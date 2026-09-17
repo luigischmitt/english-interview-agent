@@ -6,7 +6,6 @@ Initial HTTP structure for the English Interview Agent. Transcription, reasoning
 
 ```bash
 npm install
-cp .env.example .env
 npm run dev
 ```
 
@@ -20,12 +19,13 @@ From the repository root, start Kokoro in the background:
 docker compose up -d
 ```
 
-Set the following in `backend/.env` to use it:
+Start the backend with these environment variables to use it (there is no committed `.env` file):
 
-```dotenv
-SPEECH_PROVIDER=kokoro
-KOKORO_BASE_URL=http://localhost:8880
-INTERVIEWER_VOICE=af_bella+af_heart
+```bash
+SPEECH_PROVIDER=kokoro \
+KOKORO_BASE_URL=http://localhost:8880 \
+INTERVIEWER_VOICE=af_bella+af_heart \
+npm run dev
 ```
 
 The Compose service uses the CPU image and restarts automatically when Docker starts. Stop it with:
