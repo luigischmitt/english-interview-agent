@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Camera,
+  Check,
   Clock3,
+  Container,
   Home,
   LineChart,
   Mic,
@@ -12,13 +14,16 @@ import {
   Moon,
   PhoneOff,
   Play,
+  RefreshCw,
   Settings2,
+  Square,
   SlidersHorizontal,
   Sun,
   Target,
   Video,
   VideoOff,
   Volume2,
+  VolumeX,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -445,15 +450,112 @@ function SettingsView({
   );
 }
 
+type SpeechStatus = "checking" | "ready" | "fake" | "unavailable";
+
+const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
+
 function InterviewView({ onLeave }: { onLeave: () => void }) {
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
   const [seconds, setSeconds] = useState(134);
+  const [text, setText] = useState("Hello. Thank you for joining this interview today.");
+  const [speechStatus, setSpeechStatus] = useState<SpeechStatus>("checking");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const checkSpeechStatus = async () => {
+    setSpeechStatus("checking");
+
+    try {
+      const response = await fetch(`${backendBaseUrl}/api/v1/speech/health`);
+      const data = (await response.json()) as { provider?: string; status?: string };
+
+      if (response.ok && data.provider === "kokoro" && data.status === "ready") {
+        setSpeechStatus("ready");
+        return;
+      }
+
+      setSpeechStatus(data.provider === "fake" ? "fake" : "unavailable");
+    } catch {
+      setSpeechStatus("unavailable");
+    }
+  };
+
+  useEffect(() => {
+    const statusTimer = window.setTimeout(() => {
+      void checkSpeechStatus();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(statusTimer);
+      audioRef.current?.pause();
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+    };
+  }, []);
+
+  const stopAudio = () => {
+    audioRef.current?.pause();
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+    }
+    setIsPlaying(false);
+  };
+
+  const generateSpeech = async () => {
+    const phrase = text.trim();
+    if (!phrase) {
+      setSpeechError("Type an English sentence before generating audio.");
+      return;
+    }
+
+    stopAudio();
+    setIsGenerating(true);
+    setSpeechError(null);
+
+    try {
+      const response = await fetch(`${backendBaseUrl}/api/v1/speech`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: phrase }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(data?.error?.message ?? "The backend could not generate audio.");
+      }
+
+      const audioBlob = await response.blob();
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+
+      const audioUrl = URL.createObjectURL(audioBlob);
+      audioUrlRef.current = audioUrl;
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      audio.addEventListener("ended", () => setIsPlaying(false), { once: true });
+      await audio.play();
+      setIsPlaying(true);
+      setSpeechStatus("ready");
+    } catch (error) {
+      setSpeechStatus("unavailable");
+      setSpeechError(error instanceof Error ? error.message : "Could not reach the local speech service.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const elapsed = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
@@ -467,8 +569,141 @@ function InterviewView({ onLeave }: { onLeave: () => void }) {
       </div>
       <div className="mx-auto grid w-full max-w-6xl flex-1 gap-3 md:grid-cols-2">
         <VideoTile label="You" active={micOn} initials="LT" dark cameraOn={cameraOn} />
-        <VideoTile label="Interviewer" active={!micOn} initials="AI" cameraOn />
+        <VideoTile label="Interviewer" active={isPlaying} initials="AI" cameraOn />
       </div>
+      <section
+        aria-labelledby="voice-lab-title"
+        className="mx-auto mt-5 w-full max-w-6xl border-t pt-5"
+      >
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]">
+          <div className="card card-border bg-card">
+            <div className="card-body gap-5 p-5 sm:p-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 id="voice-lab-title" className="card-title text-xl tracking-[-0.02em]">
+                    Voice test room
+                  </h2>
+                  <p className="mt-1 max-w-[58ch] text-sm leading-6 text-muted-foreground">
+                    Send a short interviewer line to your local backend. It forwards the text to Kokoro with the
+                    <span className="font-medium text-foreground"> af_bella + af_heart </span> voice mix.
+                  </p>
+                </div>
+                <div
+                  className={`badge badge-outline shrink-0 gap-2 py-3 text-xs font-medium ${
+                    speechStatus === "ready"
+                      ? "badge-success"
+                      : speechStatus === "checking"
+                        ? "badge-info"
+                        : "badge-warning"
+                  }`}
+                >
+                  <span
+                    className={`status ${speechStatus === "checking" ? "status-info animate-pulse" : ""} ${
+                      speechStatus === "ready" ? "status-success" : speechStatus === "unavailable" ? "status-warning" : ""
+                    }`}
+                    aria-hidden="true"
+                  />
+                  {speechStatus === "ready"
+                    ? "Kokoro ready"
+                    : speechStatus === "checking"
+                      ? "Checking service"
+                      : speechStatus === "fake"
+                        ? "Fake provider active"
+                        : "Service unavailable"}
+                </div>
+              </div>
+
+              <fieldset className="fieldset w-full gap-2">
+                <legend className="fieldset-legend text-sm font-medium">English line to speak</legend>
+                <textarea
+                  className="textarea textarea-bordered min-h-28 w-full resize-y bg-base-100 text-base leading-6"
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                  placeholder="Type what the interviewer should say in English..."
+                  maxLength={2000}
+                />
+                <p className="label text-muted-foreground">{text.length} / 2,000 characters</p>
+              </fieldset>
+
+              {speechError && (
+                <div role="alert" className="alert alert-error alert-soft text-sm">
+                  <VolumeX className="size-4" aria-hidden="true" />
+                  <span>{speechError}</span>
+                </div>
+              )}
+
+              <div className="card-actions items-center justify-between gap-3 border-t pt-4">
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Audio stays on this device during this local test.
+                </p>
+                <div className="flex w-full gap-2 sm:w-auto">
+                  {isPlaying && (
+                    <button type="button" className="btn btn-ghost" onClick={stopAudio}>
+                      <Square className="size-4" aria-hidden="true" /> Stop
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-primary flex-1 sm:flex-none"
+                    onClick={() => void generateSpeech()}
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? (
+                      <span className="loading loading-spinner loading-sm" aria-hidden="true" />
+                    ) : (
+                      <Play className="size-4" aria-hidden="true" />
+                    )}
+                    {isGenerating ? "Generating…" : "Speak with Kokoro"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside className="card card-border bg-base-200">
+            <div className="card-body gap-4 p-5 sm:p-6">
+              <div className="flex items-center gap-3">
+                <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-content">
+                  <Container className="size-4" aria-hidden="true" />
+                </span>
+                <div>
+                  <h2 className="card-title text-base">Local setup</h2>
+                  <p className="text-xs text-muted-foreground">What needs to run first</p>
+                </div>
+              </div>
+              <ol className="space-y-3 text-sm leading-5">
+                <li className="flex gap-3">
+                  <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                  <span>
+                    Keep <strong>Docker Desktop</strong> open and run <code>docker compose up -d</code> from the project root.
+                  </span>
+                </li>
+                <li className="flex gap-3">
+                  <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                  <span>
+                    Start the backend on port <code>3001</code> with <code>SPEECH_PROVIDER=kokoro</code>.
+                  </span>
+                </li>
+                <li className="flex gap-3">
+                  <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                  <span>Use the field here. The site calls the backend; the backend calls Kokoro.</span>
+                </li>
+              </ol>
+              <div className="mt-auto flex items-center justify-between border-t pt-4">
+                <span className="text-xs text-muted-foreground">Backend: localhost:3001</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => void checkSpeechStatus()}
+                  aria-label="Check local speech service again"
+                >
+                  <RefreshCw className="size-4" aria-hidden="true" /> Refresh
+                </button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
       <div className="mx-auto flex w-full max-w-6xl justify-center pt-5">
         <div className="grid w-full max-w-sm grid-cols-3 items-center gap-3 rounded-xl border bg-card p-3 sm:flex sm:w-auto sm:max-w-none sm:gap-2 sm:p-2">
           <Button
