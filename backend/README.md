@@ -2,7 +2,23 @@
 
 Initial HTTP structure for the English Interview Agent. Transcription, reasoning, and English-formulation providers are still placeholders. Speech synthesis is available through a provider boundary and can call a local Kokoro container.
 
-## Run locally
+## Run the complete local environment
+
+From the repository root:
+
+```bash
+docker compose up --build
+```
+
+This starts the frontend at `http://localhost:3000`, the backend at `http://localhost:3001`, and Kokoro at `http://localhost:8880`. Source folders are mounted into the frontend and backend containers, so their development servers reload when code changes.
+
+Stop every service with:
+
+```bash
+docker compose down
+```
+
+## Run the backend without Docker
 
 ```bash
 npm install
@@ -11,7 +27,7 @@ npm run dev
 
 The server runs on `http://localhost:3001` by default.
 
-## Run Kokoro locally
+## Run Kokoro with a local backend
 
 From the repository root, start Kokoro in the background:
 
