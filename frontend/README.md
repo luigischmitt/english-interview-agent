@@ -13,7 +13,23 @@ Este é um protótipo funcional somente de frontend. Não há autenticação, pe
 
 Os dados de dashboard são estáticos e existem apenas para validar hierarquia e layout. O avatar por iniciais na sala de entrevista é temporário: ele será substituído pelo avatar do entrevistador quando esse recurso existir.
 
-## Rodar localmente
+## Rodar o ambiente completo com Docker
+
+Na raiz do repositório:
+
+```bash
+docker compose up --build
+```
+
+Abra [http://localhost:3000](http://localhost:3000). O comando também inicia o backend e o Kokoro. As alterações em `frontend/` e `backend/` são recarregadas durante o desenvolvimento.
+
+Para desligar o ambiente:
+
+```bash
+docker compose down
+```
+
+## Rodar somente o frontend
 
 ```bash
 npm install
