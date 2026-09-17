@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Camera,
-  Check,
   Clock3,
   Container,
   Home,
@@ -584,7 +583,7 @@ function InterviewView({ onLeave }: { onLeave: () => void }) {
                     Voice test room
                   </h2>
                   <p className="mt-1 max-w-[58ch] text-sm leading-6 text-muted-foreground">
-                    Send a short interviewer line to your local backend. It forwards the text to Kokoro with the
+                    Type a short interviewer line and the local stack turns it into audio with the
                     <span className="font-medium text-foreground"> af_bella + af_heart </span> voice mix.
                   </p>
                 </div>
@@ -667,30 +666,35 @@ function InterviewView({ onLeave }: { onLeave: () => void }) {
                   <Container className="size-4" aria-hidden="true" />
                 </span>
                 <div>
-                  <h2 className="card-title text-base">Local setup</h2>
-                  <p className="text-xs text-muted-foreground">What needs to run first</p>
+                  <h2 className="card-title text-base">One-command local stack</h2>
+                  <p className="text-xs text-muted-foreground">Frontend, backend and Kokoro start together</p>
                 </div>
               </div>
-              <ol className="space-y-3 text-sm leading-5">
-                <li className="flex gap-3">
-                  <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-                  <span>
-                    Keep <strong>Docker Desktop</strong> open and run <code>docker compose up -d</code> from the project root.
-                  </span>
+              <div className="rounded-field border border-base-300 bg-base-100 px-3 py-2 font-mono text-xs text-base-content">
+                docker compose up
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">
+                Run it from the project root with Docker Desktop open, then use this page at <strong className="text-base-content">localhost:3000</strong>.
+              </p>
+              <ul className="steps steps-vertical w-full text-xs">
+                <li className="step step-primary text-left">
+                  <span><strong>Frontend</strong> opens this test room on <code>localhost:3000</code>.</span>
                 </li>
-                <li className="flex gap-3">
-                  <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-                  <span>
-                    Start the backend on port <code>3001</code> with <code>SPEECH_PROVIDER=kokoro</code>.
-                  </span>
+                <li className="step step-primary text-left">
+                  <span><strong>Backend</strong> receives the sentence on <code>localhost:3001</code>.</span>
                 </li>
-                <li className="flex gap-3">
-                  <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-                  <span>Use the field here. The site calls the backend; the backend calls Kokoro.</span>
+                <li className="step step-primary text-left">
+                  <span><strong>Kokoro</strong> generates the MP3 on port <code>8880</code>; the backend returns it here.</span>
                 </li>
-              </ol>
+              </ul>
+              {speechStatus === "unavailable" && (
+                <div role="alert" className="alert alert-warning alert-soft text-xs leading-5">
+                  <Container className="size-4 shrink-0" aria-hidden="true" />
+                  <span>Service not ready. Check Docker Desktop, run the command above from the project root, then refresh this status.</span>
+                </div>
+              )}
               <div className="mt-auto flex items-center justify-between border-t pt-4">
-                <span className="text-xs text-muted-foreground">Backend: localhost:3001</span>
+                <span className="text-xs text-muted-foreground">Browser → backend → Kokoro</span>
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
