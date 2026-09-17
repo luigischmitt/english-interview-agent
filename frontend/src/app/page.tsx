@@ -671,7 +671,7 @@ function InterviewView({ onLeave }: { onLeave: () => void }) {
                 </div>
               </div>
               <div className="rounded-field border border-base-300 bg-base-100 px-3 py-2 font-mono text-xs text-base-content">
-                docker compose up
+                docker compose up -d
               </div>
               <p className="text-xs leading-5 text-muted-foreground">
                 Run it from the project root with Docker Desktop open, then use this page at <strong className="text-base-content">localhost:3000</strong>.
