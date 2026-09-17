@@ -289,97 +289,46 @@ function HomeView({
   return (
     <main className="mx-auto w-full min-w-0 max-w-6xl px-5 py-10 pb-28 sm:px-8 lg:px-12 lg:py-14">
       <PageIntro
-        title="Good evening, Lucas."
-        description="Practice the English that helps your experience come through clearly in an interview."
-        action={
-          <Button size="lg" className="h-11 gap-2 px-5" onClick={onStart}>
-            <Play className="size-4 fill-current" /> Start interview
-          </Button>
-        }
+        title="Ready to practice?"
+        description="Choose where to continue."
       />
 
-      <section className="mt-12 grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.65fr)] lg:items-start">
-        <Card className="min-w-0 justify-between gap-8 border border-primary/20 bg-card p-6 py-6 ring-0 sm:p-8">
-          <div className="flex items-start justify-between gap-6">
+      <section className="mt-10 grid gap-8 md:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)] md:items-stretch">
+        <Card className="min-w-0 justify-between gap-10 border border-primary/20 bg-card p-6 py-6 ring-0 sm:p-8">
+          <div className="flex items-start justify-between gap-5">
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Next practice</p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.025em]">
-                Technical interview
+              <h2 className="text-2xl font-semibold tracking-[-0.025em]">
+                Start an interview
               </h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Mid-level, 25 minutes, spoken English
+                Technical interview, 25 minutes
               </p>
             </div>
             <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground">
               <Target className="size-5" aria-hidden="true" />
             </span>
           </div>
-          <div className="flex flex-col gap-4 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="max-w-md text-sm leading-6 text-muted-foreground">
-              Focus on structuring technical decisions before adding detail.
-            </p>
-            <Button variant="secondary" className="gap-2" onClick={onStart}>
-              Begin session <ArrowRight className="size-4" />
+          <div className="border-t pt-5">
+            <Button className="gap-2" onClick={onStart}>
+              <Play className="size-4 fill-current" /> Start interview
             </Button>
           </div>
         </Card>
 
-        <div className="border-y py-1">
-          <SectionHeading
-            title="In this session"
-            description="A focused format that keeps you in interview mode."
-          />
-          <div className="mt-5 space-y-4">
-            <div>
-              <p className="text-sm font-medium">Answer out loud</p>
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                Build clarity while you speak, not after the answer is finished.
-              </p>
-            </div>
-            <div className="border-t pt-4">
-              <p className="text-sm font-medium">Handle follow-ups</p>
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                Practice staying precise when the interviewer asks for more detail.
-              </p>
-            </div>
-            <div className="border-t pt-4">
-              <p className="text-sm font-medium">Review what matters</p>
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                Receive feedback after the session, prioritized by impact.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-16 grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)] lg:gap-14">
-        <div>
-          <SectionHeading
-            title="Continue from your last session"
-            description="Your feedback carries into the next practice."
-          />
-          <div className="mt-6 border-y py-5">
-            <p className="text-sm font-medium">Keep the decision before the detail</p>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-              Your answers were easier to follow when you started with the choice you made, then explained the trade-offs.
+        <div className="flex flex-col justify-between border-y py-6 sm:px-1 md:py-8">
+          <div>
+            <span className="grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground">
+              <LineChart className="size-5" aria-hidden="true" />
+            </span>
+            <h2 className="mt-5 text-xl font-semibold tracking-[-0.02em]">
+              Review your progress
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              See your confidence and focus areas.
             </p>
-            <button
-              type="button"
-              onClick={onProgress}
-              className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
-            >
-              Review progress <ArrowRight className="size-4" />
-            </button>
           </div>
-        </div>
-
-        <div>
-          <SectionHeading title="A calmer start" description="You do not need perfect English to begin." />
-          <p className="mt-6 text-sm leading-6 text-muted-foreground">
-            Take a moment to think, answer in complete ideas, and let the interviewer guide the next question.
-          </p>
-          <Button variant="outline" className="mt-5 gap-2" onClick={onStart}>
-            Enter interview room <ArrowRight className="size-4" />
+          <Button variant="outline" className="mt-8 w-fit gap-2" onClick={onProgress}>
+            View progress <ArrowRight className="size-4" />
           </Button>
         </div>
       </section>
