@@ -36,6 +36,7 @@ O trabalho é organizado por issues no Linear. Cada alteração deve pertencer a
 4. Faça commits claros vinculados à issue.
 5. Abra uma PR da branch para `main`, associe-a à issue e descreva validações realizadas.
 6. Faça merge apenas após revisão/validação e então encerre a issue.
+7. Depois que o merge estiver confirmado na `main`, apague a branch remota e a branch local da issue. Antes de apagar a cópia local, preserve alterações não commitadas do usuário (por exemplo, com stash) e remova worktrees temporários vinculados à branch.
 
 ### Branches
 
