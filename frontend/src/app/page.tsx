@@ -574,14 +574,14 @@ function VideoTile({
 }) {
   return (
     <div
-      className={`relative flex min-h-72 items-center justify-center overflow-hidden rounded-2xl border ${dark ? "bg-[#2a231e] text-white" : "bg-secondary"} ${active ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-background" : ""}`}
+      className={`relative flex min-h-72 items-center justify-center overflow-hidden rounded-2xl border ${dark ? "bg-[#2a2d2e] text-white" : "bg-secondary"} ${active ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-background" : ""}`}
     >
       {cameraOn ? (
         <Avatar className="size-28 border-4 border-background/70 text-2xl">
           <AvatarFallback
             className={
               dark
-                ? "bg-[#41362f] text-white"
+                ? "bg-[#414a49] text-white"
                 : "bg-primary text-primary-foreground"
             }
           >
