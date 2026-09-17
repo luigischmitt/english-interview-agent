@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import {
   ArrowRight,
   Camera,
-  ChevronRight,
   Clock3,
   Home,
   LineChart,
@@ -44,19 +43,17 @@ const viewLabels: Record<View, string> = {
   settings: "Settings",
 };
 
-const sessions = [
-  { name: "Technical interview", date: "Today", score: 72 },
-  { name: "Behavioral interview", date: "Sep 27", score: 68 },
-  { name: "General conversation", date: "Sep 24", score: 64 },
-];
-
-function Brand() {
+function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className={`flex items-center ${compact ? "justify-center" : "gap-3"}`}>
       <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
         <Volume2 className="size-4" aria-hidden="true" />
       </span>
-      <span className="text-sm font-semibold tracking-[-0.01em]">
+      <span
+        className={`overflow-hidden whitespace-nowrap text-sm font-semibold tracking-[-0.01em] transition-[width,opacity] duration-200 ${
+          compact ? "w-0 opacity-0" : "w-32 opacity-100"
+        }`}
+      >
         Interview Agent
       </span>
     </div>
@@ -65,39 +62,60 @@ function Brand() {
 
 function Navigation({
   view,
+  expanded,
   onNavigate,
+  onExpand,
 }: {
   view: View;
+  expanded: boolean;
   onNavigate: (view: View) => void;
+  onExpand: (expanded: boolean) => void;
 }) {
   return (
     <>
-      <aside className="sticky top-0 hidden min-h-dvh w-60 shrink-0 border-r bg-sidebar px-4 py-5 lg:flex lg:flex-col">
-        <div className="px-2 pb-8">
-          <Brand />
+      <aside
+        className={`sticky top-0 hidden min-h-dvh shrink-0 border-r bg-sidebar py-5 transition-[width,padding] duration-200 lg:flex lg:flex-col ${
+          expanded ? "w-60 px-4" : "w-[72px] px-3"
+        }`}
+        onMouseEnter={() => onExpand(true)}
+        onMouseLeave={() => onExpand(false)}
+      >
+        <div className="pb-8">
+          <Brand compact={!expanded} />
         </div>
         <nav aria-label="Primary navigation">
-          <ul className="menu menu-sm w-full gap-1 p-0">
+          <ul className="space-y-1">
             {navigationItems.map(({ id, label, icon: Icon }) => (
-              <li key={id}>
+              <li key={id} className="flex">
                 <button
                   type="button"
                   aria-current={view === id ? "page" : undefined}
                   onClick={() => onNavigate(id)}
-                  className={`h-10 gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${
+                  title={expanded ? undefined : label}
+                  className={`flex h-10 w-full items-center rounded-lg text-sm font-medium transition-colors ${
                     view === id
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
                       : "text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
-                  }`}
+                  } ${expanded ? "gap-3 px-3" : "justify-center px-0"}`}
                 >
                   <Icon className="size-4" aria-hidden="true" />
-                  {label}
+                  <span
+                    className={`overflow-hidden whitespace-nowrap transition-[width,opacity] duration-200 ${
+                      expanded ? "w-28 opacity-100" : "w-0 opacity-0"
+                    }`}
+                  >
+                    {label}
+                  </span>
                 </button>
               </li>
             ))}
           </ul>
         </nav>
-        <p className="mt-auto px-2 text-xs leading-5 text-muted-foreground">
+        <p
+          className={`mt-auto overflow-hidden text-xs leading-5 text-muted-foreground transition-[height,opacity] duration-200 ${
+            expanded ? "h-10 opacity-100" : "h-0 opacity-0"
+          }`}
+        >
           Clear English. Stronger interviews.
         </p>
       </aside>
@@ -280,7 +298,7 @@ function HomeView({
         }
       />
 
-      <section className="mt-12 grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(240px,0.65fr)]">
+      <section className="mt-12 grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.65fr)] lg:items-start">
         <Card className="min-w-0 justify-between gap-8 border border-primary/20 bg-card p-6 py-6 ring-0 sm:p-8">
           <div className="flex items-start justify-between gap-6">
             <div>
@@ -306,81 +324,63 @@ function HomeView({
           </div>
         </Card>
 
-        <Card className="stats stats-vertical block w-full min-w-0 gap-0 border bg-card py-0 ring-0">
-          <div className="stat min-w-0 px-6 py-6 sm:px-7 sm:py-7">
-            <p className="stat-title whitespace-normal text-sm font-medium text-muted-foreground">
-              Interview readiness
-            </p>
-            <p className="stat-value mt-4 text-5xl font-semibold tracking-[-0.04em] text-foreground">
-              72<span className="ml-1 text-lg font-medium text-muted-foreground">/100</span>
-            </p>
-            <p className="stat-desc mt-3 whitespace-normal text-sm text-muted-foreground">
-              Up 8 points this month
-            </p>
-          </div>
-        </Card>
-      </section>
-
-      <section className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)] lg:gap-14">
-        <div>
-          <div className="flex items-start justify-between gap-4">
-            <SectionHeading
-              title="Communication confidence"
-              description="Your last five interview sessions"
-            />
-            <span className="text-sm font-semibold text-primary">+18%</span>
-          </div>
-          <div className="mt-6">
-            <TrendChart />
-            <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-              <span>Sep 3</span>
-              <span>Today</span>
+        <div className="border-y py-1">
+          <SectionHeading
+            title="In this session"
+            description="A focused format that keeps you in interview mode."
+          />
+          <div className="mt-5 space-y-4">
+            <div>
+              <p className="text-sm font-medium">Answer out loud</p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                Build clarity while you speak, not after the answer is finished.
+              </p>
+            </div>
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium">Handle follow-ups</p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                Practice staying precise when the interviewer asks for more detail.
+              </p>
+            </div>
+            <div className="border-t pt-4">
+              <p className="text-sm font-medium">Review what matters</p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                Receive feedback after the session, prioritized by impact.
+              </p>
             </div>
           </div>
         </div>
-
-        <div>
-          <SectionHeading
-            title="Focus next"
-            description="The skills with the greatest impact on clarity"
-          />
-          <div className="mt-7 space-y-6">
-            <FocusRow label="Answer structure" status="Primary focus" value={58} />
-            <FocusRow label="Verb tense" status="Improving" value={70} />
-            <FocusRow label="Pacing" status="Stable" value={76} />
-          </div>
-        </div>
       </section>
 
-      <section className="mt-14">
-        <div className="flex items-end justify-between gap-4">
-          <SectionHeading title="Recent sessions" />
-          <button
-            type="button"
-            onClick={onProgress}
-            className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
-          >
-            See all progress <ChevronRight className="size-4" />
-          </button>
-        </div>
-        <div className="mt-4 border-y">
-          {sessions.map((session, index) => (
+      <section className="mt-16 grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)] lg:gap-14">
+        <div>
+          <SectionHeading
+            title="Continue from your last session"
+            description="Your feedback carries into the next practice."
+          />
+          <div className="mt-6 border-y py-5">
+            <p className="text-sm font-medium">Keep the decision before the detail</p>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+              Your answers were easier to follow when you started with the choice you made, then explained the trade-offs.
+            </p>
             <button
               type="button"
-              key={session.name}
               onClick={onProgress}
-              className={`group flex w-full items-center justify-between gap-5 py-4 text-left transition-colors hover:text-primary ${index > 0 ? "border-t" : ""}`}
+              className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
             >
-              <div>
-                <p className="text-sm font-medium">{session.name}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{session.date}</p>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-semibold tabular-nums">{session.score}</span>
-                <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </div>
+              Review progress <ArrowRight className="size-4" />
             </button>
-          ))}
+          </div>
+        </div>
+
+        <div>
+          <SectionHeading title="A calmer start" description="You do not need perfect English to begin." />
+          <p className="mt-6 text-sm leading-6 text-muted-foreground">
+            Take a moment to think, answer in complete ideas, and let the interviewer guide the next question.
+          </p>
+          <Button variant="outline" className="mt-5 gap-2" onClick={onStart}>
+            Enter interview room <ArrowRight className="size-4" />
+          </Button>
         </div>
       </section>
     </main>
@@ -599,6 +599,7 @@ function VideoTile({
 export default function App() {
   const [view, setView] = useState<View>("home");
   const [darkMode, setDarkMode] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
@@ -607,13 +608,19 @@ export default function App() {
 
   const navigate = (nextView: View) => {
     setView(nextView);
+    setSidebarExpanded(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
     <div className="min-h-dvh overflow-x-clip bg-background text-foreground">
       <div className="flex min-h-dvh">
-        <Navigation view={view} onNavigate={navigate} />
+        <Navigation
+          view={view}
+          expanded={sidebarExpanded}
+          onNavigate={navigate}
+          onExpand={setSidebarExpanded}
+        />
         <div className="min-w-0 flex-1">
           <Topbar
             view={view}
