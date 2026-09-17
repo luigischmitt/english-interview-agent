@@ -1,13 +1,87 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@plugin "daisyui" {
+  themes: false;
+  logs: false;
+}
+
+@plugin "daisyui/theme" {
+  name: "interview-light";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+  --color-base-100: #fbfaf3;
+  --color-base-200: #fffef8;
+  --color-base-300: #e7e9e4;
+  --color-base-content: #28343a;
+  --color-primary: #3c5966;
+  --color-primary-content: #f7f7f1;
+  --color-secondary: #e3e7e3;
+  --color-secondary-content: #28343a;
+  --color-accent: #d9e1dc;
+  --color-accent-content: #28343a;
+  --color-neutral: #55656b;
+  --color-neutral-content: #f7f7f1;
+  --color-info: #5d7a80;
+  --color-info-content: #f7f7f1;
+  --color-success: #89a4a0;
+  --color-success-content: #28343a;
+  --color-warning: #e3e7e3;
+  --color-warning-content: #28343a;
+  --color-error: #9f3d2b;
+  --color-error-content: #f7f7f1;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: "interview-dark";
+  default: false;
+  prefersdark: false;
+  color-scheme: dark;
+  --color-base-100: #1f2021;
+  --color-base-200: #2a2d2e;
+  --color-base-300: #353a3b;
+  --color-base-content: #f4f5ef;
+  --color-primary: #b7c8ca;
+  --color-primary-content: #1d272b;
+  --color-secondary: #353a3b;
+  --color-secondary-content: #f4f5ef;
+  --color-accent: #414a49;
+  --color-accent-content: #f4f5ef;
+  --color-neutral: #bbc5c3;
+  --color-neutral-content: #1d272b;
+  --color-info: #89a4a0;
+  --color-info-content: #1d272b;
+  --color-success: #5d7a80;
+  --color-success-content: #f4f5ef;
+  --color-warning: #414a49;
+  --color-warning-content: #f4f5ef;
+  --color-error: #eb9a82;
+  --color-error-content: #1f2021;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -122,9 +196,25 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground selection:bg-primary selection:text-primary-foreground;
+    text-rendering: optimizeLegibility;
   }
   html {
     @apply font-sans;
+    scrollbar-color: var(--muted-foreground) var(--background);
+    scroll-behavior: smooth;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
