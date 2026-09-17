@@ -122,16 +122,16 @@ function Navigation({
 
       <nav
         aria-label="Mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur lg:hidden"
       >
-        <ul className="menu menu-horizontal grid grid-cols-4 p-0">
+        <ul className="menu menu-horizontal grid w-full grid-cols-4 gap-1 p-0">
           {navigationItems.map(({ id, label, icon: Icon }) => (
-            <li key={id}>
+            <li key={id} className="min-w-0">
               <button
                 type="button"
                 aria-current={view === id ? "page" : undefined}
                 onClick={() => onNavigate(id)}
-                className={`flex min-h-12 flex-col gap-1 rounded-lg px-2 py-1 text-[11px] font-medium ${
+                className={`flex min-h-12 w-full flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[11px] font-medium ${
                   view === id
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground"
@@ -287,7 +287,7 @@ function HomeView({
   onProgress: () => void;
 }) {
   return (
-    <main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-28 sm:px-8 sm:py-10 lg:px-12 lg:py-14">
+    <main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
       <PageIntro
         title="Ready to practice?"
         description="Choose where to continue."
@@ -349,7 +349,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function ProgressView() {
   return (
-    <main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-28 sm:px-8 sm:py-10 lg:px-12 lg:py-14">
+    <main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
       <PageIntro
         title="Your progress"
         description="See which communication skills are becoming more reliable under interview pressure."
@@ -399,7 +399,7 @@ function SettingsView({
   onToggleTheme: () => void;
 }) {
   return (
-    <main className="mx-auto w-full min-w-0 max-w-4xl px-4 py-8 pb-28 sm:px-8 sm:py-10 lg:px-12 lg:py-14">
+    <main className="mx-auto w-full min-w-0 max-w-4xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
       <PageIntro
         title="Settings"
         description="Adjust the practice environment to make each session comfortable and focused."
@@ -458,7 +458,7 @@ function InterviewView({ onLeave }: { onLeave: () => void }) {
   const elapsed = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
   return (
-    <main className="flex min-h-[calc(100dvh-4rem)] flex-col px-3 py-4 pb-28 sm:px-6 sm:py-5 lg:px-8 lg:pb-6">
+    <main className="flex min-h-[calc(100dvh-4rem)] flex-col px-3 py-4 pb-36 sm:px-6 sm:py-5 sm:pb-28 lg:px-8 lg:pb-6">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 pb-5 text-sm">
         <p className="font-medium">Interview in progress</p>
         <p className="flex items-center gap-2 text-muted-foreground tabular-nums">
@@ -470,10 +470,11 @@ function InterviewView({ onLeave }: { onLeave: () => void }) {
         <VideoTile label="Interviewer" active={!micOn} initials="AI" cameraOn />
       </div>
       <div className="mx-auto flex w-full max-w-6xl justify-center pt-5">
-        <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl border bg-card p-2">
+        <div className="grid w-full max-w-sm grid-cols-3 items-center gap-3 rounded-xl border bg-card p-3 sm:flex sm:w-auto sm:max-w-none sm:gap-2 sm:p-2">
           <Button
             variant={micOn ? "secondary" : "destructive"}
             size="icon-lg"
+            className="justify-self-center"
             aria-label={micOn ? "Mute microphone" : "Unmute microphone"}
             onClick={() => setMicOn(!micOn)}
           >
@@ -482,15 +483,25 @@ function InterviewView({ onLeave }: { onLeave: () => void }) {
           <Button
             variant={cameraOn ? "secondary" : "destructive"}
             size="icon-lg"
+            className="justify-self-center"
             aria-label={cameraOn ? "Turn camera off" : "Turn camera on"}
             onClick={() => setCameraOn(!cameraOn)}
           >
             {cameraOn ? <Camera className="size-4" /> : <VideoOff className="size-4" />}
           </Button>
-          <Button variant="ghost" size="icon-lg" aria-label="Interview options">
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            className="justify-self-center"
+            aria-label="Interview options"
+          >
             <Settings2 className="size-4" />
           </Button>
-          <Button variant="destructive" className="h-9 gap-2 px-4" onClick={onLeave}>
+          <Button
+            variant="destructive"
+            className="col-span-3 h-11 w-full gap-2 px-4 sm:col-auto sm:h-9 sm:w-auto"
+            onClick={onLeave}
+          >
             <PhoneOff className="size-4" /> End call
           </Button>
         </div>
