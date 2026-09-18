@@ -1,6 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import AOS from "aos";
+import {
+  CategoryScale,
+  Chart,
+  Filler,
+  Legend,
+  LineController,
+  LineElement,
+  LinearScale,
+  PointElement,
+  Tooltip,
+} from "chart.js";
+import gsap from "gsap";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Camera,
@@ -30,6 +43,19 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+
+import "aos/dist/aos.css";
+
+Chart.register(
+  CategoryScale,
+  Filler,
+  Legend,
+  LineController,
+  LineElement,
+  LinearScale,
+  PointElement,
+  Tooltip,
+);
 
 type View = "home" | "interview" | "progress" | "settings";
 
@@ -190,57 +216,125 @@ function PageIntro({
   description: string;
   action?: React.ReactNode;
 }) {
+  const introRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+
+    const context = gsap.context(() => {
+      gsap.fromTo(
+        "[data-page-intro-word]",
+        { yPercent: 115, opacity: 0, filter: "blur(5px)" },
+        {
+          yPercent: 0,
+          opacity: 1,
+          filter: "blur(0px)",
+          duration: 0.56,
+          stagger: 0.055,
+          ease: "power3.out",
+        },
+      );
+      gsap.fromTo(
+        "[data-page-intro-support]",
+        { y: 10, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.35, delay: 0.2, ease: "power2.out" },
+      );
+    }, introRef);
+
+    return () => context.revert();
+  }, [title]);
+
   return (
-    <div className="flex min-w-0 flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+    <div ref={introRef} className="flex min-w-0 flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0 max-w-2xl">
         <h1 className="text-balance text-[clamp(1.875rem,calc(1.25rem+3.125vw),2.5rem)] font-semibold leading-[1.12] tracking-[-0.03em]">
-          {title}
+          {title.split(" ").map((word, index) => (
+            <span key={`${word}-${index}`} className="mr-[0.24em] inline-block overflow-hidden align-bottom last:mr-0">
+              <span className="inline-block" data-page-intro-word>
+                {word}
+              </span>
+            </span>
+          ))}
         </h1>
-        <p className="mt-3 max-w-[60ch] text-[15px] leading-6 text-muted-foreground sm:text-base">
+        <p data-page-intro-support className="mt-3 max-w-[60ch] text-[15px] leading-6 text-muted-foreground sm:text-base">
           {description}
         </p>
       </div>
-      {action}
+      {action && <div data-page-intro-support>{action}</div>}
     </div>
   );
 }
 
-function TrendChart() {
+function ConfidenceChart({ darkMode }: { darkMode: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const styles = getComputedStyle(document.documentElement);
+    const chart = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels: ["Sep 3", "Sep 7", "Sep 10", "Sep 14", "Today"],
+        datasets: [
+          {
+            data: [48, 53, 58, 63, 72],
+            borderColor: styles.getPropertyValue("--chart-1").trim(),
+            backgroundColor: "transparent",
+            borderWidth: 3,
+            tension: 0.38,
+            pointRadius: 4,
+            pointHoverRadius: 5,
+            pointBackgroundColor: styles.getPropertyValue("--card").trim(),
+            pointBorderColor: styles.getPropertyValue("--chart-1").trim(),
+            pointBorderWidth: 2.5,
+          },
+        ],
+      },
+      options: {
+        animation: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? false
+          : { duration: 1100, easing: "easeOutQuart" },
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            displayColors: false,
+            backgroundColor: styles.getPropertyValue("--card").trim(),
+            bodyColor: styles.getPropertyValue("--foreground").trim(),
+            borderColor: styles.getPropertyValue("--border").trim(),
+            borderWidth: 1,
+            callbacks: { label: (context) => `Confidence: ${context.parsed.y}` },
+          },
+        },
+        scales: {
+          x: { display: false },
+          y: {
+            min: 40,
+            max: 80,
+            display: false,
+            grid: { color: styles.getPropertyValue("--border").trim() },
+          },
+        },
+        interaction: { intersect: false, mode: "index" },
+      },
+    });
+
+    return () => chart.destroy();
+  }, [darkMode]);
+
   return (
-    <svg
+    <div
       aria-label="Communication confidence improved from 48 to 72 across five sessions"
-      className="h-36 w-full overflow-visible"
+      className="relative h-36 w-full"
       role="img"
-      viewBox="0 0 520 140"
-      preserveAspectRatio="none"
     >
-      <path d="M0 118H520M0 70H520M0 22H520" className="stroke-border" />
-      <path
-        d="M8 116 C68 103, 116 91, 166 92 S247 72, 284 68 S362 54, 402 48 S474 27, 512 22"
-        className="stroke-primary"
-        fill="none"
-        strokeLinecap="round"
-        strokeWidth="3"
-        vectorEffect="non-scaling-stroke"
-      />
-      {[
-        [8, 116],
-        [166, 92],
-        [284, 68],
-        [402, 48],
-        [512, 22],
-      ].map(([cx, cy]) => (
-        <circle
-          key={`${cx}-${cy}`}
-          cx={cx}
-          cy={cy}
-          r="4"
-          className="fill-card stroke-primary"
-          strokeWidth="2.5"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
-    </svg>
+      <canvas ref={canvasRef} />
+    </div>
   );
 }
 
@@ -297,7 +391,7 @@ function HomeView({
         description="Choose where to continue."
       />
 
-      <section className="mt-10 grid gap-8 md:grid-cols-5 md:items-stretch">
+      <section className="mt-10 grid gap-8 md:grid-cols-5 md:items-stretch" data-aos="fade-up" data-aos-duration="450">
         <Card className="min-w-0 justify-between gap-10 border border-primary/20 bg-card p-6 py-6 ring-0 sm:p-8 md:col-span-3">
           <div className="flex items-start justify-between gap-5">
             <div>
@@ -351,18 +445,18 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProgressView() {
+function ProgressView({ darkMode }: { darkMode: boolean }) {
   return (
     <main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
       <PageIntro
         title="Your progress"
         description="See which communication skills are becoming more reliable under interview pressure."
       />
-      <section className="mt-12 grid gap-10 lg:grid-cols-10 lg:gap-14">
+      <section className="mt-12 grid gap-10 lg:grid-cols-10 lg:gap-14" data-aos="fade-up" data-aos-duration="500">
         <div className="lg:col-span-7">
           <SectionHeading title="Confidence trend" description="Last five interviews" />
           <div className="mt-7">
-            <TrendChart />
+            <ConfidenceChart darkMode={darkMode} />
             <div className="mt-2 flex justify-between text-xs text-muted-foreground">
               <span>Sep 3</span>
               <span>Today</span>
@@ -380,7 +474,7 @@ function ProgressView() {
           </div>
         </div>
       </section>
-      <section className="mt-12 max-w-3xl sm:mt-16">
+      <section className="mt-12 max-w-3xl sm:mt-16" data-aos="fade-up" data-aos-duration="450">
         <SectionHeading
           title="Skill development"
           description="Prioritized by impact on clarity and professional credibility"
@@ -408,7 +502,7 @@ function SettingsView({
         title="Settings"
         description="Adjust the practice environment to make each session comfortable and focused."
       />
-      <section className="mt-12">
+      <section className="mt-12" data-aos="fade-up" data-aos-duration="450">
         <SectionHeading title="Appearance" />
         <div className="mt-4 flex flex-col gap-5 border-y py-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -423,7 +517,7 @@ function SettingsView({
           </Button>
         </div>
       </section>
-      <section className="mt-12">
+      <section className="mt-12" data-aos="fade-up" data-aos-duration="450">
         <SectionHeading title="Interview experience" />
         <div className="mt-4 border-y">
           <div className="flex flex-col gap-3 py-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
@@ -573,6 +667,8 @@ function InterviewView({ onLeave }: { onLeave: () => void }) {
       <section
         aria-labelledby="voice-lab-title"
         className="mx-auto mt-5 w-full max-w-6xl border-t pt-5"
+        data-aos="fade-up"
+        data-aos-duration="450"
       >
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]">
           <div className="card card-border bg-card">
@@ -801,6 +897,21 @@ export default function App() {
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   useEffect(() => {
+    AOS.init({
+      duration: 500,
+      easing: "ease-out-cubic",
+      once: true,
+      offset: 48,
+      disable: () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    });
+  }, []);
+
+  useEffect(() => {
+    const refreshTimer = window.setTimeout(() => AOS.refreshHard(), 0);
+    return () => window.clearTimeout(refreshTimer);
+  }, [view]);
+
+  useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
     document.documentElement.dataset.theme = darkMode ? "interview-dark" : "interview-light";
   }, [darkMode]);
@@ -833,7 +944,7 @@ export default function App() {
             />
           )}
           {view === "interview" && <InterviewView onLeave={() => navigate("home")} />}
-          {view === "progress" && <ProgressView />}
+          {view === "progress" && <ProgressView darkMode={darkMode} />}
           {view === "settings" && (
             <SettingsView
               darkMode={darkMode}

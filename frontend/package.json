@@ -10,8 +10,11 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
+    "aos": "^2.3.4",
+    "chart.js": "^4.5.1",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
+    "gsap": "^3.15.0",
     "lucide-react": "^1.46.0",
     "next": "16.3.5",
     "react": "19.2.8",
@@ -21,6 +24,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/aos": "^3.0.8",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
