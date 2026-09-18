@@ -15,7 +15,7 @@ import {
 import gsap from "gsap";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  ArrowRight,
+  ArrowUpRight,
   Camera,
   Clock3,
   Container,
@@ -28,6 +28,7 @@ import {
   Play,
   RefreshCw,
   Settings2,
+  Shuffle,
   Square,
   SlidersHorizontal,
   Sun,
@@ -72,6 +73,24 @@ const viewLabels: Record<View, string> = {
   progress: "Your progress",
   settings: "Settings",
 };
+
+const warmUpPrompts = [
+  {
+    topic: "Technical decision",
+    question: "Tell me about a technical decision you made with incomplete information.",
+    cue: "Start with the constraint, then name the trade-off you chose.",
+  },
+  {
+    topic: "Collaboration",
+    question: "Describe a time you helped a team move through a difficult disagreement.",
+    cue: "Give the context first. Then show what changed because of your contribution.",
+  },
+  {
+    topic: "Impact",
+    question: "What is a project where your work made a meaningful difference?",
+    cue: "Pick one concrete result and connect it to the decision behind it.",
+  },
+] as const;
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
@@ -384,51 +403,117 @@ function HomeView({
   onStart: () => void;
   onProgress: () => void;
 }) {
+  const [promptIndex, setPromptIndex] = useState(0);
+  const promptRef = useRef<HTMLDivElement>(null);
+  const prompt = warmUpPrompts[promptIndex];
+
+  const selectPrompt = (index: number) => {
+    if (index === promptIndex) return;
+    setPromptIndex(index);
+  };
+
+  const chooseAnotherPrompt = () => {
+    selectPrompt((promptIndex + 1) % warmUpPrompts.length);
+  };
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    gsap.fromTo(
+      promptRef.current,
+      { opacity: 0, y: 12 },
+      { opacity: 1, y: 0, duration: 0.32, ease: "power2.out" },
+    );
+  }, [promptIndex]);
+
   return (
     <main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
       <PageIntro
-        title="Ready to practice?"
-        description="Choose where to continue."
+        title="Find your opening."
+        description="Take one focused minute before you step into the interview."
       />
 
-      <section className="mt-10 grid gap-8 md:grid-cols-5 md:items-stretch" data-aos="fade-up" data-aos-duration="450">
-        <Card className="min-w-0 justify-between gap-10 border border-primary/20 bg-card p-6 py-6 ring-0 sm:p-8 md:col-span-3">
-          <div className="flex items-start justify-between gap-5">
-            <div>
-              <h2 className="text-2xl font-semibold tracking-[-0.025em]">
-                Start an interview
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Technical interview, 25 minutes
+      <section className="mt-10 grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(16rem,0.55fr)] lg:gap-8" data-aos="fade-up" data-aos-duration="450">
+        <Card className="min-w-0 overflow-hidden border-0 bg-primary text-primary-foreground shadow-[0_20px_45px_-30px_color-mix(in_srgb,var(--primary)_72%,transparent)]">
+          <div className="card-body gap-8 p-6 sm:p-8 lg:p-10">
+            <div className="flex items-start justify-between gap-5">
+              <div>
+                <h2 className="text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">
+                  Your next answer starts here.
+                </h2>
+                <p className="mt-2 max-w-[48ch] text-sm leading-6 text-primary-foreground/75">
+                  Choose a direction, find the story, then carry that clarity into the room.
+                </p>
+              </div>
+              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary-foreground/12 text-primary-foreground">
+                <Target className="size-5" aria-hidden="true" />
+              </span>
+            </div>
+
+            <div ref={promptRef} aria-live="polite" className="max-w-[60ch]">
+              <p className="text-base font-medium leading-7 sm:text-lg">{prompt.question}</p>
+              <p className="mt-4 border-t border-primary-foreground/30 pt-4 text-sm leading-6 text-primary-foreground/75">
+                {prompt.cue}
               </p>
             </div>
-            <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground">
-              <Target className="size-5" aria-hidden="true" />
-            </span>
-          </div>
-          <div className="border-t pt-5">
-            <Button className="gap-2" onClick={onStart}>
-              <Play className="size-4 fill-current" /> Start interview
-            </Button>
+
+            <div className="flex flex-wrap gap-2" aria-label="Choose a warm-up prompt">
+              {warmUpPrompts.map((item, index) => (
+                <button
+                  key={item.topic}
+                  type="button"
+                  aria-pressed={promptIndex === index}
+                  onClick={() => selectPrompt(index)}
+                  className={`btn btn-sm rounded-selector border-primary-foreground/20 px-3 text-primary-foreground hover:border-primary-foreground/55 hover:bg-primary-foreground/14 ${
+                    promptIndex === index ? "bg-primary-foreground text-primary!" : "bg-transparent"
+                  }`}
+                >
+                  {item.topic}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-primary-foreground/20 pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <Button className="w-full gap-2 bg-primary-foreground text-primary hover:bg-primary-foreground/90 sm:w-auto" onClick={onStart}>
+                <Play className="size-4 fill-current" /> Start interview
+              </Button>
+              <button type="button" className="btn btn-ghost btn-sm gap-2 text-primary-foreground hover:bg-primary-foreground/12" onClick={chooseAnotherPrompt}>
+                <Shuffle className="size-4" aria-hidden="true" /> Another question
+              </button>
+            </div>
           </div>
         </Card>
 
-        <div className="flex flex-col justify-between border-y py-6 sm:px-1 md:col-span-2 md:py-8">
-          <div>
-            <span className="grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground">
-              <LineChart className="size-5" aria-hidden="true" />
-            </span>
-            <h2 className="mt-5 text-xl font-semibold tracking-[-0.02em]">
-              Review your progress
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              See your confidence and focus areas.
-            </p>
-          </div>
-          <Button variant="outline" className="mt-8 w-fit gap-2" onClick={onProgress}>
-            View progress <ArrowRight className="size-4" />
-          </Button>
+        <aside className="flex flex-col border-y border-border py-6 lg:py-8">
+          <h2 className="text-lg font-semibold tracking-[-0.02em]">A focused room</h2>
+          <dl className="mt-6 space-y-4 text-sm">
+            <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
+              <dt className="text-muted-foreground">Format</dt>
+              <dd className="font-medium">Technical interview</dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
+              <dt className="text-muted-foreground">Time</dt>
+              <dd className="font-medium tabular-nums">25 minutes</dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
+              <dt className="text-muted-foreground">Language</dt>
+              <dd className="font-medium">English</dd>
+            </div>
+          </dl>
+          <p className="mt-auto pt-8 text-sm leading-6 text-muted-foreground">
+            You do not need a perfect answer. You need one that is clear, specific, and yours.
+          </p>
+        </aside>
+      </section>
+
+      <section className="mt-12 flex flex-col gap-5 border-t pt-6 sm:mt-16 sm:flex-row sm:items-end sm:justify-between" data-aos="fade-up" data-aos-duration="450">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.02em]">Keep the momentum.</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">Your detailed practice history lives in one dedicated place.</p>
         </div>
+        <button type="button" className="btn btn-ghost w-fit gap-2 px-0 hover:bg-transparent hover:text-primary" onClick={onProgress}>
+          View progress <ArrowUpRight className="size-4" aria-hidden="true" />
+        </button>
       </section>
     </main>
   );
