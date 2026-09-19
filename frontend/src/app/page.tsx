@@ -41,7 +41,6 @@ import { Separator } from "@/components/ui/separator";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { synthesizeInterviewerQuestion } from "@/lib/interview/speech";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
-import type { SpeechPlayback } from "@/lib/interview/speech";
 
 import "aos/dist/aos.css";
 
@@ -829,7 +828,6 @@ function FixedInterviewView({
   const [answerError, setAnswerError] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(0);
-  const activePlaybackRef = useRef<SpeechPlayback | null>(null);
   const advanceTimerRef = useRef<number | null>(null);
   const question: InterviewQuestion = questions[currentIndex];
 
@@ -845,8 +843,6 @@ function FixedInterviewView({
     const playback = synthesizeInterviewerQuestion(question.prompt, {
       endpoint: `${backendBaseUrl}/api/v1/speech`,
     });
-    activePlaybackRef.current = playback;
-
     void playback.promise.then((result) => {
       if (cancelled || result.status === "cancelled") return;
       if (result.status === "unavailable") setSpeechMessage(result.message);
@@ -856,7 +852,6 @@ function FixedInterviewView({
     return () => {
       cancelled = true;
       playback.cancel();
-      activePlaybackRef.current = null;
       if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current);
     };
   }, [currentIndex, question.prompt]);
