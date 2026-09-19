@@ -640,12 +640,12 @@ function InterviewSetupView({
                 <legend className="fieldset-legend text-sm font-medium">Session length</legend>
                 <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Session length">
                   {["15", "25", "40"].map((minutes) => (
-                    <label key={minutes} className={`btn btn-sm h-11 border ${config.duration === minutes ? "btn-primary" : "btn-ghost border-base-300"}`}>
+                    <label key={minutes} className={`btn btn-sm h-11 border ${config.duration === minutes ? "btn-primary" : "btn-ghost border-base-300"} peer-focus-within:ring-2 peer-focus-within:ring-primary peer-focus-within:ring-offset-2`}>
                       <input
                         type="radio"
                         name="duration"
                         value={minutes}
-                        className="sr-only"
+                        className="peer sr-only"
                         checked={config.duration === minutes}
                         onChange={(event) => updateConfig("duration", event.target.value)}
                       />
@@ -659,12 +659,12 @@ function InterviewSetupView({
                 <legend className="fieldset-legend text-sm font-medium">Questions</legend>
                 <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Number of questions">
                   {["3", "5", "8"].map((count) => (
-                    <label key={count} className={`btn btn-sm h-11 border ${config.questionCount === count ? "btn-primary" : "btn-ghost border-base-300"}`}>
+                    <label key={count} className={`btn btn-sm h-11 border ${config.questionCount === count ? "btn-primary" : "btn-ghost border-base-300"} peer-focus-within:ring-2 peer-focus-within:ring-primary peer-focus-within:ring-offset-2`}>
                       <input
                         type="radio"
                         name="questionCount"
                         value={count}
-                        className="sr-only"
+                        className="peer sr-only"
                         checked={config.questionCount === count}
                         onChange={(event) => updateConfig("questionCount", event.target.value)}
                       />
