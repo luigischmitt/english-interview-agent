@@ -22,6 +22,8 @@ create table public.interviews (
     check (duration_minutes is null or duration_minutes between 1 and 180),
   constraint interviews_question_count_check
     check (question_count is null or question_count between 1 and 50),
+  constraint interviews_target_role_not_blank_check
+    check (length(btrim(target_role)) > 0),
   constraint interviews_status_check
     check (status in ('draft', 'in_progress', 'completed', 'abandoned'))
 );
@@ -32,7 +34,6 @@ create table public.interview_turns (
   sequence_number integer not null,
   speaker text not null,
   content text,
-  audio_storage_path text,
   created_at timestamptz not null default timezone('utc', now()),
 
   constraint interview_turns_sequence_number_check
@@ -42,6 +43,22 @@ create table public.interview_turns (
   constraint interview_turns_interview_sequence_unique
     unique (interview_id, sequence_number)
 );
+
+create function public.set_interviews_updated_at()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.updated_at = clock_timestamp();
+  return new;
+end;
+$$;
+
+create trigger interviews_set_updated_at
+before update on public.interviews
+for each row
+execute function public.set_interviews_updated_at();
 
 create index interviews_user_id_created_at_idx
   on public.interviews (user_id, created_at desc);
