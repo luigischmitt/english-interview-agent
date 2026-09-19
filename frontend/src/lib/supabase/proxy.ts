@@ -1,23 +1,35 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const publicKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+import { sanitizeNextPath } from "@/lib/auth/redirect";
+
+import { getSupabasePublicConfigOrNull } from "./config";
 
 const publicRoutes = new Set([
   "/login",
   "/signup",
   "/forgot-password",
-  "/update-password",
+  "/auth/callback",
 ]);
 
 export async function updateSupabaseSession(request: NextRequest) {
-  if (!publicUrl || !publicKey) {
-    return NextResponse.next({ request });
+  const config = getSupabasePublicConfigOrNull();
+  const isPublicRoute = publicRoutes.has(request.nextUrl.pathname);
+
+  if (!config) {
+    if (isPublicRoute) {
+      return NextResponse.next({ request });
+    }
+
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.search = "";
+    loginUrl.searchParams.set("reason", "config");
+    return NextResponse.redirect(loginUrl);
   }
 
   let response = NextResponse.next({ request });
-  const supabase = createServerClient(publicUrl, publicKey, {
+  const supabase = createServerClient(config.supabaseUrl, config.supabasePublishableKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -35,12 +47,15 @@ export async function updateSupabaseSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const isPublicRoute = publicRoutes.has(request.nextUrl.pathname);
 
   if (!user && !isPublicRoute) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("next", request.nextUrl.pathname);
+    loginUrl.search = "";
+    loginUrl.searchParams.set(
+      "next",
+      sanitizeNextPath(`${request.nextUrl.pathname}${request.nextUrl.search}`),
+    );
     return NextResponse.redirect(loginUrl);
   }
 

@@ -20,10 +20,10 @@ export function AuthSessionGuard() {
     const {
       data: { subscription },
     } = client.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
-        if (event === "SIGNED_OUT") {
-          router.replace("/login?reason=expired");
-        }
+      if (event === "SIGNED_OUT") {
+        const wasManual = window.sessionStorage.getItem("auth:manual-signout") === "1";
+        window.sessionStorage.removeItem("auth:manual-signout");
+        router.replace(wasManual ? "/login" : "/login?reason=expired");
       }
     });
 

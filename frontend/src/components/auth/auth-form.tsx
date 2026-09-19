@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { sanitizeNextPath } from "@/lib/auth/redirect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type AuthMode = "login" | "signup" | "forgot-password" | "update-password";
@@ -43,7 +44,7 @@ function getErrorMessage(error: unknown) {
   return "We could not complete that request. Please check your details and try again.";
 }
 
-export function AuthForm({ mode }: { mode: AuthMode }) {
+export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: string; next?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -52,9 +53,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
-  const [expired] = useState(
-    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("reason") === "expired",
-  );
+  const expired = reason === "expired";
   const details = copy[mode];
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -81,8 +80,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
         if (signInError) throw signInError;
-        const next = new URLSearchParams(window.location.search).get("next") ?? "/";
-        router.replace(next.startsWith("/") ? next : "/");
+        router.replace(sanitizeNextPath(next));
         return;
       }
 
@@ -90,7 +88,10 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: name.trim() } },
+          options: {
+            data: { full_name: name.trim() },
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=%2F`,
+          },
         });
 
         if (signUpError) throw signUpError;
@@ -105,7 +106,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
 
       if (mode === "forgot-password") {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/update-password`,
+          redirectTo: `${window.location.origin}/auth/callback?next=%2Fupdate-password`,
         });
 
         if (resetError) throw resetError;
@@ -141,6 +142,16 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
             {expired && (
               <div role="alert" className="alert alert-warning text-sm">
                 Your session ended. Sign in again to keep your practice space secure.
+              </div>
+            )}
+            {reason === "config" && (
+              <div role="alert" className="alert alert-warning text-sm">
+                Authentication is not configured in this environment yet.
+              </div>
+            )}
+            {reason === "auth_callback" && (
+              <div role="alert" className="alert alert-error text-sm">
+                That authentication link is invalid or has expired. Please try again.
               </div>
             )}
             {error && (

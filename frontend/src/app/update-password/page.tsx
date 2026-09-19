@@ -1,5 +1,10 @@
 import { AuthForm } from "@/components/auth/auth-form";
 
-export default function UpdatePasswordPage() {
-  return <AuthForm mode="update-password" />;
+export default async function UpdatePasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reason?: string }>;
+}) {
+  const params = await searchParams;
+  return <AuthForm mode="update-password" reason={params.reason} />;
 }

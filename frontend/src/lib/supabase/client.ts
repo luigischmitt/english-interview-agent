@@ -1,18 +1,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-
-export function getSupabasePublicConfig() {
-  if (!supabaseUrl || !supabasePublishableKey) {
-    throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-    );
-  }
-
-  return { supabaseUrl, supabasePublishableKey };
-}
+import { getSupabasePublicConfig } from "./config";
 
 /**
  * Browser client for Supabase's publishable surface and cookie-backed session.

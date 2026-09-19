@@ -9,29 +9,38 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 export function SignOutButton() {
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
-    const { error } = await getSupabaseBrowserClient().auth.signOut();
+    setError(null);
+    window.sessionStorage.setItem("auth:manual-signout", "1");
 
-    if (error) {
+    try {
+      const { error: signOutError } = await getSupabaseBrowserClient().auth.signOut();
+
+      if (signOutError) throw signOutError;
+      router.replace("/login");
+    } catch {
+      window.sessionStorage.removeItem("auth:manual-signout");
+      setError("We could not sign you out. Please try again.");
       setIsSigningOut(false);
-      return;
     }
-
-    router.replace("/login");
   };
 
   return (
-    <button
-      type="button"
-      className="btn btn-ghost btn-sm gap-2"
-      onClick={handleSignOut}
-      disabled={isSigningOut}
-      aria-label="Sign out"
-    >
-      {isSigningOut ? <span className="loading loading-spinner loading-xs" /> : <LogOut className="size-4" />}
-      <span className="hidden sm:inline">Sign out</span>
-    </button>
+    <div className="flex items-center gap-2">
+      {error && <span role="alert" className="text-xs text-error">{error}</span>}
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm gap-2"
+        onClick={handleSignOut}
+        disabled={isSigningOut}
+        aria-label="Sign out"
+      >
+        {isSigningOut ? <span className="loading loading-spinner loading-xs" /> : <LogOut className="size-4" />}
+        <span className="hidden sm:inline">Sign out</span>
+      </button>
+    </div>
   );
 }
