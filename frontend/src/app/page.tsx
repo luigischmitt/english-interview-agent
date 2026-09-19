@@ -38,6 +38,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { MicrophoneCapture } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { synthesizeInterviewerQuestion } from "@/lib/interview/speech";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
@@ -827,6 +828,7 @@ function FixedInterviewView({
   const [answers, setAnswers] = useState<InterviewAnswers>({});
   const [answerError, setAnswerError] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
+  const [hasVoiceAnswer, setHasVoiceAnswer] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const advanceTimerRef = useRef<number | null>(null);
   const question: InterviewQuestion = questions[currentIndex];
@@ -858,13 +860,14 @@ function FixedInterviewView({
 
   const submitAnswer = () => {
     const trimmedAnswer = answer.trim();
-    if (!trimmedAnswer) {
-      setAnswerError("Write a short answer before continuing.");
+    if (!trimmedAnswer && !hasVoiceAnswer) {
+      setAnswerError("Type a short answer or finish a voice answer before continuing.");
       return;
     }
 
-    setAnswers((current) => ({ ...current, [question.id]: trimmedAnswer }));
+    setAnswers((current) => ({ ...current, [question.id]: trimmedAnswer || "[Voice response captured locally]" }));
     setAnswer("");
+    setHasVoiceAnswer(false);
     setAnswerError(null);
     setSpeechMessage(null);
     setPhase("advancing");
@@ -924,6 +927,7 @@ function FixedInterviewView({
             </div>
             {speechMessage && <div role="status" className="alert alert-warning alert-soft text-sm"><Volume2 className="size-4 shrink-0" aria-hidden="true" /><span>{speechMessage}</span></div>}
             <fieldset className="fieldset w-full gap-2"><legend className="fieldset-legend text-sm font-medium">Your temporary answer</legend><textarea className={`textarea textarea-bordered min-h-32 w-full resize-y bg-base-100 text-base leading-6 ${answerError ? "textarea-error" : ""}`} value={answer} onChange={(event) => { setAnswer(event.target.value); if (answerError) setAnswerError(null); }} placeholder={isSpeaking ? "The answer box will be ready after the question." : "Type your answer in English..."} disabled={isSpeaking || isAdvancing} aria-invalid={Boolean(answerError)} aria-describedby={answerError ? "answer-error" : "answer-note"} />{answerError ? <p id="answer-error" className="label text-error" role="alert">{answerError}</p> : <p id="answer-note" className="label text-muted-foreground">This prototype keeps the answer only in the current session.</p>}</fieldset>
+            <MicrophoneCapture key={question.id} disabled={isSpeaking || isAdvancing} onAvailabilityChange={setHasVoiceAnswer} />
             <div className="card-actions justify-end border-t pt-4"><button type="button" className="btn btn-primary gap-2" onClick={submitAnswer} disabled={isSpeaking || isAdvancing}>{isAdvancing ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}{isAdvancing ? "Moving to next" : currentIndex === questions.length - 1 ? "Finish interview" : "Submit answer"}</button></div>
           </div></div>
           <aside className="card card-border bg-base-200"><div className="card-body gap-4 p-5 sm:p-6"><h2 className="card-title text-base">Session progress</h2><progress className="progress progress-primary w-full" value={progress} max="100" aria-label={`Question ${currentIndex + 1} of ${questions.length}`} /><p className="text-sm font-medium">{currentIndex + 1} of {questions.length} questions</p><dl className="mt-2 space-y-3 border-t pt-4 text-sm"><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Planned time</dt><dd className="font-medium">{config.duration} min</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Elapsed</dt><dd className="font-medium tabular-nums">{elapsed}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Audio</dt><dd className="font-medium">Kokoro route</dd></div></dl><p className="mt-auto border-t pt-4 text-xs leading-5 text-muted-foreground">Audio issues do not block the practice. You can answer and continue while the provider is repaired.</p></div></aside>
