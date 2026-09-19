@@ -17,27 +17,19 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   ArrowLeft,
-  Camera,
   Clock3,
-  Container,
   Home,
   LineChart,
-  Mic,
-  MicOff,
   Moon,
   PhoneOff,
   Play,
-  RefreshCw,
-  Settings2,
   Shuffle,
-  Square,
   SlidersHorizontal,
   Sun,
   Target,
   Video,
   VideoOff,
   Volume2,
-  VolumeX,
 } from "lucide-react";
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -46,6 +38,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { getFixedInterviewQuestions } from "@/lib/interview/questions";
+import { synthesizeInterviewerQuestion } from "@/lib/interview/speech";
+import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 
 import "aos/dist/aos.css";
 
@@ -61,14 +56,6 @@ Chart.register(
 );
 
 type View = "home" | "interview-setup" | "interview" | "progress" | "settings";
-
-type InterviewConfig = {
-  role: string;
-  seniority: string;
-  focus: string;
-  duration: string;
-  questionCount: string;
-};
 
 const navigationItems = [
   { id: "home" as const, label: "Home", icon: Home },
@@ -824,315 +811,125 @@ function SettingsView({
   );
 }
 
-type SpeechStatus = "checking" | "ready" | "fake" | "unavailable";
-
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 
-function InterviewView({
+function FixedInterviewView({
   config,
   onLeave,
 }: {
   config: InterviewConfig;
   onLeave: () => void;
 }) {
-  const [micOn, setMicOn] = useState(true);
-  const [cameraOn, setCameraOn] = useState(true);
-  const [seconds, setSeconds] = useState(134);
-  const [text, setText] = useState("Hello. Thank you for joining this interview today.");
-  const [speechStatus, setSpeechStatus] = useState<SpeechStatus>("checking");
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [speechError, setSpeechError] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioUrlRef = useRef<string | null>(null);
+  const questions = getFixedInterviewQuestions(config);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [phase, setPhase] = useState<InterviewPhase>("speaking");
+  const [answer, setAnswer] = useState("");
+  const [answers, setAnswers] = useState<InterviewAnswers>({});
+  const [answerError, setAnswerError] = useState<string | null>(null);
+  const [speechMessage, setSpeechMessage] = useState<string | null>(null);
+  const [seconds, setSeconds] = useState(0);
+  const advanceTimerRef = useRef<number | null>(null);
+  const question: InterviewQuestion = questions[currentIndex];
 
   useEffect(() => {
+    if (phase === "ending") return;
     const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
-  }, []);
-
-  const checkSpeechStatus = async () => {
-    setSpeechStatus("checking");
-
-    try {
-      const response = await fetch(`${backendBaseUrl}/api/v1/speech/health`);
-      const data = (await response.json()) as { provider?: string; status?: string };
-
-      if (response.ok && data.provider === "kokoro" && data.status === "ready") {
-        setSpeechStatus("ready");
-        return;
-      }
-
-      setSpeechStatus(data.provider === "fake" ? "fake" : "unavailable");
-    } catch {
-      setSpeechStatus("unavailable");
-    }
-  };
+  }, [phase]);
 
   useEffect(() => {
-    const statusTimer = window.setTimeout(() => {
-      void checkSpeechStatus();
-    }, 0);
+    let cancelled = false;
+
+    const playback = synthesizeInterviewerQuestion(question.prompt, {
+      endpoint: `${backendBaseUrl}/api/v1/speech`,
+    });
+    void playback.promise.then((result) => {
+      if (cancelled || result.status === "cancelled") return;
+      if (result.status === "unavailable") setSpeechMessage(result.message);
+      setPhase("answering");
+    });
 
     return () => {
-      window.clearTimeout(statusTimer);
-      audioRef.current?.pause();
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current);
-      }
+      cancelled = true;
+      playback.cancel();
+      if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current);
     };
-  }, []);
+  }, [currentIndex, question.prompt]);
 
-  const stopAudio = () => {
-    audioRef.current?.pause();
-    if (audioRef.current) {
-      audioRef.current.currentTime = 0;
-    }
-    setIsPlaying(false);
-  };
-
-  const generateSpeech = async () => {
-    const phrase = text.trim();
-    if (!phrase) {
-      setSpeechError("Type an English sentence before generating audio.");
+  const submitAnswer = () => {
+    const trimmedAnswer = answer.trim();
+    if (!trimmedAnswer) {
+      setAnswerError("Write a short answer before continuing.");
       return;
     }
 
-    stopAudio();
-    setIsGenerating(true);
-    setSpeechError(null);
-
-    try {
-      const response = await fetch(`${backendBaseUrl}/api/v1/speech`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: phrase }),
-      });
-
-      if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as {
-          error?: { message?: string };
-        } | null;
-        throw new Error(data?.error?.message ?? "The backend could not generate audio.");
+    setAnswers((current) => ({ ...current, [question.id]: trimmedAnswer }));
+    setAnswer("");
+    setAnswerError(null);
+    setSpeechMessage(null);
+    setPhase("advancing");
+    advanceTimerRef.current = window.setTimeout(() => {
+      if (currentIndex >= questions.length - 1) setPhase("ending");
+      else {
+        setPhase("speaking");
+        setCurrentIndex((value) => value + 1);
       }
-
-      const audioBlob = await response.blob();
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current);
-      }
-
-      const audioUrl = URL.createObjectURL(audioBlob);
-      audioUrlRef.current = audioUrl;
-      const audio = new Audio(audioUrl);
-      audioRef.current = audio;
-      audio.addEventListener("ended", () => setIsPlaying(false), { once: true });
-      await audio.play();
-      setIsPlaying(true);
-      setSpeechStatus("ready");
-    } catch (error) {
-      setSpeechStatus("unavailable");
-      setSpeechError(error instanceof Error ? error.message : "Could not reach the local speech service.");
-    } finally {
-      setIsGenerating(false);
-    }
+    }, 450);
   };
 
   const elapsed = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const isSpeaking = phase === "speaking";
+  const isAdvancing = phase === "advancing";
+  const progress = phase === "ending" ? 100 : ((currentIndex + (isAdvancing ? 1 : 0)) / questions.length) * 100;
+
+  if (phase === "ending") {
+    return (
+      <main className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-3xl flex-col justify-center px-4 py-10 pb-36 sm:px-8 sm:pb-28 lg:pb-10">
+        <section className="card card-border bg-card" aria-labelledby="interview-complete-title">
+          <div className="card-body gap-6 p-6 sm:p-8">
+            <p className="text-sm font-medium uppercase tracking-[0.14em] text-primary">Session complete</p>
+            <div>
+              <h1 id="interview-complete-title" className="text-3xl font-semibold tracking-[-0.03em]">You made it through the room.</h1>
+              <p className="mt-3 max-w-[58ch] leading-7 text-muted-foreground">Your answers stayed local for this prototype. The feedback layer can be connected later without changing this interview flow.</p>
+            </div>
+            <dl className="grid gap-3 border-y py-5 text-sm sm:grid-cols-4">
+              <div><dt className="text-muted-foreground">Questions</dt><dd className="mt-1 font-semibold">{questions.length}</dd></div>
+              <div><dt className="text-muted-foreground">Answers registered</dt><dd className="mt-1 font-semibold">{Object.keys(answers).length}</dd></div>
+              <div><dt className="text-muted-foreground">Target role</dt><dd className="mt-1 truncate font-semibold">{config.role}</dd></div>
+              <div><dt className="text-muted-foreground">Planned time</dt><dd className="mt-1 font-semibold">{config.duration} min</dd></div>
+            </dl>
+            <button type="button" className="btn btn-primary w-fit gap-2" onClick={onLeave}>Back to overview <ArrowUpRight className="size-4" aria-hidden="true" /></button>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-h-[calc(100dvh-4rem)] flex-col px-3 py-4 pb-36 sm:px-6 sm:py-5 sm:pb-28 lg:px-8 lg:pb-6">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 pb-5 text-sm">
-        <div>
-          <p className="font-medium">Interview in progress</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {config.role} · {config.seniority.replace("-", " ")} · {config.focus.replaceAll("-", " ")}
-          </p>
-        </div>
-        <p className="flex items-center gap-2 text-muted-foreground tabular-nums">
-          <Clock3 className="size-4" aria-hidden="true" /> {elapsed}
-        </p>
+        <div><p className="font-medium">Interview in progress</p><p className="mt-0.5 text-xs text-muted-foreground">{config.role} · {config.seniority.replace("-", " ")} · {config.focus.replaceAll("-", " ")}</p></div>
+        <p className="flex items-center gap-2 text-muted-foreground tabular-nums"><Clock3 className="size-4" aria-hidden="true" /> {elapsed}</p>
       </div>
       <div className="mx-auto grid w-full max-w-6xl flex-1 gap-3 md:grid-cols-2">
-        <VideoTile label="You" active={micOn} initials="LT" dark cameraOn={cameraOn} />
-        <VideoTile label="Interviewer" active={isPlaying} initials="AI" cameraOn />
+        <VideoTile label="You" active={false} initials="LT" cameraOn dark />
+        <VideoTile label="Interviewer" active={isSpeaking} initials="AI" cameraOn />
       </div>
-      <section
-        aria-labelledby="voice-lab-title"
-        className="mx-auto mt-5 w-full max-w-6xl border-t pt-5"
-        data-aos="fade-up"
-        data-aos-duration="450"
-      >
+      <section aria-labelledby="interview-question-title" className="mx-auto mt-5 w-full max-w-6xl border-t pt-5" data-aos="fade-up" data-aos-duration="450">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]">
-          <div className="card card-border bg-card">
-            <div className="card-body gap-5 p-5 sm:p-6">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h2 id="voice-lab-title" className="card-title text-xl tracking-[-0.02em]">
-                    Voice test room
-                  </h2>
-                  <p className="mt-1 max-w-[58ch] text-sm leading-6 text-muted-foreground">
-                    Type a short interviewer line and the local stack turns it into audio with the
-                    <span className="font-medium text-foreground"> af_bella + af_heart </span> voice mix.
-                  </p>
-                </div>
-                <div
-                  className={`badge badge-outline shrink-0 gap-2 py-3 text-xs font-medium ${
-                    speechStatus === "ready"
-                      ? "badge-success"
-                      : speechStatus === "checking"
-                        ? "badge-info"
-                        : "badge-warning"
-                  }`}
-                >
-                  <span
-                    className={`status ${speechStatus === "checking" ? "status-info animate-pulse" : ""} ${
-                      speechStatus === "ready" ? "status-success" : speechStatus === "unavailable" ? "status-warning" : ""
-                    }`}
-                    aria-hidden="true"
-                  />
-                  {speechStatus === "ready"
-                    ? "Kokoro ready"
-                    : speechStatus === "checking"
-                      ? "Checking service"
-                      : speechStatus === "fake"
-                        ? "Fake provider active"
-                        : "Service unavailable"}
-                </div>
-              </div>
-
-              <fieldset className="fieldset w-full gap-2">
-                <legend className="fieldset-legend text-sm font-medium">English line to speak</legend>
-                <textarea
-                  className="textarea textarea-bordered min-h-28 w-full resize-y bg-base-100 text-base leading-6"
-                  value={text}
-                  onChange={(event) => setText(event.target.value)}
-                  placeholder="Type what the interviewer should say in English..."
-                  maxLength={2000}
-                />
-                <p className="label text-muted-foreground">{text.length} / 2,000 characters</p>
-              </fieldset>
-
-              {speechError && (
-                <div role="alert" className="alert alert-error alert-soft text-sm">
-                  <VolumeX className="size-4" aria-hidden="true" />
-                  <span>{speechError}</span>
-                </div>
-              )}
-
-              <div className="card-actions items-center justify-between gap-3 border-t pt-4">
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Audio stays on this device during this local test.
-                </p>
-                <div className="flex w-full gap-2 sm:w-auto">
-                  {isPlaying && (
-                    <button type="button" className="btn btn-ghost" onClick={stopAudio}>
-                      <Square className="size-4" aria-hidden="true" /> Stop
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-primary flex-1 sm:flex-none"
-                    onClick={() => void generateSpeech()}
-                    disabled={isGenerating}
-                  >
-                    {isGenerating ? (
-                      <span className="loading loading-spinner loading-sm" aria-hidden="true" />
-                    ) : (
-                      <Play className="size-4" aria-hidden="true" />
-                    )}
-                    {isGenerating ? "Generating…" : "Speak with Kokoro"}
-                  </button>
-                </div>
-              </div>
+          <div className="card card-border bg-card"><div className="card-body gap-5 p-5 sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div><p className="text-xs font-medium uppercase tracking-[0.14em] text-primary">Question {currentIndex + 1} of {questions.length}</p><h2 id="interview-question-title" className="mt-2 text-xl font-semibold tracking-[-0.02em] sm:text-2xl">{question.prompt}</h2><p className="mt-1 max-w-[58ch] text-sm leading-6 text-muted-foreground">{question.cue}</p></div>
+              <span className={`badge badge-outline shrink-0 gap-2 py-3 text-xs font-medium ${isSpeaking ? "badge-info" : isAdvancing ? "badge-warning" : "badge-success"}`}><span className={`status ${isSpeaking ? "status-info animate-pulse" : isAdvancing ? "status-warning" : "status-success"}`} aria-hidden="true" />{isSpeaking ? "Interviewer speaking" : isAdvancing ? "Moving forward" : "Your turn"}</span>
             </div>
-          </div>
-
-          <aside className="card card-border bg-base-200">
-            <div className="card-body gap-4 p-5 sm:p-6">
-              <div className="flex items-center gap-3">
-                <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-content">
-                  <Container className="size-4" aria-hidden="true" />
-                </span>
-                <div>
-                  <h2 className="card-title text-base">One-command local stack</h2>
-                  <p className="text-xs text-muted-foreground">Frontend, backend and Kokoro start together</p>
-                </div>
-              </div>
-              <div className="rounded-field border border-base-300 bg-base-100 px-3 py-2 font-mono text-xs text-base-content">
-                docker compose up -d
-              </div>
-              <p className="text-xs leading-5 text-muted-foreground">
-                Run it from the project root with Docker Desktop open, then use this page at <strong className="text-base-content">localhost:3000</strong>.
-              </p>
-              <ul className="steps steps-vertical w-full text-xs">
-                <li className="step step-primary text-left">
-                  <span><strong>Frontend</strong> opens this test room on <code>localhost:3000</code>.</span>
-                </li>
-                <li className="step step-primary text-left">
-                  <span><strong>Backend</strong> receives the sentence on <code>localhost:3001</code>.</span>
-                </li>
-                <li className="step step-primary text-left">
-                  <span><strong>Kokoro</strong> generates the MP3 on port <code>8880</code>; the backend returns it here.</span>
-                </li>
-              </ul>
-              {speechStatus === "unavailable" && (
-                <div role="alert" className="alert alert-warning alert-soft text-xs leading-5">
-                  <Container className="size-4 shrink-0" aria-hidden="true" />
-                  <span>Service not ready. Check Docker Desktop, run the command above from the project root, then refresh this status.</span>
-                </div>
-              )}
-              <div className="mt-auto flex items-center justify-between border-t pt-4">
-                <span className="text-xs text-muted-foreground">Browser → backend → Kokoro</span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => void checkSpeechStatus()}
-                  aria-label="Check local speech service again"
-                >
-                  <RefreshCw className="size-4" aria-hidden="true" /> Refresh
-                </button>
-              </div>
-            </div>
-          </aside>
+            {speechMessage && <div role="status" className="alert alert-warning alert-soft text-sm"><Volume2 className="size-4 shrink-0" aria-hidden="true" /><span>{speechMessage}</span></div>}
+            <fieldset className="fieldset w-full gap-2"><legend className="fieldset-legend text-sm font-medium">Your temporary answer</legend><textarea className={`textarea textarea-bordered min-h-32 w-full resize-y bg-base-100 text-base leading-6 ${answerError ? "textarea-error" : ""}`} value={answer} onChange={(event) => { setAnswer(event.target.value); if (answerError) setAnswerError(null); }} placeholder={isSpeaking ? "The answer box will be ready after the question." : "Type your answer in English..."} disabled={isSpeaking || isAdvancing} aria-invalid={Boolean(answerError)} aria-describedby={answerError ? "answer-error" : "answer-note"} />{answerError ? <p id="answer-error" className="label text-error" role="alert">{answerError}</p> : <p id="answer-note" className="label text-muted-foreground">This prototype keeps the answer only in the current session.</p>}</fieldset>
+            <div className="card-actions justify-end border-t pt-4"><button type="button" className="btn btn-primary gap-2" onClick={submitAnswer} disabled={isSpeaking || isAdvancing}>{isAdvancing ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}{isAdvancing ? "Moving to next" : currentIndex === questions.length - 1 ? "Finish interview" : "Submit answer"}</button></div>
+          </div></div>
+          <aside className="card card-border bg-base-200"><div className="card-body gap-4 p-5 sm:p-6"><h2 className="card-title text-base">Session progress</h2><progress className="progress progress-primary w-full" value={progress} max="100" aria-label={`Question ${currentIndex + 1} of ${questions.length}`} /><p className="text-sm font-medium">{currentIndex + 1} of {questions.length} questions</p><dl className="mt-2 space-y-3 border-t pt-4 text-sm"><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Planned time</dt><dd className="font-medium">{config.duration} min</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Elapsed</dt><dd className="font-medium tabular-nums">{elapsed}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Audio</dt><dd className="font-medium">Kokoro route</dd></div></dl><p className="mt-auto border-t pt-4 text-xs leading-5 text-muted-foreground">Audio issues do not block the practice. You can answer and continue while the provider is repaired.</p></div></aside>
         </div>
       </section>
-      <div className="mx-auto flex w-full max-w-6xl justify-center pt-5">
-        <div className="grid w-full max-w-sm grid-cols-3 items-center gap-3 rounded-xl border bg-card p-3 sm:flex sm:w-auto sm:max-w-none sm:gap-2 sm:p-2">
-          <Button
-            variant={micOn ? "secondary" : "destructive"}
-            size="icon-lg"
-            className="justify-self-center"
-            aria-label={micOn ? "Mute microphone" : "Unmute microphone"}
-            onClick={() => setMicOn(!micOn)}
-          >
-            {micOn ? <Mic className="size-4" /> : <MicOff className="size-4" />}
-          </Button>
-          <Button
-            variant={cameraOn ? "secondary" : "destructive"}
-            size="icon-lg"
-            className="justify-self-center"
-            aria-label={cameraOn ? "Turn camera off" : "Turn camera on"}
-            onClick={() => setCameraOn(!cameraOn)}
-          >
-            {cameraOn ? <Camera className="size-4" /> : <VideoOff className="size-4" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-lg"
-            className="justify-self-center"
-            aria-label="Interview options"
-          >
-            <Settings2 className="size-4" />
-          </Button>
-          <Button
-            variant="destructive"
-            className="col-span-3 h-11 w-full gap-2 px-4 sm:col-auto sm:h-9 sm:w-auto"
-            onClick={onLeave}
-          >
-            <PhoneOff className="size-4" /> End call
-          </Button>
-        </div>
-      </div>
+      <div className="mx-auto flex w-full max-w-6xl justify-center pt-5"><div className="flex w-full max-w-sm items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:w-auto sm:max-w-none sm:gap-2 sm:p-2"><p className="px-2 text-xs text-muted-foreground">Answers stay temporary in this test.</p><Button variant="destructive" className="h-11 gap-2 px-4 sm:h-9" onClick={onLeave}><PhoneOff className="size-4" /> End interview</Button></div></div>
     </main>
   );
 }
@@ -1246,7 +1043,7 @@ export default function App() {
             />
           )}
           {view === "interview" && (
-            <InterviewView config={interviewConfig} onLeave={() => navigate("home")} />
+            <FixedInterviewView config={interviewConfig} onLeave={() => navigate("home")} />
           )}
           {view === "progress" && <ProgressView darkMode={darkMode} />}
           {view === "settings" && (
