@@ -58,6 +58,26 @@ Integrações server-side futuras deverão usar variáveis sem `NEXT_PUBLIC_` e
 um módulo separado, executado exclusivamente no servidor. A configuração de
 autenticação, tabelas e políticas RLS será adicionada nas issues seguintes.
 
+## Autenticação
+
+As telas de `/login`, `/signup`, `/forgot-password` e `/update-password` usam
+o cliente Supabase SSR para manter a sessão em cookies e o `proxy.ts` para
+atualizar a sessão e redirecionar áreas protegidas. O cliente usa somente as
+variáveis públicas abaixo:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+```
+
+Esses valores devem ser definidos no `.env.local` do frontend, que é ignorado
+pelo Git. A publishable key pode aparecer no bundle do navegador; `service_role`,
+senhas e tokens privados nunca devem ser usados no frontend ou versionados.
+
+O fluxo de recuperação depende de o Supabase Auth aceitar a URL local
+`/update-password` no allow list de redirect URLs. Nenhum usuário é criado
+automaticamente por este projeto.
+
 ## Verificações
 
 ```bash

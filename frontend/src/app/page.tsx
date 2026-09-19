@@ -40,6 +40,7 @@ import {
   VolumeX,
 } from "lucide-react";
 
+import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -224,14 +225,17 @@ function Topbar({
       <p className="hidden text-sm font-medium text-muted-foreground lg:block">
         {viewLabels[view]}
       </p>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={darkMode ? "Use light theme" : "Use dark theme"}
-        onClick={onToggleTheme}
-      >
-        {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={darkMode ? "Use light theme" : "Use dark theme"}
+          onClick={onToggleTheme}
+        >
+          {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
+        </Button>
+        <SignOutButton />
+      </div>
     </header>
   );
 }
