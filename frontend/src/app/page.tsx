@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from "chart.js";
 import gsap from "gsap";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   ArrowLeft,
@@ -40,6 +40,12 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { MicrophoneCapture } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
+import {
+  appendInterviewTurn,
+  createInterviewSession,
+  updateInterviewStatus,
+  type InterviewTurnInput,
+} from "@/lib/interview/persistence";
 import { synthesizeInterviewerQuestion } from "@/lib/interview/speech";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 
@@ -828,10 +834,147 @@ function FixedInterviewView({
   const [answers, setAnswers] = useState<InterviewAnswers>({});
   const [answerError, setAnswerError] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
+  const [persistenceMessage, setPersistenceMessage] = useState<string | null>(null);
+  const [persistenceState, setPersistenceState] = useState<"saving" | "saved" | "local">("saving");
   const [hasVoiceAnswer, setHasVoiceAnswer] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const advanceTimerRef = useRef<number | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const sessionCreationRef = useRef<ReturnType<typeof createInterviewSession> | null>(null);
+  const sessionStartRequestedRef = useRef(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const pendingTurnsRef = useRef<InterviewTurnInput[]>([]);
+  const persistedQuestionIndexesRef = useRef<Set<number>>(new Set());
+  const finalizedRef = useRef(false);
+  const completionRequestedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const flushingTurnsRef = useRef(false);
+  const flushPromiseRef = useRef<Promise<void> | null>(null);
+  const turnWritesRef = useRef<Set<Promise<unknown>>>(new Set());
+  const persistenceDegradedRef = useRef(false);
   const question: InterviewQuestion = questions[currentIndex];
+
+  const reportPersistenceFailure = useCallback((message: string) => {
+    persistenceDegradedRef.current = true;
+    if (!mountedRef.current) return;
+    setPersistenceState("local");
+    setPersistenceMessage(message);
+  }, []);
+
+  const enqueueTurn = useCallback((turn: InterviewTurnInput) => {
+    if (!sessionIdRef.current || flushingTurnsRef.current) {
+      pendingTurnsRef.current.push(turn);
+      return;
+    }
+    const write = appendInterviewTurn({ ...turn, interviewId: sessionIdRef.current });
+    turnWritesRef.current.add(write);
+    void write.finally(() => turnWritesRef.current.delete(write)).then((result) => {
+      if (!result.ok) reportPersistenceFailure(result.message);
+    });
+  }, [reportPersistenceFailure]);
+
+  const abandonSession = useCallback(() => {
+    if (finalizedRef.current || completionRequestedRef.current) return;
+    finalizedRef.current = true;
+    const finishAsAbandoned = (id: string) => {
+      void updateInterviewStatus(id, "abandoned").then((result) => {
+        if (!result.ok) reportPersistenceFailure("Interview ended locally. Its status could not be saved.");
+      });
+    };
+    if (sessionIdRef.current) finishAsAbandoned(sessionIdRef.current);
+    else void sessionCreationRef.current?.then((result) => {
+      if (result.ok && !completionRequestedRef.current) finishAsAbandoned(result.value.id);
+    });
+  }, [reportPersistenceFailure]);
+
+  const waitForTurnPersistence = useCallback(async () => {
+    if (flushPromiseRef.current) await flushPromiseRef.current;
+    while (flushingTurnsRef.current || pendingTurnsRef.current.length > 0 || turnWritesRef.current.size > 0) {
+      if (flushPromiseRef.current) await flushPromiseRef.current;
+      await Promise.all([...turnWritesRef.current]);
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    // pagehide is best effort only: browsers may terminate async requests during unload.
+    const handlePagehide = () => abandonSession();
+    window.addEventListener("pagehide", handlePagehide);
+    return () => {
+      mountedRef.current = false;
+      window.removeEventListener("pagehide", handlePagehide);
+      queueMicrotask(() => {
+        if (!mountedRef.current) abandonSession();
+      });
+    };
+  }, [abandonSession]);
+
+  useEffect(() => {
+    if (sessionStartRequestedRef.current) return;
+    sessionStartRequestedRef.current = true;
+    const creation = createInterviewSession(config);
+    sessionCreationRef.current = creation;
+    void creation.then((result) => {
+      if (!result.ok) {
+        reportPersistenceFailure("This interview is running locally. We could not create its account session.");
+        return;
+      }
+      sessionIdRef.current = result.value.id;
+      if (mountedRef.current) setSessionId(result.value.id);
+      flushingTurnsRef.current = true;
+      const flush = (async () => {
+        let hasFailure = false;
+        while (pendingTurnsRef.current.length > 0) {
+          const pendingTurn = pendingTurnsRef.current.shift();
+          if (!pendingTurn) continue;
+          const write = appendInterviewTurn({ ...pendingTurn, interviewId: result.value.id });
+          turnWritesRef.current.add(write);
+          const pendingResult = await write.finally(() => turnWritesRef.current.delete(write));
+          if (!pendingResult.ok) hasFailure = true;
+        }
+        flushingTurnsRef.current = false;
+        if (hasFailure) reportPersistenceFailure("Some answers are local because saving to your account failed.");
+      })();
+      flushPromiseRef.current = flush;
+      void flush;
+    });
+  }, [config, reportPersistenceFailure]);
+
+  useEffect(() => {
+    if (persistedQuestionIndexesRef.current.has(currentIndex)) return;
+    persistedQuestionIndexesRef.current.add(currentIndex);
+    enqueueTurn({
+      interviewId: sessionId ?? "",
+      sequenceNumber: currentIndex * 2 + 1,
+      speaker: "interviewer",
+      content: question.prompt,
+    });
+  }, [currentIndex, enqueueTurn, question.prompt, sessionId]);
+
+  useEffect(() => {
+    if (phase !== "ending") return;
+    completionRequestedRef.current = true;
+    if (finalizedRef.current) return;
+    finalizedRef.current = true;
+    void (async () => {
+      let completedSessionId = sessionIdRef.current;
+      if (!completedSessionId && sessionCreationRef.current) {
+        const creation = await sessionCreationRef.current;
+        if (!creation.ok) {
+          reportPersistenceFailure("Interview complete locally. We could not create its account session.");
+          return;
+        }
+        completedSessionId = creation.value.id;
+        sessionIdRef.current = completedSessionId;
+        if (mountedRef.current) setSessionId(completedSessionId);
+      }
+      if (!completedSessionId) return;
+      await waitForTurnPersistence();
+      const result = await updateInterviewStatus(completedSessionId, "completed");
+      if (!result.ok) reportPersistenceFailure("Interview complete locally. We could not update its status in your account.");
+      else if (!persistenceDegradedRef.current && mountedRef.current) setPersistenceState("saved");
+    })();
+  }, [phase, reportPersistenceFailure, sessionId, waitForTurnPersistence]);
 
   useEffect(() => {
     if (phase === "ending") return;
@@ -865,7 +1008,14 @@ function FixedInterviewView({
       return;
     }
 
-    setAnswers((current) => ({ ...current, [question.id]: trimmedAnswer || "[Voice response captured locally]" }));
+    setAnswers((current) => ({ ...current, [question.id]: trimmedAnswer }));
+    const candidateTurn: InterviewTurnInput = {
+      interviewId: sessionIdRef.current ?? "",
+      sequenceNumber: currentIndex * 2 + 2,
+      speaker: "candidate",
+      content: trimmedAnswer || null,
+    };
+    enqueueTurn(candidateTurn);
     setAnswer("");
     setHasVoiceAnswer(false);
     setAnswerError(null);
@@ -880,10 +1030,16 @@ function FixedInterviewView({
     }, 450);
   };
 
+  const leaveInterview = () => {
+    abandonSession();
+    onLeave();
+  };
+
   const elapsed = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   const isSpeaking = phase === "speaking";
   const isAdvancing = phase === "advancing";
   const progress = phase === "ending" ? 100 : ((currentIndex + (isAdvancing ? 1 : 0)) / questions.length) * 100;
+  const persistenceLabel = persistenceState === "saved" ? "Saved to your private session." : persistenceState === "local" ? "Saved locally for this session; account sync needs attention." : "Saving to your private session…";
 
   if (phase === "ending") {
     return (
@@ -893,8 +1049,9 @@ function FixedInterviewView({
             <p className="text-sm font-medium uppercase tracking-[0.14em] text-primary">Session complete</p>
             <div>
               <h1 id="interview-complete-title" className="text-3xl font-semibold tracking-[-0.03em]">You made it through the room.</h1>
-              <p className="mt-3 max-w-[58ch] leading-7 text-muted-foreground">Your answers stayed local for this prototype. The feedback layer can be connected later without changing this interview flow.</p>
+              <p className="mt-3 max-w-[58ch] leading-7 text-muted-foreground">{persistenceLabel} Voice recordings remain local and are not uploaded or transcribed yet.</p>
             </div>
+            {persistenceMessage && <div role="status" className="alert alert-warning alert-soft text-sm"><span>{persistenceMessage}</span></div>}
             <dl className="grid gap-3 border-y py-5 text-sm sm:grid-cols-4">
               <div><dt className="text-muted-foreground">Questions</dt><dd className="mt-1 font-semibold">{questions.length}</dd></div>
               <div><dt className="text-muted-foreground">Answers registered</dt><dd className="mt-1 font-semibold">{Object.keys(answers).length}</dd></div>
@@ -926,14 +1083,15 @@ function FixedInterviewView({
               <span className={`badge badge-outline shrink-0 gap-2 py-3 text-xs font-medium ${isSpeaking ? "badge-info" : isAdvancing ? "badge-warning" : "badge-success"}`}><span className={`status ${isSpeaking ? "status-info animate-pulse" : isAdvancing ? "status-warning" : "status-success"}`} aria-hidden="true" />{isSpeaking ? "Interviewer speaking" : isAdvancing ? "Moving forward" : "Your turn"}</span>
             </div>
             {speechMessage && <div role="status" className="alert alert-warning alert-soft text-sm"><Volume2 className="size-4 shrink-0" aria-hidden="true" /><span>{speechMessage}</span></div>}
-            <fieldset className="fieldset w-full gap-2"><legend className="fieldset-legend text-sm font-medium">Your temporary answer</legend><textarea className={`textarea textarea-bordered min-h-32 w-full resize-y bg-base-100 text-base leading-6 ${answerError ? "textarea-error" : ""}`} value={answer} onChange={(event) => { setAnswer(event.target.value); if (answerError) setAnswerError(null); }} placeholder={isSpeaking ? "The answer box will be ready after the question." : "Type your answer in English..."} disabled={isSpeaking || isAdvancing} aria-invalid={Boolean(answerError)} aria-describedby={answerError ? "answer-error" : "answer-note"} />{answerError ? <p id="answer-error" className="label text-error" role="alert">{answerError}</p> : <p id="answer-note" className="label text-muted-foreground">This prototype keeps the answer only in the current session.</p>}</fieldset>
+            {persistenceMessage && <div role="status" className="alert alert-info alert-soft text-sm"><span>{persistenceMessage}</span></div>}
+            <fieldset className="fieldset w-full gap-2"><legend className="fieldset-legend text-sm font-medium">Your answer</legend><textarea className={`textarea textarea-bordered min-h-32 w-full resize-y bg-base-100 text-base leading-6 ${answerError ? "textarea-error" : ""}`} value={answer} onChange={(event) => { setAnswer(event.target.value); if (answerError) setAnswerError(null); }} placeholder={isSpeaking ? "The answer box will be ready after the question." : "Type your answer in English..."} disabled={isSpeaking || isAdvancing} aria-invalid={Boolean(answerError)} aria-describedby={answerError ? "answer-error" : "answer-note"} />{answerError ? <p id="answer-error" className="label text-error" role="alert">{answerError}</p> : <p id="answer-note" className="label text-muted-foreground">Written answers are saved to this private session. Voice recordings stay local until transcription is supported.</p>}</fieldset>
             <MicrophoneCapture key={question.id} disabled={isSpeaking || isAdvancing} onAvailabilityChange={setHasVoiceAnswer} />
             <div className="card-actions justify-end border-t pt-4"><button type="button" className="btn btn-primary gap-2" onClick={submitAnswer} disabled={isSpeaking || isAdvancing}>{isAdvancing ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}{isAdvancing ? "Moving to next" : currentIndex === questions.length - 1 ? "Finish interview" : "Submit answer"}</button></div>
           </div></div>
           <aside className="card card-border bg-base-200"><div className="card-body gap-4 p-5 sm:p-6"><h2 className="card-title text-base">Session progress</h2><progress className="progress progress-primary w-full" value={progress} max="100" aria-label={`Question ${currentIndex + 1} of ${questions.length}`} /><p className="text-sm font-medium">{currentIndex + 1} of {questions.length} questions</p><dl className="mt-2 space-y-3 border-t pt-4 text-sm"><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Planned time</dt><dd className="font-medium">{config.duration} min</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Elapsed</dt><dd className="font-medium tabular-nums">{elapsed}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Audio</dt><dd className="font-medium">Kokoro route</dd></div></dl><p className="mt-auto border-t pt-4 text-xs leading-5 text-muted-foreground">Audio issues do not block the practice. You can answer and continue while the provider is repaired.</p></div></aside>
         </div>
       </section>
-      <div className="mx-auto flex w-full max-w-6xl justify-center pt-5"><div className="flex w-full max-w-sm items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:w-auto sm:max-w-none sm:gap-2 sm:p-2"><p className="px-2 text-xs text-muted-foreground">Answers stay temporary in this test.</p><Button variant="destructive" className="h-11 gap-2 px-4 sm:h-9" onClick={onLeave}><PhoneOff className="size-4" /> End interview</Button></div></div>
+      <div className="mx-auto flex w-full max-w-6xl justify-center pt-5"><div className="flex w-full max-w-sm items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:w-auto sm:max-w-none sm:gap-2 sm:p-2"><p className="px-2 text-xs text-muted-foreground">{persistenceLabel}</p><Button variant="destructive" className="h-11 gap-2 px-4 sm:h-9" onClick={leaveInterview}><PhoneOff className="size-4" /> End interview</Button></div></div>
     </main>
   );
 }
