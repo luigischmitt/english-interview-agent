@@ -38,6 +38,26 @@ npm run dev
 
 Abra [http://localhost:3000](http://localhost:3000).
 
+## Configuração do Supabase
+
+O cliente browser está disponível em `src/lib/supabase/client.ts` e usa
+somente a configuração pública do projeto. Defina estas variáveis no ambiente
+local antes de importar o cliente:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+```
+
+`NEXT_PUBLIC_` significa que esses valores podem aparecer no bundle do
+frontend. Use apenas a URL do projeto e a publishable key. Nunca coloque
+`service_role`, senha, token privado ou qualquer outro segredo em variáveis
+com esse prefixo, em arquivos versionados ou no código do cliente.
+
+Integrações server-side futuras deverão usar variáveis sem `NEXT_PUBLIC_` e
+um módulo separado, executado exclusivamente no servidor. A configuração de
+autenticação, tabelas e políticas RLS será adicionada nas issues seguintes.
+
 ## Verificações
 
 ```bash
