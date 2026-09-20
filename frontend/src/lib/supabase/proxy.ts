@@ -6,6 +6,13 @@ import { sanitizeNextPath } from "@/lib/auth/redirect";
 import { getSupabasePublicConfigOrNull } from "./config";
 
 const publicRoutes = new Set([
+  "/",
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/auth/callback",
+]);
+const authEntryRoutes = new Set([
   "/login",
   "/signup",
   "/forgot-password",
@@ -59,7 +66,7 @@ export async function updateSupabaseSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (user && isPublicRoute && request.nextUrl.pathname !== "/update-password") {
+  if (user && authEntryRoutes.has(request.nextUrl.pathname)) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
