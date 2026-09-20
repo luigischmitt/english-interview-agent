@@ -1,0 +1,18 @@
+import { useEffect, useState } from "react";
+
+import type { InterviewPhase } from "@/lib/interview/types";
+
+export function useInterviewSession(phase: InterviewPhase) {
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    if (phase === "ending") return;
+    const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [phase]);
+
+  return {
+    seconds,
+    elapsed: `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`,
+  };
+}

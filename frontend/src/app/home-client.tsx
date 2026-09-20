@@ -34,7 +34,8 @@ import {
   updateInterviewStatus,
   type InterviewTurnInput,
 } from "@/lib/interview/persistence";
-import { synthesizeInterviewerQuestion } from "@/lib/interview/speech";
+import { useSpeechPlayback } from "./hooks/use-speech-playback";
+import { useInterviewSession } from "./hooks/use-interview-session";
 import type {
   InterviewAnswers,
   InterviewConfig,
@@ -350,7 +351,7 @@ const defaultInterviewConfig: InterviewConfig = {
   questionCount: "5",
 };
 
-function InterviewSetupView({
+function InterviewSetup({
   onBack,
   onStart,
 }: {
@@ -776,9 +777,7 @@ function SettingsView({
   );
 }
 
-const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
-
-function FixedInterviewView({
+function InterviewRoom({
   config,
   onLeave,
 }: {
@@ -791,11 +790,9 @@ function FixedInterviewView({
   const [answer, setAnswer] = useState("");
   const [answers, setAnswers] = useState<InterviewAnswers>({});
   const [answerError, setAnswerError] = useState<string | null>(null);
-  const [speechMessage, setSpeechMessage] = useState<string | null>(null);
   const [persistenceMessage, setPersistenceMessage] = useState<string | null>(null);
   const [persistenceState, setPersistenceState] = useState<"saving" | "saved" | "local">("saving");
   const [hasVoiceAnswer, setHasVoiceAnswer] = useState(false);
-  const [seconds, setSeconds] = useState(0);
   const advanceTimerRef = useRef<number | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const sessionCreationRef = useRef<ReturnType<typeof createInterviewSession> | null>(null);
@@ -934,30 +931,16 @@ function FixedInterviewView({
     })();
   }, [phase, reportPersistenceFailure, sessionId, waitForTurnPersistence]);
 
-  useEffect(() => {
-    if (phase === "ending") return;
-    const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, [phase]);
+  const { elapsed } = useInterviewSession(phase);
 
-  useEffect(() => {
-    let cancelled = false;
+  const { speechMessage, setSpeechMessage } = useSpeechPlayback(
+    question.prompt,
+    useCallback(() => setPhase("answering"), []),
+  );
 
-    const playback = synthesizeInterviewerQuestion(question.prompt, {
-      endpoint: `${backendBaseUrl}/api/v1/speech`,
-    });
-    void playback.promise.then((result) => {
-      if (cancelled || result.status === "cancelled") return;
-      if (result.status === "unavailable") setSpeechMessage(result.message);
-      setPhase("answering");
-    });
-
-    return () => {
-      cancelled = true;
-      playback.cancel();
-      if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current);
-    };
-  }, [currentIndex, question.prompt]);
+  useEffect(() => () => {
+    if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current);
+  }, [currentIndex]);
 
   const submitAnswer = () => {
     const trimmedAnswer = answer.trim();
@@ -993,7 +976,6 @@ function FixedInterviewView({
     onLeave();
   };
 
-  const elapsed = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   const isSpeaking = phase === "speaking";
   const isAdvancing = phase === "advancing";
   const progress = phase === "ending" ? 100 : ((currentIndex + (isAdvancing ? 1 : 0)) / questions.length) * 100;
@@ -1151,7 +1133,7 @@ export default function App() {
             />
           )}
           {view === "interview-setup" && (
-            <InterviewSetupView
+            <InterviewSetup
               onBack={() => navigate("home")}
               onStart={(config) => {
                 setInterviewConfig(config);
@@ -1160,7 +1142,7 @@ export default function App() {
             />
           )}
           {view === "interview" && (
-            <FixedInterviewView config={interviewConfig} onLeave={() => navigate("home")} />
+            <InterviewRoom config={interviewConfig} onLeave={() => navigate("home")} />
           )}
           {view === "progress" && <ProgressView />}
           {view === "settings" && (
