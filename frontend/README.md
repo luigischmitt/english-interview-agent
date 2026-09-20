@@ -1,93 +1,153 @@
 # Frontend — English Interview Agent
 
-Interface inicial para o agente de simulação de entrevistas em inglês voltado a profissionais brasileiros de tecnologia.
+Aplicação web para praticar entrevistas profissionais em inglês. A interface
+é voltada inicialmente a profissionais brasileiros de tecnologia e separa a
+prática da resposta em inglês da análise futura de áudio.
 
-## Escopo atual
+## O que está disponível hoje
 
-Este é um protótipo funcional somente de frontend. Não há autenticação, persistência, backend, câmera, microfone ou integração com IA.
+- Página pública inicial, com links para criar conta e entrar.
+- Autenticação Supabase: cadastro, login, recuperação e atualização de senha.
+- Área protegida com configuração de entrevista, sequência fixa de perguntas,
+  respostas escritas e tela de progresso.
+- Reprodução opcional da pergunta do entrevistador pelo backend de speech;
+  o texto da pergunta sempre permanece visível.
+- Captura opcional de microfone usando `MediaRecorder`. O áudio fica apenas no
+  estado do navegador durante a sessão: não é enviado, reproduzido,
+  transcrito ou salvo.
+- Sessões e turnos de texto salvos nas tabelas Supabase quando a conta e a
+  conexão estão disponíveis. As políticas RLS limitam os dados ao usuário.
 
-- Home minimalista com dados demonstrativos de evolução e sessões recentes.
-- Navegação local para uma sala de entrevista no estilo de videochamada.
-- Controles locais de microfone, câmera, encerramento e alternância entre tema claro/escuro.
-- Tema claro é o padrão; o escuro é uma alternativa de conforto visual.
+Não há captura de câmera, avatar de entrevistador real, follow-ups gerados
+por IA, transcrição, análise de pronúncia ou relatório de feedback conectado.
+Os blocos visuais de câmera são apenas parte da sala de prática.
 
-Os dados de dashboard são estáticos e existem apenas para validar hierarquia e layout. O avatar por iniciais na sala de entrevista é temporário: ele será substituído pelo avatar do entrevistador quando esse recurso existir.
+## Variáveis de ambiente
 
-## Rodar o ambiente completo com Docker
-
-Na raiz do repositório:
+Crie `frontend/.env.local` (esse arquivo não deve ser commitado):
 
 ```bash
-docker compose up --build
+NEXT_PUBLIC_SUPABASE_URL=https://<seu-projeto>.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 ```
 
-Abra [http://localhost:3000](http://localhost:3000). O comando também inicia o backend e o Kokoro. As alterações em `frontend/` e `backend/` são recarregadas durante o desenvolvimento.
+As duas primeiras variáveis habilitam o cliente browser/SSR do Supabase. Elas
+serão expostas ao navegador; use somente a URL do projeto e a publishable key.
+Nunca coloque `service_role`, senha, token privado ou outro segredo em uma
+variável `NEXT_PUBLIC_`, no código do cliente ou em arquivos versionados.
 
-Para desligar o ambiente:
+`NEXT_PUBLIC_BACKEND_URL` aponta para a API de áudio e usa
+`http://localhost:3001` por padrão. Para execução em Docker Compose, esse
+valor já é definido pelo serviço `frontend` como `http://localhost:3001`.
 
-```bash
-docker compose down
-```
+### Quando o Supabase não está configurado
 
-## Rodar somente o frontend
+Sem `NEXT_PUBLIC_SUPABASE_URL` ou `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, a
+raiz continua mostrando a página pública. Rotas de autenticação exibem uma
+mensagem de configuração quando uma operação é tentada, e qualquer rota
+protegida redireciona para `/login?reason=config`. Não existe usuário de
+desenvolvimento criado automaticamente e não é possível salvar sessões sem
+uma conta Supabase configurada.
+
+## Fluxo local completo (Docker + Supabase)
+
+O `compose.yaml` inicia apenas frontend, backend e Kokoro. Ele não inicia uma
+instância do Supabase. Use um projeto Supabase hospedado ou o fluxo local do
+Supabase CLI, aplicando a migration versionada em `supabase/migrations/` antes
+de testar persistência. O projeto/CLI deve ser configurado separadamente; não
+há URL, chave ou segredo no repositório.
+
+1. Configure o projeto Supabase e aplique a migration de `interviews` e
+   `interview_turns` conforme [`supabase/README.md`](../supabase/README.md).
+2. Crie `frontend/.env.local` com as três variáveis acima.
+3. Na raiz do repositório, inicie o ambiente:
+
+   ```bash
+   docker compose up --build
+   ```
+
+   Isso expõe o frontend em `http://localhost:3000`, o backend em
+   `http://localhost:3001` e o Kokoro em `http://localhost:8880`.
+4. Abra `http://localhost:3000`, crie/confirme uma conta no Supabase e entre.
+   Inicie uma entrevista para verificar texto, áudio e persistência.
+5. Verifique a saúde da API quando necessário:
+
+   ```bash
+   curl http://localhost:3001/health
+   curl http://localhost:3001/api/v1/speech/health
+   ```
+
+6. Encerre os serviços com:
+
+   ```bash
+   docker compose down
+   ```
+
+O `SPEECH_PROVIDER=kokoro` usado pelo Compose faz o backend depender do
+container Kokoro. Se o backend de speech estiver indisponível, a pergunta
+continua visível e a entrevista pode prosseguir sem áudio.
+
+## Executar somente o frontend
+
+Com `frontend/.env.local` configurado:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Abra [http://localhost:3000](http://localhost:3000).
+Abra `http://localhost:3000`. Para reprodução de perguntas, execute também o
+backend (ou aponte `NEXT_PUBLIC_BACKEND_URL` para uma API compatível). Sem ele,
+o texto continua disponível e a falha de áudio não bloqueia a prática.
 
-## Configuração do Supabase
+## Persistência e falhas
 
-O cliente browser está disponível em `src/lib/supabase/client.ts` e usa
-somente a configuração pública do projeto. Defina estas variáveis no ambiente
-local antes de importar o cliente:
+Ao iniciar uma entrevista, o app tenta criar uma sessão privada no Supabase e
+salvar cada pergunta e resposta escrita. Ao concluir, marca a sessão como
+`completed`; ao sair antes do fim, tenta marcá-la como `abandoned`.
 
-```bash
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
-```
+Se a autenticação, o banco ou uma gravação falhar, a interface informa a
+degradação e deixa o candidato continuar no estado da página. Nesse caso,
+dados que ainda não chegaram ao Supabase estão disponíveis somente durante a
+sessão atual do navegador e podem ser perdidos ao recarregar/fechar a página;
+eles não são uma cópia offline garantida. O estado exibido deve permanecer
+“salvo localmente para esta sessão; sincronização precisa de atenção”, nunca
+“salvo na conta”, quando a escrita falhou.
 
-`NEXT_PUBLIC_` significa que esses valores podem aparecer no bundle do
-frontend. Use apenas a URL do projeto e a publishable key. Nunca coloque
-`service_role`, senha, token privado ou qualquer outro segredo em variáveis
-com esse prefixo, em arquivos versionados ou no código do cliente.
+## Áudio, transcrição e privacidade futura
 
-Integrações server-side futuras deverão usar variáveis sem `NEXT_PUBLIC_` e
-um módulo separado, executado exclusivamente no servidor. A configuração de
-autenticação, tabelas e políticas RLS será adicionada nas issues seguintes.
+O microfone é opcional e a gravação atual nunca sai do navegador. Transcrição,
+upload de áudio e análise vocal ainda não estão implementados. Uma futura
+implementação deverá publicar e aplicar uma política explícita antes de
+enviar áudio: consentimento, finalidade, retenção, exclusão e provedores que
+podem processá-lo. Essa política é um requisito planejado, não uma capacidade
+ou garantia disponível nesta versão.
 
-## Autenticação
+## Validação antes de abrir uma PR
 
-As telas de `/login`, `/signup`, `/forgot-password` e `/update-password` usam
-o cliente Supabase SSR para manter a sessão em cookies e o `proxy.ts` para
-atualizar a sessão e redirecionar áreas protegidas. O cliente usa somente as
-variáveis públicas abaixo:
-
-```bash
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
-```
-
-Esses valores devem ser definidos no `.env.local` do frontend, que é ignorado
-pelo Git. A publishable key pode aparecer no bundle do navegador; `service_role`,
-senhas e tokens privados nunca devem ser usados no frontend ou versionados.
-
-O fluxo de recuperação depende de o Supabase Auth aceitar a URL local
-`/update-password` no allow list de redirect URLs. Nenhum usuário é criado
-automaticamente por este projeto.
-
-## Verificações
+No diretório `frontend/`, execute:
 
 ```bash
 npm run lint
 npm run build
 ```
 
+Para validar também o serviço usado pelo fluxo completo, na raiz execute:
+
+```bash
+(cd backend && npm run typecheck && npm test)
+```
+
+Quando Docker e um projeto Supabase de teste estiverem disponíveis, valide
+também login, recuperação de senha, criação/conclusão de uma sessão, falha de
+speech e falha de persistência. Nunca use chaves privadas ou dados reais em
+logs, commits ou ambientes de teste compartilhados.
+
 ## Stack
 
 - Next.js com App Router e TypeScript
-- Tailwind CSS
-- shadcn/ui
-- Lucide React
+- Supabase Auth/SSR e Postgres com RLS
+- Tailwind CSS, daisyUI e componentes locais
+- MediaRecorder para captura local opcional
+- Backend Express + Kokoro para fala do entrevistador

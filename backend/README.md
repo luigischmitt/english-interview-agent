@@ -27,6 +27,24 @@ npm run dev
 
 The server runs on `http://localhost:3001` by default.
 
+### Environment variables
+
+The backend does not require Supabase credentials: interview persistence is
+performed by the authenticated frontend client. The speech service accepts:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `3001` | HTTP port. |
+| `ALLOWED_ORIGIN` | `http://localhost:3000` | Browser origin allowed by CORS. |
+| `SPEECH_PROVIDER` | `fake` | `fake` returns deterministic test audio; `kokoro` calls Kokoro. |
+| `KOKORO_BASE_URL` | `http://localhost:8880` | Kokoro HTTP base URL. |
+| `KOKORO_TIMEOUT_MS` | `15000` | Positive request timeout in milliseconds. |
+| `INTERVIEWER_VOICE` | `af_bella+af_heart` | Voice passed to Kokoro. |
+| `INTERVIEWER_SPEED` | `1` | Positive default speech speed. |
+
+Do not add Supabase `service_role` keys or other private credentials to this
+service unless a future server-side integration explicitly requires them.
+
 ## Run Kokoro with a local backend
 
 From the repository root, start Kokoro in the background:
@@ -50,7 +68,10 @@ The Compose service uses the CPU image and restarts automatically when Docker st
 docker compose down
 ```
 
-When `SPEECH_PROVIDER=fake` (the default), the API returns deterministic test audio and never requires Docker or Kokoro.
+When `SPEECH_PROVIDER=fake` (the default), the API returns deterministic test
+audio and never requires Docker or Kokoro. The frontend can continue showing
+the question and accepting an answer when speech is unavailable; speech is
+not a gate for interview practice.
 
 ## Current routes
 
