@@ -3,7 +3,8 @@
 import { useState, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
-import { defaultInterviewConfig, PageIntro } from "../home-client";
+import { PageIntro } from "./shared";
+import { defaultInterviewConfig } from "../interview-config";
 
 export function InterviewSetup({
   onBack,

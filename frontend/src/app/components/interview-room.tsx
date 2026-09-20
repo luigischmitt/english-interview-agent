@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Clock3, PhoneOff, VideoOff, Volume2 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,10 @@ export function InterviewRoom({
   const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession } = useInterviewPersistence(config, question, currentIndex, phase);
   const { elapsed } = useInterviewSession(phase);
   const { speechMessage, setSpeechMessage } = useSpeechPlayback(question.prompt, useCallback(() => setPhase("answering"), []));
+
+  useEffect(() => () => {
+    if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current);
+  }, [currentIndex]);
 
   const submitAnswer = () => {
     const trimmedAnswer = answer.trim();

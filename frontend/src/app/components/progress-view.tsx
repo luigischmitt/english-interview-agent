@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { loadInterviewSession, listInterviewSessions } from "@/lib/interview/persistence";
 import type { InterviewSession } from "@/lib/interview/types";
-import { PageIntro, SectionHeading } from "../home-client";
+import { PageIntro, SectionHeading } from "./shared";
 
 function formatPracticeDuration(milliseconds: number | null) {
   if (milliseconds === null) return "Unavailable";
