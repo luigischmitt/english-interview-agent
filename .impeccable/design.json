@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-19T22:56:02-03:00",
+  "title": "Design System: English Interview Agent",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Warm Canvas",
+        "canonical": "#fbfaf3",
+        "tonalRamp": ["#272e30", "#3a4343", "#505958", "#69716e", "#848b84", "#a1a79f", "#bec3b9", "#fbfaf3"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Soft Paper",
+        "canonical": "#fffef8",
+        "tonalRamp": ["#292f31", "#3c4443", "#525a58", "#6b726e", "#868d86", "#a4aa9f", "#c1c6bc", "#fffef8"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#28343a",
+        "tonalRamp": ["#28343a", "#3d484c", "#535e61", "#6b7678", "#858f8f", "#a1aaa7", "#bec5c0", "#f4f5ef"]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "#55656b",
+        "tonalRamp": ["#303d42", "#465359", "#5d6a6f", "#748084", "#8c9799", "#a5afaf", "#bec6c3", "#f4f5ef"]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline Rule",
+        "canonical": "#d4dbd6",
+        "tonalRamp": ["#323b3b", "#4a5351", "#626b67", "#7b837e", "#969d96", "#b0b6ae", "#c4cac1", "#f7f8f1"]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Quiet Teal",
+        "canonical": "#3c5966",
+        "tonalRamp": ["#16252d", "#233943", "#304d58", "#3c5966", "#58717a", "#789097", "#9bb0b3", "#d7e1e0"]
+      },
+      "accent-content": {
+        "role": "neutral",
+        "displayName": "Accent Ink",
+        "canonical": "#f7f7f1",
+        "tonalRamp": ["#283134", "#41494a", "#5a6262", "#737a78", "#8d938f", "#a6aca6", "#c0c5bd", "#f7f7f1"]
+      },
+      "accent-soft": {
+        "role": "neutral",
+        "displayName": "Quiet Tint",
+        "canonical": "#d9e1dc",
+        "tonalRamp": ["#273232", "#3f4b49", "#59645f", "#737e77", "#8e9890", "#aab2a9", "#c0c8bf", "#d9e1dc"]
+      },
+      "sidebar": {
+        "role": "neutral",
+        "displayName": "Sidebar Wash",
+        "canonical": "#e9ede9",
+        "tonalRamp": ["#2b3434", "#424b49", "#5b6460", "#747d76", "#8f9790", "#a9b0a8", "#c3cac1", "#e9ede9"]
+      },
+      "positive": {
+        "role": "tertiary",
+        "displayName": "Soft Positive",
+        "canonical": "#89a4a0",
+        "tonalRamp": ["#233a39", "#35514f", "#496763", "#5e7c77", "#73908a", "#89a4a0", "#aec1b9", "#e3eee7"]
+      },
+      "warning": {
+        "role": "secondary",
+        "displayName": "Quiet Warning",
+        "canonical": "#e3e7e3",
+        "tonalRamp": ["#333835", "#4c514d", "#656a65", "#7e837c", "#979c94", "#b0b5ad", "#c9cec6", "#e3e7e3"]
+      },
+      "error": {
+        "role": "secondary",
+        "displayName": "Brick Error",
+        "canonical": "#9f3d2b",
+        "tonalRamp": ["#3a1713", "#57231c", "#702d23", "#88362a", "#9f3d2b", "#b95f4c", "#d18b7b", "#f3d1c7"]
+      }
+    },
+    "typographyMeta": {
+      "display": {"displayName": "Home Display", "purpose": "Public Home promise and audience statement."},
+      "headline": {"displayName": "Page Headline", "purpose": "Authenticated orientation and room headings."},
+      "title": {"displayName": "Section Title", "purpose": "How-it-works and practice block headings."},
+      "body": {"displayName": "Readable Body", "purpose": "Short explanatory copy, prompts, and interview content."},
+      "label": {"displayName": "Control Label", "purpose": "Navigation, controls, field labels, and metadata."}
+    },
+    "shadows": [],
+    "motion": [
+      {"name": "state-transition", "value": "100–160ms ease-out", "purpose": "Button, border, and navigation state changes."},
+      {"name": "prompt-crossfade", "value": "160–220ms opacity/translate", "purpose": "Local warm-up prompt replacement; remove under reduced motion."},
+      {"name": "orientation-entrance", "value": "180–240ms opacity/translate", "purpose": "Single initial Home orientation entrance; no looping effects."}
+    ],
+    "breakpoints": [
+      {"name": "sm", "value": "640px"},
+      {"name": "lg", "value": "1024px"}
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single high-emphasis action for creating a practice space or starting practice.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Start practice <span aria-hidden=\"true\">→</span></button>",
+      "css": ".ds-btn-primary { display: inline-flex; min-height: 3rem; align-items: center; justify-content: center; gap: .5rem; border: 1px solid transparent; border-radius: .5rem; background: var(--primary); color: var(--primary-foreground); padding: .75rem 1.25rem; font: 500 .875rem/1.5 var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif); transition: background-color 140ms ease-out, border-color 140ms ease-out, transform 100ms ease-out; } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary), var(--foreground) 12%); } .ds-btn-primary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; } .ds-btn-primary:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "A quiet secondary action such as Sign in, View progress, or Another prompt.",
+      "html": "<button class=\"ds-btn-ghost\" type=\"button\">View progress</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; min-height: 3rem; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: .5rem; background: transparent; color: var(--foreground); padding: .75rem; font: 500 .875rem/1.5 var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif); transition: background-color 140ms ease-out, color 140ms ease-out, transform 100ms ease-out; } .ds-btn-ghost:hover { background: var(--muted); color: var(--foreground); } .ds-btn-ghost:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; } .ds-btn-ghost:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "A role or setup field that keeps the form quiet and legible.",
+      "html": "<label class=\"ds-field\"><span>Target role</span><input type=\"text\" placeholder=\"e.g. Software Engineer\" /></label>",
+      "css": ".ds-field { display: grid; gap: .5rem; color: var(--foreground); font: 500 .875rem/1.5 var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif); } .ds-field input { width: 100%; height: 2.75rem; border: 1px solid var(--input); border-radius: .5rem; background: var(--background); color: var(--foreground); padding: .625rem .75rem; font: 400 1rem/1.75 var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif); transition: border-color 140ms ease-out, box-shadow 140ms ease-out; } .ds-field input::placeholder { color: var(--muted-foreground); } .ds-field input:hover { border-color: var(--muted-foreground); } .ds-field input:focus-visible { border-color: var(--ring); outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring), transparent 70%); } .ds-field input:disabled { opacity: .5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Editorial Card",
+      "kind": "card",
+      "refersTo": "editorial-card",
+      "description": "A bounded work surface for setup, interview state, or truthful completion copy.",
+      "html": "<article class=\"ds-card\"><h3>Interview details</h3><p>Choose a few details for this practice room.</p></article>",
+      "css": ".ds-card { border: 1px solid color-mix(in oklch, var(--foreground), transparent 90%); border-radius: .75rem; background: var(--card); color: var(--card-foreground); padding: 1.25rem; font: 400 1rem/1.75 var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif); } .ds-card h3 { margin: 0; font-size: 1.125rem; font-weight: 600; line-height: 1.3; letter-spacing: -.02em; } .ds-card p { margin: .25rem 0 0; color: var(--muted-foreground); font-size: .875rem; line-height: 1.5; }"
+    },
+    {
+      "name": "Desktop Navigation Rail",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Persistent labeled navigation for Home, Interview, Progress, and Settings.",
+      "html": "<nav class=\"ds-nav-rail\" aria-label=\"Primary navigation\"><a class=\"ds-nav-item ds-active\" href=\"#\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><path d=\"m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linejoin=\"round\"/></svg><span>Home</span></a><a class=\"ds-nav-item\" href=\"#\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><path d=\"M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM4 20a8 8 0 0 1 16 0\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"/></svg><span>Interview</span></a></nav>",
+      "css": ".ds-nav-rail { display: grid; width: 15rem; min-height: 14rem; gap: .25rem; border-right: 1px solid var(--border); background: var(--sidebar); padding: 1.25rem 1rem; } .ds-nav-item { display: flex; min-height: 2.75rem; align-items: center; gap: .75rem; border-left: 2px solid transparent; border-radius: .5rem; color: color-mix(in oklch, var(--sidebar-foreground), transparent 30%); padding: .75rem; text-decoration: none; font: 500 .875rem/1.5 var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif); transition: background-color 140ms ease-out, color 140ms ease-out, border-color 140ms ease-out; } .ds-nav-item svg { width: 1rem; height: 1rem; } .ds-nav-item:hover { background: var(--sidebar-accent); color: var(--sidebar-foreground); } .ds-nav-item.ds-active { border-left-color: var(--sidebar-primary); color: var(--sidebar-foreground); background: color-mix(in oklch, var(--sidebar-accent), transparent 30%); } .ds-nav-item:focus-visible { outline: 2px solid var(--sidebar-ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Mobile Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Four labeled bottom destinations with a safe-area-aware touch target.",
+      "html": "<nav class=\"ds-nav-mobile\" aria-label=\"Mobile navigation\"><a class=\"ds-nav-mobile-item ds-active\" href=\"#\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><path d=\"m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linejoin=\"round\"/></svg><span>Home</span></a><a class=\"ds-nav-mobile-item\" href=\"#\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><path d=\"M4 18h16M6 14l3-4 3 2 5-6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg><span>Progress</span></a></nav>",
+      "css": ".ds-nav-mobile { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .25rem; border-top: 1px solid var(--border); background: var(--background); padding: .5rem .75rem max(.5rem, env(safe-area-inset-bottom)); } .ds-nav-mobile-item { display: flex; min-height: 3rem; flex-direction: column; align-items: center; justify-content: center; gap: .125rem; border-radius: .5rem; color: var(--muted-foreground); text-decoration: none; font: 500 .6875rem/1.3 var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif); } .ds-nav-mobile-item svg { width: 1rem; height: 1rem; } .ds-nav-mobile-item:hover, .ds-nav-mobile-item.ds-active { background: var(--accent); color: var(--primary); } .ds-nav-mobile-item:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Warm-up Prompt",
+      "kind": "custom",
+      "refersTo": "editorial-card",
+      "description": "Optional local preparation that supports practice without competing with the primary CTA.",
+      "html": "<section class=\"ds-warmup\" aria-label=\"Optional warm-up\"><p class=\"ds-warmup-label\">OPTIONAL WARM-UP</p><p class=\"ds-warmup-question\" aria-live=\"polite\">Tell me about a technical decision you made with incomplete information.</p><p class=\"ds-warmup-cue\">Start with the constraint, then name the trade-off you chose.</p><button class=\"ds-btn-ghost\" type=\"button\">Another prompt <span aria-hidden=\"true\">↗</span></button></section>",
+      "css": ".ds-warmup { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 1.5rem 0; color: var(--foreground); } .ds-warmup-label { margin: 0; color: var(--primary); font: 500 .6875rem/1.3 var(--font-geist-mono, ui-monospace, monospace); letter-spacing: .14em; } .ds-warmup-question { margin: 1.25rem 0 0; font: 500 .875rem/1.75 var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif); } .ds-warmup-cue { margin: .75rem 0 0; color: var(--muted-foreground); font: 400 .875rem/1.75 var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif); } .ds-warmup .ds-btn-ghost { margin-top: 1.25rem; padding-left: 0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Calm Rehearsal Desk",
+    "overview": "English Interview Agent is an editorial operating surface for a high-pressure human task. The interface gives a candidate one useful next move, using warm bone surfaces, ink-colored type, sparse hairline rules, and a precise blue-green accent. It feels like a prepared desk: quiet, legible, and ready when the question arrives.\n\nThe visual system favors hierarchy over decoration. Public Home makes the audience and promise clear before offering one account action; authenticated Home keeps one practice action in front, with warm-up and Progress as supporting paths. The implementation rejects gradients, heavy shadows, generic bento grids, decorative avatars, and claims the product cannot support.",
+    "keyCharacteristics": ["Warm monochrome canvas with a single muted teal action voice.", "Editorial rules, narrow measures, and deliberate whitespace.", "Controls are modestly rounded, tactile, and visibly focusable.", "Content remains useful at 390px, 768px, and 1440px."],
+    "rules": [
+      {"name": "The One Voice Rule", "body": "Let the accent carry action and current-location meaning; do not spread it across decorative surfaces.", "section": "colors"},
+      {"name": "The Clear Answer Rule", "body": "Use tight, weight-led headings and readable measures; never use display scale to make a promise sound louder than it is.", "section": "typography"},
+      {"name": "The Flat Desk Rule", "body": "Surfaces rest flat; use a rule, spacing, or tonal shift to establish hierarchy before adding elevation.", "section": "elevation"}
+    ],
+    "dos": ["Do keep one primary CTA in the first viewport: “Create a practice space” publicly or “Start practice” for an authenticated candidate.", "Do use the accent for action, focus, and current location, with Hairline Rules for structure.", "Do keep explanatory copy within roughly 48–60ch and let long roles or statuses wrap.", "Do preserve visible focus, labeled navigation, 44px-or-larger touch targets, and reduced-motion behavior.", "Do let warm-up and Progress support the next action without inventing metrics or analysis claims."],
+    "donts": ["Don't add gradients, neon, glass, heavy shadows, decorative avatars, or generic bento/card grids.", "Don't use accent color as a saturated background for every navigation item or section.", "Don't make primary actions pill-shaped, icon-only, or dependent on hover to explain themselves.", "Don't claim AI analysis, readiness scores, accent correction, or outcomes not represented by the product.", "Don't duplicate Progress metrics, history, loading, error, or empty states on Home."]
+  }
+}
