@@ -24,12 +24,14 @@ import "aos/dist/aos.css";
 
 type View = "home" | "interview-setup" | "interview" | "progress" | "settings";
 
-const navigationItems = [
+const primaryNavigationItems = [
   { id: "home" as const, label: "Home", icon: Home },
   { id: "interview-setup" as const, label: "Interview", icon: Video },
   { id: "progress" as const, label: "Progress", icon: LineChart },
-  { id: "settings" as const, label: "Settings", icon: SlidersHorizontal },
 ];
+
+const settingsNavigationItem = { id: "settings" as const, label: "Settings", icon: SlidersHorizontal };
+const navigationItems = [...primaryNavigationItems, settingsNavigationItem];
 
 import { InterviewRoom } from "./components/interview-room";
 import { InterviewSetup } from "./components/interview-setup";
@@ -91,6 +93,24 @@ function Navigation({
   view: View;
   onNavigate: (view: View) => void;
 }) {
+  const renderNavigationItem = ({ id, label, icon: Icon }: (typeof navigationItems)[number]) => (
+    <li key={id} className="flex">
+      <button
+        type="button"
+        aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
+        onClick={() => onNavigate(id)}
+        className={`flex h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+          isNavigationItemActive(view, id)
+            ? "border-l-2 border-primary bg-sidebar-accent/70 text-sidebar-foreground"
+            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
+        }`}
+      >
+        <Icon className="size-4" aria-hidden="true" />
+        <span className="whitespace-nowrap">{label}</span>
+      </button>
+    </li>
+  );
+
   return (
     <>
       <aside
@@ -100,29 +120,14 @@ function Navigation({
           <Brand />
         </div>
         <nav aria-label="Primary navigation">
-          <ul className="space-y-1">
-            {navigationItems.map(({ id, label, icon: Icon }) => (
-              <li key={id} className="flex">
-                <button
-                  type="button"
-                  aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
-                  onClick={() => onNavigate(id)}
-                  className={`flex h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                    isNavigationItemActive(view, id)
-                      ? "border-l-2 border-primary bg-sidebar-accent/70 text-sidebar-foreground"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
-                  }`}
-                >
-                  <Icon className="size-4" aria-hidden="true" />
-                  <span className="whitespace-nowrap">{label}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <ul className="space-y-1">{primaryNavigationItems.map(renderNavigationItem)}</ul>
         </nav>
-        <p
-          className="mt-auto text-xs leading-5 text-muted-foreground"
-        >
+        <div className="mt-auto border-t border-sidebar-border pt-4">
+          <nav aria-label="Utility navigation">
+            <ul>{renderNavigationItem(settingsNavigationItem)}</ul>
+          </nav>
+        </div>
+        <p className="mt-5 text-xs leading-5 text-muted-foreground">
           Clear English. Stronger interviews.
         </p>
       </aside>
