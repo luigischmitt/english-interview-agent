@@ -125,7 +125,7 @@ function Navigation({
       <aside
         id="desktop-sidebar"
         aria-label="Desktop navigation"
-        className={`sticky top-0 hidden min-h-dvh shrink-0 border-r bg-sidebar px-4 py-5 transition-[width] duration-200 lg:flex lg:flex-col ${
+        className={`sticky top-0 hidden h-dvh max-h-dvh min-h-0 shrink-0 self-start overflow-y-auto border-r bg-sidebar px-4 py-5 transition-[width] duration-200 lg:flex lg:flex-col ${
           sidebarExpanded ? "w-60" : "w-20"
         }`}
       >
