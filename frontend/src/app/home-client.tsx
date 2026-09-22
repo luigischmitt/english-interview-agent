@@ -8,6 +8,8 @@ import {
   Home,
   LineChart,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
   SlidersHorizontal,
   Sun,
@@ -89,24 +91,31 @@ function Brand({ compact = false }: { compact?: boolean }) {
 function Navigation({
   view,
   onNavigate,
+  sidebarExpanded,
+  onToggleSidebar,
 }: {
   view: View;
   onNavigate: (view: View) => void;
+  sidebarExpanded: boolean;
+  onToggleSidebar: () => void;
 }) {
   const renderNavigationItem = ({ id, label, icon: Icon }: (typeof navigationItems)[number]) => (
     <li key={id} className="flex">
       <button
         type="button"
+        aria-label={label}
         aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
         onClick={() => onNavigate(id)}
-        className={`flex h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+        className={`flex h-11 w-full items-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+          sidebarExpanded ? "gap-3 px-3" : "justify-center px-0"
+        } ${
           isNavigationItemActive(view, id)
             ? "border-l-2 border-primary bg-sidebar-accent/70 text-sidebar-foreground"
             : "text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
         }`}
       >
         <Icon className="size-4" aria-hidden="true" />
-        <span className="whitespace-nowrap">{label}</span>
+        <span className={sidebarExpanded ? "whitespace-nowrap" : "sr-only"}>{label}</span>
       </button>
     </li>
   );
@@ -114,10 +123,27 @@ function Navigation({
   return (
     <>
       <aside
-        className="sticky top-0 hidden min-h-dvh w-60 shrink-0 border-r bg-sidebar px-4 py-5 lg:flex lg:flex-col"
+        id="desktop-sidebar"
+        aria-label="Desktop navigation"
+        className={`sticky top-0 hidden min-h-dvh shrink-0 border-r bg-sidebar px-4 py-5 transition-[width] duration-200 lg:flex lg:flex-col ${
+          sidebarExpanded ? "w-60" : "w-20"
+        }`}
       >
-        <div className="pb-8">
-          <Brand />
+        <div className={`flex flex-col gap-3 pb-8 ${sidebarExpanded ? "" : "items-center"}`}>
+          <Brand compact={!sidebarExpanded} />
+          <button
+            type="button"
+            aria-label={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+            aria-expanded={sidebarExpanded}
+            aria-controls="desktop-sidebar"
+            onClick={onToggleSidebar}
+            className={`btn btn-ghost min-h-11 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+              sidebarExpanded ? "w-full justify-start gap-2 px-3" : "btn-square size-11"
+            }`}
+          >
+            {sidebarExpanded ? <PanelLeftClose className="size-4" aria-hidden="true" /> : <PanelLeftOpen className="size-4" aria-hidden="true" />}
+            {sidebarExpanded && <span>Collapse sidebar</span>}
+          </button>
         </div>
         <nav aria-label="Primary navigation">
           <ul className="space-y-1">{primaryNavigationItems.map(renderNavigationItem)}</ul>
@@ -127,7 +153,7 @@ function Navigation({
             <ul>{renderNavigationItem(settingsNavigationItem)}</ul>
           </nav>
         </div>
-        <p className="mt-5 text-xs leading-5 text-muted-foreground">
+        <p className={`mt-5 text-xs leading-5 text-muted-foreground ${sidebarExpanded ? "" : "sr-only"}`}>
           Clear English. Stronger interviews.
         </p>
       </aside>
@@ -309,6 +335,7 @@ export default function App() {
   const [view, setView] = useState<View>("home");
   const [interviewConfig, setInterviewConfig] = useState<InterviewConfig>(defaultInterviewConfig);
   const [darkMode, setDarkMode] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
 
   useEffect(() => {
     AOS.init({
@@ -342,6 +369,8 @@ export default function App() {
         <Navigation
           view={view}
           onNavigate={navigate}
+          sidebarExpanded={sidebarExpanded}
+          onToggleSidebar={() => setSidebarExpanded((expanded) => !expanded)}
         />
         <div className="min-w-0 flex-1">
           <Topbar
