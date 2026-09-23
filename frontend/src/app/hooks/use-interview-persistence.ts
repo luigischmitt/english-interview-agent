@@ -56,7 +56,7 @@ export function useInterviewPersistence(
     finalizedRef.current = true;
     const finishAsAbandoned = (id: string) => {
       void updateInterviewStatus(id, "abandoned").then((result) => {
-        if (!result.ok) reportPersistenceFailure("Interview ended locally. Its status could not be saved.");
+        if (!result.ok) reportPersistenceFailure("A entrevista foi encerrada localmente. Não foi possível salvar seu status.");
       });
     };
     if (sessionIdRef.current) finishAsAbandoned(sessionIdRef.current);
@@ -91,7 +91,7 @@ export function useInterviewPersistence(
     sessionCreationRef.current = creation;
     void creation.then((result) => {
       if (!result.ok) {
-        reportPersistenceFailure("This interview is running locally. We could not create its account session.");
+        reportPersistenceFailure("Esta entrevista está sendo executada localmente. Não foi possível criar a sessão na sua conta.");
         return;
       }
       sessionIdRef.current = result.value.id;
@@ -108,7 +108,7 @@ export function useInterviewPersistence(
           if (!pendingResult.ok) hasFailure = true;
         }
         flushingTurnsRef.current = false;
-        if (hasFailure) reportPersistenceFailure("Some answers are local because saving to your account failed.");
+        if (hasFailure) reportPersistenceFailure("Algumas respostas estão apenas locais porque não foi possível salvá-las na sua conta.");
       })();
       flushPromiseRef.current = flush;
     });
@@ -130,7 +130,7 @@ export function useInterviewPersistence(
       if (!completedSessionId && sessionCreationRef.current) {
         const creation = await sessionCreationRef.current;
         if (!creation.ok) {
-          reportPersistenceFailure("Interview complete locally. We could not create its account session.");
+          reportPersistenceFailure("Entrevista concluída localmente. Não foi possível criar a sessão na sua conta.");
           return;
         }
         completedSessionId = creation.value.id;
@@ -140,7 +140,7 @@ export function useInterviewPersistence(
       if (!completedSessionId) return;
       await waitForTurnPersistence();
       const result = await updateInterviewStatus(completedSessionId, "completed");
-      if (!result.ok) reportPersistenceFailure("Interview complete locally. We could not update its status in your account.");
+      if (!result.ok) reportPersistenceFailure("Entrevista concluída localmente. Não foi possível atualizar seu status na sua conta.");
       else if (!persistenceDegradedRef.current && mountedRef.current) setPersistenceState("saved");
     })();
   }, [phase, reportPersistenceFailure, waitForTurnPersistence]);

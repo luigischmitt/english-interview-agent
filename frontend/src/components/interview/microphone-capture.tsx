@@ -20,16 +20,16 @@ type MicrophoneRecorder = {
 const getMicrophoneError = (error: unknown) => {
   if (error instanceof DOMException) {
     if (error.name === "NotAllowedError" || error.name === "SecurityError") {
-      return "Microphone permission was denied. You can type your answer instead.";
+      return "A permissão para o microfone foi negada. Você pode escrever sua resposta.";
     }
     if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
-      return "No microphone was found. You can type your answer instead.";
+      return "Nenhum microfone foi encontrado. Você pode escrever sua resposta.";
     }
     if (error.name === "NotReadableError" || error.name === "TrackStartError") {
-      return "The microphone is already in use. You can type your answer instead.";
+      return "O microfone já está em uso. Você pode escrever sua resposta.";
     }
   }
-  return "Microphone capture is unavailable. You can type your answer instead.";
+  return "A captura do microfone não está disponível. Você pode escrever sua resposta.";
 };
 
 export function useMicrophoneRecorder(): MicrophoneRecorder {
@@ -104,7 +104,7 @@ export function useMicrophoneRecorder(): MicrophoneRecorder {
         clearTimer();
         recorderRef.current = null;
         setStatus("error");
-        setError("Recording failed. You can type your answer instead.");
+        setError("A gravação falhou. Você pode escrever sua resposta.");
       };
       recorder.onstop = () => {
         stopTracks(stream);
@@ -117,7 +117,7 @@ export function useMicrophoneRecorder(): MicrophoneRecorder {
           setStatus("ready");
         } else {
           setStatus("error");
-          setError("No audio was captured. You can type your answer instead.");
+          setError("Nenhum áudio foi gravado. Você pode escrever sua resposta.");
         }
       };
       recorder.start(250);
@@ -129,7 +129,7 @@ export function useMicrophoneRecorder(): MicrophoneRecorder {
       if (!mountedRef.current || generationRef.current !== generation) return;
       stopTracks();
       setStatus("error");
-      setError(captureError instanceof Error && captureError.message === "unsupported" ? "This browser cannot record audio. You can type your answer instead." : getMicrophoneError(captureError));
+      setError(captureError instanceof Error && captureError.message === "unsupported" ? "Este navegador não pode gravar áudio. Você pode escrever sua resposta." : getMicrophoneError(captureError));
     }
   }, [clearTimer, status, stopTracks]);
 
@@ -181,23 +181,23 @@ export function MicrophoneCapture({ disabled = false, onAvailabilityChange }: Mi
   useEffect(() => onAvailabilityChange(recorder.hasRecording), [onAvailabilityChange, recorder.hasRecording]);
 
   return (
-    <div className="rounded-lg border border-dashed border-base-300 bg-base-200/60 p-4" aria-label="Optional microphone answer">
+    <div className="rounded-lg border border-dashed border-base-300 bg-base-200/60 p-4" aria-label="Resposta opcional pelo microfone">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Mic className="size-4 text-primary" aria-hidden="true" />
           <div>
-            <p className="text-sm font-medium">Answer with your voice <span className="font-normal text-muted-foreground">(optional)</span></p>
+            <p className="text-sm font-medium">Responda com sua voz <span className="font-normal text-muted-foreground">(opcional)</span></p>
             <p className="text-xs text-muted-foreground" aria-live="polite">
-              {isRecording ? `Recording locally · ${formattedDuration}` : isPaused ? `Paused · ${formattedDuration}` : recorder.hasRecording ? `Voice answer captured · ${formattedDuration}` : "Nothing is sent or transcribed."}
+              {isRecording ? `Gravando localmente · ${formattedDuration}` : isPaused ? `Pausado · ${formattedDuration}` : recorder.hasRecording ? `Resposta por voz gravada · ${formattedDuration}` : "Nada é enviado nem transcrito."}
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!isRecording && !isPaused && !recorder.hasRecording && <button type="button" className="btn btn-sm btn-outline gap-2" onClick={() => void recorder.start()} disabled={busy}><Mic className="size-4" aria-hidden="true" />{recorder.status === "requesting" ? "Requesting…" : "Start recording"}</button>}
-          {isRecording && <button type="button" className="btn btn-sm btn-ghost gap-2" onClick={recorder.pause}><Pause className="size-4" aria-hidden="true" />Pause</button>}
-          {isPaused && <button type="button" className="btn btn-sm btn-ghost gap-2" onClick={recorder.resume}><Play className="size-4" aria-hidden="true" />Resume</button>}
-          {(isRecording || isPaused) && <><button type="button" className="btn btn-sm btn-primary gap-2" onClick={recorder.stop}><Square className="size-3 fill-current" aria-hidden="true" />Finish recording</button><button type="button" className="btn btn-sm btn-ghost" onClick={recorder.cancel}>Cancel</button></>}
-          {recorder.hasRecording && <button type="button" className="btn btn-sm btn-ghost" onClick={recorder.cancel} disabled={disabled}>Clear</button>}
+          {!isRecording && !isPaused && !recorder.hasRecording && <button type="button" className="btn btn-sm btn-outline gap-2" onClick={() => void recorder.start()} disabled={busy}><Mic className="size-4" aria-hidden="true" />{recorder.status === "requesting" ? "Solicitando…" : "Iniciar gravação"}</button>}
+          {isRecording && <button type="button" className="btn btn-sm btn-ghost gap-2" onClick={recorder.pause}><Pause className="size-4" aria-hidden="true" />Pausar</button>}
+          {isPaused && <button type="button" className="btn btn-sm btn-ghost gap-2" onClick={recorder.resume}><Play className="size-4" aria-hidden="true" />Retomar</button>}
+          {(isRecording || isPaused) && <><button type="button" className="btn btn-sm btn-primary gap-2" onClick={recorder.stop}><Square className="size-3 fill-current" aria-hidden="true" />Concluir gravação</button><button type="button" className="btn btn-sm btn-ghost" onClick={recorder.cancel}>Cancelar</button></>}
+          {recorder.hasRecording && <button type="button" className="btn btn-sm btn-ghost" onClick={recorder.cancel} disabled={disabled}>Limpar</button>}
         </div>
       </div>
       {recorder.error && <p className="mt-3 text-sm text-error" role="alert">{recorder.error}</p>}

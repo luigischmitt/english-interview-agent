@@ -6,6 +6,20 @@ import type { InterviewConfig } from "@/lib/interview/types";
 import { PageIntro } from "./shared";
 import { defaultInterviewConfig } from "../interview-config";
 
+const seniorityLabels: Record<InterviewConfig["seniority"], string> = {
+  junior: "Júnior",
+  "mid-level": "Pleno",
+  senior: "Sênior",
+  staff: "Staff / Lead",
+};
+
+const focusLabels: Record<InterviewConfig["focus"], string> = {
+  "technical-depth": "Profundidade técnica",
+  communication: "Comunicação e clareza",
+  behavioral: "Respostas comportamentais",
+  mixed: "Prática equilibrada",
+};
+
 export function InterviewSetup({
   onBack,
   onStart,
@@ -40,12 +54,12 @@ export function InterviewSetup({
         onClick={onBack}
       >
         <ArrowLeft className="size-4" aria-hidden="true" />
-        Back to overview
+        Voltar à visão geral
       </button>
 
       <PageIntro
-        title="Set the room up for you."
-        description="Choose a few details so the practice feels close to the interview you are preparing for."
+        title="Configure sua entrevista."
+        description="Escolha o cargo, o foco e o tempo que você quer praticar."
       />
 
       <form onSubmit={handleSubmit} className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)]" noValidate>
@@ -53,61 +67,61 @@ export function InterviewSetup({
           <div className="card-body gap-7 p-5 sm:p-8">
             <div>
               <h2 id="interview-details-title" className="card-title text-xl tracking-[-0.02em]">
-                Interview details
+                Detalhes da entrevista
               </h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                You can change these choices whenever you start a new session.
+                Você pode mudar essas opções a cada nova sessão.
               </p>
             </div>
 
             <div className="grid gap-6 sm:grid-cols-2">
               <label className="fieldset gap-2 sm:col-span-2">
-                <span className="fieldset-legend text-sm font-medium">Target role <span className="text-error" aria-hidden="true">*</span></span>
+                <span className="fieldset-legend text-sm font-medium">Cargo para praticar <span className="text-error" aria-hidden="true">*</span></span>
                 <input
                   className={`input input-bordered h-11 w-full bg-base-100 ${showErrors ? "input-error" : ""}`}
                   value={config.role}
                   onChange={(event) => updateConfig("role", event.target.value)}
-                  placeholder="e.g. Software Engineer"
+                  placeholder="ex.: Software Engineer"
                   aria-invalid={showErrors && !config.role.trim()}
                   aria-describedby={showErrors ? "role-error" : undefined}
                   required
                 />
                 {showErrors && !config.role.trim() && (
-                  <span id="role-error" className="label text-error">Add the role you want to practice for.</span>
+                  <span id="role-error" className="label text-error">Informe o cargo para o qual você quer praticar.</span>
                 )}
               </label>
 
               <label className="fieldset gap-2">
-                <span className="fieldset-legend text-sm font-medium">Seniority</span>
+                <span className="fieldset-legend text-sm font-medium">Senioridade</span>
                 <select
                   className="select select-bordered h-11 w-full bg-base-100"
                   value={config.seniority}
                   onChange={(event) => updateConfig("seniority", event.target.value)}
                 >
-                  <option value="junior">Junior</option>
-                  <option value="mid-level">Mid-level</option>
-                  <option value="senior">Senior</option>
+                  <option value="junior">Júnior</option>
+                  <option value="mid-level">Pleno</option>
+                  <option value="senior">Sênior</option>
                   <option value="staff">Staff / Lead</option>
                 </select>
               </label>
 
               <label className="fieldset gap-2">
-                <span className="fieldset-legend text-sm font-medium">Practice focus</span>
+                <span className="fieldset-legend text-sm font-medium">Foco da prática</span>
                 <select
                   className="select select-bordered h-11 w-full bg-base-100"
                   value={config.focus}
                   onChange={(event) => updateConfig("focus", event.target.value)}
                 >
-                  <option value="technical-depth">Technical depth</option>
-                  <option value="communication">Communication and clarity</option>
-                  <option value="behavioral">Behavioral answers</option>
-                  <option value="mixed">Balanced practice</option>
+                  <option value="technical-depth">Profundidade técnica</option>
+                  <option value="communication">Comunicação e clareza</option>
+                  <option value="behavioral">Respostas comportamentais</option>
+                  <option value="mixed">Prática equilibrada</option>
                 </select>
               </label>
 
               <fieldset className="fieldset gap-2">
-                <legend className="fieldset-legend text-sm font-medium">Session length</legend>
-                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Session length">
+                <legend className="fieldset-legend text-sm font-medium">Duração da sessão</legend>
+                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Duração da sessão">
                   {["15", "25", "40"].map((minutes) => (
                     <label key={minutes} className={`btn btn-sm h-11 border ${config.duration === minutes ? "btn-primary" : "btn-ghost border-base-300"} focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2`}>
                       <input
@@ -125,8 +139,8 @@ export function InterviewSetup({
               </fieldset>
 
               <fieldset className="fieldset gap-2">
-                <legend className="fieldset-legend text-sm font-medium">Questions</legend>
-                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Number of questions">
+                <legend className="fieldset-legend text-sm font-medium">Perguntas</legend>
+                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Número de perguntas">
                   {["3", "5", "8"].map((count) => (
                     <label key={count} className={`btn btn-sm h-11 border ${config.questionCount === count ? "btn-primary" : "btn-ghost border-base-300"} focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2`}>
                       <input
@@ -145,34 +159,34 @@ export function InterviewSetup({
             </div>
 
             <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-end">
-              <button type="button" className="btn btn-ghost order-2 sm:order-1" onClick={onBack}>Cancel</button>
-              <button type="submit" className="btn btn-primary order-1 gap-2 sm:order-2">Start interview <ArrowUpRight className="size-4" aria-hidden="true" /></button>
+              <button type="button" className="btn btn-ghost order-2 sm:order-1" onClick={onBack}>Cancelar</button>
+              <button type="submit" className="btn btn-primary order-1 gap-2 sm:order-2">Começar entrevista <ArrowUpRight className="size-4" aria-hidden="true" /></button>
             </div>
           </div>
         </section>
 
         <aside className="border-y border-border py-6 lg:py-8" aria-labelledby="session-preview-title" data-aos="fade-up" data-aos-delay="80" data-aos-duration="450">
-          <h2 id="session-preview-title" className="text-lg font-semibold tracking-[-0.02em]">Your session</h2>
+          <h2 id="session-preview-title" className="text-lg font-semibold tracking-[-0.02em]">Sua sessão</h2>
           <dl className="mt-6 space-y-4 text-sm">
             <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-              <dt className="text-muted-foreground">Role</dt>
-              <dd className="max-w-[14rem] truncate text-right font-medium">{config.role || "Not selected"}</dd>
+              <dt className="text-muted-foreground">Cargo</dt>
+              <dd className="max-w-[14rem] truncate text-right font-medium">{config.role || "Não selecionado"}</dd>
             </div>
             <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-              <dt className="text-muted-foreground">Level</dt>
-              <dd className="font-medium capitalize">{config.seniority.replace("-", " ")}</dd>
+              <dt className="text-muted-foreground">Nível</dt>
+              <dd className="font-medium">{seniorityLabels[config.seniority]}</dd>
             </div>
             <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-              <dt className="text-muted-foreground">Focus</dt>
-              <dd className="max-w-[14rem] text-right font-medium">{config.focus.replaceAll("-", " ")}</dd>
+              <dt className="text-muted-foreground">Foco</dt>
+              <dd className="max-w-[14rem] text-right font-medium">{focusLabels[config.focus]}</dd>
             </div>
             <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-              <dt className="text-muted-foreground">Format</dt>
-              <dd className="font-medium">{config.questionCount} questions · {config.duration} min</dd>
+              <dt className="text-muted-foreground">Formato</dt>
+              <dd className="font-medium">{config.questionCount} perguntas · {config.duration} min</dd>
             </div>
           </dl>
           <p className="mt-8 text-sm leading-6 text-muted-foreground">
-            The interviewer will keep the conversation in English and use your choices to frame the session.
+            As perguntas da entrevista serão em inglês. O cargo informado aparece na primeira pergunta.
           </p>
         </aside>
       </form>

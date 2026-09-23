@@ -23,7 +23,7 @@ export function SignOutButton() {
       router.replace("/login");
     } catch {
       window.sessionStorage.removeItem("auth:manual-signout");
-      setError("We could not sign you out. Please try again.");
+      setError("Não foi possível sair. Tente novamente.");
       setIsSigningOut(false);
     }
   };
@@ -36,10 +36,10 @@ export function SignOutButton() {
         className="btn btn-ghost btn-sm gap-2"
         onClick={handleSignOut}
         disabled={isSigningOut}
-        aria-label="Sign out"
+        aria-label="Sair"
       >
         {isSigningOut ? <span className="loading loading-spinner loading-xs" /> : <LogOut className="size-4" />}
-        <span className="hidden sm:inline">Sign out</span>
+        <span className="hidden sm:inline">Sair</span>
       </button>
     </div>
   );
