@@ -17,13 +17,13 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "English Interview Agent",
-  description: "Practice interviews in English with confidence.",
+  description: "Pratique entrevistas em inglês com confiança.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="en"
+      lang="pt-BR"
       data-theme="interview-light"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >

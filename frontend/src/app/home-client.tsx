@@ -27,12 +27,12 @@ import "aos/dist/aos.css";
 type View = "home" | "interview-setup" | "interview" | "progress" | "settings";
 
 const primaryNavigationItems = [
-  { id: "home" as const, label: "Home", icon: Home },
-  { id: "interview-setup" as const, label: "Interview", icon: Video },
-  { id: "progress" as const, label: "Progress", icon: LineChart },
+  { id: "home" as const, label: "Início", icon: Home },
+  { id: "interview-setup" as const, label: "Entrevista", icon: Video },
+  { id: "progress" as const, label: "Progresso", icon: LineChart },
 ];
 
-const settingsNavigationItem = { id: "settings" as const, label: "Settings", icon: SlidersHorizontal };
+const settingsNavigationItem = { id: "settings" as const, label: "Configurações", icon: SlidersHorizontal };
 const navigationItems = [...primaryNavigationItems, settingsNavigationItem];
 
 import { InterviewRoom } from "./components/interview-room";
@@ -46,11 +46,11 @@ function isNavigationItemActive(view: View, item: View) {
 }
 
 const viewLabels: Record<View, string> = {
-  home: "Practice overview",
-  "interview-setup": "Prepare interview",
-  interview: "Interview room",
-  progress: "Your progress",
-  settings: "Settings",
+  home: "Início",
+  "interview-setup": "Preparar entrevista",
+  interview: "Sala de entrevista",
+  progress: "Seu progresso",
+  settings: "Configurações",
 };
 
 const warmUpPrompts = [
@@ -124,7 +124,7 @@ function Navigation({
     <>
       <aside
         id="desktop-sidebar"
-        aria-label="Desktop navigation"
+        aria-label="Navegação para desktop"
         className={`sticky top-0 hidden h-dvh max-h-dvh min-h-0 shrink-0 self-start overflow-y-auto border-r bg-sidebar px-4 py-5 transition-[width] duration-200 lg:flex lg:flex-col ${
           sidebarExpanded ? "w-60" : "w-20"
         }`}
@@ -133,7 +133,7 @@ function Navigation({
           <Brand compact={!sidebarExpanded} />
           <button
             type="button"
-            aria-label={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+            aria-label={sidebarExpanded ? "Recolher barra lateral" : "Expandir barra lateral"}
             aria-expanded={sidebarExpanded}
             aria-controls="desktop-sidebar"
             onClick={onToggleSidebar}
@@ -142,24 +142,24 @@ function Navigation({
             }`}
           >
             {sidebarExpanded ? <PanelLeftClose className="size-4" aria-hidden="true" /> : <PanelLeftOpen className="size-4" aria-hidden="true" />}
-            {sidebarExpanded && <span>Collapse sidebar</span>}
+            {sidebarExpanded && <span>Recolher barra lateral</span>}
           </button>
         </div>
-        <nav aria-label="Primary navigation">
+        <nav aria-label="Navegação principal">
           <ul className="space-y-1">{primaryNavigationItems.map(renderNavigationItem)}</ul>
         </nav>
         <div className="mt-auto border-t border-sidebar-border pt-4">
-          <nav aria-label="Utility navigation">
+          <nav aria-label="Navegação utilitária">
             <ul>{renderNavigationItem(settingsNavigationItem)}</ul>
           </nav>
         </div>
         <p className={`mt-5 text-xs leading-5 text-muted-foreground ${sidebarExpanded ? "" : "sr-only"}`}>
-          Clear English. Stronger interviews.
+          Pratique inglês para entrevistas.
         </p>
       </aside>
 
       <nav
-        aria-label="Mobile navigation"
+        aria-label="Navegação móvel"
         className="fixed inset-x-0 bottom-0 z-20 border-t bg-background px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden"
       >
         <ul className="menu menu-horizontal grid w-full grid-cols-4 gap-1 p-0">
@@ -207,7 +207,7 @@ function Topbar({
         <Button
           variant="ghost"
           size="icon"
-          aria-label={darkMode ? "Use light theme" : "Use dark theme"}
+          aria-label={darkMode ? "Usar tema claro" : "Usar tema escuro"}
           onClick={onToggleTheme}
         >
           {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
@@ -247,31 +247,31 @@ function HomeView({
   return (
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-10 pb-36 sm:px-8 sm:py-14 sm:pb-28 lg:px-12 lg:py-20">
       <PageIntro
-        title="Make your next answer clearer."
-        description="A short English interview practice session for the role you are preparing for."
+        title="Vamos praticar?"
+        description="Monte uma entrevista para o cargo que você busca e responda em inglês."
       />
 
       <section className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,1.3fr)_minmax(17rem,0.7fr)] lg:gap-16" data-aos="fade-up" data-aos-duration="220">
         <div className="border-t border-border pt-6">
-          <h2 className="text-2xl font-semibold tracking-[-0.025em]">Start with one useful answer.</h2>
-          <p className="mt-3 max-w-[52ch] text-base leading-7 text-muted-foreground">Choose your role and focus in the next step, then enter a room where questions are spoken and your written answer stays available.</p>
-          <Button className="mt-7 min-h-12 gap-2 px-5" onClick={onStart}><Play className="size-4 fill-current" /> Start practice</Button>
+          <h2 className="text-2xl font-semibold tracking-[-0.025em]">Prepare sua prática.</h2>
+          <p className="mt-3 max-w-[52ch] text-base leading-7 text-muted-foreground">Escolha o cargo e o foco. Na entrevista, as perguntas aparecem em texto e também podem ser lidas em voz alta.</p>
+          <Button className="mt-7 min-h-12 gap-2 px-5" onClick={onStart}><Play className="size-4 fill-current" /> Começar prática</Button>
         </div>
         <aside className="border-y border-border py-6" aria-labelledby="warm-up-title">
-          <div className="flex items-start justify-between gap-4"><div><h2 id="warm-up-title" className="text-lg font-semibold">Optional warm-up</h2><p className="mt-1 text-sm text-muted-foreground">Find your opening before the room.</p></div><Target className="mt-1 size-5 text-primary" aria-hidden="true" /></div>
+          <div className="flex items-start justify-between gap-4"><div><h2 id="warm-up-title" className="text-lg font-semibold">Aquecimento opcional</h2><p className="mt-1 text-sm text-muted-foreground">Use uma pergunta para começar a pensar em inglês.</p></div><Target className="mt-1 size-5 text-primary" aria-hidden="true" /></div>
           <div ref={promptRef} aria-live="polite" className="mt-5"><p className="text-sm font-medium leading-6">{prompt.question}</p><p className="mt-3 text-sm leading-6 text-muted-foreground">{prompt.cue}</p></div>
-          <button type="button" onClick={() => selectPrompt((promptIndex + 1) % warmUpPrompts.length)} className="btn btn-ghost mt-5 min-h-11 px-0 hover:bg-transparent hover:text-primary">Another prompt <ArrowUpRight className="size-4" aria-hidden="true" /></button>
+          <button type="button" onClick={() => selectPrompt((promptIndex + 1) % warmUpPrompts.length)} className="btn btn-ghost mt-5 min-h-11 px-0 hover:bg-transparent hover:text-primary">Outra pergunta <ArrowUpRight className="size-4" aria-hidden="true" /></button>
           <dl className="mt-6 space-y-3 border-t border-border pt-5 text-sm">
-            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Mode</dt><dd className="text-right font-medium">English, spoken answers</dd></div>
-            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Focus</dt><dd className="font-medium">Choose in setup</dd></div>
-            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Room</dt><dd className="max-w-[18rem] text-right font-medium">Questions are spoken aloud; you answer at your pace.</dd></div>
+            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Modo</dt><dd className="text-right font-medium">Inglês, respostas faladas</dd></div>
+            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Foco</dt><dd className="font-medium">Escolha na configuração</dd></div>
+            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Sala</dt><dd className="max-w-[18rem] text-right font-medium">Você responde no seu ritmo, com as perguntas sempre visíveis.</dd></div>
           </dl>
         </aside>
       </section>
 
       <section className="mt-16 flex flex-col gap-5 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between" data-aos="fade-up" data-aos-duration="220">
-        <div><h2 className="text-lg font-semibold tracking-[-0.02em]">Your practice history has its own place.</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">Keep this page focused on what you can do next.</p></div>
-        <button type="button" className="btn btn-ghost min-h-11 w-fit gap-2 px-0 hover:bg-transparent hover:text-primary" onClick={onProgress}>View progress <ArrowUpRight className="size-4" aria-hidden="true" /></button>
+        <div><h2 className="text-lg font-semibold tracking-[-0.02em]">Confira seu histórico de prática.</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">Veja as sessões que você já concluiu.</p></div>
+        <button type="button" className="btn btn-ghost min-h-11 w-fit gap-2 px-0 hover:bg-transparent hover:text-primary" onClick={onProgress}>Ver progresso <ArrowUpRight className="size-4" aria-hidden="true" /></button>
       </section>
     </main>
   );
@@ -287,42 +287,42 @@ function SettingsView({
   return (
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-4xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
       <PageIntro
-        title="Settings"
-        description="Adjust the practice environment to make each session comfortable and focused."
+        title="Configurações"
+        description="Escolha como você prefere usar a plataforma."
       />
       <section className="mt-12" data-aos="fade-up" data-aos-duration="450">
-        <SectionHeading title="Appearance" />
+        <SectionHeading title="Aparência" />
         <div className="mt-4 flex flex-col gap-5 border-y py-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-medium">{darkMode ? "Dark theme" : "Light theme"}</p>
+            <p className="text-sm font-medium">{darkMode ? "Tema escuro" : "Tema claro"}</p>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              Light is the default. Choose the theme that feels most comfortable.
+              Escolha o tema que fica melhor para você.
             </p>
           </div>
           <Button variant="outline" className="w-full gap-2 sm:w-auto" onClick={onToggleTheme}>
             {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            Use {darkMode ? "light" : "dark"} theme
+            Usar tema {darkMode ? "claro" : "escuro"}
           </Button>
         </div>
       </section>
       <section className="mt-12" data-aos="fade-up" data-aos-duration="450">
-        <SectionHeading title="Interview experience" />
+        <SectionHeading title="Experiência da entrevista" />
         <div className="mt-4 border-y">
           <div className="flex flex-col gap-3 py-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
             <div>
-              <p className="text-sm font-medium">Voice-first interview</p>
+              <p className="text-sm font-medium">Entrevista com foco na voz</p>
               <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                The interview is designed around spoken answers and natural follow-ups.
+                As perguntas podem ser reproduzidas em voz alta durante a entrevista.
               </p>
             </div>
             <span className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground">
-              Enabled
+              Ativado
             </span>
           </div>
           <div className="border-t py-5">
-            <p className="text-sm font-medium">Camera and interviewer avatar</p>
+            <p className="text-sm font-medium">Câmera e avatar do entrevistador</p>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              More controls will be available when these features are connected.
+              Esses recursos ainda não estão disponíveis.
             </p>
           </div>
         </div>
@@ -335,7 +335,7 @@ export default function App() {
   const [view, setView] = useState<View>("home");
   const [interviewConfig, setInterviewConfig] = useState<InterviewConfig>(defaultInterviewConfig);
   const [darkMode, setDarkMode] = useState(false);
-  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   useEffect(() => {
     AOS.init({
@@ -364,7 +364,7 @@ export default function App() {
 
   return (
     <div className="min-h-dvh overflow-x-clip bg-background text-foreground">
-      <a href="#main-content" className="skip-link">Skip to content</a>
+      <a href="#main-content" className="skip-link">Pular para o conteúdo</a>
       <div className="flex min-h-dvh">
         <Navigation
           view={view}

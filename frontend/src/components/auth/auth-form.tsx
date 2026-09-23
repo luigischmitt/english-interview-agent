@@ -11,37 +11,37 @@ type AuthMode = "login" | "signup" | "forgot-password" | "update-password";
 
 const copy = {
   login: {
-    eyebrow: "Welcome back",
-    title: "Practice with more confidence.",
-    description: "Sign in to continue building clearer interview answers.",
-    submit: "Sign in",
+    eyebrow: "Acesse sua conta",
+    title: "Continue sua prática.",
+    description: "Entre para retomar suas entrevistas e ver seu histórico.",
+    submit: "Entrar",
   },
   signup: {
-    eyebrow: "Start practicing",
-    title: "Make your English easier to hear.",
-    description: "Create a private practice space for your interview progress.",
-    submit: "Create account",
+    eyebrow: "Crie sua conta",
+    title: "Comece a praticar entrevistas.",
+    description: "Guarde suas sessões e pratique quando quiser.",
+    submit: "Criar conta",
   },
   "forgot-password": {
-    eyebrow: "Account recovery",
-    title: "Find your way back in.",
-    description: "We will send a secure link to reset your password.",
-    submit: "Send recovery link",
+    eyebrow: "Recuperação de conta",
+    title: "Redefina sua senha.",
+    description: "Enviaremos um link seguro para redefinir sua senha.",
+    submit: "Enviar link de recuperação",
   },
   "update-password": {
-    eyebrow: "New password",
-    title: "Choose a fresh password.",
-    description: "Use at least eight characters to keep your account protected.",
-    submit: "Update password",
+    eyebrow: "Nova senha",
+    title: "Crie uma nova senha.",
+    description: "Use pelo menos oito caracteres para proteger sua conta.",
+    submit: "Atualizar senha",
   },
 } as const;
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.includes("Missing NEXT_PUBLIC")) {
-    return "Supabase is not configured in this environment yet.";
+    return "O Supabase ainda não está configurado neste ambiente.";
   }
 
-  return "We could not complete that request. Please check your details and try again.";
+  return "Não foi possível concluir esta solicitação. Confira seus dados e tente novamente.";
 }
 
 export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: string; next?: string }) {
@@ -62,12 +62,12 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
     setMessage(null);
 
     if ((mode === "signup" || mode === "update-password") && password.length < 8) {
-      setError("Your password must contain at least eight characters.");
+      setError("Sua senha precisa ter pelo menos oito caracteres.");
       return;
     }
 
     if (mode === "signup" && password !== passwordConfirmation) {
-      setError("Your passwords do not match.");
+      setError("As senhas não coincidem.");
       return;
     }
 
@@ -100,7 +100,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
           return;
         }
 
-        setMessage("Your account is ready for confirmation. Check your email to continue.");
+        setMessage("Sua conta está pronta para confirmação. Verifique seu e-mail para continuar.");
         return;
       }
 
@@ -110,13 +110,13 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
         });
 
         if (resetError) throw resetError;
-        setMessage("If an account uses this email, a recovery link is on its way.");
+        setMessage("Se houver uma conta com este e-mail, um link de recuperação será enviado.");
         return;
       }
 
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) throw updateError;
-      setMessage("Your password was updated. You can keep practicing now.");
+      setMessage("Sua senha foi atualizada. Você já pode continuar praticando.");
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -141,17 +141,17 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
 
             {expired && (
               <div role="alert" className="alert alert-warning text-sm">
-                Your session ended. Sign in again to keep your practice space secure.
+                Sua sessão terminou. Entre novamente para manter seu espaço de prática seguro.
               </div>
             )}
             {reason === "config" && (
               <div role="alert" className="alert alert-warning text-sm">
-                Authentication is not configured in this environment yet.
+                A autenticação ainda não está configurada neste ambiente.
               </div>
             )}
             {reason === "auth_callback" && (
               <div role="alert" className="alert alert-error text-sm">
-                That authentication link is invalid or has expired. Please try again.
+                Este link de autenticação é inválido ou expirou. Tente novamente.
               </div>
             )}
             {error && (
@@ -168,14 +168,14 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
             <form className="space-y-4" onSubmit={handleSubmit}>
               {mode === "signup" && (
                 <fieldset className="fieldset">
-                  <legend className="fieldset-legend">Name</legend>
+                  <legend className="fieldset-legend">Nome</legend>
                   <input
                     className="input w-full"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     name="name"
                     autoComplete="name"
-                    placeholder="Your name"
+                    placeholder="Seu nome"
                     required
                   />
                 </fieldset>
@@ -183,7 +183,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
 
               {mode !== "update-password" && (
                 <fieldset className="fieldset">
-                  <legend className="fieldset-legend">Email</legend>
+                  <legend className="fieldset-legend">E-mail</legend>
                   <input
                     className="input w-full"
                     value={email}
@@ -199,7 +199,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
 
               {(mode === "login" || mode === "signup" || mode === "update-password") && (
                 <fieldset className="fieldset">
-                  <legend className="fieldset-legend">{mode === "update-password" ? "New password" : "Password"}</legend>
+                  <legend className="fieldset-legend">{mode === "update-password" ? "Nova senha" : "Senha"}</legend>
                   <input
                     className="input w-full"
                     value={password}
@@ -207,7 +207,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     name="password"
                     type="password"
                     autoComplete={mode === "login" ? "current-password" : "new-password"}
-                    placeholder="At least 8 characters"
+                    placeholder="Pelo menos 8 caracteres"
                     required
                   />
                 </fieldset>
@@ -215,7 +215,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
 
               {mode === "signup" && (
                 <fieldset className="fieldset">
-                  <legend className="fieldset-legend">Confirm password</legend>
+                  <legend className="fieldset-legend">Confirmar senha</legend>
                   <input
                     className="input w-full"
                     value={passwordConfirmation}
@@ -223,7 +223,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     name="password-confirmation"
                     type="password"
                     autoComplete="new-password"
-                    placeholder="Repeat your password"
+                    placeholder="Repita sua senha"
                     required
                   />
                 </fieldset>
@@ -238,17 +238,17 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
             <div className="text-center text-sm text-base-content/65">
               {mode === "login" && (
                 <>
-                  <Link href="/forgot-password" className="link link-hover font-medium text-primary">Forgot your password?</Link>
-                  <p className="mt-4">New here? <Link href="/signup" className="link link-hover font-medium text-primary">Create an account</Link></p>
+                  <Link href="/forgot-password" className="link link-hover font-medium text-primary">Esqueceu sua senha?</Link>
+                  <p className="mt-4">Ainda não tem conta? <Link href="/signup" className="link link-hover font-medium text-primary">Criar uma conta</Link></p>
                 </>
               )}
-              {mode === "signup" && <p>Already have an account? <Link href="/login" className="link link-hover font-medium text-primary">Sign in</Link></p>}
-              {mode === "forgot-password" && <p>Remembered it? <Link href="/login" className="link link-hover font-medium text-primary">Back to sign in</Link></p>}
-              {mode === "update-password" && <p>Need to start over? <Link href="/login" className="link link-hover font-medium text-primary">Back to sign in</Link></p>}
+              {mode === "signup" && <p>Já tem uma conta? <Link href="/login" className="link link-hover font-medium text-primary">Entrar</Link></p>}
+              {mode === "forgot-password" && <p>Lembrou? <Link href="/login" className="link link-hover font-medium text-primary">Voltar para entrar</Link></p>}
+              {mode === "update-password" && <p>Precisa recomeçar? <Link href="/login" className="link link-hover font-medium text-primary">Voltar para entrar</Link></p>}
             </div>
           </div>
         </div>
-        <p className="mt-6 text-center text-xs leading-5 text-base-content/50">Your account keeps your practice private and ready for the next interview.</p>
+        <p className="mt-6 text-center text-xs leading-5 text-base-content/50">Suas sessões ficam privadas na sua conta.</p>
       </section>
     </main>
   );

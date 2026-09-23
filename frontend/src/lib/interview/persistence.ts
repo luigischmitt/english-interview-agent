@@ -72,11 +72,11 @@ const toTurn = (row: TurnRow): InterviewTurn => ({
 
 const safeMessage = (error: { message?: string; code?: string }) => {
   switch (error.code) {
-    case "42501": return "You do not have permission to save this interview.";
-    case "23505": return "This interview turn was already saved.";
-    case "PGRST116": return "The interview could not be found.";
-    case "PGRST301": return "Your session expired. Sign in again to save this interview.";
-    default: return "We could not save this interview right now. You can continue locally.";
+    case "42501": return "Você não tem permissão para salvar esta entrevista.";
+    case "23505": return "Este turno da entrevista já foi salvo.";
+    case "PGRST116": return "A entrevista não foi encontrada.";
+    case "PGRST301": return "Sua sessão expirou. Entre novamente para salvar esta entrevista.";
+    default: return "Não foi possível salvar esta entrevista agora. Você pode continuar localmente.";
   }
 };
 
@@ -91,7 +91,7 @@ async function authenticatedClient(): Promise<PersistenceResult<{ client: Supaba
     const client = getSupabaseBrowserClient();
     const { data, error } = await client.auth.getUser();
     if (error) return failure(error);
-    if (!data.user) return failure({ message: "Your session has ended. Sign in again to save this interview." });
+    if (!data.user) return failure({ message: "Sua sessão terminou. Entre novamente para salvar esta entrevista." });
     return { ok: true, value: { client, userId: data.user.id } };
   } catch (error) {
     return failure({ message: error instanceof Error ? error.message : undefined });

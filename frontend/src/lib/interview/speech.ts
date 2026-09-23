@@ -59,7 +59,7 @@ export function synthesizeInterviewerQuestion(text: string, options: SpeechPlayb
 
       if (!response.ok) {
         const data = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-        return { status: "unavailable", message: data?.error?.message ?? "Audio is unavailable right now. You can continue without it." };
+        return { status: "unavailable", message: data?.error?.message ?? "O áudio não está disponível agora. Você pode continuar sem ele." };
       }
 
       objectUrl = URL.createObjectURL(await response.blob());
@@ -75,7 +75,7 @@ export function synthesizeInterviewerQuestion(text: string, options: SpeechPlayb
       return { status: "completed" };
     } catch {
       if (cancelled) return { status: "cancelled" };
-      return { status: "unavailable", message: timedOut ? "Audio took too long to respond. You can continue without it." : "Audio is unavailable right now. You can continue without it." };
+      return { status: "unavailable", message: timedOut ? "O áudio demorou demais para responder. Você pode continuar sem ele." : "O áudio não está disponível agora. Você pode continuar sem ele." };
     } finally {
       cleanup();
     }

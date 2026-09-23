@@ -8,7 +8,7 @@ import type { InterviewSession } from "@/lib/interview/types";
 import { PageIntro, SectionHeading } from "./shared";
 
 function formatPracticeDuration(milliseconds: number | null) {
-  if (milliseconds === null) return "Unavailable";
+  if (milliseconds === null) return "Indisponível";
   const totalMinutes = Math.floor(Math.max(0, milliseconds) / 60_000);
   if (totalMinutes < 1) return "<1 min";
   const hours = Math.floor(totalMinutes / 60);
@@ -25,10 +25,10 @@ function sessionDuration(session: InterviewSession) {
 }
 
 function formatSessionDate(value: string | null) {
-  if (!value) return "Date unavailable";
+  if (!value) return "Data indisponível";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Date unavailable";
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(date);
+  if (Number.isNaN(date.getTime())) return "Data indisponível";
+  return new Intl.DateTimeFormat("pt-BR", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
 export function ProgressView() {
@@ -118,11 +118,11 @@ export function ProgressView() {
   return (
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
       <PageIntro
-        title="Your progress"
-        description="A record of the interview practice you have completed so far."
+        title="Histórico de prática"
+        description="Veja as entrevistas que você já concluiu."
       />
       {isLoading ? (
-        <section className="mt-12 space-y-8" aria-busy="true" aria-label="Loading progress">
+        <section className="mt-12 space-y-8" aria-busy="true" aria-label="Carregando progresso">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="skeleton h-28 w-full rounded-box" />
             <div className="skeleton h-28 w-full rounded-box" />
@@ -133,11 +133,11 @@ export function ProgressView() {
         <section className="mt-12" role="alert">
           <div className="alert alert-error items-start">
             <div>
-              <h2 className="font-semibold">We could not load your progress.</h2>
-              <p className="mt-1 text-sm">Check your connection and try again.</p>
+              <h2 className="font-semibold">Não foi possível carregar seu progresso.</h2>
+              <p className="mt-1 text-sm">Verifique sua conexão e tente novamente.</p>
             </div>
             <Button type="button" variant="outline" onClick={() => void loadProgress()}>
-              Try again
+              Tentar novamente
             </Button>
           </div>
         </section>
@@ -145,11 +145,11 @@ export function ProgressView() {
         <section className="mt-12" data-aos="fade-up" data-aos-duration="500">
           <Card className="border-dashed">
             <div className="card-body items-start gap-4 p-6 sm:p-8">
-              <span className="badge badge-ghost">No completed sessions yet</span>
+              <span className="badge badge-ghost">Nenhuma sessão concluída ainda</span>
               <div>
-                <h2 className="text-xl font-semibold tracking-[-0.02em]">Your practice history starts here.</h2>
+                <h2 className="text-xl font-semibold tracking-[-0.02em]">Ainda não há sessões concluídas.</h2>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                  Complete an interview to see real practice time and session history. In-progress or abandoned sessions are not counted.
+                  Conclua uma entrevista para ver o tempo de prática e o histórico aqui. Sessões em andamento ou abandonadas não entram na lista.
                 </p>
               </div>
             </div>
@@ -160,36 +160,36 @@ export function ProgressView() {
           <section className="mt-12 grid gap-4 sm:grid-cols-2" data-aos="fade-up" data-aos-duration="500">
             <Card>
               <div className="card-body gap-2 p-5 sm:p-6">
-                <p className="text-sm text-muted-foreground">Completed sessions</p>
+                <p className="text-sm text-muted-foreground">Sessões concluídas</p>
                 <p className="text-3xl font-semibold tracking-[-0.04em] tabular-nums">{completedSessions.length}</p>
               </div>
             </Card>
             <Card>
               <div className="card-body gap-2 p-5 sm:p-6">
-                <p className="text-sm text-muted-foreground">Time practiced</p>
-                <p className="text-3xl font-semibold tracking-[-0.04em] tabular-nums">{hasKnownDuration ? formatPracticeDuration(practicedMilliseconds) : "Unavailable"}</p>
-                <p className="text-xs text-muted-foreground">Based on available completed session timestamps</p>
+                <p className="text-sm text-muted-foreground">Tempo de prática</p>
+                <p className="text-3xl font-semibold tracking-[-0.04em] tabular-nums">{hasKnownDuration ? formatPracticeDuration(practicedMilliseconds) : "Indisponível"}</p>
+                <p className="text-xs text-muted-foreground">Com base nos horários disponíveis das sessões concluídas</p>
               </div>
             </Card>
           </section>
           <section className="mt-12" data-aos="fade-up" data-aos-duration="450">
-            <SectionHeading title="Completed sessions" description="Your most recent interview practice first." />
+            <SectionHeading title="Sessões concluídas" description="Suas práticas de entrevista mais recentes primeiro." />
             <div className="mt-6 overflow-x-auto rounded-box border border-base-300">
               <table className="table">
-                <caption className="sr-only">Completed interview sessions</caption>
+                <caption className="sr-only">Sessões de entrevista concluídas</caption>
                 <thead>
                   <tr>
-                    <th scope="col">Date</th>
-                    <th scope="col">Role</th>
-                    <th scope="col" className="text-right">Text answers</th>
-                    <th scope="col" className="text-right">Duration</th>
+                    <th scope="col">Data</th>
+                    <th scope="col">Cargo</th>
+                    <th scope="col" className="text-right">Respostas escritas</th>
+                    <th scope="col" className="text-right">Duração</th>
                   </tr>
                 </thead>
                 <tbody>
                   {completedSessions.map((session) => (
                     <tr key={session.id}>
                       <td>{formatSessionDate(session.completedAt ?? session.startedAt)}</td>
-                      <td className="font-medium">{session.targetRole || "Interview practice"}</td>
+                      <td className="font-medium">{session.targetRole || "Prática de entrevista"}</td>
                       <td className="text-right tabular-nums">{answerCounts[session.id] ?? 0}</td>
                       <td className="text-right tabular-nums">{formatPracticeDuration(sessionDuration(session))}</td>
                     </tr>
