@@ -46,11 +46,8 @@ describe("backend routes", () => {
     expect(response.body).toEqual({ status: "ok" });
   });
 
-  it.each([
-    ["/api/v1/thinking"],
-    ["/api/v1/formulations"],
-  ])("keeps POST %s ready for its future service", async (path) => {
-    const response = await request(app).post(path).send({});
+  it("keeps POST /api/v1/formulations ready for its future service", async () => {
+    const response = await request(app).post("/api/v1/formulations").send({});
 
     expect(response.status).toBe(501);
     expect(response.body.error.code).toBe("NOT_IMPLEMENTED");

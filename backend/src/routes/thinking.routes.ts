@@ -1,8 +1,10 @@
 import { Router } from "express";
 
-import { notImplemented } from "../controllers/not-implemented.js";
+import { createThinkingController } from "../controllers/thinking-controller.js";
+import type { ThinkingService } from "../thinking/types.js";
 
-export const thinkingRouter = Router();
-
-// The request will send an interview context for the reasoning service.
-thinkingRouter.post("/", notImplemented("thinking"));
+export function createThinkingRouter(service: ThinkingService | null) {
+  const thinkingRouter = Router();
+  thinkingRouter.post("/", createThinkingController(service));
+  return thinkingRouter;
+}
