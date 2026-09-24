@@ -190,6 +190,16 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange }: M
   const isTranscribing = transcription.status === "pending";
   const busy = disabled || recorder.status === "requesting" || isTranscribing;
   const formattedDuration = `${String(Math.floor(recorder.duration / 60)).padStart(2, "0")}:${String(recorder.duration % 60).padStart(2, "0")}`;
+  const assessment = transcription.status === "available" ? transcription.value.assessment : null;
+  const metrics = assessment
+    ? [
+        { label: "Pronúncia", value: assessment.accuracyScore },
+        { label: "Fluência", value: assessment.fluencyScore },
+        { label: "Prosódia", value: assessment.prosodyScore },
+        { label: "Nota geral", value: assessment.pronunciationScore },
+      ].filter((metric): metric is { label: string; value: number } => metric.value !== null)
+    : [];
+  const flaggedWords = assessment?.words.filter((word) => word.errorType && word.errorType !== "None") ?? [];
 
   useEffect(() => {
     const recording = recorder.recording;
@@ -260,7 +270,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange }: M
       </div>
       {recorder.error && <p className="mt-3 text-sm text-error" role="alert">{recorder.error}</p>}
       {isTranscribing && <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Analisando a resposta por voz…</p>}
-      {transcription.status === "available" && <div className="mt-3 border-t border-base-300 pt-3" aria-live="polite"><p className="text-sm font-medium">Transcrição</p><p className="mt-1 text-sm leading-6 text-base-content/75">{transcription.value.transcript}</p></div>}
+      {transcription.status === "available" && <div className="mt-4 space-y-4 border-t border-base-300 pt-4" aria-live="polite"><section aria-labelledby="voice-transcript-title"><h3 id="voice-transcript-title" className="text-sm font-medium">Transcrição</h3><p className="mt-1 text-sm leading-6 text-base-content/75">{transcription.value.transcript}</p></section>{metrics.length > 0 && <section aria-labelledby="voice-metrics-title" className="border-t border-base-300 pt-4"><h3 id="voice-metrics-title" className="text-sm font-medium">Sinais da fala</h3><dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">{metrics.map((metric) => <div key={metric.label}><dt className="text-xs text-muted-foreground">{metric.label}</dt><dd className="mt-0.5 text-lg font-semibold tabular-nums">{Math.round(metric.value)}<span className="ml-0.5 text-xs font-normal text-muted-foreground">/100</span></dd></div>)}</dl><p className="mt-3 text-xs leading-5 text-muted-foreground">Dados experimentais do Azure Speech. Eles indicam aspectos da fala, não avaliam sua competência técnica nem definem a qualidade profissional da resposta.</p></section>}{flaggedWords.length > 0 && <section aria-labelledby="flagged-words-title" className="border-t border-base-300 pt-4"><h3 id="flagged-words-title" className="text-sm font-medium">Palavras para revisar</h3><ul className="mt-2 flex flex-wrap gap-2" aria-label="Palavras sinalizadas pelo Azure Speech">{flaggedWords.map((word, index) => <li key={`${word.word}-${index}`} className="badge badge-outline gap-1.5 py-3 text-xs"><span>{word.word}</span>{word.accuracyScore !== null && <span className="text-muted-foreground">{Math.round(word.accuracyScore)}/100</span>}</li>)}</ul></section>}</div>}
       {transcription.status === "failed" && <p className="mt-3 text-sm text-warning-content" role="status">{transcription.message} Você pode continuar com uma resposta escrita.</p>}
     </div>
   );
