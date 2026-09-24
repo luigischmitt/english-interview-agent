@@ -12,18 +12,20 @@ prática da resposta em inglês da análise futura de áudio.
   respostas escritas e tela de progresso.
 - Reprodução opcional da pergunta do entrevistador pelo backend de speech;
   o texto da pergunta sempre permanece visível.
-- Captura opcional de microfone usando `MediaRecorder`. Ao concluir uma
-  gravação de até 30 segundos, o navegador a converte para WAV e a envia ao
-  backend para transcrição no Azure Speech ou, em teste local, nos modelos
-  Whisper configurados via OpenRouter. O áudio não é
+- Captura opcional de microfone usando `MediaRecorder`. O navegador transmite
+  WebM/MP4 em blocos de 250 ms pelo WebSocket do backend. VAD encerra após
+  1,5 segundo de silêncio; o botão manual continua disponível. O backend
+  mantém o áudio em memória e chama Whisper Large V3 Turbo uma vez após fala
+  de pelo menos 600 ms, com limite de 30 segundos e 4 MiB. O áudio não é
   reproduzido nem salvo; a transcrição pode compor a resposta escrita privada
   da sessão.
 - Sessões e turnos de texto salvos nas tabelas Supabase quando a conta e a
   conexão estão disponíveis. As políticas RLS limitam os dados ao usuário.
 
 Não há captura de câmera, avatar de entrevistador real, follow-ups gerados
-por IA ou relatório de feedback conectado. A transcrição atual é concluída
-por resposta; não há streaming ou feedback durante a fala.
+por IA ou relatório de feedback conectado. O áudio é transmitido em blocos,
+mas a transcrição só é solicitada uma vez após a resposta; não há transcrição
+ou feedback ao vivo durante a fala.
 Os blocos visuais de câmera são apenas parte da sala de prática.
 
 ## Variáveis de ambiente
@@ -121,12 +123,13 @@ eles não são uma cópia offline garantida. O estado exibido deve permanecer
 
 ## Áudio, transcrição e privacidade
 
-O microfone é opcional. Ao concluir uma resposta por voz de até 30 segundos,
-o áudio é enviado ao backend e encaminhado ao transcritor escolhido para
-gerar a transcrição. O app não salva,
-reproduz ou persiste o arquivo de áudio. A transcrição resultante pode ser
-salva como turno de texto da sessão privada. Não há streaming, transcrição ao
-vivo, upload persistente de áudio ou relatório final de feedback conectado.
+O microfone é opcional. Durante uma resposta por voz de até 30 segundos, o
+navegador envia blocos WebM/MP4 ao backend, que os mantém em memória e
+encaminha o áudio completo ao Whisper Large V3 Turbo uma vez ao detectar
+silêncio ou receber a ação manual de conclusão. O app não salva, reproduz ou
+persiste o áudio. A transcrição resultante pode ser salva como turno de texto
+da sessão privada. Não há transcrição ao vivo, upload persistente de áudio ou
+relatório final de feedback conectado.
 
 ## Validação antes de abrir uma PR
 
@@ -153,5 +156,5 @@ logs, commits ou ambientes de teste compartilhados.
 - Next.js com App Router e TypeScript
 - Supabase Auth/SSR e Postgres com RLS
 - Tailwind CSS, daisyUI e componentes locais
-- MediaRecorder para captura local opcional
+- MediaRecorder e WebSocket para captura e envio opcional de áudio
 - Backend Express + Kokoro para fala do entrevistador

@@ -7,7 +7,9 @@ export type TranscriptionResult = {
   transcript: string;
 };
 
+export type AudioFormat = "wav" | "webm" | "mp4";
+
 export interface TranscriptionService {
   availableProviders(): TranscriptionProvider[];
-  transcribe(audio: Buffer, provider: TranscriptionProvider): Promise<TranscriptionResult>;
+  transcribe(audio: Buffer, provider: TranscriptionProvider, format?: AudioFormat): Promise<TranscriptionResult>;
 }

@@ -1,6 +1,6 @@
 # Backend
 
-The backend provides interviewer speech through Kokoro and completed-response transcription through Azure Speech or OpenRouter Whisper. Reasoning and English-formulation routes remain placeholders.
+The backend provides interviewer speech through Kokoro and completed-response transcription through OpenRouter Whisper Large V3 Turbo. Reasoning and English-formulation routes remain placeholders.
 
 ## Run the complete local environment
 
@@ -84,6 +84,7 @@ not a gate for interview practice.
 | `GET` | `/health` | Returns `{ "status": "ok" }`. |
 | `GET` | `/api/v1/transcriptions/providers` | Returns the configured transcription choices for the local comparison selector. |
 | `POST` | `/api/v1/transcriptions` | Receives a completed 16 kHz mono WAV response (maximum 30 seconds), returns a transcription from the selected configured provider. Audio is not persisted. |
+| `WS` | `/api/v1/transcriptions/stream` | Receives `start`, RMS `level`, binary audio, and `finalize` or `cancel` messages. Keeps up to 30 seconds / 4 MiB in memory and calls Whisper Turbo once on completion. |
 | `POST` | `/api/v1/thinking` | Reserved for interview-context reasoning; returns `501` until connected. |
 | `POST` | `/api/v1/formulations` | Reserved for answer formulation in English; returns `501` until connected. |
 | `GET` | `/api/v1/speech/health` | Reports whether the configured speech provider is ready. |
@@ -102,7 +103,7 @@ AZURE_SPEECH_REGION=brazilsouth
 OPENROUTER_API_KEY=<your-openrouter-key>
 ```
 
-When `OPENROUTER_API_KEY` is present, the local interview room exposes a comparison selector with Azure Speech, Whisper Large V3, and Whisper Large V3 Turbo. The browser converts a completed response to 16 kHz mono WAV before sending it to this backend route. The backend does not store audio or expose either provider key. This first implementation accepts responses up to 30 seconds and does not stream audio over WebSocket.
+`OPENROUTER_API_KEY` enables Whisper Large V3 Turbo for the streaming response path. The browser sends WebM or MP4 chunks and VAD levels over WebSocket; silence after 1.5 seconds or the manual finish button triggers a single transcription call. The backend does not persist audio or expose the provider key. The legacy WAV route remains available for compatibility.
 
 ### Generate interviewer speech
 

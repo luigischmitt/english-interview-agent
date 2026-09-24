@@ -1,177 +1,11 @@
 "use client";
 
-import { Pause, Play, Square, Mic, LoaderCircle } from "lucide-react";
+import { LoaderCircle, Mic, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { requestAvailableTranscriptionProviders, requestVoiceTranscription, type TranscriptionProvider, type VoiceTranscription } from "@/lib/interview/transcription";
+import type { VoiceTranscription } from "@/lib/interview/transcription";
 
-type RecorderStatus = "idle" | "requesting" | "recording" | "paused" | "ready" | "error";
-
-type MicrophoneRecorder = {
-  status: RecorderStatus;
-  duration: number;
-  error: string | null;
-  hasRecording: boolean;
-  recording: Blob | null;
-  start: () => void;
-  pause: () => void;
-  resume: () => void;
-  stop: () => void;
-  cancel: () => void;
-};
-
-const getMicrophoneError = (error: unknown) => {
-  if (error instanceof DOMException) {
-    if (error.name === "NotAllowedError" || error.name === "SecurityError") {
-      return "A permissão para o microfone foi negada. Você pode escrever sua resposta.";
-    }
-    if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
-      return "Nenhum microfone foi encontrado. Você pode escrever sua resposta.";
-    }
-    if (error.name === "NotReadableError" || error.name === "TrackStartError") {
-      return "O microfone já está em uso. Você pode escrever sua resposta.";
-    }
-  }
-  return "A captura do microfone não está disponível. Você pode escrever sua resposta.";
-};
-
-export function useMicrophoneRecorder(): MicrophoneRecorder {
-  const [status, setStatus] = useState<RecorderStatus>("idle");
-  const [duration, setDuration] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [recording, setRecording] = useState<Blob | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<number | null>(null);
-  const startedAtRef = useRef(0);
-  const generationRef = useRef(0);
-  const mountedRef = useRef(true);
-
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  const stopTracks = useCallback((stream: MediaStream | null = streamRef.current) => {
-    stream?.getTracks().forEach((track) => track.stop());
-    if (streamRef.current === stream) streamRef.current = null;
-  }, []);
-
-  const cancel = useCallback(() => {
-    generationRef.current += 1;
-    clearTimer();
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-    recorderRef.current = null;
-    stopTracks();
-    chunksRef.current = [];
-    setStatus("idle");
-    setDuration(0);
-    setRecording(null);
-  }, [clearTimer, stopTracks]);
-
-  const start = useCallback(async () => {
-    if (status === "recording" || status === "paused" || status === "requesting") return;
-    const generation = generationRef.current + 1;
-    generationRef.current = generation;
-    setError(null);
-    setStatus("requesting");
-
-    try {
-      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-        throw new Error("unsupported");
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (!mountedRef.current || generationRef.current !== generation) {
-        stopTracks(stream);
-        return;
-      }
-      streamRef.current = stream;
-      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type));
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      if (!mountedRef.current || generationRef.current !== generation) {
-        stopTracks(stream);
-        return;
-      }
-      recorderRef.current = recorder;
-      chunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (mountedRef.current && generationRef.current === generation && recorderRef.current === recorder && event.data.size > 0) chunksRef.current.push(event.data);
-      };
-      recorder.onerror = () => {
-        stopTracks(stream);
-        if (!mountedRef.current || generationRef.current !== generation || recorderRef.current !== recorder) return;
-        clearTimer();
-        recorderRef.current = null;
-        setStatus("error");
-        setError("A gravação falhou. Você pode escrever sua resposta.");
-      };
-      recorder.onstop = () => {
-        stopTracks(stream);
-        if (!mountedRef.current || generationRef.current !== generation || recorderRef.current !== recorder) return;
-        clearTimer();
-        recorderRef.current = null;
-        if (chunksRef.current.length > 0) {
-          // Keep the Blob in component state only; it is never uploaded, played, or persisted.
-          setRecording(new Blob(chunksRef.current, { type: recorder.mimeType }));
-          setStatus("ready");
-        } else {
-          setStatus("error");
-          setError("Nenhum áudio foi gravado. Você pode escrever sua resposta.");
-        }
-      };
-      recorder.start(250);
-      startedAtRef.current = Date.now();
-      setDuration(0);
-      setStatus("recording");
-      timerRef.current = window.setInterval(() => setDuration(Math.floor((Date.now() - startedAtRef.current) / 1000)), 250);
-    } catch (captureError) {
-      if (!mountedRef.current || generationRef.current !== generation) return;
-      stopTracks();
-      setStatus("error");
-      setError(captureError instanceof Error && captureError.message === "unsupported" ? "Este navegador não pode gravar áudio. Você pode escrever sua resposta." : getMicrophoneError(captureError));
-    }
-  }, [clearTimer, status, stopTracks]);
-
-  const pause = useCallback(() => {
-    if (recorderRef.current?.state === "recording") {
-      recorderRef.current.pause();
-      clearTimer();
-      setStatus("paused");
-    }
-  }, [clearTimer]);
-
-  const resume = useCallback(() => {
-    if (recorderRef.current?.state === "paused") {
-      recorderRef.current.resume();
-      startedAtRef.current = Date.now() - duration * 1000;
-      timerRef.current = window.setInterval(() => setDuration(Math.floor((Date.now() - startedAtRef.current) / 1000)), 250);
-      setStatus("recording");
-    }
-  }, [duration]);
-
-  const stop = useCallback(() => {
-    if (recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
-    else if (status === "recording" || status === "paused") setStatus("idle");
-  }, [status]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      cancel();
-    };
-  }, [cancel]);
-
-  return { status, duration, error, hasRecording: recording !== null, recording, start, pause, resume, stop, cancel };
-}
-
-type MicrophoneCaptureProps = {
-  disabled?: boolean;
-  onTranscriptionChange: (state: VoiceTranscriptionState) => void;
-};
+type RecorderStatus = "idle" | "requesting" | "recording" | "finalizing" | "error";
+type StreamMessage = { type?: string; sessionId?: string; provider?: VoiceTranscription["provider"]; transcript?: string; message?: string };
 
 export type VoiceTranscriptionState =
   | { status: "idle" }
@@ -179,113 +13,366 @@ export type VoiceTranscriptionState =
   | { status: "available"; value: VoiceTranscription }
   | { status: "failed"; message: string };
 
-const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
-const maximumAssessmentDuration = 30;
-const providerLabels: Record<TranscriptionProvider, string> = {
-  azure: "Azure Speech",
-  "whisper-large-v3": "Whisper Large V3",
-  "whisper-large-v3-turbo": "Whisper Large V3 Turbo",
+type MicrophoneCaptureProps = {
+  disabled?: boolean;
+  onTranscriptionChange: (state: VoiceTranscriptionState) => void;
 };
 
-export function MicrophoneCapture({ disabled = false, onTranscriptionChange }: MicrophoneCaptureProps) {
-  const recorder = useMicrophoneRecorder();
-  const [transcription, setTranscription] = useState<VoiceTranscriptionState>({ status: "idle" });
-  const [availableProviders, setAvailableProviders] = useState<TranscriptionProvider[]>(["azure"]);
-  const [provider, setProvider] = useState<TranscriptionProvider>("azure");
-  const [transcriptionAttempt, setTranscriptionAttempt] = useState(0);
-  const providerRef = useRef<TranscriptionProvider>("azure");
-  const isRecording = recorder.status === "recording";
-  const isPaused = recorder.status === "paused";
-  const isTranscribing = transcription.status === "pending";
-  const busy = disabled || recorder.status === "requesting" || isTranscribing;
-  const formattedDuration = `${String(Math.floor(recorder.duration / 60)).padStart(2, "0")}:${String(recorder.duration % 60).padStart(2, "0")}`;
+const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
+const maxDurationSeconds = 30;
+const sampleIntervalMs = 100;
+const preRollChunkCount = 1;
 
-  useEffect(() => {
-    let cancelled = false;
-    void requestAvailableTranscriptionProviders(`${backendBaseUrl}/api/v1/transcriptions`).then((providers) => {
-      if (cancelled || providers.length === 0) return;
-      setAvailableProviders(providers);
-      setProvider((current) => {
-        const nextProvider = providers.includes(current) ? current : providers[0];
-        providerRef.current = nextProvider;
-        return nextProvider;
-      });
-    });
-    return () => { cancelled = true; };
+function measureRms(analyser: AnalyserNode, buffer: Float32Array<ArrayBuffer>): number {
+  analyser.getFloatTimeDomainData(buffer);
+  let sum = 0;
+  for (const value of buffer) sum += value * value;
+  return Math.sqrt(sum / buffer.length);
+}
+
+function getSpeechThreshold(samples: number[]): number {
+  const noiseLevel = samples.length ? samples.reduce((sum, level) => sum + level, 0) / samples.length : 0;
+  return Math.max(0.025, Math.min(0.15, noiseLevel * 2.5));
+}
+
+function getStreamUrl(): string {
+  const url = new URL("/api/v1/transcriptions/stream", backendBaseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}
+
+function microphoneError(error: unknown): string {
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError" || error.name === "SecurityError") return "A permissão para o microfone foi negada. Você pode escrever sua resposta.";
+    if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") return "Nenhum microfone foi encontrado. Você pode escrever sua resposta.";
+    if (error.name === "NotReadableError" || error.name === "TrackStartError") return "O microfone já está em uso. Você pode escrever sua resposta.";
+  }
+  return "A captura de áudio não está disponível agora. Você pode escrever sua resposta.";
+}
+
+export function MicrophoneCapture({ disabled = false, onTranscriptionChange }: MicrophoneCaptureProps) {
+  const [status, setStatus] = useState<RecorderStatus>("idle");
+  const [duration, setDuration] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [transcription, setTranscription] = useState<VoiceTranscriptionState>({ status: "idle" });
+  const socketRef = useRef<WebSocket | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const levelTimerRef = useRef<number | null>(null);
+  const durationTimerRef = useRef<number | null>(null);
+  const connectionTimeoutRef = useRef<number | null>(null);
+  const startedAtRef = useRef(0);
+  const preRollRef = useRef<Blob[]>([]);
+  const containerHeaderSentRef = useRef(false);
+  const speechStartedRef = useRef(false);
+  const stopReasonRef = useRef<"manual" | "silence" | "cancel">("manual");
+  const generationRef = useRef(0);
+  const onTranscriptionChangeRef = useRef(onTranscriptionChange);
+
+  useEffect(() => { onTranscriptionChangeRef.current = onTranscriptionChange; }, [onTranscriptionChange]);
+
+  const releaseCapture = useCallback(() => {
+    if (levelTimerRef.current !== null) window.clearInterval(levelTimerRef.current);
+    if (durationTimerRef.current !== null) window.clearInterval(durationTimerRef.current);
+    if (connectionTimeoutRef.current !== null) window.clearTimeout(connectionTimeoutRef.current);
+    levelTimerRef.current = null;
+    durationTimerRef.current = null;
+    connectionTimeoutRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    const context = audioContextRef.current;
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    if (context && context.state !== "closed") void context.close();
   }, []);
 
-  useEffect(() => {
-    const recording = recorder.recording;
-    if (!recording) return;
+  const fail = useCallback((message: string) => {
+    generationRef.current += 1;
+    stopReasonRef.current = "cancel";
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    releaseCapture();
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "cancel" }));
+    if (socket) {
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.onerror = null;
+    }
+    socket?.close();
+    recorderRef.current = null;
+    containerHeaderSentRef.current = false;
+    preRollRef.current = [];
+    setStatus("error");
+    setError(message);
+    const failed = { status: "failed" as const, message };
+    setTranscription(failed);
+    onTranscriptionChangeRef.current(failed);
+  }, [releaseCapture]);
 
-    let cancelled = false;
-    const transcribe = async () => {
-      if (recorder.duration > maximumAssessmentDuration) {
-        const failed = { status: "failed" as const, message: "Para avaliar a fala, mantenha cada resposta por voz em até 30 segundos." };
-        if (!cancelled) {
-          setTranscription(failed);
-          onTranscriptionChange(failed);
-        }
+  const stopRecording = useCallback((reason: "manual" | "silence") => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    stopReasonRef.current = reason;
+    setStatus("finalizing");
+    recorder.stop();
+  }, []);
+
+  const cancelRecording = useCallback(() => {
+    generationRef.current += 1;
+    stopReasonRef.current = "cancel";
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    releaseCapture();
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "cancel" }));
+    if (socket) {
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.onerror = null;
+    }
+    socket?.close();
+    recorderRef.current = null;
+    containerHeaderSentRef.current = false;
+    preRollRef.current = [];
+    setStatus("idle");
+    setDuration(0);
+    setError(null);
+    setTranscription({ status: "idle" });
+    onTranscriptionChangeRef.current({ status: "idle" });
+  }, [releaseCapture]);
+
+  const startRecording = useCallback(async () => {
+    if (status === "requesting" || status === "recording" || status === "finalizing" || disabled) return;
+    setError(null);
+    setStatus("requesting");
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    setDuration(0);
+    setTranscription({ status: "idle" });
+    onTranscriptionChangeRef.current({ status: "idle" });
+    speechStartedRef.current = false;
+    stopReasonRef.current = "manual";
+    containerHeaderSentRef.current = false;
+    preRollRef.current = [];
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined" || typeof WebSocket === "undefined") throw new Error("unsupported");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (generationRef.current !== generation) {
+        stream.getTracks().forEach((track) => track.stop());
         return;
       }
+      streamRef.current = stream;
+      const context = new AudioContext();
+      audioContextRef.current = context;
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 1024;
+      context.createMediaStreamSource(stream).connect(analyser);
+      analyserRef.current = analyser;
+      await context.resume();
 
-      const pending = { status: "pending" as const };
-      setTranscription(pending);
-      onTranscriptionChange(pending);
-
-      try {
-        const value = await requestVoiceTranscription(recording, `${backendBaseUrl}/api/v1/transcriptions`, providerRef.current);
-        if (cancelled) return;
-        const available = { status: "available" as const, value };
-        setTranscription(available);
-        onTranscriptionChange(available);
-      } catch (error) {
-        if (cancelled) return;
-        const failed = { status: "failed" as const, message: error instanceof Error ? error.message : "A transcrição não está disponível agora." };
-        setTranscription(failed);
-        onTranscriptionChange(failed);
+      const calibrationSamples: number[] = [];
+      const calibrationBuffer = new Float32Array(new ArrayBuffer(analyser.fftSize));
+      const calibrationStart = performance.now();
+      while (performance.now() - calibrationStart < 500) {
+        if (generationRef.current !== generation) return;
+        calibrationSamples.push(measureRms(analyser, calibrationBuffer));
+        await new Promise((resolve) => window.setTimeout(resolve, sampleIntervalMs));
       }
-    };
+      const speechThreshold = getSpeechThreshold(calibrationSamples);
 
-    void transcribe();
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type));
+      if (!mimeType) throw new Error("unsupported");
+      const recorder = new MediaRecorder(stream, { mimeType });
+      recorderRef.current = recorder;
 
-    return () => {
-      cancelled = true;
-    };
-  }, [onTranscriptionChange, recorder.duration, recorder.recording, transcriptionAttempt]);
+      const socket = new WebSocket(getStreamUrl());
+      socket.binaryType = "arraybuffer";
+      socketRef.current = socket;
+      const ready = new Promise<void>((resolve, reject) => {
+        let connectionReady = false;
+        const connectionTimeout = window.setTimeout(() => reject(new Error("timeout")), 5_000);
+        connectionTimeoutRef.current = connectionTimeout;
+        socket.onopen = () => socket.send(JSON.stringify({ type: "start", mimeType: mimeType.startsWith("audio/webm") ? "audio/webm" : "audio/mp4", speechThreshold }));
+        socket.onerror = () => { window.clearTimeout(connectionTimeout); connectionTimeoutRef.current = null; reject(new Error("connection")); };
+        socket.onmessage = (event) => {
+          if (generationRef.current !== generation) return;
+          let message: StreamMessage;
+          try { message = JSON.parse(String(event.data)) as StreamMessage; } catch { return; }
+          if (message.type === "ready") {
+            connectionReady = true;
+            window.clearTimeout(connectionTimeout);
+            connectionTimeoutRef.current = null;
+            resolve();
+            return;
+          }
+          if (message.type === "error" && !connectionReady) {
+            window.clearTimeout(connectionTimeout);
+            connectionTimeoutRef.current = null;
+            reject(new Error(message.message ?? "Audio transcription is unavailable right now. You can continue with a written answer."));
+            return;
+          }
+          if (message.type === "speech-started") {
+            speechStartedRef.current = true;
+            preRollRef.current.forEach((chunk) => { if (socket.readyState === WebSocket.OPEN) socket.send(chunk); });
+            preRollRef.current = [];
+            return;
+          }
+          if (message.type === "silence-detected") {
+            stopRecording("silence");
+            return;
+          }
+          if (message.type === "finalizing") {
+            setStatus("finalizing");
+            return;
+          }
+          if (message.type === "result" && message.provider && message.transcript) {
+            const available = { status: "available" as const, value: { provider: message.provider, transcript: message.transcript } };
+            setTranscription(available);
+            setStatus("idle");
+            onTranscriptionChangeRef.current(available);
+            releaseCapture();
+            socketRef.current = null;
+            socket.onmessage = null;
+            socket.onclose = null;
+            socket.onerror = null;
+            return;
+          }
+          if (message.type === "error") fail(message.message ?? "A transcrição não está disponível agora. Você pode escrever sua resposta.");
+        };
+        socket.onclose = (event) => {
+          if (socketRef.current === socket && event.code !== 1000) {
+            window.clearTimeout(connectionTimeout);
+            connectionTimeoutRef.current = null;
+            reject(new Error("connection"));
+            fail("A conexão de áudio foi interrompida. Você pode escrever sua resposta.");
+          }
+        };
+      });
+      await ready;
+      if (generationRef.current !== generation) {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "cancel" }));
+        socket.close();
+        return;
+      }
+      if (socket.readyState !== WebSocket.OPEN) throw new Error("connection");
 
-  const clearRecording = () => {
-    recorder.cancel();
-    const idle = { status: "idle" as const };
-    setTranscription(idle);
-    onTranscriptionChange(idle);
-  };
+      recorder.ondataavailable = (event) => {
+        if (generationRef.current !== generation) return;
+        if (event.data.size === 0) return;
+        if (!containerHeaderSentRef.current) {
+          containerHeaderSentRef.current = true;
+          if (socket.readyState === WebSocket.OPEN) socket.send(event.data);
+          return;
+        }
+        if (speechStartedRef.current) {
+          if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 1024 * 1024) socket.send(event.data);
+          else fail("A conexão de áudio está lenta. Você pode escrever sua resposta.");
+          return;
+        }
+        preRollRef.current.push(event.data);
+        if (preRollRef.current.length > preRollChunkCount) preRollRef.current.shift();
+      };
+      recorder.onerror = () => { if (generationRef.current === generation) fail("A gravação falhou. Você pode escrever sua resposta."); };
+      recorder.onstop = () => {
+        releaseCapture();
+        recorderRef.current = null;
+        if (generationRef.current !== generation) return;
+        if (stopReasonRef.current === "cancel") return;
+        if (!speechStartedRef.current) {
+          fail("Não detectei fala nesta gravação. Você pode escrever sua resposta.");
+          return;
+        }
+        if (socket.readyState !== WebSocket.OPEN) {
+          fail("A conexão de áudio foi interrompida. Você pode escrever sua resposta.");
+          return;
+        }
+        setStatus("finalizing");
+        const reason = stopReasonRef.current;
+        socket.send(JSON.stringify({ type: "finalize", reason }));
+        const pending = { status: "pending" as const };
+        setTranscription(pending);
+        onTranscriptionChangeRef.current(pending);
+      };
+      recorder.start(250);
+      startedAtRef.current = Date.now();
+      setStatus("recording");
+      durationTimerRef.current = window.setInterval(() => {
+        if (generationRef.current !== generation) return;
+        const seconds = Math.floor((Date.now() - startedAtRef.current) / 1_000);
+        setDuration(seconds);
+        if (seconds >= maxDurationSeconds) stopRecording("manual");
+      }, 200);
+      const levelBuffer = new Float32Array(new ArrayBuffer(analyser.fftSize));
+      levelTimerRef.current = window.setInterval(() => {
+        if (generationRef.current !== generation) return;
+        if (socket.readyState === WebSocket.OPEN && analyserRef.current) {
+          socket.send(JSON.stringify({ type: "level", value: measureRms(analyser, levelBuffer) }));
+        }
+      }, sampleIntervalMs);
+    } catch (captureError) {
+      if (generationRef.current !== generation) return;
+      fail(captureError instanceof Error && captureError.message === "unsupported"
+        ? "Este navegador não pode transmitir áudio. Você pode escrever sua resposta."
+        : captureError instanceof Error && captureError.message === "timeout"
+          ? "A conexão de áudio demorou para responder. Você pode escrever sua resposta."
+          : captureError instanceof Error && captureError.message === "connection"
+            ? "A conexão de áudio falhou. Você pode escrever sua resposta."
+          : microphoneError(captureError));
+    }
+  }, [disabled, fail, releaseCapture, status, stopRecording]);
+
+  useEffect(() => () => {
+    generationRef.current += 1;
+    if (connectionTimeoutRef.current !== null) window.clearTimeout(connectionTimeoutRef.current);
+    connectionTimeoutRef.current = null;
+    stopReasonRef.current = "cancel";
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    releaseCapture();
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "cancel" }));
+    if (socket) {
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.onerror = null;
+    }
+    socket?.close();
+  }, [releaseCapture]);
+
+  const isRecording = status === "recording";
+  const isPending = status === "requesting" || status === "finalizing" || transcription.status === "pending";
+  const formattedDuration = `${String(Math.floor(duration / 60)).padStart(2, "0")}:${String(duration % 60).padStart(2, "0")}`;
 
   return (
-    <div className="rounded-lg border border-dashed border-base-300 bg-base-200/60 p-4" aria-label="Resposta opcional pelo microfone">
+    <section className="rounded-lg border border-dashed border-base-300 bg-base-200/60 p-4" aria-label="Resposta opcional pelo microfone">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Mic className="size-4 text-primary" aria-hidden="true" />
           <div>
             <p className="text-sm font-medium">Responda com sua voz <span className="font-normal text-muted-foreground">(opcional)</span></p>
             <p className="text-xs text-muted-foreground" aria-live="polite">
-              {isRecording ? `Gravando · ${formattedDuration}` : isPaused ? `Pausado · ${formattedDuration}` : isTranscribing ? "Enviando para transcrição…" : transcription.status === "available" ? "Transcrição pronta." : recorder.hasRecording ? "Resposta por voz pronta para transcrição." : "Conclua uma gravação para receber a transcrição."}
+              {isRecording ? `Gravando · ${formattedDuration}` : status === "requesting" ? "Conectando ao transcritor…" : isPending ? "Preparando a transcrição…" : transcription.status === "available" ? "Transcrição pronta." : status === "error" ? "A gravação não foi concluída." : "A gravação para após uma pausa ou pelo botão."}
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!isRecording && !isPaused && !recorder.hasRecording && <button type="button" className="btn btn-sm btn-outline gap-2" onClick={() => void recorder.start()} disabled={busy}><Mic className="size-4" aria-hidden="true" />{recorder.status === "requesting" ? "Solicitando…" : "Iniciar gravação"}</button>}
-          {isRecording && <button type="button" className="btn btn-sm btn-ghost gap-2" onClick={recorder.pause}><Pause className="size-4" aria-hidden="true" />Pausar</button>}
-          {isPaused && <button type="button" className="btn btn-sm btn-ghost gap-2" onClick={recorder.resume}><Play className="size-4" aria-hidden="true" />Retomar</button>}
-          {(isRecording || isPaused) && <><button type="button" className="btn btn-sm btn-primary gap-2" onClick={recorder.stop}><Square className="size-3 fill-current" aria-hidden="true" />Concluir gravação</button><button type="button" className="btn btn-sm btn-ghost" onClick={clearRecording}>Cancelar</button></>}
-          {recorder.hasRecording && <><button type="button" className="btn btn-sm btn-outline" onClick={() => setTranscriptionAttempt((attempt) => attempt + 1)} disabled={disabled || isTranscribing}>Transcrever novamente</button><button type="button" className="btn btn-sm btn-ghost" onClick={clearRecording} disabled={disabled || isTranscribing}>Limpar</button></>}
+          {!isRecording && status !== "requesting" && status !== "finalizing" && transcription.status !== "available" && <button type="button" className="btn btn-sm btn-outline gap-2" onClick={() => void startRecording()} disabled={disabled}><Mic className="size-4" aria-hidden="true" />{status === "error" ? "Tentar de novo" : "Iniciar gravação"}</button>}
+          {isRecording && <><button type="button" className="btn btn-sm btn-primary gap-2" onClick={() => stopRecording("manual")}><Square className="size-3 fill-current" aria-hidden="true" />Concluir resposta</button><button type="button" className="btn btn-sm btn-ghost gap-2" onClick={cancelRecording}><X className="size-4" aria-hidden="true" />Cancelar</button></>}
+          {isPending && <LoaderCircle className="size-5 animate-spin self-center text-muted-foreground" aria-hidden="true" />}
+          {transcription.status === "available" && <button type="button" className="btn btn-sm btn-ghost" onClick={cancelRecording} disabled={disabled}>Limpar transcrição</button>}
         </div>
       </div>
-      {availableProviders.length > 1 && <fieldset className="fieldset mt-4 max-w-sm gap-1 border-t border-base-300 pt-4"><legend className="fieldset-legend text-sm font-medium">Transcritor em teste</legend><select className="select select-sm w-full" value={provider} onChange={(event) => { const nextProvider = event.target.value as TranscriptionProvider; providerRef.current = nextProvider; setProvider(nextProvider); }} disabled={isRecording || isPaused || isTranscribing || disabled} aria-describedby="transcription-provider-note">{availableProviders.map((availableProvider) => <option key={availableProvider} value={availableProvider}>{providerLabels[availableProvider]}</option>)}</select><p id="transcription-provider-note" className="label text-muted-foreground">Depois de gravar, troque a opção e use “Transcrever novamente” para comparar o mesmo áudio.</p></fieldset>}
-      {recorder.error && <p className="mt-3 text-sm text-error" role="alert">{recorder.error}</p>}
-      {isTranscribing && <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Transcrevendo a resposta por voz…</p>}
-      {transcription.status === "available" && <div className="mt-4 border-t border-base-300 pt-4" aria-live="polite"><section aria-labelledby="voice-transcript-title"><div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><h3 id="voice-transcript-title" className="text-sm font-medium">Transcrição</h3><p className="text-xs text-muted-foreground">{providerLabels[transcription.value.provider]}</p></div><p className="mt-1 text-sm leading-6 text-base-content/75">{transcription.value.transcript}</p></section></div>}
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">Whisper Large V3 Turbo · até 30 segundos. O áudio é enviado em blocos e removido da memória após a transcrição.</p>
+      {error && transcription.status !== "failed" && <p className="mt-3 text-sm text-error" role="alert">{error}</p>}
+      {transcription.status === "available" && <div className="mt-4 border-t border-base-300 pt-4" aria-live="polite"><h3 className="text-sm font-medium">Transcrição</h3><p className="mt-1 text-sm leading-6 text-base-content/75">{transcription.value.transcript}</p></div>}
       {transcription.status === "failed" && <p className="mt-3 text-sm text-warning-content" role="status">{transcription.message} Você pode continuar com uma resposta escrita.</p>}
-    </div>
+    </section>
   );
 }
