@@ -2,20 +2,18 @@
 
 import AOS from "aos";
 import gsap from "gsap";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   Home,
   LineChart,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   Play,
   SlidersHorizontal,
   Sun,
   Target,
   Video,
-  Volume2,
 } from "lucide-react";
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -73,13 +71,18 @@ const warmUpPrompts = [
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <div className={`flex items-center ${compact ? "justify-center" : "gap-3"}`}>
-      <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
-        <Volume2 className="size-4" aria-hidden="true" />
-      </span>
+    <div className={`flex items-center ${compact ? "justify-center" : "gap-2"}`}>
+      <Image
+        src="/interview-agent-logo.jpg"
+        alt="English Interview Agent"
+        width={40}
+        height={40}
+        priority
+        className="size-10 shrink-0 rounded-lg object-cover"
+      />
       <span
         className={`overflow-hidden whitespace-nowrap text-sm font-semibold tracking-[-0.01em] transition-[width,opacity] duration-200 ${
-          compact ? "w-0 opacity-0" : "w-40 opacity-100"
+          compact ? "w-0 opacity-0" : "w-36 opacity-100 sm:w-40"
         }`}
       >
         English Interview Agent
@@ -92,18 +95,21 @@ function Navigation({
   view,
   onNavigate,
   sidebarExpanded,
-  onToggleSidebar,
+  onExpandSidebar,
+  onCollapseSidebar,
 }: {
   view: View;
   onNavigate: (view: View) => void;
   sidebarExpanded: boolean;
-  onToggleSidebar: () => void;
+  onExpandSidebar: () => void;
+  onCollapseSidebar: () => void;
 }) {
   const renderNavigationItem = ({ id, label, icon: Icon }: (typeof navigationItems)[number]) => (
     <li key={id} className="flex">
       <button
         type="button"
         aria-label={label}
+        title={sidebarExpanded ? undefined : label}
         aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
         onClick={() => onNavigate(id)}
         className={`flex h-11 w-full items-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
@@ -125,25 +131,25 @@ function Navigation({
       <aside
         id="desktop-sidebar"
         aria-label="Desktop navigation"
-        className={`sticky top-0 hidden h-dvh max-h-dvh min-h-0 shrink-0 self-start overflow-y-auto border-r bg-sidebar px-4 py-5 transition-[width] duration-200 lg:flex lg:flex-col ${
+        onPointerEnter={onExpandSidebar}
+        onPointerLeave={(event) => {
+          if (!event.currentTarget.contains(document.activeElement)) onCollapseSidebar();
+        }}
+        onFocusCapture={onExpandSidebar}
+        onBlurCapture={(event) => {
+          if (
+            !event.currentTarget.contains(event.relatedTarget as Node | null) &&
+            !event.currentTarget.matches(":hover")
+          ) {
+            onCollapseSidebar();
+          }
+        }}
+        className={`sticky top-0 hidden h-dvh max-h-dvh min-h-0 shrink-0 self-start overflow-y-auto border-r bg-sidebar px-4 py-5 transition-[width] duration-300 ease-in-out lg:flex lg:flex-col ${
           sidebarExpanded ? "w-60" : "w-20"
         }`}
       >
         <div className={`flex flex-col gap-3 pb-8 ${sidebarExpanded ? "" : "items-center"}`}>
           <Brand compact={!sidebarExpanded} />
-          <button
-            type="button"
-            aria-label={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
-            aria-expanded={sidebarExpanded}
-            aria-controls="desktop-sidebar"
-            onClick={onToggleSidebar}
-            className={`btn btn-ghost min-h-11 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-              sidebarExpanded ? "w-full justify-start gap-2 px-3" : "btn-square size-11"
-            }`}
-          >
-            {sidebarExpanded ? <PanelLeftClose className="size-4" aria-hidden="true" /> : <PanelLeftOpen className="size-4" aria-hidden="true" />}
-            {sidebarExpanded && <span>Collapse sidebar</span>}
-          </button>
         </div>
         <nav aria-label="Primary navigation">
           <ul className="space-y-1">{primaryNavigationItems.map(renderNavigationItem)}</ul>
@@ -335,7 +341,7 @@ export default function App() {
   const [view, setView] = useState<View>("home");
   const [interviewConfig, setInterviewConfig] = useState<InterviewConfig>(defaultInterviewConfig);
   const [darkMode, setDarkMode] = useState(false);
-  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   useEffect(() => {
     AOS.init({
@@ -370,7 +376,8 @@ export default function App() {
           view={view}
           onNavigate={navigate}
           sidebarExpanded={sidebarExpanded}
-          onToggleSidebar={() => setSidebarExpanded((expanded) => !expanded)}
+          onExpandSidebar={() => setSidebarExpanded(true)}
+          onCollapseSidebar={() => setSidebarExpanded(false)}
         />
         <div className="min-w-0 flex-1">
           <Topbar

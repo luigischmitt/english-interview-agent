@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -90,13 +91,13 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
           password,
           options: {
             data: { full_name: name.trim() },
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=%2F`,
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=%2Fdashboard`,
           },
         });
 
         if (signUpError) throw signUpError;
         if (data.session) {
-          router.replace("/");
+          router.replace("/dashboard");
           return;
         }
 
@@ -127,9 +128,18 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
   return (
     <main className="grid min-h-dvh place-items-center bg-base-100 px-4 py-10 text-base-content sm:px-6">
       <section className="w-full max-w-md">
-        <Link href="/login" className="mb-8 inline-flex items-center gap-2 text-sm font-semibold tracking-tight">
-          <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-content">EA</span>
-          English Interview Agent
+        <Link href="/login" className="mb-8 inline-flex items-center gap-4 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4">
+          <Image
+            src="/interview-agent-logo.jpg"
+            alt=""
+            width={64}
+            height={64}
+            className="size-16 shrink-0 rounded-2xl object-cover shadow-sm ring-1 ring-black/10"
+          />
+          <span className="flex min-w-0 flex-col gap-1">
+            <span className="text-2xl font-semibold leading-tight tracking-[-0.03em]">English Interview Agent</span>
+            <span className="text-sm font-medium text-base-content/60">Clear English. Stronger interviews.</span>
+          </span>
         </Link>
         <div className="card card-border bg-base-100 shadow-sm">
           <div className="card-body gap-6 p-6 sm:p-8">
