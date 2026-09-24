@@ -47,7 +47,9 @@ describe("final interview report service", () => {
     expect(body.response_format.json_schema.strict).toBe(true);
     expect(body.response_format.json_schema.schema.properties).not.toHaveProperty("score");
     expect(body.response_format.json_schema.schema.properties).not.toHaveProperty("internal_rationale");
-    expect(body.messages[0].content).toContain("Do not infer vocal delivery");
+    expect(body.messages[0].content).toContain("Write the report in Brazilian Portuguese");
+    expect(body.messages[0].content).toContain("keep evidence as an exact contiguous excerpt from the original English answer");
+    expect(body.messages[0].content).toContain("suggestion in Brazilian Portuguese; it may include a corrected English example");
     expect(JSON.parse(body.messages[1].content)).toEqual({ roleContext: input.roleContext, turns: input.turns });
   });
 
