@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { MicrophoneCapture, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
+import { decideNextTurn } from "@/lib/interview/orchestration";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
@@ -19,14 +20,21 @@ export function InterviewRoom({
 }) {
   const questions = getFixedInterviewQuestions(config);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [question, setQuestion] = useState<InterviewQuestion>(() => questions[0]);
+  const [questionSequenceNumber, setQuestionSequenceNumber] = useState(1);
+  const [followUpUsed, setFollowUpUsed] = useState(false);
   const [phase, setPhase] = useState<InterviewPhase>("speaking");
   const [answer, setAnswer] = useState("");
   const [answers, setAnswers] = useState<InterviewAnswers>({});
   const [answerError, setAnswerError] = useState<string | null>(null);
   const [voiceTranscription, setVoiceTranscription] = useState<VoiceTranscriptionState>({ status: "idle" });
   const advanceTimerRef = useRef<number | null>(null);
-  const question: InterviewQuestion = questions[currentIndex];
-  const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession } = useInterviewPersistence(config, question, currentIndex, phase);
+  const submitInFlightRef = useRef(false);
+  const generationRef = useRef(0);
+  const decisionAbortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+  const leftRef = useRef(false);
+  const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession } = useInterviewPersistence(config, question, questionSequenceNumber, phase);
   const { elapsed } = useInterviewSession(phase);
   const { speechMessage, setSpeechMessage } = useSpeechPlayback(question.prompt, useCallback(() => setPhase("answering"), []));
 
@@ -34,7 +42,20 @@ export function InterviewRoom({
     if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current);
   }, [currentIndex]);
 
-  const submitAnswer = () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      generationRef.current += 1;
+      decisionAbortRef.current?.abort();
+      decisionAbortRef.current = null;
+      submitInFlightRef.current = false;
+      if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current);
+    };
+  }, []);
+
+  const submitAnswer = async () => {
+    if (submitInFlightRef.current || leftRef.current || !mountedRef.current) return;
     const trimmedAnswer = answer.trim();
     if (voiceTranscription.status === "pending" && !trimmedAnswer) {
       setAnswerError("Aguarde a transcrição da resposta por voz antes de continuar.");
@@ -46,11 +67,15 @@ export function InterviewRoom({
       return;
     }
 
+    submitInFlightRef.current = true;
+    const generation = ++generationRef.current;
+    const abortController = new AbortController();
+    decisionAbortRef.current = abortController;
     const savedAnswer = trimmedAnswer || voiceTranscript;
-    setAnswers((current) => ({ ...current, [question.id]: savedAnswer }));
+    setAnswers((current) => ({ ...current, [`${question.id}:${questionSequenceNumber}`]: savedAnswer }));
     const candidateTurn: InterviewTurnInput = {
       interviewId: sessionId ?? "",
-      sequenceNumber: currentIndex * 2 + 2,
+      sequenceNumber: questionSequenceNumber + 1,
       speaker: "candidate",
       content: savedAnswer,
     };
@@ -60,23 +85,53 @@ export function InterviewRoom({
     setAnswerError(null);
     setSpeechMessage(null);
     setPhase("advancing");
+    const decision = await decideNextTurn({
+      config,
+      currentQuestion: question.prompt,
+      transcript: savedAnswer,
+      nextFixedQuestion: currentIndex < questions.length - 1 ? questions[currentIndex + 1].prompt : null,
+      followUpUsed,
+      signal: abortController.signal,
+    });
+    if (!mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
     advanceTimerRef.current = window.setTimeout(() => {
-      if (currentIndex >= questions.length - 1) setPhase("ending");
-      else {
+      advanceTimerRef.current = null;
+      if (!mountedRef.current || generation !== generationRef.current) return;
+      decisionAbortRef.current = null;
+      submitInFlightRef.current = false;
+      if (decision.decision === "FOLLOW_UP") {
+        setQuestion({ ...question, id: `${question.id}-follow-up`, prompt: decision.followUpQuestion, cue: "Uma pergunta curta para aprofundar sua resposta." });
+        setFollowUpUsed(true);
+        setQuestionSequenceNumber((sequence) => sequence + 2);
         setPhase("speaking");
-        setCurrentIndex((value) => value + 1);
+      } else if (currentIndex >= questions.length - 1) setPhase("ending");
+      else {
+        const nextIndex = currentIndex + 1;
+        setCurrentIndex(nextIndex);
+        setQuestion(questions[nextIndex]);
+        setFollowUpUsed(false);
+        setQuestionSequenceNumber((sequence) => sequence + 2);
+        setPhase("speaking");
       }
     }, 450);
   };
 
   const leaveInterview = () => {
+    leftRef.current = true;
+    generationRef.current += 1;
+    decisionAbortRef.current?.abort();
+    decisionAbortRef.current = null;
+    submitInFlightRef.current = false;
+    if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current);
+    advanceTimerRef.current = null;
     abandonSession();
     onLeave();
   };
 
   const isSpeaking = phase === "speaking";
   const isAdvancing = phase === "advancing";
-  const progress = phase === "ending" ? 100 : ((currentIndex + (isAdvancing ? 1 : 0)) / questions.length) * 100;
+  const isFollowUp = question.id.endsWith("-follow-up");
+  const progress = phase === "ending" ? 100 : ((currentIndex + 1) / questions.length) * 100;
   const persistenceLabel = persistenceState === "saved" ? "Sessão salva na sua conta." : persistenceState === "local" ? "Salva apenas no estado local desta sessão; sincronização pendente." : "Salvando na sua conta…";
 
   if (phase === "ending") {
@@ -117,7 +172,7 @@ export function InterviewRoom({
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]">
           <div className="card card-border bg-card"><div className="card-body gap-5 p-5 sm:p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div><p className="text-xs font-medium uppercase tracking-[0.14em] text-primary">Pergunta {currentIndex + 1} de {questions.length}</p><h2 id="interview-question-title" className="mt-2 text-xl font-semibold tracking-[-0.02em] sm:text-2xl">{question.prompt}</h2><p className="mt-1 max-w-[58ch] text-sm leading-6 text-muted-foreground">{question.cue}</p></div>
+              <div><p className="text-xs font-medium uppercase tracking-[0.14em] text-primary">{isFollowUp ? `Aprofundamento · pergunta ${currentIndex + 1}` : `Pergunta ${currentIndex + 1} de ${questions.length}`}</p><h2 id="interview-question-title" className="mt-2 text-xl font-semibold tracking-[-0.02em] sm:text-2xl">{question.prompt}</h2><p className="mt-1 max-w-[58ch] text-sm leading-6 text-muted-foreground">{question.cue}</p></div>
               <span className={`badge badge-outline shrink-0 gap-2 py-3 text-xs font-medium ${isSpeaking ? "badge-info" : isAdvancing ? "badge-warning" : "badge-success"}`}><span className={`status ${isSpeaking ? "status-info animate-pulse" : isAdvancing ? "status-warning" : "status-success"}`} aria-hidden="true" />{isSpeaking ? "Entrevistador falando" : isAdvancing ? "Avançando" : "Sua vez"}</span>
             </div>
             {speechMessage && <div role="status" className="alert alert-warning alert-soft text-sm"><Volume2 className="size-4 shrink-0" aria-hidden="true" /><span>{speechMessage}</span></div>}
