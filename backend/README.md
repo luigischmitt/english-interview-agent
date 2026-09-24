@@ -45,8 +45,10 @@ performed by the authenticated frontend client. The speech service accepts:
 | `AZURE_SPEECH_REGION` | — | Azure Speech resource region, such as `brazilsouth`. Required only for voice transcription. |
 | `AZURE_SPEECH_TIMEOUT_MS` | `20000` | Positive Azure Speech request timeout in milliseconds. |
 | `OPENROUTER_API_KEY` | — | OpenRouter key. Enables the two Whisper transcription choices and stays server-side. |
-| `INTERVIEW_REASONING_MODEL` | `mistralai/mistral-small-3.2-24b-instruct` | OpenRouter model for the `thinking` route. Keep this configuration server-side. |
-| `INTERVIEW_REASONING_TIMEOUT_MS` | `15000` | Positive timeout in milliseconds for interview-answer reasoning requests. |
+| `INTERVIEW_REASONING_MODEL` | `mistralai/mistral-small-3.2-24b-instruct` | OpenRouter model for interview reasoning and next-turn orchestration. Keep this configuration server-side. |
+| `INTERVIEW_REASONING_TIMEOUT_MS` | `15000` | Positive timeout in milliseconds for interview reasoning requests. |
+| `INTERVIEW_ORCHESTRATION_TIMEOUT_MS` | `6000` | Positive timeout in milliseconds for next-turn orchestration. |
+| `INTERVIEW_REASONING_DIAGNOSTICS` | `false` | Set to `true` to include model, latency, and provider-reported cost in next-turn responses. Keep disabled outside local testing. |
 
 Do not add Supabase `service_role` keys or other private credentials to this
 service unless a future server-side integration explicitly requires them.
@@ -88,6 +90,7 @@ not a gate for interview practice.
 | `POST` | `/api/v1/transcriptions` | Receives a completed 16 kHz mono WAV response (maximum 30 seconds), returns a transcription from the selected configured provider. Audio is not persisted. |
 | `WS` | `/api/v1/transcriptions/stream` | Receives `start`, RMS `level`, binary audio, and `finalize` or `cancel` messages. Keeps up to 30 seconds / 4 MiB in memory and calls Whisper Turbo once on completion. |
 | `POST` | `/api/v1/thinking` | Assesses technical answer coverage and written English communication. Uses OpenRouter credentials held by the backend. |
+| `POST` | `/api/v1/thinking/next-turn` | Chooses one brief follow-up or advances to the next fixed interview question. Provider errors and invalid output deterministically return `NEXT`. |
 | `POST` | `/api/v1/formulations` | Reserved for answer formulation in English; returns `501` until connected. |
 | `GET` | `/api/v1/speech/health` | Reports whether the configured speech provider is ready. |
 | `GET` | `/api/v1/speech/voices` | Returns the sole approved interviewer persona. |
@@ -161,12 +164,25 @@ OPENROUTER_API_KEY=<your-openrouter-key>
 
 `OPENROUTER_API_KEY` enables Whisper Large V3 Turbo for the streaming response path. The browser sends WebM or MP4 chunks and VAD levels over WebSocket; silence after 1.5 seconds or the manual finish button triggers a single transcription call. The backend does not persist audio or expose the provider key. The legacy WAV route remains available for compatibility.
 
-The same server-side key enables `/api/v1/thinking`. Override the reasoning
-model or timeout locally with `INTERVIEW_REASONING_MODEL` and
-`INTERVIEW_REASONING_TIMEOUT_MS`; these variables must not be exposed to the
-browser. The selected default is a stable Mistral Small 3.2 model, and the
-reasoning request has a 15-second default timeout. Its provider routing
-requires structured-output support and denies data collection.
+The same server-side key enables `/api/v1/thinking` and
+`/api/v1/thinking/next-turn`. Override the reasoning model or timeout locally
+with `INTERVIEW_REASONING_MODEL` and `INTERVIEW_REASONING_TIMEOUT_MS`; these
+variables must not be exposed to the browser. The selected default is a stable
+Mistral Small 3.2 model, and the reasoning request has a 15-second default
+timeout. Provider routing requires structured-output support and denies data
+collection. The next-turn route receives the active question, final text
+transcript, minimal role context, next fixed question, and whether a follow-up
+has already been used for the current planned question. Transcript is treated
+as untrusted data. At most one brief follow-up is accepted; timeout, rate
+limiting, provider errors, missing credentials, or malformed output fall back
+to `{"decision":"NEXT","followUpQuestion":null}`. Model, latency, and
+provider-reported cost diagnostics can be enabled with the server-only
+`INTERVIEW_REASONING_DIAGNOSTICS=true` flag; it defaults off and should remain
+off outside local testing. Diagnostics include only model, latency, and
+provider-reported cost, never credentials or hidden rationale. Orchestration
+uses a separate 6-second timeout by default; answer assessment retains its
+15-second timeout. The browser cancels orchestration requests after 7 seconds
+so its fallback stays slightly outside the backend timeout.
 
 ### Generate interviewer speech
 

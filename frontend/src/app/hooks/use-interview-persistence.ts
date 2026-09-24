@@ -13,7 +13,7 @@ type PersistenceState = "saving" | "saved" | "local";
 export function useInterviewPersistence(
   config: InterviewConfig,
   question: InterviewQuestion,
-  currentIndex: number,
+  questionSequenceNumber: number,
   phase: "speaking" | "answering" | "advancing" | "ending",
 ) {
   const [persistenceMessage, setPersistenceMessage] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export function useInterviewPersistence(
   const sessionCreationRef = useRef<ReturnType<typeof createInterviewSession> | null>(null);
   const sessionStartRequestedRef = useRef(false);
   const pendingTurnsRef = useRef<InterviewTurnInput[]>([]);
-  const persistedQuestionIndexesRef = useRef(new Set<number>());
+  const persistedQuestionSequencesRef = useRef(new Set<number>());
   const finalizedRef = useRef(false);
   const completionRequestedRef = useRef(false);
   const mountedRef = useRef(true);
@@ -115,10 +115,10 @@ export function useInterviewPersistence(
   }, [config, reportPersistenceFailure]);
 
   useEffect(() => {
-    if (persistedQuestionIndexesRef.current.has(currentIndex)) return;
-    persistedQuestionIndexesRef.current.add(currentIndex);
-    enqueueTurn({ interviewId: sessionId ?? "", sequenceNumber: currentIndex * 2 + 1, speaker: "interviewer", content: question.prompt });
-  }, [currentIndex, enqueueTurn, question.prompt, sessionId]);
+    if (persistedQuestionSequencesRef.current.has(questionSequenceNumber)) return;
+    persistedQuestionSequencesRef.current.add(questionSequenceNumber);
+    enqueueTurn({ interviewId: sessionId ?? "", sequenceNumber: questionSequenceNumber, speaker: "interviewer", content: question.prompt });
+  }, [enqueueTurn, question.prompt, questionSequenceNumber, sessionId]);
 
   useEffect(() => {
     if (phase !== "ending") return;

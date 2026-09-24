@@ -9,7 +9,9 @@ prática da resposta em inglês da análise futura de áudio.
 - Página pública inicial, com links para criar conta e entrar.
 - Autenticação Supabase: cadastro, login, recuperação e atualização de senha.
 - Área protegida com configuração de entrevista, sequência fixa de perguntas,
-  respostas escritas e tela de progresso.
+  respostas escritas e tela de progresso. Após uma resposta, o entrevistador
+  pode fazer no máximo um follow-up curto antes de continuar a sequência fixa;
+  se o serviço estiver indisponível, a entrevista avança normalmente.
 - Reprodução opcional da pergunta do entrevistador pelo backend de speech;
   o texto da pergunta sempre permanece visível.
 - Captura opcional de microfone usando `MediaRecorder`. O navegador transmite
@@ -22,8 +24,8 @@ prática da resposta em inglês da análise futura de áudio.
 - Sessões e turnos de texto salvos nas tabelas Supabase quando a conta e a
   conexão estão disponíveis. As políticas RLS limitam os dados ao usuário.
 
-Não há captura de câmera, avatar de entrevistador real, follow-ups gerados
-por IA ou relatório de feedback conectado. O áudio é transmitido em blocos,
+Não há captura de câmera, avatar de entrevistador real ou relatório de
+feedback conectado. O áudio é transmitido em blocos,
 mas a transcrição só é solicitada uma vez após a resposta; não há transcrição
 ou feedback ao vivo durante a fala.
 Os blocos visuais de câmera são apenas parte da sala de prática.

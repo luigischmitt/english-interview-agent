@@ -33,3 +33,18 @@ export type ThinkingAssessment = {
 export interface ThinkingService {
   assess(input: InterviewThinkingInput): Promise<ThinkingAssessment>;
 }
+
+export type InterviewOrchestrationInput = InterviewThinkingInput & {
+  nextFixedQuestion: string | null;
+  followUpUsed: boolean;
+};
+
+export type InterviewOrchestrationResult = {
+  decision: "FOLLOW_UP" | "NEXT";
+  followUpQuestion: string | null;
+  diagnostics?: { model: string; latencyMs: number; costUsd: number | null };
+};
+
+export interface InterviewOrchestrationService {
+  decide(input: InterviewOrchestrationInput): Promise<InterviewOrchestrationResult>;
+}
