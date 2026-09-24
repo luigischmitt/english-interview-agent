@@ -1,5 +1,5 @@
 import { TranscriptionUnavailableError } from "./errors.js";
-import type { TranscriptionProvider, TranscriptionResult, TranscriptionService } from "./types.js";
+import type { AudioFormat, TranscriptionProvider, TranscriptionResult, TranscriptionService } from "./types.js";
 
 type OpenRouterWhisperTranscriptionServiceOptions = {
   key: string;
@@ -25,7 +25,7 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
     return ["whisper-large-v3", "whisper-large-v3-turbo"];
   }
 
-  async transcribe(audio: Buffer, provider: TranscriptionProvider): Promise<TranscriptionResult> {
+  async transcribe(audio: Buffer, provider: TranscriptionProvider, format: AudioFormat = "wav"): Promise<TranscriptionResult> {
     if (provider === "azure") throw new TranscriptionUnavailableError("This transcription provider is not configured.");
 
     try {
@@ -37,7 +37,7 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
         },
         body: JSON.stringify({
           model: modelForProvider[provider],
-          input_audio: { data: audio.toString("base64"), format: "wav" },
+          input_audio: { data: audio.toString("base64"), format },
           language: "en",
           temperature: 0,
         }),
