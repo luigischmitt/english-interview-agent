@@ -1,6 +1,6 @@
 # Backend
 
-Initial HTTP structure for the English Interview Agent. Transcription, reasoning, and English-formulation providers are still placeholders. Speech synthesis is available through a provider boundary and can call a local Kokoro container.
+The backend provides interviewer speech through Kokoro and completed-response transcription plus pronunciation assessment through Azure Speech. Reasoning and English-formulation routes remain placeholders.
 
 ## Run the complete local environment
 
@@ -41,6 +41,9 @@ performed by the authenticated frontend client. The speech service accepts:
 | `KOKORO_TIMEOUT_MS` | `15000` | Positive request timeout in milliseconds. |
 | `INTERVIEWER_VOICE` | `af_bella+af_heart` | Voice passed to Kokoro. |
 | `INTERVIEWER_SPEED` | `1` | Positive default speech speed. |
+| `AZURE_SPEECH_KEY` | — | Azure Speech resource key. Required only for voice transcription. Keep it server-side. |
+| `AZURE_SPEECH_REGION` | — | Azure Speech resource region, such as `brazilsouth`. Required only for voice transcription. |
+| `AZURE_SPEECH_TIMEOUT_MS` | `20000` | Positive Azure Speech request timeout in milliseconds. |
 
 Do not add Supabase `service_role` keys or other private credentials to this
 service unless a future server-side integration explicitly requires them.
@@ -78,7 +81,7 @@ not a gate for interview practice.
 | Method | Route | Current behavior |
 | --- | --- | --- |
 | `GET` | `/health` | Returns `{ "status": "ok" }`. |
-| `POST` | `/api/v1/transcriptions` | Reserved for audio transcription; returns `501` until connected. |
+| `POST` | `/api/v1/transcriptions` | Receives a completed 16 kHz mono WAV response (maximum 30 seconds), returns Azure Speech transcription and pronunciation signals. Audio is not persisted. |
 | `POST` | `/api/v1/thinking` | Reserved for interview-context reasoning; returns `501` until connected. |
 | `POST` | `/api/v1/formulations` | Reserved for answer formulation in English; returns `501` until connected. |
 | `GET` | `/api/v1/speech/health` | Reports whether the configured speech provider is ready. |
@@ -86,6 +89,17 @@ not a gate for interview practice.
 | `POST` | `/api/v1/speech` | Generates MP3 audio for interviewer text. |
 
 All API errors use `{ "error": { "code": string, "message": string } }`.
+
+### Configure Azure Speech locally
+
+Create `backend/.env` locally (it is ignored by Git):
+
+```bash
+AZURE_SPEECH_KEY=<your-resource-key>
+AZURE_SPEECH_REGION=brazilsouth
+```
+
+The browser converts a completed response to 16 kHz mono WAV before sending it to this backend route. The backend does not store audio or expose the Azure key; it forwards the WAV body to Azure Speech, first for transcription and then for a pronunciation assessment based on that transcript. This first implementation accepts responses up to 30 seconds and does not stream audio over WebSocket.
 
 ### Generate interviewer speech
 

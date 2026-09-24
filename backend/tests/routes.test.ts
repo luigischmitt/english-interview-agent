@@ -5,12 +5,14 @@ import { app, createApp } from "../src/app.js";
 import type { SpeechConfig } from "../src/speech/config.js";
 import { SpeechProviderUnavailableError } from "../src/speech/errors.js";
 import { KokoroSpeechProvider } from "../src/speech/kokoro-speech-provider.js";
+import { AzureSpeechTranscriptionService } from "../src/transcription/azure-speech-transcription-service.js";
 import type {
   SpeechProvider,
   SpeechProviderHealth,
   SpeechSynthesisRequest,
   SynthesizedSpeech,
 } from "../src/speech/types.js";
+import type { TranscriptionService } from "../src/transcription/types.js";
 
 const speechConfig: SpeechConfig = {
   provider: "fake",
@@ -44,7 +46,6 @@ describe("backend routes", () => {
   });
 
   it.each([
-    ["/api/v1/transcriptions"],
     ["/api/v1/thinking"],
     ["/api/v1/formulations"],
   ])("keeps POST %s ready for its future service", async (path) => {
@@ -52,6 +53,41 @@ describe("backend routes", () => {
 
     expect(response.status).toBe(501);
     expect(response.body.error.code).toBe("NOT_IMPLEMENTED");
+  });
+
+  it("returns transcript and speech assessment for a completed WAV recording", async () => {
+    const transcriptionService: TranscriptionService = {
+      async transcribe(audio) {
+        expect(audio.toString()).toBe("wav bytes");
+        return {
+          transcript: "I led the migration.",
+          assessment: {
+            accuracyScore: 84,
+            fluencyScore: 77,
+            prosodyScore: 73,
+            pronunciationScore: 79,
+            words: [{ word: "migration", accuracyScore: 72, errorType: "Mispronunciation" }],
+          },
+        };
+      },
+    };
+    const testApp = createApp({ speechConfig, transcriptionService });
+
+    const response = await request(testApp)
+      .post("/api/v1/transcriptions")
+      .set("content-type", "audio/wav")
+      .send(Buffer.from("wav bytes"));
+
+    expect(response.status).toBe(200);
+    expect(response.body.transcript).toBe("I led the migration.");
+    expect(response.body.assessment.fluencyScore).toBe(77);
+  });
+
+  it("rejects missing audio before calling Azure Speech", async () => {
+    const response = await request(app).post("/api/v1/transcriptions").set("content-type", "audio/wav").send();
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("INVALID_TRANSCRIPTION_REQUEST");
   });
 
   it("returns a consistent response for unknown routes", async () => {
@@ -166,5 +202,52 @@ describe("speech routes", () => {
 
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe("SPEECH_PROVIDER_UNAVAILABLE");
+  });
+});
+
+describe("Azure Speech transcription", () => {
+  it("uses the first Azure transcript as the reference for pronunciation assessment", async () => {
+    const requests: Array<{ headers?: HeadersInit }> = [];
+    const responses = [
+      { RecognitionStatus: "Success", NBest: [{ Display: "I led the migration." }] },
+      {
+        RecognitionStatus: "Success",
+        NBest: [{
+          AccuracyScore: 91,
+          FluencyScore: 82,
+          ProsodyScore: 78,
+          PronScore: 84,
+          Words: [{ Word: "migration", AccuracyScore: 74, ErrorType: "Mispronunciation" }],
+        }],
+      },
+    ];
+    const service = new AzureSpeechTranscriptionService({
+      key: "test-key",
+      region: "brazilsouth",
+      timeoutMs: 1_000,
+      fetchImplementation: async (_input, init) => {
+        requests.push({ headers: init?.headers });
+        return new Response(JSON.stringify(responses.shift()), { status: 200 });
+      },
+    });
+
+    const result = await service.transcribe(Buffer.from("wav bytes"));
+
+    expect(result).toEqual({
+      transcript: "I led the migration.",
+      assessment: {
+        accuracyScore: 91,
+        fluencyScore: 82,
+        prosodyScore: 78,
+        pronunciationScore: 84,
+        words: [{ word: "migration", accuracyScore: 74, errorType: "Mispronunciation" }],
+      },
+    });
+    const pronunciationHeader = new Headers(requests[1].headers).get("Pronunciation-Assessment");
+    expect(pronunciationHeader).toBeTruthy();
+    expect(JSON.parse(Buffer.from(pronunciationHeader!, "base64").toString())).toMatchObject({
+      ReferenceText: "I led the migration.",
+      EnableProsodyAssessment: "True",
+    });
   });
 });
