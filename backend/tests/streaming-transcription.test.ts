@@ -6,6 +6,7 @@ import { StreamingTranscriptionSessions } from "../src/transcription/streaming-t
 import { defaultVadConfig, getSilenceThreshold, VoiceActivityDetector } from "../src/transcription/voice-activity-detector.js";
 import type { TranscriptionService } from "../src/transcription/types.js";
 import { attachTranscriptionWebSocket } from "../src/transcription/transcription-websocket.js";
+import type { PronunciationAssessmentService } from "../src/transcription/azure-pronunciation-assessment.js";
 import { getAllowedOrigins, isOriginAllowed } from "../src/middlewares/allowed-origins.js";
 
 function createService() {
@@ -22,9 +23,9 @@ function createService() {
 
 const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-async function openStreamServer(service: TranscriptionService) {
+async function openStreamServer(service: TranscriptionService, assessmentService: PronunciationAssessmentService | null = null) {
   const server = createServer();
-  attachTranscriptionWebSocket(server, service);
+  attachTranscriptionWebSocket(server, service, assessmentService);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Expected an ephemeral TCP address");
@@ -180,6 +181,46 @@ describe("streaming transcription sessions", () => {
 });
 
 describe("stream WebSocket lifecycle", () => {
+  it("delivers the Whisper result before the optional assessment event", async () => {
+    let finishAssessment!: (value: { provider: "azure"; locale: "en-US"; mode: "scripted"; scores: { accuracy: number; fluency: number; prosody: number } }) => void;
+    let azureReferenceText = "";
+    const assess = vi.fn(async (_audio: Buffer, _format: "webm" | "mp4", referenceText: string) => {
+      azureReferenceText = referenceText;
+      return new Promise<{ provider: "azure"; locale: "en-US"; mode: "scripted"; scores: { accuracy: number; fluency: number; prosody: number } }>((resolve) => { finishAssessment = resolve; });
+    });
+    const assessment: PronunciationAssessmentService = { assess };
+    const { service, transcribe } = createService();
+    const fixture = await openStreamServer(service, assessment);
+    const socket = new WebSocket(fixture.url);
+    try {
+      await new Promise<void>((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); });
+      const ready = waitForType(socket, "ready");
+      socket.send(JSON.stringify({ type: "start", mimeType: "audio/webm", speechThreshold: 0.025 }));
+      await expect(ready).resolves.toMatchObject({ features: { pronunciationAssessment: true } });
+      const speechStarted = waitForType(socket, "speech-started");
+      socket.send(JSON.stringify({ type: "level", value: 0.05 }));
+      await delay(210);
+      socket.send(JSON.stringify({ type: "level", value: 0.05 }));
+      await speechStarted;
+      socket.send(Buffer.from("final audio"));
+      await delay(610);
+      socket.send(JSON.stringify({ type: "level", value: 0.05 }));
+      const result = waitForType(socket, "result");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await expect(result).resolves.toMatchObject({ provider: "whisper-large-v3-turbo", transcript: "transcribed webm" });
+      expect(transcribe).toHaveBeenCalledOnce();
+      expect(transcribe).toHaveBeenCalledWith(expect.any(Buffer), "whisper-large-v3-turbo", "webm");
+      expect(assess).toHaveBeenCalledOnce();
+      expect(azureReferenceText).toBe("transcribed webm");
+      const assessmentEvent = waitForType(socket, "assessment");
+      finishAssessment({ provider: "azure", locale: "en-US", mode: "scripted", scores: { accuracy: 80, fluency: 75, prosody: 70 } });
+      await expect(assessmentEvent).resolves.toMatchObject({ type: "assessment", status: "available", scores: { accuracy: 80, fluency: 75, prosody: 70 } });
+    } finally {
+      socket.close();
+      await fixture.close();
+    }
+  });
+
   it("runs start, VAD levels, binary chunks, manual finalize, and one Turbo result", async () => {
     const { service, transcribe } = createService();
     const fixture = await openStreamServer(service);

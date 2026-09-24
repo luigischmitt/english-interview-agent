@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { defaultVadConfig, getSilenceThreshold, VoiceActivityDetector, type VadConfig } from "./voice-activity-detector.js";
 import type { TranscriptionResult, TranscriptionService } from "./types.js";
+import type { PronunciationAssessment, PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
 
 export type StreamingSession = {
   id: string;
@@ -22,6 +23,7 @@ export class StreamingTranscriptionSessions {
     private readonly now: () => number = Date.now,
     private readonly config: VadConfig = defaultVadConfig,
     private readonly maxActiveSessions = 16,
+    private readonly assessmentService: PronunciationAssessmentService | null = null,
   ) {}
 
   create(mimeType: string, speechThreshold: number): StreamingSession {
@@ -57,6 +59,10 @@ export class StreamingTranscriptionSessions {
   }
 
   async finalize(id: string): Promise<TranscriptionResult> {
+    return (await this.finalizeWithAssessment(id)).result;
+  }
+
+  async finalizeWithAssessment(id: string): Promise<{ result: TranscriptionResult; startAssessment: () => Promise<PronunciationAssessment | null> }> {
     const session = this.sessions.get(id);
     if (!session) throw new Error("STREAM_NOT_FOUND");
     if (!session.vad.hasSpeech || session.vad.speechDurationMs < session.config.minimumSpeechMs || session.bytes === 0) {
@@ -66,7 +72,16 @@ export class StreamingTranscriptionSessions {
     this.sessions.delete(id);
     const audio = Buffer.concat(session.chunks, session.bytes);
     session.chunks.length = 0;
-    return this.transcriptionService.transcribe(audio, "whisper-large-v3-turbo", session.mimeType === "audio/webm" ? "webm" : "mp4");
+    const format = session.mimeType === "audio/webm" ? "webm" : "mp4";
+    const result = await this.transcriptionService.transcribe(audio, "whisper-large-v3-turbo", format);
+    let assessment: Promise<PronunciationAssessment | null> | undefined;
+    const startAssessment = () => {
+      assessment ??= this.assessmentService
+        ? this.assessmentService.assess(audio, format, result.transcript).catch(() => null)
+        : Promise.resolve(null);
+      return assessment;
+    };
+    return { result, startAssessment };
   }
 
   cancel(id: string): boolean {

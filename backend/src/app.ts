@@ -14,9 +14,12 @@ import { createOrchestrationService } from "./thinking/openrouter-orchestration-
 import type { InterviewOrchestrationService, ThinkingService } from "./thinking/types.js";
 import { loadTranscriptionConfig, type TranscriptionConfig } from "./transcription/config.js";
 import { createTranscriptionService } from "./transcription/create-transcription-service.js";
+import { createPronunciationAssessmentService } from "./transcription/create-pronunciation-assessment-service.js";
 import type { TranscriptionService } from "./transcription/types.js";
 
-export const defaultTranscriptionService = createTranscriptionService(loadTranscriptionConfig());
+export const defaultTranscriptionConfig = loadTranscriptionConfig();
+export const defaultTranscriptionService = createTranscriptionService(defaultTranscriptionConfig);
+export const defaultPronunciationAssessmentService = createPronunciationAssessmentService(defaultTranscriptionConfig);
 
 type AppDependencies = {
   speechConfig?: SpeechConfig;
