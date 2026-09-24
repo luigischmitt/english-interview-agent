@@ -55,20 +55,11 @@ describe("backend routes", () => {
     expect(response.body.error.code).toBe("NOT_IMPLEMENTED");
   });
 
-  it("returns transcript and speech assessment for a completed WAV recording", async () => {
+  it("returns a transcript for a completed WAV recording", async () => {
     const transcriptionService: TranscriptionService = {
       async transcribe(audio) {
         expect(audio.toString()).toBe("wav bytes");
-        return {
-          transcript: "I led the migration.",
-          assessment: {
-            accuracyScore: 84,
-            fluencyScore: 77,
-            prosodyScore: 73,
-            pronunciationScore: 79,
-            words: [{ word: "migration", accuracyScore: 72, errorType: "Mispronunciation" }],
-          },
-        };
+        return { transcript: "I led the migration." };
       },
     };
     const testApp = createApp({ speechConfig, transcriptionService });
@@ -80,7 +71,6 @@ describe("backend routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.transcript).toBe("I led the migration.");
-    expect(response.body.assessment.fluencyScore).toBe(77);
   });
 
   it("rejects missing audio before calling Azure Speech", async () => {
@@ -206,21 +196,9 @@ describe("speech routes", () => {
 });
 
 describe("Azure Speech transcription", () => {
-  it("uses the first Azure transcript as the reference for pronunciation assessment", async () => {
+  it("makes one Azure request to transcribe a recording", async () => {
     const requests: Array<{ headers?: HeadersInit }> = [];
-    const responses = [
-      { RecognitionStatus: "Success", NBest: [{ Display: "I led the migration." }] },
-      {
-        RecognitionStatus: "Success",
-        NBest: [{
-          AccuracyScore: 91,
-          FluencyScore: 82,
-          ProsodyScore: 78,
-          PronScore: 84,
-          Words: [{ Word: "migration", AccuracyScore: 74, ErrorType: "Mispronunciation" }],
-        }],
-      },
-    ];
+    const responses = [{ RecognitionStatus: "Success", NBest: [{ Display: "I led the migration." }] }];
     const service = new AzureSpeechTranscriptionService({
       key: "test-key",
       region: "brazilsouth",
@@ -233,21 +211,7 @@ describe("Azure Speech transcription", () => {
 
     const result = await service.transcribe(Buffer.from("wav bytes"));
 
-    expect(result).toEqual({
-      transcript: "I led the migration.",
-      assessment: {
-        accuracyScore: 91,
-        fluencyScore: 82,
-        prosodyScore: 78,
-        pronunciationScore: 84,
-        words: [{ word: "migration", accuracyScore: 74, errorType: "Mispronunciation" }],
-      },
-    });
-    const pronunciationHeader = new Headers(requests[1].headers).get("Pronunciation-Assessment");
-    expect(pronunciationHeader).toBeTruthy();
-    expect(JSON.parse(Buffer.from(pronunciationHeader!, "base64").toString())).toMatchObject({
-      ReferenceText: "I led the migration.",
-      EnableProsodyAssessment: "True",
-    });
+    expect(result).toEqual({ transcript: "I led the migration." });
+    expect(requests).toHaveLength(1);
   });
 });

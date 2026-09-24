@@ -14,16 +14,15 @@ prática da resposta em inglês da análise futura de áudio.
   o texto da pergunta sempre permanece visível.
 - Captura opcional de microfone usando `MediaRecorder`. Ao concluir uma
   gravação de até 30 segundos, o navegador a converte para WAV e a envia ao
-  backend para transcrição e avaliação de fala no Azure Speech. O áudio não é
+  backend para transcrição no Azure Speech. O áudio não é
   reproduzido nem salvo; a transcrição pode compor a resposta escrita privada
   da sessão.
 - Sessões e turnos de texto salvos nas tabelas Supabase quando a conta e a
   conexão estão disponíveis. As políticas RLS limitam os dados ao usuário.
 
 Não há captura de câmera, avatar de entrevistador real, follow-ups gerados
-por IA ou relatório de feedback conectado. A transcrição e a avaliação de
-fala atuais são concluídas por resposta; não há streaming ou feedback durante
-a fala.
+por IA ou relatório de feedback conectado. A transcrição atual é concluída
+por resposta; não há streaming ou feedback durante a fala.
 Os blocos visuais de câmera são apenas parte da sala de prática.
 
 ## Variáveis de ambiente
@@ -123,7 +122,7 @@ eles não são uma cópia offline garantida. O estado exibido deve permanecer
 
 O microfone é opcional. Ao concluir uma resposta por voz de até 30 segundos,
 o áudio é enviado ao backend e encaminhado ao Azure Speech para gerar a
-transcrição e sinais de pronúncia, fluência e prosódia. O app não salva,
+transcrição. O app não salva,
 reproduz ou persiste o arquivo de áudio. A transcrição resultante pode ser
 salva como turno de texto da sessão privada. Não há streaming, transcrição ao
 vivo, upload persistente de áudio ou relatório final de feedback conectado.

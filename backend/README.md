@@ -1,6 +1,6 @@
 # Backend
 
-The backend provides interviewer speech through Kokoro and completed-response transcription plus pronunciation assessment through Azure Speech. Reasoning and English-formulation routes remain placeholders.
+The backend provides interviewer speech through Kokoro and completed-response transcription through Azure Speech. Reasoning and English-formulation routes remain placeholders.
 
 ## Run the complete local environment
 
@@ -99,7 +99,7 @@ AZURE_SPEECH_KEY=<your-resource-key>
 AZURE_SPEECH_REGION=brazilsouth
 ```
 
-The browser converts a completed response to 16 kHz mono WAV before sending it to this backend route. The backend does not store audio or expose the Azure key; it forwards the WAV body to Azure Speech, first for transcription and then for a pronunciation assessment based on that transcript. This first implementation accepts responses up to 30 seconds and does not stream audio over WebSocket.
+The browser converts a completed response to 16 kHz mono WAV before sending it to this backend route. The backend does not store audio or expose the Azure key; it forwards the WAV body to Azure Speech for transcription. This first implementation accepts responses up to 30 seconds and does not stream audio over WebSocket.
 
 ### Generate interviewer speech
 

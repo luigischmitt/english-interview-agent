@@ -1,12 +1,5 @@
 export type VoiceTranscription = {
   transcript: string;
-  assessment: {
-    accuracyScore: number | null;
-    fluencyScore: number | null;
-    prosodyScore: number | null;
-    pronunciationScore: number | null;
-    words: Array<{ word: string; accuracyScore: number | null; errorType: string | null }>;
-  };
 };
 
 const sampleRate = 16_000;

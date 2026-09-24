@@ -1,19 +1,8 @@
 import { TranscriptionUnavailableError } from "./errors.js";
-import type { PronunciationAssessment, TranscriptionResult, TranscriptionService } from "./types.js";
-
-type AzureWord = {
-  Word?: string;
-  AccuracyScore?: number;
-  ErrorType?: string;
-};
+import type { TranscriptionResult, TranscriptionService } from "./types.js";
 
 type AzureCandidate = {
   Display?: string;
-  AccuracyScore?: number;
-  FluencyScore?: number;
-  ProsodyScore?: number;
-  PronScore?: number;
-  Words?: AzureWord[];
 };
 
 type AzureSpeechResponse = {
@@ -28,14 +17,6 @@ type AzureSpeechTranscriptionServiceOptions = {
   timeoutMs: number;
   fetchImplementation?: typeof fetch;
 };
-
-const emptyAssessment = (): PronunciationAssessment => ({
-  accuracyScore: null,
-  fluencyScore: null,
-  prosodyScore: null,
-  pronunciationScore: null,
-  words: [],
-});
 
 export class AzureSpeechTranscriptionService implements TranscriptionService {
   private readonly endpoint: string;
@@ -54,26 +35,15 @@ export class AzureSpeechTranscriptionService implements TranscriptionService {
       throw new TranscriptionUnavailableError("Azure Speech could not recognize a response in this recording.");
     }
 
-    const assessment = await this.request(audio, transcript);
-    return { transcript, assessment: this.toAssessment(assessment.NBest?.[0]) };
+    return { transcript };
   }
 
-  private async request(audio: Buffer, referenceText?: string): Promise<AzureSpeechResponse> {
+  private async request(audio: Buffer): Promise<AzureSpeechResponse> {
     const headers: Record<string, string> = {
       Accept: "application/json",
       "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
       "Ocp-Apim-Subscription-Key": this.options.key,
     };
-
-    if (referenceText) {
-      headers["Pronunciation-Assessment"] = Buffer.from(JSON.stringify({
-        ReferenceText: referenceText,
-        GradingSystem: "HundredMark",
-        Granularity: "Word",
-        Dimension: "Comprehensive",
-        EnableProsodyAssessment: "True",
-      })).toString("base64");
-    }
 
     try {
       const response = await this.fetchImplementation(this.endpoint, {
@@ -92,21 +62,5 @@ export class AzureSpeechTranscriptionService implements TranscriptionService {
       if (error instanceof TranscriptionUnavailableError) throw error;
       throw new TranscriptionUnavailableError("Azure Speech is unavailable right now.", { cause: error });
     }
-  }
-
-  private toAssessment(candidate: AzureCandidate | undefined): PronunciationAssessment {
-    if (!candidate) return emptyAssessment();
-
-    return {
-      accuracyScore: candidate.AccuracyScore ?? null,
-      fluencyScore: candidate.FluencyScore ?? null,
-      prosodyScore: candidate.ProsodyScore ?? null,
-      pronunciationScore: candidate.PronScore ?? null,
-      words: (candidate.Words ?? []).map((word) => ({
-        word: word.Word ?? "",
-        accuracyScore: word.AccuracyScore ?? null,
-        errorType: word.ErrorType ?? null,
-      })),
-    };
   }
 }
