@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Clock3, PhoneOff, VideoOff, Volume2 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { MicrophoneCapture, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
+import { MicrophoneCapture, type VoiceAssessmentState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { decideNextTurn } from "@/lib/interview/orchestration";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
+import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback } from "../hooks/use-speech-playback";
 
@@ -28,6 +29,8 @@ export function InterviewRoom({
   const [answers, setAnswers] = useState<InterviewAnswers>({});
   const [answerError, setAnswerError] = useState<string | null>(null);
   const [voiceTranscription, setVoiceTranscription] = useState<VoiceTranscriptionState>({ status: "idle" });
+  const [voiceAssessments, setVoiceAssessments] = useState<Record<string, { questionLabel: string; sequenceNumber: number; state: VoiceAssessmentState }>>({});
+  const [assessmentSockets] = useState(() => new AssessmentSocketRegistry());
   const advanceTimerRef = useRef<number | null>(null);
   const submitInFlightRef = useRef(false);
   const generationRef = useRef(0);
@@ -51,8 +54,9 @@ export function InterviewRoom({
       decisionAbortRef.current = null;
       submitInFlightRef.current = false;
       if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current);
+      assessmentSockets.closeAll();
     };
-  }, []);
+  }, [assessmentSockets]);
 
   const submitAnswer = async () => {
     if (submitInFlightRef.current || leftRef.current || !mountedRef.current) return;
@@ -142,7 +146,7 @@ export function InterviewRoom({
             <p className="text-sm font-medium uppercase tracking-[0.14em] text-primary">Sessão concluída</p>
             <div>
               <h1 id="interview-complete-title" className="text-3xl font-semibold tracking-[-0.03em]">Você concluiu a entrevista.</h1>
-              <p className="mt-3 max-w-[58ch] leading-7 text-muted-foreground">{persistenceLabel} Respostas por voz são enviadas ao Azure Speech para transcrição; o áudio não é salvo.</p>
+              <p className="mt-3 max-w-[58ch] leading-7 text-muted-foreground">{persistenceLabel} Respostas por voz são transcritas pelo Whisper e o áudio não é salvo.</p>
             </div>
             {persistenceMessage && <div role="status" className="alert alert-warning alert-soft text-sm"><span>{persistenceMessage}</span></div>}
             <dl className="grid gap-3 border-y py-5 text-sm sm:grid-cols-4">
@@ -151,6 +155,7 @@ export function InterviewRoom({
               <div><dt className="text-muted-foreground">Cargo</dt><dd className="mt-1 truncate font-semibold">{config.role}</dd></div>
               <div><dt className="text-muted-foreground">Tempo planejado</dt><dd className="mt-1 font-semibold">{config.duration} min</dd></div>
             </dl>
+            {Object.keys(voiceAssessments).length > 0 && <section className="border-t pt-5" aria-labelledby="voice-assessment-title"><h2 id="voice-assessment-title" className="text-base font-semibold">Sinais experimentais de fala</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">Estimativas experimentais do Azure em inglês dos EUA, comparadas à transcrição canônica do Whisper. Erros de transcrição também podem afetar os valores; eles não indicam nível geral de inglês e respostas curtas podem não ser representativas.</p><div className="mt-4 space-y-3">{Object.entries(voiceAssessments).sort(([, first], [, second]) => first.sequenceNumber - second.sequenceNumber).map(([attemptId, entry]) => <div key={attemptId} className="border-t pt-3 text-sm"><p className="font-medium">{entry.questionLabel}</p>{entry.state.status === "pending" ? <p className="mt-1 text-muted-foreground">A avaliação ainda está sendo processada.</p> : entry.state.status === "unavailable" ? <p className="mt-1 text-muted-foreground">Avaliação indisponível para esta resposta.</p> : <dl className="mt-2 grid grid-cols-3 gap-3"><Score label="Precisão" value={entry.state.scores.accuracy} /><Score label="Fluência" value={entry.state.scores.fluency} /><Score label="Prosódia" value={entry.state.scores.prosody} /></dl>}</div>)}</div></section>}
             <button type="button" className="btn btn-primary w-fit gap-2" onClick={onLeave}>Voltar à visão geral <ArrowUpRight className="size-4" aria-hidden="true" /></button>
           </div>
         </section>
@@ -178,7 +183,7 @@ export function InterviewRoom({
             {speechMessage && <div role="status" className="alert alert-warning alert-soft text-sm"><Volume2 className="size-4 shrink-0" aria-hidden="true" /><span>{speechMessage}</span></div>}
             {persistenceMessage && <div role="status" className="alert alert-info alert-soft text-sm"><span>{persistenceMessage}</span></div>}
             <fieldset className="fieldset w-full gap-2"><legend className="fieldset-legend text-sm font-medium">Sua resposta</legend><textarea className={`textarea textarea-bordered min-h-32 w-full resize-y bg-base-100 text-base leading-6 ${answerError ? "textarea-error" : ""}`} value={answer} onChange={(event) => { setAnswer(event.target.value); if (answerError) setAnswerError(null); }} placeholder={isSpeaking ? "O campo ficará disponível depois da pergunta." : "Escreva sua resposta em inglês..."} disabled={isSpeaking || isAdvancing} aria-invalid={Boolean(answerError)} aria-describedby={answerError ? "answer-error" : "answer-note"} />{answerError ? <p id="answer-error" className="label text-error" role="alert">{answerError}</p> : <p id="answer-note" className="label text-muted-foreground">As respostas escritas são salvas nesta sessão privada. Você também pode enviar uma resposta por voz para transcrição.</p>}</fieldset>
-            <MicrophoneCapture key={question.id} disabled={isSpeaking || isAdvancing} onTranscriptionChange={setVoiceTranscription} />
+            <MicrophoneCapture key={question.id} disabled={isSpeaking || isAdvancing} assessmentSockets={assessmentSockets} onTranscriptionChange={setVoiceTranscription} onAssessmentChange={(attemptId, assessment) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { questionLabel: isFollowUp ? `Aprofundamento da pergunta ${currentIndex + 1}` : `Pergunta ${currentIndex + 1}`, sequenceNumber: questionSequenceNumber, state: assessment } }))} />
             <div className="card-actions justify-end border-t pt-4"><button type="button" className="btn btn-primary gap-2" onClick={submitAnswer} disabled={isSpeaking || isAdvancing || (voiceTranscription.status === "pending" && !answer.trim())}>{isAdvancing ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}{isAdvancing ? "Avançando" : currentIndex === questions.length - 1 ? "Concluir entrevista" : "Enviar resposta"}</button></div>
           </div></div>
           <aside className="card card-border bg-base-200"><div className="card-body gap-4 p-5 sm:p-6"><h2 className="card-title text-base">Progresso da sessão</h2><progress className="progress progress-primary w-full" value={progress} max="100" aria-label={`Pergunta ${currentIndex + 1} de ${questions.length}`} /><p className="text-sm font-medium">{currentIndex + 1} de {questions.length} perguntas</p><dl className="mt-2 space-y-3 border-t pt-4 text-sm"><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Tempo planejado</dt><dd className="font-medium">{config.duration} min</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Decorrido</dt><dd className="font-medium tabular-nums">{elapsed}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Áudio</dt><dd className="font-medium">Rota Kokoro</dd></div></dl><p className="mt-auto border-t pt-4 text-xs leading-5 text-muted-foreground">Se o áudio não funcionar, você ainda pode ler, responder e seguir com a entrevista.</p></div></aside>
@@ -187,6 +192,10 @@ export function InterviewRoom({
       <div className="mx-auto flex w-full max-w-6xl justify-center pt-5"><div className="flex w-full max-w-sm items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:w-auto sm:max-w-none sm:gap-2 sm:p-2"><p className="px-2 text-xs text-muted-foreground">{persistenceLabel}</p><Button variant="destructive" className="h-11 gap-2 px-4 sm:h-9" onClick={leaveInterview}><PhoneOff className="size-4" /> Encerrar entrevista</Button></div></div>
     </main>
   );
+}
+
+function Score({ label, value }: { label: string; value: number | null }) {
+  return <div><dt className="text-muted-foreground">{label}</dt><dd className="mt-1 font-semibold tabular-nums">{value === null ? "—" : `${Math.round(value)} / 100`}</dd></div>;
 }
 
 export function VideoTile({

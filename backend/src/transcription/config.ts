@@ -3,6 +3,8 @@ export type TranscriptionConfig = {
   azureSpeechRegion: string | null;
   openRouterApiKey: string | null;
   timeoutMs: number;
+  assessmentEnabled: boolean;
+  assessmentTimeoutMs: number;
 };
 
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
@@ -22,5 +24,7 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     azureSpeechRegion: environment.AZURE_SPEECH_REGION?.trim() || null,
     openRouterApiKey: environment.OPENROUTER_API_KEY?.trim() || null,
     timeoutMs: parsePositiveNumber(environment.AZURE_SPEECH_TIMEOUT_MS, 20_000),
+    assessmentEnabled: environment.AZURE_SPEECH_ASSESSMENT_ENABLED === "true",
+    assessmentTimeoutMs: parsePositiveNumber(environment.AZURE_SPEECH_ASSESSMENT_TIMEOUT_MS, 8_000),
   };
 }

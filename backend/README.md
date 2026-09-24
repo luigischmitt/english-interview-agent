@@ -44,6 +44,8 @@ performed by the authenticated frontend client. The speech service accepts:
 | `AZURE_SPEECH_KEY` | — | Azure Speech resource key. Required only for voice transcription. Keep it server-side. |
 | `AZURE_SPEECH_REGION` | — | Azure Speech resource region, such as `brazilsouth`. Required only for voice transcription. |
 | `AZURE_SPEECH_TIMEOUT_MS` | `20000` | Positive Azure Speech request timeout in milliseconds. |
+| `AZURE_SPEECH_ASSESSMENT_ENABLED` | `false` | Set to `true` to enable optional experimental pronunciation signals. Requires Azure Speech key and region. |
+| `AZURE_SPEECH_ASSESSMENT_TIMEOUT_MS` | `8000` | Positive total deadline shared by ffmpeg conversion and the Azure scripted assessment request. |
 | `OPENROUTER_API_KEY` | — | OpenRouter key. Enables the two Whisper transcription choices and stays server-side. |
 | `INTERVIEW_REASONING_MODEL` | `mistralai/mistral-small-3.2-24b-instruct` | OpenRouter model for interview reasoning and next-turn orchestration. Keep this configuration server-side. |
 | `INTERVIEW_REASONING_TIMEOUT_MS` | `15000` | Positive timeout in milliseconds for interview reasoning requests. |
@@ -88,7 +90,7 @@ not a gate for interview practice.
 | `GET` | `/health` | Returns `{ "status": "ok" }`. |
 | `GET` | `/api/v1/transcriptions/providers` | Returns the configured transcription choices for the local comparison selector. |
 | `POST` | `/api/v1/transcriptions` | Receives a completed 16 kHz mono WAV response (maximum 30 seconds), returns a transcription from the selected configured provider. Audio is not persisted. |
-| `WS` | `/api/v1/transcriptions/stream` | Receives `start`, RMS `level`, binary audio, and `finalize` or `cancel` messages. Keeps up to 30 seconds / 4 MiB in memory and calls Whisper Turbo once on completion. |
+| `WS` | `/api/v1/transcriptions/stream` | Receives `start`, RMS `level`, binary audio, and `finalize` or `cancel` messages. Keeps up to 30 seconds / 4 MiB in memory and calls Whisper Turbo once on completion. When enabled, sends the Whisper transcript first, then submits the same audio plus that canonical transcript as Azure's scripted `ReferenceText`; a later `assessment` event contains experimental Accuracy, Fluency, and Prosody signals or `unavailable`. There is no second Azure transcription call. |
 | `POST` | `/api/v1/thinking` | Assesses technical answer coverage and written English communication. Uses OpenRouter credentials held by the backend. |
 | `POST` | `/api/v1/thinking/next-turn` | Chooses one brief follow-up or advances to the next fixed interview question. Provider errors and invalid output deterministically return `NEXT`. |
 | `POST` | `/api/v1/formulations` | Reserved for answer formulation in English; returns `501` until connected. |
@@ -183,6 +185,8 @@ provider-reported cost, never credentials or hidden rationale. Orchestration
 uses a separate 6-second timeout by default; answer assessment retains its
 15-second timeout. The browser cancels orchestration requests after 7 seconds
 so its fallback stays slightly outside the backend timeout.
+
+Set `AZURE_SPEECH_ASSESSMENT_ENABLED=true` to send the same in-memory final recording to Azure Pronunciation Assessment REST in scripted mode, using the canonical Whisper transcript as `ReferenceText`. This avoids a separate Azure speech-to-text call, but the assessment can still inherit recognition errors from Whisper because its transcript is the scoring reference. The WebM/MP4 input is converted by ffmpeg through stdin/stdout to mono 16 kHz 16-bit PCM WAV; no temporary audio file is created. The backend Docker image installs ffmpeg. Whisper's transcript is sent to the browser before the optional Azure request begins; conversion or Azure failures/timeouts yield unavailable assessment and never replace or delay the transcript. Scores are ephemeral and not persisted. Accuracy, Fluency, and Prosody are experimental vendor signals, not a validated English-level, readiness, proficiency, or accent measure. Microsoft's pricing material lists some pronunciation-assessment enhanced features under Standard/pay-as-you-go and Prosody as an additional paid score, so verify the current pricing and tier terms for the target resource; this implementation does not assume S0 is required. A live synthetic-English end-to-end smoke against the configured F0 resource returned numeric Accuracy, Fluency, and Prosody values, confirming this resource path works at test time; it does not establish general F0 availability or future billing. Keep the toggle off when these costs are not desired. See Microsoft's [Pronunciation Assessment guide](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/how-to-pronunciation-assessment), [short-audio REST format limits](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/rest-speech-to-text-short), and [pricing guidance](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/pronunciation-assessment-tool).
 
 ### Generate interviewer speech
 

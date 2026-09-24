@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { getAllowedOrigins, isOriginAllowed } from "../middlewares/allowed-origins.js";
 import type { TranscriptionService } from "./types.js";
 import { StreamingTranscriptionSessions } from "./streaming-transcription.js";
+import type { PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
 
 type ClientMessage =
   | { type: "start"; mimeType: string; speechThreshold: number }
@@ -25,9 +26,9 @@ function parseMessage(raw: Buffer): ClientMessage | null {
   }
 }
 
-export function attachTranscriptionWebSocket(server: Server, transcriptionService: TranscriptionService): void {
+export function attachTranscriptionWebSocket(server: Server, transcriptionService: TranscriptionService, assessmentService: PronunciationAssessmentService | null = null): void {
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
-  const sessions = new StreamingTranscriptionSessions(transcriptionService);
+  const sessions = new StreamingTranscriptionSessions(transcriptionService, undefined, undefined, undefined, assessmentService);
 
   server.on("upgrade", (request, socket, head) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -59,9 +60,18 @@ export function attachTranscriptionWebSocket(server: Server, transcriptionServic
       clearTimeout(timer);
       send(socket, { type: "finalizing", reason });
       try {
-        const result = await sessions.finalize(sessionId);
+        const { result, startAssessment } = await sessions.finalizeWithAssessment(sessionId);
         send(socket, { type: "result", ...result });
-        socket.close(1000, "Transcription complete");
+        if (!assessmentService) {
+          socket.close(1000, "Transcription complete");
+          return;
+        }
+        void startAssessment().then((value) => {
+          send(socket, value
+            ? { type: "assessment", status: "available", ...value }
+            : { type: "assessment", status: "unavailable" });
+          socket.close(1000, "Transcription complete");
+        });
       } catch (error) {
         const code = error instanceof Error ? error.message : "TRANSCRIPTION_UNAVAILABLE";
         const message = code === "STREAM_TOO_SHORT"
@@ -105,7 +115,7 @@ export function attachTranscriptionWebSocket(server: Server, transcriptionServic
           const session = sessions.create(message.mimeType, message.speechThreshold);
           sessionId = session.id;
           started = true;
-          send(socket, { type: "ready", sessionId, limits: { maximumDurationMs: session.config.maxDurationMs, maximumBytes: session.config.maxBytes } });
+          send(socket, { type: "ready", sessionId, limits: { maximumDurationMs: session.config.maxDurationMs, maximumBytes: session.config.maxBytes }, features: { pronunciationAssessment: assessmentService !== null } });
         } catch (error) {
           const code = error instanceof Error ? error.message : "STREAM_UNAVAILABLE";
           send(socket, { type: "error", code, message: "Audio transcription is unavailable right now. You can continue with a written answer." });
