@@ -14,7 +14,8 @@ prática da resposta em inglês da análise futura de áudio.
   o texto da pergunta sempre permanece visível.
 - Captura opcional de microfone usando `MediaRecorder`. Ao concluir uma
   gravação de até 30 segundos, o navegador a converte para WAV e a envia ao
-  backend para transcrição no Azure Speech. O áudio não é
+  backend para transcrição no Azure Speech ou, em teste local, nos modelos
+  Whisper configurados via OpenRouter. O áudio não é
   reproduzido nem salvo; a transcrição pode compor a resposta escrita privada
   da sessão.
 - Sessões e turnos de texto salvos nas tabelas Supabase quando a conta e a
@@ -121,8 +122,8 @@ eles não são uma cópia offline garantida. O estado exibido deve permanecer
 ## Áudio, transcrição e privacidade
 
 O microfone é opcional. Ao concluir uma resposta por voz de até 30 segundos,
-o áudio é enviado ao backend e encaminhado ao Azure Speech para gerar a
-transcrição. O app não salva,
+o áudio é enviado ao backend e encaminhado ao transcritor escolhido para
+gerar a transcrição. O app não salva,
 reproduz ou persiste o arquivo de áudio. A transcrição resultante pode ser
 salva como turno de texto da sessão privada. Não há streaming, transcrição ao
 vivo, upload persistente de áudio ou relatório final de feedback conectado.

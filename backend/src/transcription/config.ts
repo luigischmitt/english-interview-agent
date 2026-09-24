@@ -1,6 +1,7 @@
 export type TranscriptionConfig = {
   azureSpeechKey: string | null;
   azureSpeechRegion: string | null;
+  openRouterApiKey: string | null;
   timeoutMs: number;
 };
 
@@ -19,6 +20,7 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
   return {
     azureSpeechKey: environment.AZURE_SPEECH_KEY?.trim() || null,
     azureSpeechRegion: environment.AZURE_SPEECH_REGION?.trim() || null,
+    openRouterApiKey: environment.OPENROUTER_API_KEY?.trim() || null,
     timeoutMs: parsePositiveNumber(environment.AZURE_SPEECH_TIMEOUT_MS, 20_000),
   };
 }

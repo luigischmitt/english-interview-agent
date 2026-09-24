@@ -1,6 +1,11 @@
 export type VoiceTranscription = {
+  provider: TranscriptionProvider;
   transcript: string;
 };
+
+export const transcriptionProviders = ["azure", "whisper-large-v3", "whisper-large-v3-turbo"] as const;
+
+export type TranscriptionProvider = (typeof transcriptionProviders)[number];
 
 const sampleRate = 16_000;
 
@@ -46,11 +51,11 @@ async function convertToAzureWav(recording: Blob): Promise<Blob> {
   }
 }
 
-export async function requestVoiceTranscription(recording: Blob, endpoint: string): Promise<VoiceTranscription> {
+export async function requestVoiceTranscription(recording: Blob, endpoint: string, provider: TranscriptionProvider): Promise<VoiceTranscription> {
   const audio = await convertToAzureWav(recording);
   const response = await fetch(endpoint, {
     method: "POST",
-    headers: { "content-type": "audio/wav" },
+    headers: { "content-type": "audio/wav", "x-transcription-provider": provider },
     body: audio,
   });
 
@@ -60,4 +65,16 @@ export async function requestVoiceTranscription(recording: Blob, endpoint: strin
   }
 
   return await response.json() as VoiceTranscription;
+}
+
+export async function requestAvailableTranscriptionProviders(endpoint: string): Promise<TranscriptionProvider[]> {
+  try {
+    const response = await fetch(`${endpoint}/providers`);
+    if (!response.ok) return ["azure"];
+    const data = await response.json() as { providers?: unknown };
+    if (!Array.isArray(data.providers)) return ["azure"];
+    return data.providers.filter((provider): provider is TranscriptionProvider => typeof provider === "string" && (transcriptionProviders as readonly string[]).includes(provider));
+  } catch {
+    return ["azure"];
+  }
 }

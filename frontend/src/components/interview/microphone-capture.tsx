@@ -2,7 +2,7 @@
 
 import { Pause, Play, Square, Mic, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { requestVoiceTranscription, type VoiceTranscription } from "@/lib/interview/transcription";
+import { requestAvailableTranscriptionProviders, requestVoiceTranscription, type TranscriptionProvider, type VoiceTranscription } from "@/lib/interview/transcription";
 
 type RecorderStatus = "idle" | "requesting" | "recording" | "paused" | "ready" | "error";
 
@@ -181,15 +181,32 @@ export type VoiceTranscriptionState =
 
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const maximumAssessmentDuration = 30;
+const providerLabels: Record<TranscriptionProvider, string> = {
+  azure: "Azure Speech",
+  "whisper-large-v3": "Whisper Large V3",
+  "whisper-large-v3-turbo": "Whisper Large V3 Turbo",
+};
 
 export function MicrophoneCapture({ disabled = false, onTranscriptionChange }: MicrophoneCaptureProps) {
   const recorder = useMicrophoneRecorder();
   const [transcription, setTranscription] = useState<VoiceTranscriptionState>({ status: "idle" });
+  const [availableProviders, setAvailableProviders] = useState<TranscriptionProvider[]>(["azure"]);
+  const [provider, setProvider] = useState<TranscriptionProvider>("azure");
   const isRecording = recorder.status === "recording";
   const isPaused = recorder.status === "paused";
   const isTranscribing = transcription.status === "pending";
   const busy = disabled || recorder.status === "requesting" || isTranscribing;
   const formattedDuration = `${String(Math.floor(recorder.duration / 60)).padStart(2, "0")}:${String(recorder.duration % 60).padStart(2, "0")}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    void requestAvailableTranscriptionProviders(`${backendBaseUrl}/api/v1/transcriptions`).then((providers) => {
+      if (cancelled || providers.length === 0) return;
+      setAvailableProviders(providers);
+      setProvider((current) => providers.includes(current) ? current : providers[0]);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const recording = recorder.recording;
@@ -211,7 +228,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange }: M
       onTranscriptionChange(pending);
 
       try {
-        const value = await requestVoiceTranscription(recording, `${backendBaseUrl}/api/v1/transcriptions`);
+        const value = await requestVoiceTranscription(recording, `${backendBaseUrl}/api/v1/transcriptions`, provider);
         if (cancelled) return;
         const available = { status: "available" as const, value };
         setTranscription(available);
@@ -229,7 +246,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange }: M
     return () => {
       cancelled = true;
     };
-  }, [onTranscriptionChange, recorder.duration, recorder.recording]);
+  }, [onTranscriptionChange, provider, recorder.duration, recorder.recording]);
 
   const clearRecording = () => {
     recorder.cancel();
@@ -258,9 +275,10 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange }: M
           {recorder.hasRecording && <button type="button" className="btn btn-sm btn-ghost" onClick={clearRecording} disabled={disabled || isTranscribing}>Limpar</button>}
         </div>
       </div>
+      {availableProviders.length > 1 && <fieldset className="fieldset mt-4 max-w-sm gap-1 border-t border-base-300 pt-4"><legend className="fieldset-legend text-sm font-medium">Transcritor em teste</legend><select className="select select-sm w-full" value={provider} onChange={(event) => setProvider(event.target.value as TranscriptionProvider)} disabled={recorder.hasRecording || isRecording || isPaused || isTranscribing || disabled} aria-describedby="transcription-provider-note">{availableProviders.map((availableProvider) => <option key={availableProvider} value={availableProvider}>{providerLabels[availableProvider]}</option>)}</select><p id="transcription-provider-note" className="label text-muted-foreground">Selecione antes de gravar e use a mesma resposta para comparar os resultados.</p></fieldset>}
       {recorder.error && <p className="mt-3 text-sm text-error" role="alert">{recorder.error}</p>}
       {isTranscribing && <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Transcrevendo a resposta por voz…</p>}
-      {transcription.status === "available" && <div className="mt-4 border-t border-base-300 pt-4" aria-live="polite"><section aria-labelledby="voice-transcript-title"><h3 id="voice-transcript-title" className="text-sm font-medium">Transcrição</h3><p className="mt-1 text-sm leading-6 text-base-content/75">{transcription.value.transcript}</p></section></div>}
+      {transcription.status === "available" && <div className="mt-4 border-t border-base-300 pt-4" aria-live="polite"><section aria-labelledby="voice-transcript-title"><div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><h3 id="voice-transcript-title" className="text-sm font-medium">Transcrição</h3><p className="text-xs text-muted-foreground">{providerLabels[transcription.value.provider]}</p></div><p className="mt-1 text-sm leading-6 text-base-content/75">{transcription.value.transcript}</p></section></div>}
       {transcription.status === "failed" && <p className="mt-3 text-sm text-warning-content" role="status">{transcription.message} Você pode continuar com uma resposta escrita.</p>}
     </div>
   );

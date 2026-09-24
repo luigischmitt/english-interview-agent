@@ -1,5 +1,5 @@
 import { TranscriptionUnavailableError } from "./errors.js";
-import type { TranscriptionResult, TranscriptionService } from "./types.js";
+import type { TranscriptionProvider, TranscriptionResult, TranscriptionService } from "./types.js";
 
 type AzureCandidate = {
   Display?: string;
@@ -27,7 +27,12 @@ export class AzureSpeechTranscriptionService implements TranscriptionService {
     this.fetchImplementation = options.fetchImplementation ?? fetch;
   }
 
-  async transcribe(audio: Buffer): Promise<TranscriptionResult> {
+  availableProviders(): TranscriptionProvider[] {
+    return ["azure"];
+  }
+
+  async transcribe(audio: Buffer, provider: TranscriptionProvider): Promise<TranscriptionResult> {
+    if (provider !== "azure") throw new TranscriptionUnavailableError("This transcription provider is not configured.");
     const transcription = await this.request(audio);
     const transcript = transcription.NBest?.[0]?.Display?.trim() || transcription.DisplayText?.trim();
 
@@ -35,7 +40,7 @@ export class AzureSpeechTranscriptionService implements TranscriptionService {
       throw new TranscriptionUnavailableError("Azure Speech could not recognize a response in this recording.");
     }
 
-    return { transcript };
+    return { provider, transcript };
   }
 
   private async request(audio: Buffer): Promise<AzureSpeechResponse> {

@@ -1,7 +1,13 @@
+export const transcriptionProviders = ["azure", "whisper-large-v3", "whisper-large-v3-turbo"] as const;
+
+export type TranscriptionProvider = (typeof transcriptionProviders)[number];
+
 export type TranscriptionResult = {
+  provider: TranscriptionProvider;
   transcript: string;
 };
 
 export interface TranscriptionService {
-  transcribe(audio: Buffer): Promise<TranscriptionResult>;
+  availableProviders(): TranscriptionProvider[];
+  transcribe(audio: Buffer, provider: TranscriptionProvider): Promise<TranscriptionResult>;
 }
