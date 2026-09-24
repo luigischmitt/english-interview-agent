@@ -1,11 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
+import { DM_Sans, Instrument_Serif } from "next/font/google";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { sanitizeNextPath } from "@/lib/auth/redirect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-landing-sans",
+});
+
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
+  variable: "--font-landing-serif",
+});
 
 type AuthMode = "login" | "signup" | "forgot-password" | "update-password";
 
@@ -35,6 +50,50 @@ const copy = {
     submit: "Atualizar senha",
   },
 } as const;
+
+const NOTICE_STYLES = {
+  warning: "border-[#e6dcb8] bg-[#f7f1df] text-[#6b4e12]",
+  error: "border-[#f0c9c5] bg-[#fbeceb] text-[#8a2f27]",
+  success: "border-[#c6d6cc] bg-[#e8f2ec] text-[#1f6b45]",
+} as const;
+
+function Notice({
+  tone,
+  role,
+  children,
+}: {
+  tone: keyof typeof NOTICE_STYLES;
+  role: "alert" | "status";
+  children: ReactNode;
+}) {
+  return (
+    <div role={role} className={`border px-4 py-3 text-sm leading-relaxed ${NOTICE_STYLES[tone]}`}>
+      {children}
+    </div>
+  );
+}
+
+function Field({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-[13px] font-medium text-[#0e2a1f]">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+const inputClassName =
+  "w-full border border-[#d9e3dc] bg-[#f3f4ee] px-3.5 py-2.5 text-[15px] text-[#0e2a1f] outline-none transition-colors placeholder:text-[#8a9c92] focus:border-[#1f6b45] focus:bg-white";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.includes("Missing NEXT_PUBLIC")) {
@@ -125,52 +184,65 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
   };
 
   return (
-    <main className="grid min-h-dvh place-items-center bg-base-100 px-4 py-10 text-base-content sm:px-6">
+    <main
+      className={`${dmSans.variable} ${instrumentSerif.variable} grid min-h-dvh place-items-center bg-[#f3f4ee] px-4 py-10 text-[#0e2a1f] [font-family:var(--font-landing-sans)] sm:px-6`}
+    >
       <section className="w-full max-w-md">
-        <Link href="/login" className="mb-8 inline-flex items-center gap-2 text-sm font-semibold tracking-tight">
-          <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-content">EA</span>
-          English Interview Agent
+        <Link
+          href="/login"
+          className="mb-8 inline-flex items-center gap-3 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f6b45] focus-visible:ring-offset-4 focus-visible:ring-offset-[#f3f4ee]"
+        >
+          <Image src="/landing/tucano.png" alt="" width={34} height={39} unoptimized className="h-10 w-auto" />
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-xl font-semibold leading-tight tracking-[-0.02em]">English Interview Agent</span>
+            <span className="text-sm font-medium text-[#5c7a6a]">Inglês claro. Entrevistas mais fortes.</span>
+          </span>
         </Link>
-        <div className="card card-border bg-base-100 shadow-sm">
-          <div className="card-body gap-6 p-6 sm:p-8">
+
+        <div className="border border-[#d9e3dc] bg-white shadow-[0_40px_90px_-40px_rgba(14,42,31,0.35)]">
+          <div className="flex flex-col gap-6 p-6 sm:p-8">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{details.eyebrow}</p>
-              <h1 className="card-title mt-3 text-3xl leading-tight tracking-[-0.03em]">{details.title}</h1>
-              <p className="mt-3 text-sm leading-6 text-base-content/65">{details.description}</p>
+              <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[#1f6b45]">
+                {details.eyebrow}
+              </p>
+              <h1 className="mt-3 text-3xl leading-tight tracking-[-0.01em] [font-family:var(--font-landing-serif)]">
+                {details.title}
+              </h1>
+              <p className="mt-3 text-[15px] leading-relaxed text-[#3d5a4c]">{details.description}</p>
             </div>
 
             {expired && (
-              <div role="alert" className="alert alert-warning text-sm">
+              <Notice tone="warning" role="alert">
                 Sua sessão terminou. Entre novamente para manter seu espaço de prática seguro.
-              </div>
+              </Notice>
             )}
             {reason === "config" && (
-              <div role="alert" className="alert alert-warning text-sm">
+              <Notice tone="warning" role="alert">
                 A autenticação ainda não está configurada neste ambiente.
-              </div>
+              </Notice>
             )}
             {reason === "auth_callback" && (
-              <div role="alert" className="alert alert-error text-sm">
+              <Notice tone="error" role="alert">
                 Este link de autenticação é inválido ou expirou. Tente novamente.
-              </div>
+              </Notice>
             )}
             {error && (
-              <div role="alert" className="alert alert-error text-sm">
+              <Notice tone="error" role="alert">
                 {error}
-              </div>
+              </Notice>
             )}
             {message && (
-              <div role="status" className="alert alert-success text-sm">
+              <Notice tone="success" role="status">
                 {message}
-              </div>
+              </Notice>
             )}
 
             <form className="space-y-4" onSubmit={handleSubmit}>
               {mode === "signup" && (
-                <fieldset className="fieldset">
-                  <legend className="fieldset-legend">Nome</legend>
+                <Field id="name" label="Nome">
                   <input
-                    className="input w-full"
+                    id="name"
+                    className={inputClassName}
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     name="name"
@@ -178,14 +250,14 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     placeholder="Seu nome"
                     required
                   />
-                </fieldset>
+                </Field>
               )}
 
               {mode !== "update-password" && (
-                <fieldset className="fieldset">
-                  <legend className="fieldset-legend">E-mail</legend>
+                <Field id="email" label="E-mail">
                   <input
-                    className="input w-full"
+                    id="email"
+                    className={inputClassName}
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     name="email"
@@ -194,14 +266,14 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     placeholder="you@example.com"
                     required
                   />
-                </fieldset>
+                </Field>
               )}
 
               {(mode === "login" || mode === "signup" || mode === "update-password") && (
-                <fieldset className="fieldset">
-                  <legend className="fieldset-legend">{mode === "update-password" ? "Nova senha" : "Senha"}</legend>
+                <Field id="password" label={mode === "update-password" ? "Nova senha" : "Senha"}>
                   <input
-                    className="input w-full"
+                    id="password"
+                    className={inputClassName}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     name="password"
@@ -210,14 +282,14 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     placeholder="Pelo menos 8 caracteres"
                     required
                   />
-                </fieldset>
+                </Field>
               )}
 
               {mode === "signup" && (
-                <fieldset className="fieldset">
-                  <legend className="fieldset-legend">Confirmar senha</legend>
+                <Field id="password-confirmation" label="Confirmar senha">
                   <input
-                    className="input w-full"
+                    id="password-confirmation"
+                    className={inputClassName}
                     value={passwordConfirmation}
                     onChange={(event) => setPasswordConfirmation(event.target.value)}
                     name="password-confirmation"
@@ -226,29 +298,63 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     placeholder="Repita sua senha"
                     required
                   />
-                </fieldset>
+                </Field>
               )}
 
-              <button className="btn btn-primary w-full" type="submit" disabled={isPending}>
+              <button
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-[#1f6b45] px-6 py-3 text-base font-medium text-[#f3f4ee] transition-colors hover:bg-[#0e2a1f] disabled:cursor-not-allowed disabled:opacity-70"
+                type="submit"
+                disabled={isPending}
+              >
                 {isPending && <span className="loading loading-spinner loading-sm" />}
                 {details.submit}
               </button>
             </form>
 
-            <div className="text-center text-sm text-base-content/65">
+            <div className="text-center text-sm text-[#3d5a4c]">
               {mode === "login" && (
                 <>
-                  <Link href="/forgot-password" className="link link-hover font-medium text-primary">Esqueceu sua senha?</Link>
-                  <p className="mt-4">Ainda não tem conta? <Link href="/signup" className="link link-hover font-medium text-primary">Criar uma conta</Link></p>
+                  <Link href="/forgot-password" className="font-medium text-[#1f6b45] hover:text-[#0e2a1f]">
+                    Esqueceu sua senha?
+                  </Link>
+                  <p className="mt-4">
+                    Ainda não tem conta?{" "}
+                    <Link href="/signup" className="font-medium text-[#1f6b45] hover:text-[#0e2a1f]">
+                      Criar uma conta
+                    </Link>
+                  </p>
                 </>
               )}
-              {mode === "signup" && <p>Já tem uma conta? <Link href="/login" className="link link-hover font-medium text-primary">Entrar</Link></p>}
-              {mode === "forgot-password" && <p>Lembrou? <Link href="/login" className="link link-hover font-medium text-primary">Voltar para entrar</Link></p>}
-              {mode === "update-password" && <p>Precisa recomeçar? <Link href="/login" className="link link-hover font-medium text-primary">Voltar para entrar</Link></p>}
+              {mode === "signup" && (
+                <p>
+                  Já tem uma conta?{" "}
+                  <Link href="/login" className="font-medium text-[#1f6b45] hover:text-[#0e2a1f]">
+                    Entrar
+                  </Link>
+                </p>
+              )}
+              {mode === "forgot-password" && (
+                <p>
+                  Lembrou?{" "}
+                  <Link href="/login" className="font-medium text-[#1f6b45] hover:text-[#0e2a1f]">
+                    Voltar para entrar
+                  </Link>
+                </p>
+              )}
+              {mode === "update-password" && (
+                <p>
+                  Precisa recomeçar?{" "}
+                  <Link href="/login" className="font-medium text-[#1f6b45] hover:text-[#0e2a1f]">
+                    Voltar para entrar
+                  </Link>
+                </p>
+              )}
             </div>
           </div>
         </div>
-        <p className="mt-6 text-center text-xs leading-5 text-base-content/50">Suas sessões ficam privadas na sua conta.</p>
+        <p className="mt-6 text-center text-xs leading-5 text-[#8a9c92]">
+          Suas sessões ficam privadas na sua conta.
+        </p>
       </section>
     </main>
   );

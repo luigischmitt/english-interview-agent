@@ -18,6 +18,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "English Interview Agent",
   description: "Pratique entrevistas em inglês com confiança.",
+  icons: { icon: "/landing/tucano.png" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
