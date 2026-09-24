@@ -254,4 +254,58 @@ describe("OpenRouter Whisper transcription", () => {
       temperature: 0,
     });
   });
+
+  it("retries 429 responses with bounded Retry-After and fallback backoff, discarding each response body", async () => {
+    let requests = 0;
+    const delays: number[] = [];
+    let discarded = 0;
+    const service = new OpenRouterWhisperTranscriptionService({
+      key: "test-key",
+      timeoutMs: 1_000,
+      sleepImplementation: async (milliseconds) => { delays.push(milliseconds); },
+      fetchImplementation: async (_input, init) => {
+        expect(init?.signal).toBeDefined();
+        expect(JSON.parse(String(init?.body))).toMatchObject({ input_audio: { format: "wav" } });
+        requests += 1;
+        if (requests === 1) {
+          return new Response("limited", {
+            status: 429,
+            headers: { "Retry-After": "3" },
+          });
+        }
+        if (requests === 2) {
+          const body = new ReadableStream<Uint8Array>({
+            start(controller) { controller.enqueue(new TextEncoder().encode("limited")); },
+            cancel() { discarded += 1; },
+          });
+          return new Response(body, { status: 429 });
+        }
+        return new Response(JSON.stringify({ text: "A clear answer." }), { status: 200 });
+      },
+    });
+
+    const result = await service.transcribe(Buffer.from("wav bytes"), "whisper-large-v3-turbo");
+
+    expect(result).toEqual({ provider: "whisper-large-v3-turbo", transcript: "A clear answer." });
+    expect(requests).toBe(3);
+    expect(delays).toEqual([2_000, 800]);
+    expect(discarded).toBe(1);
+  });
+
+  it("returns a standardized error after at most three rate-limited attempts", async () => {
+    let requests = 0;
+    const service = new OpenRouterWhisperTranscriptionService({
+      key: "test-key",
+      timeoutMs: 1_000,
+      sleepImplementation: async () => undefined,
+      fetchImplementation: async () => {
+        requests += 1;
+        return new Response("limited", { status: 429, headers: { "Retry-After": "0" } });
+      },
+    });
+
+    await expect(service.transcribe(Buffer.from("wav bytes"), "whisper-large-v3"))
+      .rejects.toThrow("OpenRouter returned HTTP 429 after retries.");
+    expect(requests).toBe(3);
+  });
 });
