@@ -56,7 +56,14 @@ export function LandingPage() {
     >
       <nav className="mx-auto flex max-w-6xl animate-in fade-in slide-in-from-bottom-2 items-center justify-between gap-6 px-6 py-5 duration-700">
         <Link href="/" className="flex items-center gap-2.5 text-[#0e2a1f]">
-          <Image src="/landing/tucano.png" alt="" width={30} height={34} className="h-[34px] w-auto" />
+          <Image
+            src="/landing/tucano.png"
+            alt=""
+            width={30}
+            height={34}
+            unoptimized
+            className="h-[34px] w-auto"
+          />
           <span className="text-base font-semibold tracking-[-0.01em]">English Interview Agent</span>
         </Link>
         <div className="hidden items-center gap-7 text-[14.5px] font-medium text-[#2b4a3c] sm:flex">
@@ -93,13 +100,14 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section id="relatorio" className="relative mt-22 overflow-hidden px-6 py-24">
+      <section id="relatorio" className="relative isolate mt-22 overflow-hidden px-6 py-24">
         <div className="absolute inset-x-0 bottom-[-6%] -z-10 h-[112%] w-full">
           <Image
             src="/landing/hero-mata.png"
             alt=""
             fill
             sizes="100vw"
+            unoptimized
             className="object-cover object-bottom opacity-90"
             priority={false}
           />
@@ -180,7 +188,14 @@ export function LandingPage() {
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-6 sm:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))]">
           <div>
             <div className="flex items-center gap-2.5">
-              <Image src="/landing/tucano.png" alt="" width={30} height={34} className="h-[34px] w-auto" />
+              <Image
+                src="/landing/tucano.png"
+                alt=""
+                width={30}
+                height={34}
+                unoptimized
+                className="h-[34px] w-auto"
+              />
               <span className="text-[17px] font-semibold tracking-[-0.01em]">English Interview Agent</span>
             </div>
             <p className="mt-4 max-w-[320px] text-balance text-[15px] leading-relaxed text-[#5c7a6a]">
@@ -235,6 +250,7 @@ export function LandingPage() {
           width={2172}
           height={724}
           sizes="100vw"
+          unoptimized
           className="mt-6 h-auto w-full"
         />
       </footer>
