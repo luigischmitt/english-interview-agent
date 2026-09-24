@@ -5,12 +5,15 @@ import { app, createApp } from "../src/app.js";
 import type { SpeechConfig } from "../src/speech/config.js";
 import { SpeechProviderUnavailableError } from "../src/speech/errors.js";
 import { KokoroSpeechProvider } from "../src/speech/kokoro-speech-provider.js";
+import { AzureSpeechTranscriptionService } from "../src/transcription/azure-speech-transcription-service.js";
+import { OpenRouterWhisperTranscriptionService } from "../src/transcription/openrouter-whisper-transcription-service.js";
 import type {
   SpeechProvider,
   SpeechProviderHealth,
   SpeechSynthesisRequest,
   SynthesizedSpeech,
 } from "../src/speech/types.js";
+import type { TranscriptionService } from "../src/transcription/types.js";
 
 const speechConfig: SpeechConfig = {
   provider: "fake",
@@ -44,7 +47,6 @@ describe("backend routes", () => {
   });
 
   it.each([
-    ["/api/v1/transcriptions"],
     ["/api/v1/thinking"],
     ["/api/v1/formulations"],
   ])("keeps POST %s ready for its future service", async (path) => {
@@ -52,6 +54,49 @@ describe("backend routes", () => {
 
     expect(response.status).toBe(501);
     expect(response.body.error.code).toBe("NOT_IMPLEMENTED");
+  });
+
+  it("returns a transcript for a completed WAV recording", async () => {
+    const transcriptionService: TranscriptionService = {
+      availableProviders: () => ["azure"],
+      async transcribe(audio, provider) {
+        expect(audio.toString()).toBe("wav bytes");
+        expect(provider).toBe("azure");
+        return { provider, transcript: "I led the migration." };
+      },
+    };
+    const testApp = createApp({ speechConfig, transcriptionService });
+
+    const response = await request(testApp)
+      .post("/api/v1/transcriptions")
+      .set("content-type", "audio/wav")
+      .send(Buffer.from("wav bytes"));
+
+    expect(response.status).toBe(200);
+    expect(response.body.transcript).toBe("I led the migration.");
+    expect(response.body.provider).toBe("azure");
+  });
+
+  it("lists only the transcription providers configured on the server", async () => {
+    const transcriptionService: TranscriptionService = {
+      availableProviders: () => ["azure", "whisper-large-v3", "whisper-large-v3-turbo"],
+      async transcribe() {
+        throw new Error("not used");
+      },
+    };
+    const testApp = createApp({ speechConfig, transcriptionService });
+
+    const response = await request(testApp).get("/api/v1/transcriptions/providers");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ providers: ["azure", "whisper-large-v3", "whisper-large-v3-turbo"] });
+  });
+
+  it("rejects missing audio before calling Azure Speech", async () => {
+    const response = await request(app).post("/api/v1/transcriptions").set("content-type", "audio/wav").send();
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("INVALID_TRANSCRIPTION_REQUEST");
   });
 
   it("returns a consistent response for unknown routes", async () => {
@@ -166,5 +211,50 @@ describe("speech routes", () => {
 
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe("SPEECH_PROVIDER_UNAVAILABLE");
+  });
+});
+
+describe("Azure Speech transcription", () => {
+  it("makes one Azure request to transcribe a recording", async () => {
+    const requests: Array<{ headers?: HeadersInit }> = [];
+    const responses = [{ RecognitionStatus: "Success", NBest: [{ Display: "I led the migration." }] }];
+    const service = new AzureSpeechTranscriptionService({
+      key: "test-key",
+      region: "brazilsouth",
+      timeoutMs: 1_000,
+      fetchImplementation: async (_input, init) => {
+        requests.push({ headers: init?.headers });
+        return new Response(JSON.stringify(responses.shift()), { status: 200 });
+      },
+    });
+
+    const result = await service.transcribe(Buffer.from("wav bytes"), "azure");
+
+    expect(result).toEqual({ provider: "azure", transcript: "I led the migration." });
+    expect(requests).toHaveLength(1);
+  });
+});
+
+describe("OpenRouter Whisper transcription", () => {
+  it("sends the selected Whisper model and WAV to OpenRouter", async () => {
+    let requestBody: unknown;
+    const service = new OpenRouterWhisperTranscriptionService({
+      key: "test-key",
+      timeoutMs: 1_000,
+      fetchImplementation: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ text: "I led the migration." }), { status: 200 });
+      },
+    });
+
+    const result = await service.transcribe(Buffer.from("wav bytes"), "whisper-large-v3");
+
+    expect(result).toEqual({ provider: "whisper-large-v3", transcript: "I led the migration." });
+    expect(requestBody).toEqual({
+      model: "openai/whisper-large-v3",
+      input_audio: { data: Buffer.from("wav bytes").toString("base64"), format: "wav" },
+      language: "en",
+      temperature: 0,
+    });
   });
 });

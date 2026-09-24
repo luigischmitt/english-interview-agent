@@ -12,14 +12,18 @@ prática da resposta em inglês da análise futura de áudio.
   respostas escritas e tela de progresso.
 - Reprodução opcional da pergunta do entrevistador pelo backend de speech;
   o texto da pergunta sempre permanece visível.
-- Captura opcional de microfone usando `MediaRecorder`. O áudio fica apenas no
-  estado do navegador durante a sessão: não é enviado, reproduzido,
-  transcrito ou salvo.
+- Captura opcional de microfone usando `MediaRecorder`. Ao concluir uma
+  gravação de até 30 segundos, o navegador a converte para WAV e a envia ao
+  backend para transcrição no Azure Speech ou, em teste local, nos modelos
+  Whisper configurados via OpenRouter. O áudio não é
+  reproduzido nem salvo; a transcrição pode compor a resposta escrita privada
+  da sessão.
 - Sessões e turnos de texto salvos nas tabelas Supabase quando a conta e a
   conexão estão disponíveis. As políticas RLS limitam os dados ao usuário.
 
 Não há captura de câmera, avatar de entrevistador real, follow-ups gerados
-por IA, transcrição, análise de pronúncia ou relatório de feedback conectado.
+por IA ou relatório de feedback conectado. A transcrição atual é concluída
+por resposta; não há streaming ou feedback durante a fala.
 Os blocos visuais de câmera são apenas parte da sala de prática.
 
 ## Variáveis de ambiente
@@ -115,14 +119,14 @@ eles não são uma cópia offline garantida. O estado exibido deve permanecer
 “salvo localmente para esta sessão; sincronização precisa de atenção”, nunca
 “salvo na conta”, quando a escrita falhou.
 
-## Áudio, transcrição e privacidade futura
+## Áudio, transcrição e privacidade
 
-O microfone é opcional e a gravação atual nunca sai do navegador. Transcrição,
-upload de áudio e análise vocal ainda não estão implementados. Uma futura
-implementação deverá publicar e aplicar uma política explícita antes de
-enviar áudio: consentimento, finalidade, retenção, exclusão e provedores que
-podem processá-lo. Essa política é um requisito planejado, não uma capacidade
-ou garantia disponível nesta versão.
+O microfone é opcional. Ao concluir uma resposta por voz de até 30 segundos,
+o áudio é enviado ao backend e encaminhado ao transcritor escolhido para
+gerar a transcrição. O app não salva,
+reproduz ou persiste o arquivo de áudio. A transcrição resultante pode ser
+salva como turno de texto da sessão privada. Não há streaming, transcrição ao
+vivo, upload persistente de áudio ou relatório final de feedback conectado.
 
 ## Validação antes de abrir uma PR
 

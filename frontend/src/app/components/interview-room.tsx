@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Clock3, PhoneOff, VideoOff, Volume2 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { MicrophoneCapture } from "@/components/interview/microphone-capture";
+import { MicrophoneCapture, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
@@ -23,7 +23,7 @@ export function InterviewRoom({
   const [answer, setAnswer] = useState("");
   const [answers, setAnswers] = useState<InterviewAnswers>({});
   const [answerError, setAnswerError] = useState<string | null>(null);
-  const [hasVoiceAnswer, setHasVoiceAnswer] = useState(false);
+  const [voiceTranscription, setVoiceTranscription] = useState<VoiceTranscriptionState>({ status: "idle" });
   const advanceTimerRef = useRef<number | null>(null);
   const question: InterviewQuestion = questions[currentIndex];
   const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession } = useInterviewPersistence(config, question, currentIndex, phase);
@@ -36,21 +36,27 @@ export function InterviewRoom({
 
   const submitAnswer = () => {
     const trimmedAnswer = answer.trim();
-    if (!trimmedAnswer && !hasVoiceAnswer) {
-      setAnswerError("Escreva uma resposta curta ou conclua a resposta por voz antes de continuar.");
+    if (voiceTranscription.status === "pending") {
+      setAnswerError("Aguarde a transcrição da resposta por voz antes de continuar.");
+      return;
+    }
+    const voiceTranscript = voiceTranscription.status === "available" ? voiceTranscription.value.transcript : "";
+    if (!trimmedAnswer && !voiceTranscript) {
+      setAnswerError("Escreva uma resposta curta ou conclua uma resposta por voz transcrita antes de continuar.");
       return;
     }
 
-    setAnswers((current) => ({ ...current, [question.id]: trimmedAnswer }));
+    const savedAnswer = trimmedAnswer || voiceTranscript;
+    setAnswers((current) => ({ ...current, [question.id]: savedAnswer }));
     const candidateTurn: InterviewTurnInput = {
       interviewId: sessionId ?? "",
       sequenceNumber: currentIndex * 2 + 2,
       speaker: "candidate",
-      content: trimmedAnswer || null,
+      content: savedAnswer,
     };
     enqueueTurn(candidateTurn);
     setAnswer("");
-    setHasVoiceAnswer(false);
+    setVoiceTranscription({ status: "idle" });
     setAnswerError(null);
     setSpeechMessage(null);
     setPhase("advancing");
@@ -81,7 +87,7 @@ export function InterviewRoom({
             <p className="text-sm font-medium uppercase tracking-[0.14em] text-primary">Sessão concluída</p>
             <div>
               <h1 id="interview-complete-title" className="text-3xl font-semibold tracking-[-0.03em]">Você concluiu a entrevista.</h1>
-              <p className="mt-3 max-w-[58ch] leading-7 text-muted-foreground">{persistenceLabel} As gravações de voz ficam locais e ainda não são enviadas nem transcritas.</p>
+              <p className="mt-3 max-w-[58ch] leading-7 text-muted-foreground">{persistenceLabel} Respostas por voz são enviadas ao Azure Speech para transcrição; o áudio não é salvo.</p>
             </div>
             {persistenceMessage && <div role="status" className="alert alert-warning alert-soft text-sm"><span>{persistenceMessage}</span></div>}
             <dl className="grid gap-3 border-y py-5 text-sm sm:grid-cols-4">
@@ -116,9 +122,9 @@ export function InterviewRoom({
             </div>
             {speechMessage && <div role="status" className="alert alert-warning alert-soft text-sm"><Volume2 className="size-4 shrink-0" aria-hidden="true" /><span>{speechMessage}</span></div>}
             {persistenceMessage && <div role="status" className="alert alert-info alert-soft text-sm"><span>{persistenceMessage}</span></div>}
-            <fieldset className="fieldset w-full gap-2"><legend className="fieldset-legend text-sm font-medium">Sua resposta</legend><textarea className={`textarea textarea-bordered min-h-32 w-full resize-y bg-base-100 text-base leading-6 ${answerError ? "textarea-error" : ""}`} value={answer} onChange={(event) => { setAnswer(event.target.value); if (answerError) setAnswerError(null); }} placeholder={isSpeaking ? "O campo ficará disponível depois da pergunta." : "Escreva sua resposta em inglês..."} disabled={isSpeaking || isAdvancing} aria-invalid={Boolean(answerError)} aria-describedby={answerError ? "answer-error" : "answer-note"} />{answerError ? <p id="answer-error" className="label text-error" role="alert">{answerError}</p> : <p id="answer-note" className="label text-muted-foreground">As respostas escritas são salvas nesta sessão privada. As gravações de voz ficam locais até que a transcrição esteja disponível.</p>}</fieldset>
-            <MicrophoneCapture key={question.id} disabled={isSpeaking || isAdvancing} onAvailabilityChange={setHasVoiceAnswer} />
-            <div className="card-actions justify-end border-t pt-4"><button type="button" className="btn btn-primary gap-2" onClick={submitAnswer} disabled={isSpeaking || isAdvancing}>{isAdvancing ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}{isAdvancing ? "Avançando" : currentIndex === questions.length - 1 ? "Concluir entrevista" : "Enviar resposta"}</button></div>
+            <fieldset className="fieldset w-full gap-2"><legend className="fieldset-legend text-sm font-medium">Sua resposta</legend><textarea className={`textarea textarea-bordered min-h-32 w-full resize-y bg-base-100 text-base leading-6 ${answerError ? "textarea-error" : ""}`} value={answer} onChange={(event) => { setAnswer(event.target.value); if (answerError) setAnswerError(null); }} placeholder={isSpeaking ? "O campo ficará disponível depois da pergunta." : "Escreva sua resposta em inglês..."} disabled={isSpeaking || isAdvancing} aria-invalid={Boolean(answerError)} aria-describedby={answerError ? "answer-error" : "answer-note"} />{answerError ? <p id="answer-error" className="label text-error" role="alert">{answerError}</p> : <p id="answer-note" className="label text-muted-foreground">As respostas escritas são salvas nesta sessão privada. Você também pode enviar uma resposta por voz para transcrição.</p>}</fieldset>
+            <MicrophoneCapture key={question.id} disabled={isSpeaking || isAdvancing} onTranscriptionChange={setVoiceTranscription} />
+            <div className="card-actions justify-end border-t pt-4"><button type="button" className="btn btn-primary gap-2" onClick={submitAnswer} disabled={isSpeaking || isAdvancing || voiceTranscription.status === "pending"}>{isAdvancing ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}{isAdvancing ? "Avançando" : currentIndex === questions.length - 1 ? "Concluir entrevista" : "Enviar resposta"}</button></div>
           </div></div>
           <aside className="card card-border bg-base-200"><div className="card-body gap-4 p-5 sm:p-6"><h2 className="card-title text-base">Progresso da sessão</h2><progress className="progress progress-primary w-full" value={progress} max="100" aria-label={`Pergunta ${currentIndex + 1} de ${questions.length}`} /><p className="text-sm font-medium">{currentIndex + 1} de {questions.length} perguntas</p><dl className="mt-2 space-y-3 border-t pt-4 text-sm"><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Tempo planejado</dt><dd className="font-medium">{config.duration} min</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Decorrido</dt><dd className="font-medium tabular-nums">{elapsed}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Áudio</dt><dd className="font-medium">Rota Kokoro</dd></div></dl><p className="mt-auto border-t pt-4 text-xs leading-5 text-muted-foreground">Se o áudio não funcionar, você ainda pode ler, responder e seguir com a entrevista.</p></div></aside>
         </div>

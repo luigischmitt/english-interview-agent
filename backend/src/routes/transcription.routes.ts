@@ -1,8 +1,14 @@
-import { Router } from "express";
+import express, { Router } from "express";
 
-import { notImplemented } from "../controllers/not-implemented.js";
+import { createTranscriptionController } from "../controllers/transcription-controller.js";
+import type { TranscriptionService } from "../transcription/types.js";
 
-export const transcriptionRouter = Router();
+export function createTranscriptionRouter(service: TranscriptionService) {
+  const transcriptionRouter = Router();
+  const controller = createTranscriptionController(service);
 
-// The request will receive audio and return its transcription once the provider is selected.
-transcriptionRouter.post("/", notImplemented("transcription"));
+  transcriptionRouter.get("/providers", controller.providers);
+  transcriptionRouter.post("/", express.raw({ type: "audio/wav", limit: "4mb" }), controller.transcribe);
+
+  return transcriptionRouter;
+}
