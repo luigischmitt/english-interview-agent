@@ -14,20 +14,21 @@ prática da resposta em inglês da análise futura de áudio.
   se o serviço estiver indisponível, a entrevista avança normalmente.
 - Reprodução opcional da pergunta do entrevistador pelo backend de speech;
   o texto da pergunta sempre permanece visível.
-- Captura opcional de microfone usando `MediaRecorder`. O navegador transmite
-  WebM/MP4 em blocos de 250 ms pelo WebSocket do backend. VAD encerra após
-  1,5 segundo de silêncio; o botão manual continua disponível. O backend
-  mantém o áudio em memória e chama Whisper Large V3 Turbo uma vez após fala
-  de pelo menos 600 ms, com limite de 30 segundos e 4 MiB. O áudio não é
-  reproduzido nem salvo; a transcrição pode compor a resposta escrita privada
-  da sessão.
+- Captura opcional de microfone usando `AudioWorklet`. O navegador envia PCM
+  mono s16le a 16 kHz em frames de 100 ms pelo WebSocket v2. Whisper Large V3
+  Turbo transcreve janelas sequenciais de 10 segundos com 1 segundo de áudio
+  sobreposto; o texto aparece durante a fala e o cliente consolida palavras
+  repetidas entre janelas. VAD encerra após 2 segundos de silêncio; o botão
+  manual continua disponível. A duração padrão máxima é 3 minutos, com limites
+  de bytes, fila e sessões simultâneas configuráveis no backend. O áudio fica
+  somente em memória e não é reproduzido nem salvo; falhas preservam texto já
+  recebido e mantêm a resposta escrita disponível.
 - Sessões e turnos de texto salvos nas tabelas Supabase quando a conta e a
   conexão estão disponíveis. As políticas RLS limitam os dados ao usuário.
 
 Não há captura de câmera, avatar de entrevistador real ou relatório de
-feedback conectado. O áudio é transmitido em blocos,
-mas a transcrição só é solicitada uma vez após a resposta; não há transcrição
-ou feedback ao vivo durante a fala.
+feedback conectado. A transcrição de voz aparece em segmentos durante a fala;
+isso não representa um relatório de feedback ao vivo.
 Os blocos visuais de câmera são apenas parte da sala de prática.
 
 ## Variáveis de ambiente
@@ -125,13 +126,18 @@ eles não são uma cópia offline garantida. O estado exibido deve permanecer
 
 ## Áudio, transcrição e privacidade
 
-O microfone é opcional. Durante uma resposta por voz de até 30 segundos, o
-navegador envia blocos WebM/MP4 ao backend, que os mantém em memória e
-encaminha o áudio completo ao Whisper Large V3 Turbo uma vez ao detectar
-silêncio ou receber a ação manual de conclusão. O app não salva, reproduz ou
-persiste o áudio. A transcrição resultante pode ser salva como turno de texto
-da sessão privada. Não há transcrição ao vivo, upload persistente de áudio ou
-relatório final de feedback conectado.
+O microfone é opcional. O navegador transmite PCM mono s16le a 16 kHz pelo
+WebSocket v2. O backend retém áudio em memória até 3 minutos (por padrão), com
+limites configuráveis de duração, bytes por resposta, fila por resposta e
+sessões ativas. Janelas de 10 segundos com 1 segundo de overlap são enviadas
+sequencialmente ao Whisper Large V3 Turbo; o cliente consolida e deduplica o
+texto das janelas. Dois segundos de silêncio ou o botão manual concluem a
+captura. O app não salva nem reproduz áudio. A transcrição textual pode ser
+salva como turno da sessão privada. Quando Azure Pronunciation Assessment
+está habilitado, cada janela é avaliada após a transcrição e as métricas são
+agregadas com peso pela duração; são sinais segmentados e experimentais, não
+um relatório geral de proficiência ou sotaque. Falhas posteriores do Whisper
+preservam o texto já recebido e permitem continuar com a resposta escrita.
 
 ## Validação antes de abrir uma PR
 
@@ -158,5 +164,5 @@ logs, commits ou ambientes de teste compartilhados.
 - Next.js com App Router e TypeScript
 - Supabase Auth/SSR e Postgres com RLS
 - Tailwind CSS, daisyUI e componentes locais
-- MediaRecorder e WebSocket para captura e envio opcional de áudio
+- AudioWorklet e WebSocket para captura PCM opcional e transcrição incremental
 - Backend Express + Kokoro para fala do entrevistador

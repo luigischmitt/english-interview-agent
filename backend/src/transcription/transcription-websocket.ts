@@ -3,11 +3,11 @@ import { WebSocketServer, WebSocket } from "ws";
 
 import { getAllowedOrigins, isOriginAllowed } from "../middlewares/allowed-origins.js";
 import type { TranscriptionService } from "./types.js";
-import { StreamingTranscriptionSessions } from "./streaming-transcription.js";
-import type { PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
+import { defaultStreamingLimits, pcmSampleRate, pcmToWav, StreamingTranscriptionSessions, transcriptionOverlapMs, transcriptionWindowMs, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
+import type { PronunciationAssessment, PronunciationAssessmentService, PronunciationScores } from "./azure-pronunciation-assessment.js";
 
 type ClientMessage =
-  | { type: "start"; mimeType: string; speechThreshold: number }
+  | { type: "start"; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number }
   | { type: "level"; value: number }
   | { type: "finalize"; reason: "manual" | "silence" }
   | { type: "cancel" };
@@ -26,9 +26,31 @@ function parseMessage(raw: Buffer): ClientMessage | null {
   }
 }
 
-export function attachTranscriptionWebSocket(server: Server, transcriptionService: TranscriptionService, assessmentService: PronunciationAssessmentService | null = null): void {
-  const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
-  const sessions = new StreamingTranscriptionSessions(transcriptionService, undefined, undefined, undefined, assessmentService);
+function aggregateAssessments(entries: Array<{ assessment: PronunciationAssessment; durationMs: number }>): { provider: "azure"; locale: "en-US"; mode: "scripted"; segmented: true; durationMs: number; scores: PronunciationScores } | null {
+  if (entries.length === 0) return null;
+  const scoreFor = (key: keyof PronunciationScores): number | null => {
+    const available = entries.filter(({ assessment }) => assessment.scores[key] !== null);
+    const weight = available.reduce((sum, entry) => sum + entry.durationMs, 0);
+    if (!weight) return null;
+    return Math.round(available.reduce((sum, entry) => sum + entry.assessment.scores[key]! * entry.durationMs, 0) / weight);
+  };
+  const scores = { accuracy: scoreFor("accuracy"), fluency: scoreFor("fluency"), prosody: scoreFor("prosody") };
+  if (Object.values(scores).every((score) => score === null)) return null;
+  return { provider: "azure", locale: "en-US", mode: "scripted", segmented: true, durationMs: weightDuration(entries), scores };
+}
+
+function weightDuration(entries: Array<{ durationMs: number }>): number {
+  return entries.reduce((sum, entry) => sum + entry.durationMs, 0);
+}
+
+export function attachTranscriptionWebSocket(
+  server: Server,
+  transcriptionService: TranscriptionService,
+  assessmentService: PronunciationAssessmentService | null = null,
+  limits: StreamingLimits = defaultStreamingLimits,
+): void {
+  const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, perMessageDeflate: false });
+  const sessions = new StreamingTranscriptionSessions(transcriptionService, undefined, undefined, limits);
 
   server.on("upgrade", (request, socket, head) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -42,63 +64,143 @@ export function attachTranscriptionWebSocket(server: Server, transcriptionServic
 
   websocketServer.on("connection", (socket) => {
     let sessionId: string | null = null;
+    let retainedSession: StreamingSession | null = null;
     let nextSequence = 0;
-    let finalized = false;
     let started = false;
+    let finalRequested = false;
+    let processing = false;
+    let transcriptionFailed = false;
     let silenceFinalizationPending = false;
-    const timer = setTimeout(() => {
-      if (!finalized) {
-        if (sessionId) sessions.cancel(sessionId);
-        send(socket, { type: "error", code: "STREAM_TIMEOUT", message: "Audio connection timed out. You can continue with a written answer." });
-        socket.close(1008, "Stream timeout");
-      }
-    }, 65_000);
+    let lastWindowIndex = 0;
+    const weightedAssessments: Array<{ assessment: PronunciationAssessment; durationMs: number }> = [];
+    let assessmentChain = Promise.resolve();
+    let timer: ReturnType<typeof setTimeout>;
 
-    const finalize = async (reason: "manual" | "silence") => {
-      if (finalized || !sessionId) return;
-      finalized = true;
+    const finish = async () => {
+      if (!sessionId) return;
+      const id = sessionId;
+      const session = sessions.get(id);
+      if (!session) return;
       clearTimeout(timer);
-      send(socket, { type: "finalizing", reason });
+      if (!session.vad.hasSpeech || session.vad.speechDurationMs < session.config.minimumSpeechMs || session.bytes === 0) {
+        sessions.cancel(id);
+        sessionId = null;
+        send(socket, { type: "error", code: "STREAM_TOO_SHORT", message: "Say a little more before finishing. You can continue with a written answer." });
+        socket.close(1011, "Audio too short");
+        return;
+      }
       try {
-        const { result, startAssessment } = await sessions.finalizeWithAssessment(sessionId);
-        send(socket, { type: "result", ...result });
-        if (!assessmentService) {
+        send(socket, { type: "complete", status: transcriptionFailed ? "partial" : "complete", windows: lastWindowIndex });
+        sessions.finish(id);
+        sessionId = null;
+        if (assessmentService) {
+          void assessmentChain.then(() => {
+            if (socket.readyState === WebSocket.OPEN) {
+              const completedAssessment = aggregateAssessments(weightedAssessments);
+              send(socket, completedAssessment ? { type: "assessment", status: "available", ...completedAssessment } : { type: "assessment", status: "unavailable", segmented: true });
+              retainedSession = null;
+              socket.close(1000, "Transcription and assessment complete");
+            }
+          });
+        } else {
+          retainedSession = null;
           socket.close(1000, "Transcription complete");
-          return;
         }
-        void startAssessment().then((value) => {
-          send(socket, value
-            ? { type: "assessment", status: "available", ...value }
-            : { type: "assessment", status: "unavailable" });
-          socket.close(1000, "Transcription complete");
-        });
-      } catch (error) {
-        const code = error instanceof Error ? error.message : "TRANSCRIPTION_UNAVAILABLE";
-        const message = code === "STREAM_TOO_SHORT"
-          ? "Say a little more before finishing. You can continue with a written answer."
-          : "Speech transcription is unavailable right now. You can continue with a written answer.";
-        send(socket, { type: "error", code, message });
-        socket.close(1011, "Transcription unavailable");
+      } catch {
+        send(socket, { type: "complete", status: "partial", windows: lastWindowIndex });
+        if (assessmentService) send(socket, { type: "assessment", status: "unavailable", segmented: true });
+        sessions.finish(id);
+        sessionId = null;
+        socket.close(1000, "Transcription complete");
       }
     };
 
+    const processWindows = async () => {
+      if (processing || !sessionId) return;
+      processing = true;
+      const id = sessionId;
+      try {
+        while (sessionId === id && !transcriptionFailed) {
+          const session = sessions.get(id);
+          if (!session) break;
+          const window = sessions.takeNextWindow(id, finalRequested);
+          if (!window) break;
+          const wav = pcmToWav(window.pcm);
+          try {
+            const result = await transcriptionService.transcribe(wav, "whisper-large-v3-turbo", "wav");
+            if (sessionId !== id || session.cancelled) return;
+            lastWindowIndex = window.index;
+            send(socket, {
+              type: "partial",
+              provider: result.provider,
+              windowIndex: window.index,
+              startMs: window.startSample / pcmSampleRate * 1_000,
+              endMs: window.endSample / pcmSampleRate * 1_000,
+              durationMs: window.durationMs,
+              transcript: result.transcript,
+            });
+            if (assessmentService) {
+              assessmentChain = assessmentChain.then(async () => {
+                if (session.cancelled) return;
+                try {
+                  const assessment = await assessmentService.assess(wav, "wav", result.transcript);
+                  weightedAssessments.push({ assessment, durationMs: window.durationMs });
+                } catch {
+                  // Optional Azure assessment never blocks transcription.
+                }
+              });
+            }
+          } catch {
+            transcriptionFailed = true;
+            finalRequested = true;
+            send(socket, { type: "partial-error", message: "A later audio segment could not be transcribed. Your earlier transcript is still available; you can continue with a written answer." });
+            break;
+          }
+        }
+      } finally {
+        processing = false;
+        if (finalRequested && sessionId === id) {
+          void finish();
+        } else if (sessionId === id) {
+          const session = sessions.get(id);
+          const nextWindowEnd = session?.lastWindowEndSample === 0
+            ? pcmSampleRate * transcriptionWindowMs / 1_000
+            : (session?.lastWindowEndSample ?? 0) + pcmSampleRate * (transcriptionWindowMs - transcriptionOverlapMs) / 1_000;
+          if (session && session.samplesReceived >= nextWindowEnd) void processWindows();
+        }
+      }
+    };
+
+    timer = setTimeout(() => {
+      if (sessionId) {
+        finalRequested = true;
+        send(socket, { type: "partial-error", message: "The audio session expired. Your earlier transcript is still available; you can continue with a written answer." });
+        void processWindows();
+      } else socket.close(1008, "Stream timeout");
+    }, limits.maxDurationMs + 60_000);
+
     socket.on("message", (data, isBinary) => {
-      if (finalized) return;
       if (isBinary) {
+        if (finalRequested) return;
         if (!started || !sessionId || !Buffer.isBuffer(data)) {
           send(socket, { type: "error", code: "STREAM_NOT_STARTED", message: "Start a recording before sending audio." });
           return;
         }
         try {
           sessions.append(sessionId, nextSequence++, data);
+          void processWindows();
         } catch (error) {
           const code = error instanceof Error ? error.message : "STREAM_SIZE_LIMIT";
-          sessions.cancel(sessionId);
-          sessionId = null;
-          finalized = true;
-          clearTimeout(timer);
-          send(socket, { type: "error", code, message: "This response reached the 30 second audio limit. You can continue with a written answer." });
-          socket.close(1009, "Audio limit reached");
+          if (code === "STREAM_QUEUE_LIMIT" || code === "STREAM_SIZE_LIMIT" || code === "STREAM_DURATION_LIMIT") {
+            finalRequested = true;
+            send(socket, { type: "partial-error", code, message: "The audio limit was reached. Your earlier transcript is still available; you can continue with a written answer." });
+            void processWindows();
+          } else {
+            send(socket, { type: "error", code, message: "The audio stream is invalid. You can continue with a written answer." });
+            if (sessionId) sessions.cancel(sessionId);
+            sessionId = null;
+            socket.close(1009, "Invalid audio stream");
+          }
         }
         return;
       }
@@ -111,11 +213,17 @@ export function attachTranscriptionWebSocket(server: Server, transcriptionServic
 
       if (message.type === "start") {
         if (started) return;
+        if (message.version !== 2 || message.sampleRate !== pcmSampleRate || message.channels !== 1 || message.encoding !== "s16le") {
+          send(socket, { type: "error", code: "UNSUPPORTED_PCM_PROTOCOL", message: "This browser's audio format is not supported. You can continue with a written answer." });
+          socket.close(1003, "Unsupported audio protocol");
+          return;
+        }
         try {
-          const session = sessions.create(message.mimeType, message.speechThreshold);
+          const session = sessions.create(message.speechThreshold);
           sessionId = session.id;
+          retainedSession = session;
           started = true;
-          send(socket, { type: "ready", sessionId, limits: { maximumDurationMs: session.config.maxDurationMs, maximumBytes: session.config.maxBytes }, features: { pronunciationAssessment: assessmentService !== null } });
+          send(socket, { type: "ready", protocol: 2, sessionId, sampleRate: pcmSampleRate, limits: { maximumDurationMs: session.limits.maxDurationMs, maximumBytes: session.limits.maxBytes, maximumQueueBytes: session.limits.maxQueueBytes }, window: { durationMs: transcriptionWindowMs, overlapMs: transcriptionOverlapMs }, features: { pronunciationAssessment: assessmentService !== null } });
         } catch (error) {
           const code = error instanceof Error ? error.message : "STREAM_UNAVAILABLE";
           send(socket, { type: "error", code, message: "Audio transcription is unavailable right now. You can continue with a written answer." });
@@ -127,20 +235,8 @@ export function attachTranscriptionWebSocket(server: Server, transcriptionServic
       if (message.type === "level" && sessionId) {
         const session = sessions.get(sessionId);
         if (!session) return;
-        // Leave time for the browser to flush its final MediaRecorder slice and finalize.
-        if (Date.now() - session.startedAt > session.config.maxDurationMs + 1_000) {
-          send(socket, { type: "error", code: "STREAM_DURATION_LIMIT", message: "This response reached the 30 second audio limit. You can continue with a written answer." });
-          sessions.cancel(sessionId);
-          sessionId = null;
-          finalized = true;
-          clearTimeout(timer);
-          socket.close(1009, "Audio limit reached");
-          return;
-        }
         const update = session.vad.update(message.value, Date.now());
-        if (update.speechStarted) {
-          send(socket, { type: "speech-started" });
-        }
+        if (update.speechStarted) send(socket, { type: "speech-started" });
         if (update.shouldFinalize && !silenceFinalizationPending) {
           silenceFinalizationPending = true;
           send(socket, { type: "silence-detected" });
@@ -149,12 +245,14 @@ export function attachTranscriptionWebSocket(server: Server, transcriptionServic
       }
 
       if (message.type === "finalize") {
-        void finalize(message.reason === "silence" ? "silence" : "manual");
+        if (finalRequested || !sessionId) return;
+        finalRequested = true;
+        send(socket, { type: "finalizing", reason: message.reason });
+        void processWindows();
         return;
       }
 
       if (message.type === "cancel") {
-        finalized = true;
         clearTimeout(timer);
         if (sessionId) sessions.cancel(sessionId);
         sessionId = null;
@@ -164,7 +262,10 @@ export function attachTranscriptionWebSocket(server: Server, transcriptionServic
 
     socket.on("close", () => {
       clearTimeout(timer);
-      if (!finalized && sessionId) sessions.cancel(sessionId);
+      if (sessionId) sessions.cancel(sessionId);
+      if (retainedSession) retainedSession.cancelled = true;
+      sessionId = null;
+      retainedSession = null;
     });
   });
 }
