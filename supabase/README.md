@@ -1,14 +1,18 @@
 # Supabase database
 
-The versioned migrations in this directory define the minimum persistence
-model for interview sessions and their ordered turns.
+The versioned migrations in this directory define persistence for interview
+sessions, their ordered turns, and one final-feedback record per interview.
 
 ## Migration scope
 
 - `interviews` stores the session configuration and lifecycle timestamps.
 - `interview_turns` stores the ordered interviewer/candidate turns.
-- Both tables use UUID identifiers and ownership-based Row Level Security.
+- `interview_feedback` stores pending/ready/unavailable status, Azure signal
+  summaries with sample counts, and structured final analysis.
+- Tables use UUID identifiers and ownership-based Row Level Security.
 - Turns are deleted automatically when their interview is deleted.
+- Feedback is deleted automatically with its interview. It contains no audio or
+  full transcript copy; short excerpts may appear as analysis evidence.
 
 Authentication, login screens, and session handling are intentionally outside
 this migration and belong to the following authentication issue.

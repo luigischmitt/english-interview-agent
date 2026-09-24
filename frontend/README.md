@@ -25,10 +25,16 @@ prática da resposta em inglês da análise futura de áudio.
   recebido e mantêm a resposta escrita disponível.
 - Sessões e turnos de texto salvos nas tabelas Supabase quando a conta e a
   conexão estão disponíveis. As políticas RLS limitam os dados ao usuário.
+- Pipeline de relatório final disponível como helpers: uma chamada em lote ao
+  backend avalia conteúdo técnico e inglês escrito/transcrito; médias dos
+  sinais experimentais do Azure são calculadas por dimensão, ignorando respostas
+  indisponíveis e valores ausentes. A tabela privada `interview_feedback`
+  persiste status, resumo Azure e análise estruturada, sem salvar áudio ou copiar
+  a transcrição completa. A interface ainda não exibe esse relatório.
 
-Não há captura de câmera, avatar de entrevistador real ou relatório de
-feedback conectado. A transcrição de voz aparece em segmentos durante a fala;
-isso não representa um relatório de feedback ao vivo.
+Não há captura de câmera ou avatar de entrevistador real. A transcrição de voz
+aparece em segmentos durante a fala; isso não representa o relatório final,
+que ainda não é exibido pela interface.
 Os blocos visuais de câmera são apenas parte da sala de prática.
 
 ## Variáveis de ambiente
@@ -123,6 +129,19 @@ sessão atual do navegador e podem ser perdidos ao recarregar/fechar a página;
 eles não são uma cópia offline garantida. O estado exibido deve permanecer
 “salvo localmente para esta sessão; sincronização precisa de atenção”, nunca
 “salvo na conta”, quando a escrita falhou.
+
+## Relatório final, áudio, transcrição e privacidade
+
+Os helpers `src/lib/interview/report.ts` enviam ao endpoint
+`/api/v1/thinking/report` somente configuração da vaga e pares ordenados de
+pergunta/resposta. A rota não recebe ID de sessão e faz uma única chamada
+estruturada ao Mistral. O conteúdo de relatório e os resumos de métricas Azure
+são salvos em `interview_feedback`; RLS limita o acesso à sessão Supabase do
+usuário. Os status são `pending`, `ready` e `unavailable`. Falhas na LLM não
+impedem carregar ou salvar o resumo Azure disponível. A média ponderada por
+duração de cada sinal inclui `sampleCount` e ignora valores nulos e avaliações
+indisponíveis. O pipeline não copia a transcrição; apenas trechos curtos podem
+aparecer como evidência no relatório.
 
 ## Áudio, transcrição e privacidade
 

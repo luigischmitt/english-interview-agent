@@ -6,14 +6,14 @@ import { createThinkingRouter } from "./thinking.routes.js";
 import { createTranscriptionRouter } from "./transcription.routes.js";
 import type { SpeechConfig } from "../speech/config.js";
 import type { SpeechProvider } from "../speech/types.js";
-import type { InterviewOrchestrationService, ThinkingService } from "../thinking/types.js";
+import type { InterviewOrchestrationService, InterviewReportService, ThinkingService } from "../thinking/types.js";
 import type { TranscriptionService } from "../transcription/types.js";
 
-export function createApiRouter(provider: SpeechProvider, config: SpeechConfig, transcriptionService: TranscriptionService, thinkingService: ThinkingService | null, orchestrationService: InterviewOrchestrationService) {
+export function createApiRouter(provider: SpeechProvider, config: SpeechConfig, transcriptionService: TranscriptionService, thinkingService: ThinkingService | null, orchestrationService: InterviewOrchestrationService, reportService: InterviewReportService | null) {
   const apiRouter = Router();
 
   apiRouter.use("/transcriptions", createTranscriptionRouter(transcriptionService));
-  apiRouter.use("/thinking", createThinkingRouter(thinkingService, orchestrationService));
+  apiRouter.use("/thinking", createThinkingRouter(thinkingService, orchestrationService, reportService));
   apiRouter.use("/formulations", formulationRouter);
   apiRouter.use("/speech", createSpeechRouter(provider, config));
 
