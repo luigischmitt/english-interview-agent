@@ -116,6 +116,16 @@ describe("real-time audio E2E harness utilities", () => {
       .toBe("first answer new words here");
   });
 
+  it("merges a newly recognized article without duplicating repeated words", () => {
+    expect(mergeTranscriptWindow("We need to improve performance", "We need to improve the performance and cache results"))
+      .toBe("We need to improve the performance and cache results");
+  });
+
+  it("keeps all new content when the apparent overlap is weak", () => {
+    expect(mergeTranscriptWindow("I reviewed the database", "I changed the service and added indexes"))
+      .toBe("I reviewed the database I changed the service and added indexes");
+  });
+
   it("keeps the speech timeout active while a response body is stalled", async () => {
     let signalAborted = false;
     const fetcher: typeof fetch = async (_input, init) => {

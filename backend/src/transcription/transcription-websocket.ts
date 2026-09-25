@@ -3,7 +3,7 @@ import { WebSocketServer, WebSocket } from "ws";
 
 import { getAllowedOrigins, isOriginAllowed } from "../middlewares/allowed-origins.js";
 import type { TranscriptionService } from "./types.js";
-import { defaultStreamingLimits, pcmSampleRate, pcmToWav, StreamingTranscriptionSessions, transcriptionOverlapMs, transcriptionWindowMs, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
+import { defaultStreamingLimits, initialTranscriptionWindowMs, pcmSampleRate, pcmToWav, StreamingTranscriptionSessions, transcriptionOverlapMs, transcriptionWindowMs, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
 import type { PronunciationAssessment, PronunciationAssessmentService, PronunciationScores } from "./azure-pronunciation-assessment.js";
 
 type ClientMessage =
@@ -43,6 +43,15 @@ function weightDuration(entries: Array<{ durationMs: number }>): number {
   return entries.reduce((sum, entry) => sum + entry.durationMs, 0);
 }
 
+function safeTranscriptionErrorCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (/\b429\b|rate.?limit/i.test(message)) return "UPSTREAM_RATE_LIMITED";
+  if (/\b5\d\d\b|timeout|timed out|abort|unavailable/i.test(message)) return "UPSTREAM_UNAVAILABLE";
+  if (/could not recognize/i.test(message)) return "NO_SPEECH_RECOGNIZED";
+  if (/\b4\d\d\b/i.test(message)) return "UPSTREAM_REJECTED";
+  return "TRANSCRIPTION_FAILED";
+}
+
 export function attachTranscriptionWebSocket(
   server: Server,
   transcriptionService: TranscriptionService,
@@ -68,16 +77,18 @@ export function attachTranscriptionWebSocket(
     let nextSequence = 0;
     let started = false;
     let finalRequested = false;
-    let processing = false;
     let transcriptionFailed = false;
     let silenceFinalizationPending = false;
     let lastWindowIndex = 0;
+    let processing = false;
+    let finishing = false;
     const weightedAssessments: Array<{ assessment: PronunciationAssessment; durationMs: number }> = [];
     let assessmentChain = Promise.resolve();
     let timer: ReturnType<typeof setTimeout>;
 
     const finish = async () => {
-      if (!sessionId) return;
+      if (!sessionId || finishing) return;
+      finishing = true;
       const id = sessionId;
       const session = sessions.get(id);
       if (!session) return;
@@ -150,10 +161,10 @@ export function attachTranscriptionWebSocket(
                 }
               });
             }
-          } catch {
+          } catch (error) {
             transcriptionFailed = true;
             finalRequested = true;
-            send(socket, { type: "partial-error", message: "A later audio segment could not be transcribed. Earlier text is read-only and cannot be submitted. Please try recording again or skip/end the practice." });
+            send(socket, { type: "partial-error", code: safeTranscriptionErrorCode(error), message: "A later audio segment could not be transcribed. Earlier text is read-only and cannot be submitted. Please try recording again or skip/end the practice." });
             break;
           }
         }
@@ -164,7 +175,7 @@ export function attachTranscriptionWebSocket(
         } else if (sessionId === id) {
           const session = sessions.get(id);
           const nextWindowEnd = session?.lastWindowEndSample === 0
-            ? pcmSampleRate * transcriptionWindowMs / 1_000
+            ? pcmSampleRate * initialTranscriptionWindowMs / 1_000
             : (session?.lastWindowEndSample ?? 0) + pcmSampleRate * (transcriptionWindowMs - transcriptionOverlapMs) / 1_000;
           if (session && session.samplesReceived >= nextWindowEnd) void processWindows();
         }
@@ -223,7 +234,7 @@ export function attachTranscriptionWebSocket(
           sessionId = session.id;
           retainedSession = session;
           started = true;
-          send(socket, { type: "ready", protocol: 2, sessionId, sampleRate: pcmSampleRate, limits: { maximumDurationMs: session.limits.maxDurationMs, maximumBytes: session.limits.maxBytes, maximumQueueBytes: session.limits.maxQueueBytes }, window: { durationMs: transcriptionWindowMs, overlapMs: transcriptionOverlapMs }, features: { pronunciationAssessment: assessmentService !== null } });
+          send(socket, { type: "ready", protocol: 2, sessionId, sampleRate: pcmSampleRate, limits: { maximumDurationMs: session.limits.maxDurationMs, maximumBytes: session.limits.maxBytes, maximumQueueBytes: session.limits.maxQueueBytes }, window: { durationMs: transcriptionWindowMs, initialDurationMs: initialTranscriptionWindowMs, overlapMs: transcriptionOverlapMs }, features: { pronunciationAssessment: assessmentService !== null } });
         } catch (error) {
           const code = error instanceof Error ? error.message : "STREAM_UNAVAILABLE";
           send(socket, { type: "error", code, message: "Audio transcription is unavailable right now. Please try again or skip/end the practice." });
