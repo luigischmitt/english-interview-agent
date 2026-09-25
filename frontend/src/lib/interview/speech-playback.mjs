@@ -2,9 +2,25 @@ export function composeOpeningUtterance(introduction, firstQuestion) {
   return [introduction.trim(), firstQuestion.trim()].filter(Boolean).join(" ");
 }
 
-export function getInterviewerCaption({ isOpeningQuestion, phase, openingUtterance, questionPrompt }) {
-  const openingQuestionIsActive = isOpeningQuestion && (phase === "introducing" || phase === "speaking" || phase === "answering");
-  return openingQuestionIsActive ? openingUtterance : questionPrompt;
+export function splitInterviewerSpeech(text) {
+  const content = text.trim();
+  if (!content) return [];
+
+  if (typeof Intl.Segmenter === "function") {
+    return [...new Intl.Segmenter("en", { granularity: "sentence" }).segment(content)]
+      .map(({ segment }) => segment.trim())
+      .filter(Boolean);
+  }
+
+  return (content.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [content])
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+export function resolveInterviewerCaption({ audioEnabled, isSpeaking, playbackFailed, activeSegment, firstSegment, fallbackText, questionPrompt }) {
+  if (!audioEnabled || playbackFailed) return fallbackText;
+  if (isSpeaking) return activeSegment || firstSegment || questionPrompt;
+  return questionPrompt;
 }
 
 export function synthesizeInterviewerQuestion(text, options) {
@@ -106,4 +122,31 @@ export function synthesizeInterviewerQuestion(text, options) {
   })();
 
   return { promise, cancel };
+}
+
+export function playInterviewerSegments(segments, options) {
+  let cancelled = false;
+  let activePlayback = null;
+
+  const promise = (async () => {
+    for (const segment of segments) {
+      if (cancelled) return { status: "cancelled" };
+      options.onSegment?.(segment);
+      activePlayback = synthesizeInterviewerQuestion(segment, options);
+      const result = await activePlayback.promise;
+      activePlayback = null;
+      if (result.status !== "completed") return result;
+    }
+    return { status: "completed" };
+  })();
+
+  return {
+    promise,
+    cancel() {
+      if (cancelled) return;
+      cancelled = true;
+      activePlayback?.cancel();
+      activePlayback = null;
+    },
+  };
 }

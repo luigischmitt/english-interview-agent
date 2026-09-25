@@ -1,11 +1,17 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { synthesizeInterviewerQuestion } from "@/lib/interview/speech";
+import { playInterviewerSegments, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
 
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 
-export function useSpeechPlayback(prompt: string, onReady: () => void, enabled = true) {
+export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true) {
+  const [activeSegment, setActiveSegment] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
+  const playbackRef = useRef<SpeechPlayback | null>(null);
+  const cancelPlayback = useCallback(() => {
+    playbackRef.current?.cancel();
+    playbackRef.current = null;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -14,13 +20,20 @@ export function useSpeechPlayback(prompt: string, onReady: () => void, enabled =
       return () => { cancelled = true; };
     }
 
-    queueMicrotask(() => { if (!cancelled) setSpeechMessage(null); });
-    const playback = synthesizeInterviewerQuestion(prompt, {
+    const playback = playInterviewerSegments(segments, {
       endpoint: `${backendBaseUrl}/api/v1/speech`,
+      timeoutMs: 6_000,
+      onSegment: (segment) => {
+        setSpeechMessage(null);
+        setActiveSegment(segment);
+      },
     });
+    playbackRef.current = playback;
 
     void playback.promise.then((result) => {
       if (cancelled || result.status === "cancelled") return;
+      playbackRef.current = null;
+      setActiveSegment(null);
       if (result.status === "unavailable") setSpeechMessage(result.message);
       onReady();
     });
@@ -28,8 +41,9 @@ export function useSpeechPlayback(prompt: string, onReady: () => void, enabled =
     return () => {
       cancelled = true;
       playback.cancel();
+      if (playbackRef.current === playback) playbackRef.current = null;
     };
-  }, [enabled, onReady, prompt]);
+  }, [enabled, onReady, segments]);
 
-  return { speechMessage, setSpeechMessage };
+  return { activeSegment, speechMessage, setSpeechMessage, cancelPlayback };
 }
