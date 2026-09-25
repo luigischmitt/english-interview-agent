@@ -1,5 +1,6 @@
 import type { InterviewConfig } from "@/lib/interview/types";
 import { defaultCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
+import { defaultInterviewRoomPreferences } from "@/lib/interview/setup-audio.mjs";
 
 export const defaultInterviewConfig: InterviewConfig = {
   role: "",
@@ -7,8 +8,6 @@ export const defaultInterviewConfig: InterviewConfig = {
   focus: "technical-depth",
   duration: "15",
   questionCount: null,
-  playInterviewerAudio: true,
-  showQuestionCaptions: true,
   ...defaultCandidateVoicePreferences,
-  candidateCameraEnabled: false,
+  ...defaultInterviewRoomPreferences,
 };
