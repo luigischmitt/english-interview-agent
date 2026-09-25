@@ -6,7 +6,7 @@ export type InterviewConfig = {
   questionCount: string | null;
   playInterviewerAudio: boolean;
   showQuestionCaptions: boolean;
-  transcribeCandidateVoice: boolean;
+  showCandidateTranscript: boolean;
   candidateCameraEnabled: boolean;
   autoCaptureVoice: boolean;
 };

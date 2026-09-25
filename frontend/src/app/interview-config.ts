@@ -1,4 +1,5 @@
 import type { InterviewConfig } from "@/lib/interview/types";
+import { defaultCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 
 export const defaultInterviewConfig: InterviewConfig = {
   role: "",
@@ -8,7 +9,6 @@ export const defaultInterviewConfig: InterviewConfig = {
   questionCount: null,
   playInterviewerAudio: true,
   showQuestionCaptions: true,
-  transcribeCandidateVoice: true,
+  ...defaultCandidateVoicePreferences,
   candidateCameraEnabled: false,
-  autoCaptureVoice: true,
 };
