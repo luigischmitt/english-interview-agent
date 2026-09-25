@@ -19,6 +19,18 @@ export function nextAutoStartSignal(signal, disabled, lastSignal) {
   return signal !== null && !disabled && signal !== lastSignal ? signal : null;
 }
 
+export function finalTranscriptForSubmission(transcription) {
+  if (transcription?.status !== "available") return null;
+  const transcript = transcription.value?.transcript?.trim();
+  return transcript || null;
+}
+
+export function canSkipVoiceQuestion(captureState, transcriptionStatus) {
+  const activeCaptureStates = ["requesting", "listening", "detected", "finalizing"];
+  const unfinishedTranscriptionStates = ["pending", "partial"];
+  return !activeCaptureStates.includes(captureState) && !unfinishedTranscriptionStates.includes(transcriptionStatus);
+}
+
 export function stopMediaStreamTracks(stream) {
   stream?.getTracks().forEach((track) => track.stop());
 }

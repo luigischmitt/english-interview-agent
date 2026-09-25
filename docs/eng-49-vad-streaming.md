@@ -46,7 +46,7 @@ Uma resposta PCM máxima representa cerca de 5,5 MiB de áudio bruto; o teto de 
 
 O backend mantém buffers apenas em memória. Não grava áudio em arquivo, banco, log ou armazenamento de sessão. Uma janela é enviada ao Whisper Large V3 Turbo somente quando está pronta; chamadas são sequenciais, nunca por frame. Cada pedido usa a chave do OpenRouter no servidor. `finalize`, `cancel`, desconexão, timeout e falhas liberam buffers. O texto final pode compor o turno privado da entrevista; o áudio não é persistido.
 
-Se uma janela Whisper posterior falhar, o backend emite `partial-error` e `complete` com estado parcial. O browser preserva o texto já recebido e oferece copiá-lo para o campo de resposta; a entrevista pode continuar por escrito. Falhas antes do primeiro resultado deixam o caminho escrito disponível normalmente.
+Se uma janela Whisper posterior falhar, o backend emite `partial-error` e `complete` com estado parcial. O browser preserva o trecho para leitura somente durante a captura atual, mas ele não pode ser submetido como resposta. A pessoa pode tentar gravar novamente, pular a pergunta ou encerrar a prática. Falhas antes do primeiro resultado oferecem as mesmas ações; não há entrada escrita de resposta.
 
 ## Azure Pronunciation Assessment
 

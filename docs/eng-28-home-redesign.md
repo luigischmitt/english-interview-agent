@@ -1,6 +1,6 @@
 # ENG-28 — Home redesign direction
 
-Status: design direction for ENG-29. This document is the implementation contract; it preserves the now-available interview persistence, microphone capture, and real Progress states without adding new data behavior.
+Status: design direction for ENG-29. ENG-55 supersedes the candidate-answer interaction described below: the room is voice-only, and only completed voice transcripts may be submitted. This document otherwise preserves the Home implementation contract and the now-available interview persistence, microphone capture, and real Progress states without adding new data behavior.
 
 The route `/` has two explicit presentation states: a public Home for visitors and a practice Home for authenticated users. Both states must make the product, audience, and next step legible within seconds.
 
@@ -36,7 +36,7 @@ Evidence inspected: `frontend/src/app/page.tsx`, auth pages and session guard, i
 - The first action is visible and the warm-up prompt is product-relevant rather than generic filler.
 - “You do not need a perfect answer. You need one that is clear, specific, and yours.” is an honest, audience-specific line worth preserving in spirit.
 - The setup form has meaningful controls: target role, seniority, focus, length, and question count.
-- The room separates interviewer question, answer entry, session progress, elapsed time, and audio fallback. Kokoro is named in the room and audio failure does not block practice.
+- The room separates interviewer question, candidate response, session progress, elapsed time, and audio fallback. The candidate responds by voice; interviewer question text remains available if Kokoro fails.
 - Auth copy is calm and avoids inflated claims; expired/config/callback/error states are explicit.
 
 ### Problems the redesign must solve
@@ -73,7 +73,7 @@ Public Home content contract:
 1. Land on the authenticated Home with one obvious next action: **Start practice**.
 2. Read a short orientation line about clarity under pressure; optionally use a low-emphasis warm-up prompt without leaving Home.
 3. Select **Start practice** and complete setup: target role, seniority, focus, session length, and question count.
-4. Enter the interview room. The interviewer question is spoken with the existing Kokoro route, then the candidate answers and advances.
+4. Enter the interview room. The interviewer question is spoken with the existing Kokoro route, then the candidate answers aloud and submits only its completed voice transcript. Microphone or transcription failure offers retry, skip, or end actions.
 5. Finish the room and return to Home. Keep the completion copy truthful to persistence state: show “Saved to your private session.” when saved, or the existing local/degraded warning when account sync fails. Keep the existing note that voice recordings remain local and are not uploaded or transcribed.
 6. Progress is reachable from navigation and remains the destination for real history/metrics/loading/error/empty behavior. ENG-29 must not change or duplicate that ENG-32 surface. Settings remains a utility view for theme and voice-first explanation.
 
@@ -145,10 +145,10 @@ Home does not render a first-session/history block and does not make a new persi
 ## Content and copy rules
 
 - Default language of the app remains English because the practiced interview is in English. Copy should use short sentences and familiar B1/B2 vocabulary.
-- Keep labels concrete: “Start practice,” “Target role,” “Question count,” “Your answer.” Avoid “Optimize,” “Elevate,” “seamless,” “next-gen,” and “AI-powered.”
+- Keep labels concrete: “Start practice,” “Target role,” “Question count,” “Your voice answer.” Avoid “Optimize,” “Elevate,” “seamless,” “next-gen,” and “AI-powered.”
 - Mention pressure where it clarifies the job: “Practice answering clearly when the question is on.” Do not use shame, scarcity, or “fix your accent.”
 - Keep the distinction between content and English delivery explicit in future progress copy: technical answer quality is not the same as clarity, pacing, or pronunciation.
-- Error and unavailable copy should preserve agency: “Audio is unavailable right now. You can continue without it.”
+- If interviewer audio is unavailable, keep the question visible and offer a retry; microphone or transcription failures offer retry, skip, or end.
 - Do not invent Home metrics or history copy. When a user wants history, send them to **View progress** and let the existing Progress state explain what is available.
 
 ## Empty, loading, error, and completion states
@@ -160,8 +160,8 @@ Home does not render a first-session/history block and does not make a new persi
 | Home | Auth expired | Route to login with existing “Your session ended…” warning and preserve a safe `next` path. |
 | Setup | Missing role | Inline error: “Add the role you want to practice for.” Keep focus on the field. |
 | Setup | Submit pending | Disable submit and show a small spinner; do not change the user’s selections. |
-| Room | Kokoro unavailable/timeout | Keep question text visible, show the existing non-blocking warning, enable answer entry. |
-| Room | Speaking | Answer field disabled with a clear “The question is playing” state; never trap focus. |
+| Room | Kokoro unavailable/timeout | Keep question text visible, show the existing non-blocking warning, and let the candidate answer aloud. |
+| Room | Speaking | Keep response controls unavailable with a clear “The question is playing” state; never trap focus. |
 | Room | Advancing | Disable duplicate submit and announce “Moving to next question.” |
 | Room | Complete / saved | Preserve “Saved to your private session.” and the existing factual session summary. |
 | Room | Complete / degraded | Preserve “Saved locally for this session; account sync needs attention.” plus the existing warning; do not imply account persistence succeeded. |
