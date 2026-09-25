@@ -3,7 +3,12 @@ export type InterviewConfig = {
   seniority: string;
   focus: string;
   duration: string;
-  questionCount: string;
+  questionCount: string | null;
+  playInterviewerAudio: boolean;
+  showQuestionCaptions: boolean;
+  transcribeCandidateVoice: boolean;
+  candidateCameraEnabled: boolean;
+  autoCaptureVoice: boolean;
 };
 
 export type InterviewQuestion = {
@@ -52,4 +57,4 @@ export type PersistenceResult<T> =
   | { ok: true; value: T }
   | { ok: false; message: string; code?: string };
 
-export type InterviewPhase = "speaking" | "answering" | "advancing" | "ending";
+export type InterviewPhase = "introducing" | "speaking" | "answering" | "advancing" | "ending";

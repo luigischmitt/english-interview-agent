@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 
 import type { InterviewPhase } from "@/lib/interview/types";
+import { hasReachedTimeLimit } from "@/lib/interview/session-policy.mjs";
 
-export function useInterviewSession(phase: InterviewPhase) {
+function formatClock(seconds: number) {
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+export function useInterviewSession(phase: InterviewPhase, durationMinutes: number) {
   const [seconds, setSeconds] = useState(0);
 
   useEffect(() => {
@@ -13,6 +18,8 @@ export function useInterviewSession(phase: InterviewPhase) {
 
   return {
     seconds,
-    elapsed: `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`,
+    elapsed: formatClock(seconds),
+    remaining: formatClock(Math.max(0, durationMinutes * 60 - seconds)),
+    timeLimitReached: hasReachedTimeLimit(seconds, durationMinutes),
   };
 }

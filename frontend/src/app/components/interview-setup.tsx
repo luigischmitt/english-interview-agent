@@ -5,6 +5,7 @@ import { ArrowUpRight, ArrowLeft } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import { PageIntro } from "./shared";
 import { defaultInterviewConfig } from "../interview-config";
+import { interviewDurationOptions } from "@/lib/interview/session-policy.mjs";
 
 const seniorityLabels: Record<InterviewConfig["seniority"], string> = {
   junior: "Júnior",
@@ -35,6 +36,10 @@ export function InterviewSetup({
     if (showErrors && field === "role" && value.trim()) {
       setShowErrors(false);
     }
+  };
+
+  const updateOption = (field: "playInterviewerAudio" | "showQuestionCaptions" | "transcribeCandidateVoice" | "candidateCameraEnabled" | "autoCaptureVoice", value: boolean) => {
+    setConfig((current) => ({ ...current, [field]: value }));
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -121,42 +126,41 @@ export function InterviewSetup({
 
               <fieldset className="fieldset gap-2">
                 <legend className="fieldset-legend text-sm font-medium">Duração da sessão</legend>
-                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Duração da sessão">
-                  {["15", "25", "40"].map((minutes) => (
-                    <label key={minutes} className={`btn btn-sm h-11 border ${config.duration === minutes ? "btn-primary" : "btn-ghost border-base-300"} focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2`}>
+                <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-4" role="radiogroup" aria-label="Duração da sessão">
+                  {interviewDurationOptions.map((option) => {
+                    const minutes = String(option);
+                    return (
+                    <label key={minutes} className={`flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${config.duration === minutes ? "border-primary bg-primary/10 text-foreground" : "border-base-300 bg-base-100 hover:bg-base-200"}`}>
                       <input
                         type="radio"
                         name="duration"
                         value={minutes}
-                        className="sr-only"
+                        className="radio radio-primary radio-sm"
                         checked={config.duration === minutes}
                         onChange={(event) => updateConfig("duration", event.target.value)}
                       />
                       {minutes} min
                     </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="fieldset gap-2">
-                <legend className="fieldset-legend text-sm font-medium">Perguntas</legend>
-                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Número de perguntas">
-                  {["3", "5", "8"].map((count) => (
-                    <label key={count} className={`btn btn-sm h-11 border ${config.questionCount === count ? "btn-primary" : "btn-ghost border-base-300"} focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2`}>
-                      <input
-                        type="radio"
-                        name="questionCount"
-                        value={count}
-                        className="sr-only"
-                        checked={config.questionCount === count}
-                        onChange={(event) => updateConfig("questionCount", event.target.value)}
-                      />
-                      {count}
-                    </label>
-                  ))}
+                    );
+                  })}
                 </div>
               </fieldset>
             </div>
+
+            <section className="border-t pt-6" aria-labelledby="room-options-title">
+              <h3 id="room-options-title" className="text-base font-semibold">Opções da sala</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Você pode ajustar essas opções antes de cada prática.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <SettingToggle id="play-interviewer-audio" label="Áudio do entrevistador" description="Ouça a introdução e as perguntas em inglês." checked={config.playInterviewerAudio} onChange={(checked) => updateOption("playInterviewerAudio", checked)} />
+                <SettingToggle id="show-question-captions" label="Legenda das perguntas" description="Mantenha o texto do entrevistador visível." checked={config.showQuestionCaptions} onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
+                <SettingToggle id="transcribe-candidate-voice" label="Transcrever minha fala" description="Mostre a transcrição em inglês durante a resposta." checked={config.transcribeCandidateVoice} onChange={(checked) => {
+                  updateOption("transcribeCandidateVoice", checked);
+                  if (!checked) updateOption("autoCaptureVoice", false);
+                }} />
+                <SettingToggle id="candidate-camera" label="Câmera local" description="Ative a prévia da sua câmera na sala. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
+                <SettingToggle id="auto-capture-voice" label="Captura automática" description="Inicie o microfone após a pergunta terminar." checked={config.autoCaptureVoice} disabled={!config.transcribeCandidateVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
+              </div>
+            </section>
 
             <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-end">
               <button type="button" className="btn btn-ghost order-2 sm:order-1" onClick={onBack}>Cancelar</button>
@@ -182,15 +186,41 @@ export function InterviewSetup({
             </div>
             <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
               <dt className="text-muted-foreground">Formato</dt>
-              <dd className="font-medium">{config.questionCount} perguntas · {config.duration} min</dd>
+              <dd className="font-medium">Até {config.duration} min</dd>
             </div>
           </dl>
           <p className="mt-8 text-sm leading-6 text-muted-foreground">
-            As perguntas da entrevista serão em inglês. O cargo informado aparece na primeira pergunta.
+            A entrevista acontece em inglês. Você pode encerrar a qualquer momento; uma resposta já iniciada pode terminar após o tempo planejado.
           </p>
         </aside>
       </form>
     </main>
   );
 
+}
+
+function SettingToggle({
+  id,
+  label,
+  description,
+  checked,
+  disabled = false,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label htmlFor={id} className={`flex min-h-[4.5rem] items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-100 p-4 ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-base-200/70"}`}>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{label}</span>
+        <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
+      </span>
+      <input id={id} type="checkbox" className="toggle toggle-primary shrink-0" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+    </label>
+  );
 }

@@ -42,7 +42,7 @@ function PublicHome() {
           <div className="mt-8 grid gap-8 md:grid-cols-3 md:gap-10">
             {[
               ["Escolha o cargo e o foco", "Configure a prática para a entrevista que você está preparando."],
-              ["Responda a perguntas faladas", "Pratique em uma sala de entrevista em inglês, com o texto sempre visível quando precisar."],
+              ["Responda a perguntas faladas", "Pratique em uma sala de entrevista em inglês, com legendas opcionais para as perguntas."],
               ["Acompanhe sua prática", "Veja as sessões concluídas e retome o treino quando precisar."],
             ].map(([title, description]) => (
               <div key={title} className="border-t border-border pt-4">

@@ -4,6 +4,11 @@ export const defaultInterviewConfig: InterviewConfig = {
   role: "",
   seniority: "mid-level",
   focus: "technical-depth",
-  duration: "25",
-  questionCount: "5",
+  duration: "15",
+  questionCount: null,
+  playInterviewerAudio: true,
+  showQuestionCaptions: true,
+  transcribeCandidateVoice: true,
+  candidateCameraEnabled: false,
+  autoCaptureVoice: true,
 };

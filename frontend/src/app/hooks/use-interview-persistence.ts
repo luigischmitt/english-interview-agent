@@ -6,7 +6,7 @@ import {
   updateInterviewStatus,
   type InterviewTurnInput,
 } from "@/lib/interview/persistence";
-import type { InterviewConfig, InterviewQuestion } from "@/lib/interview/types";
+import type { InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 
 type PersistenceState = "saving" | "saved" | "local";
 
@@ -14,7 +14,7 @@ export function useInterviewPersistence(
   config: InterviewConfig,
   question: InterviewQuestion,
   questionSequenceNumber: number,
-  phase: "speaking" | "answering" | "advancing" | "ending",
+  phase: InterviewPhase,
 ) {
   const [persistenceMessage, setPersistenceMessage] = useState<string | null>(null);
   const [persistenceState, setPersistenceState] = useState<PersistenceState>("saving");
@@ -72,6 +72,30 @@ export function useInterviewPersistence(
       await Promise.all([...turnWritesRef.current]);
     }
   }, []);
+
+  const waitForSessionId = useCallback((timeoutMs = 1_000) => new Promise<string | null>((resolve) => {
+    if (sessionIdRef.current) {
+      resolve(sessionIdRef.current);
+      return;
+    }
+    const creation = sessionCreationRef.current;
+    if (!creation) {
+      resolve(null);
+      return;
+    }
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(sessionIdRef.current);
+    }, timeoutMs);
+    void creation.then((result) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      resolve(result.ok ? result.value.id : null);
+    });
+  }), []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -145,5 +169,5 @@ export function useInterviewPersistence(
     })();
   }, [phase, reportPersistenceFailure, waitForTurnPersistence]);
 
-  return { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession };
+  return { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId };
 }
