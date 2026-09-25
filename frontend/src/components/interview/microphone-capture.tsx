@@ -3,41 +3,47 @@
 import { LoaderCircle, Mic, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { VoiceTranscription } from "@/lib/interview/transcription";
+import { mergeTranscriptWindow } from "@/lib/interview/transcript-overlap.mjs";
+import { getSpeechThreshold } from "@/lib/interview/vad-threshold.mjs";
 import type { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 
 type RecorderStatus = "idle" | "requesting" | "recording" | "finalizing" | "error";
-type StreamMessage = { type?: string; status?: string; sessionId?: string; provider?: VoiceTranscription["provider"]; transcript?: string; message?: string; features?: { pronunciationAssessment?: boolean }; scores?: { accuracy: number | null; fluency: number | null; prosody: number | null } };
-export type VoiceAssessmentState = { status: "pending" } | { status: "unavailable" } | { status: "available"; scores: { accuracy: number | null; fluency: number | null; prosody: number | null } };
+type StreamMessage = {
+  type?: string;
+  status?: string;
+  protocol?: number;
+  provider?: VoiceTranscription["provider"];
+  transcript?: string;
+  message?: string;
+  features?: { pronunciationAssessment?: boolean };
+  scores?: { accuracy: number | null; fluency: number | null; prosody: number | null };
+  durationMs?: number;
+  segmented?: boolean;
+};
+export type VoiceAssessmentState =
+  | { status: "pending" }
+  | { status: "unavailable"; segmented?: boolean }
+  | { status: "available"; segmented: true; durationMs: number; scores: { accuracy: number | null; fluency: number | null; prosody: number | null } };
 
 export type VoiceTranscriptionState =
   | { status: "idle" }
   | { status: "pending" }
+  | { status: "partial"; provider: VoiceTranscription["provider"]; transcript: string }
   | { status: "available"; value: VoiceTranscription }
-  | { status: "failed"; message: string };
+  | { status: "failed"; message: string; transcript?: string };
 
 type MicrophoneCaptureProps = {
   disabled?: boolean;
   onTranscriptionChange: (state: VoiceTranscriptionState) => void;
   onAssessmentChange?: (attemptId: string, state: VoiceAssessmentState) => void;
+  onUseTranscript?: (transcript: string) => void;
   assessmentSockets: AssessmentSocketRegistry;
 };
 
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
-const maxDurationSeconds = 30;
-const sampleIntervalMs = 100;
-const preRollChunkCount = 1;
-
-function measureRms(analyser: AnalyserNode, buffer: Float32Array<ArrayBuffer>): number {
-  analyser.getFloatTimeDomainData(buffer);
-  let sum = 0;
-  for (const value of buffer) sum += value * value;
-  return Math.sqrt(sum / buffer.length);
-}
-
-function getSpeechThreshold(samples: number[]): number {
-  const noiseLevel = samples.length ? samples.reduce((sum, level) => sum + level, 0) / samples.length : 0;
-  return Math.max(0.025, Math.min(0.15, noiseLevel * 2.5));
-}
+const pcmSampleRate = 16_000;
+const maximumDurationSeconds = 180;
+const maximumSocketBufferBytes = 512 * 1024;
 
 function getStreamUrl(): string {
   const url = new URL("/api/v1/transcriptions/stream", backendBaseUrl);
@@ -54,7 +60,22 @@ function microphoneError(error: unknown): string {
   return "A captura de áudio não está disponível agora. Você pode escrever sua resposta.";
 }
 
-export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, assessmentSockets }: MicrophoneCaptureProps) {
+function toPcm16(samples: Float32Array): Int16Array {
+  const output = new Int16Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) {
+    const value = Math.max(-1, Math.min(1, samples[index]));
+    output[index] = value < 0 ? Math.round(value * 0x8000) : Math.round(value * 0x7fff);
+  }
+  return output;
+}
+
+function rootMeanSquare(samples: Float32Array): number {
+  let sum = 0;
+  for (const sample of samples) sum += sample * sample;
+  return Math.sqrt(sum / Math.max(1, samples.length));
+}
+
+export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onUseTranscript, assessmentSockets }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -62,43 +83,47 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const [assessment, setAssessment] = useState<VoiceAssessmentState | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const levelTimerRef = useRef<number | null>(null);
+  const workletRef = useRef<AudioWorkletNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
   const durationTimerRef = useRef<number | null>(null);
   const connectionTimeoutRef = useRef<number | null>(null);
   const startedAtRef = useRef(0);
-  const preRollRef = useRef<Blob[]>([]);
-  const containerHeaderSentRef = useRef(false);
-  const speechStartedRef = useRef(false);
-  const stopReasonRef = useRef<"manual" | "silence" | "cancel">("manual");
   const generationRef = useRef(0);
+  const finalizationRequestedRef = useRef(false);
+  const transcriptRef = useRef("");
   const onTranscriptionChangeRef = useRef(onTranscriptionChange);
   const onAssessmentChangeRef = useRef(onAssessmentChange);
+  const onUseTranscriptRef = useRef(onUseTranscript);
 
-  useEffect(() => { onTranscriptionChangeRef.current = onTranscriptionChange; onAssessmentChangeRef.current = onAssessmentChange; }, [onTranscriptionChange, onAssessmentChange]);
+  useEffect(() => {
+    onTranscriptionChangeRef.current = onTranscriptionChange;
+    onAssessmentChangeRef.current = onAssessmentChange;
+    onUseTranscriptRef.current = onUseTranscript;
+  }, [onTranscriptionChange, onAssessmentChange, onUseTranscript]);
 
   const releaseCapture = useCallback(() => {
-    if (levelTimerRef.current !== null) window.clearInterval(levelTimerRef.current);
     if (durationTimerRef.current !== null) window.clearInterval(durationTimerRef.current);
     if (connectionTimeoutRef.current !== null) window.clearTimeout(connectionTimeoutRef.current);
-    levelTimerRef.current = null;
     durationTimerRef.current = null;
     connectionTimeoutRef.current = null;
+    if (workletRef.current) workletRef.current.port.onmessage = null;
+    workletRef.current?.disconnect();
+    sourceRef.current?.disconnect();
+    gainRef.current?.disconnect();
+    workletRef.current = null;
+    sourceRef.current = null;
+    gainRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     const context = audioContextRef.current;
     audioContextRef.current = null;
-    analyserRef.current = null;
     if (context && context.state !== "closed") void context.close();
   }, []);
 
   const fail = useCallback((message: string) => {
     generationRef.current += 1;
-    stopReasonRef.current = "cancel";
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
     releaseCapture();
     const socket = socketRef.current;
     socketRef.current = null;
@@ -107,31 +132,44 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       socket.onmessage = null;
       socket.onclose = null;
       socket.onerror = null;
+      socket.close();
     }
-    socket?.close();
-    recorderRef.current = null;
-    containerHeaderSentRef.current = false;
-    preRollRef.current = [];
     setStatus("error");
     setError(message);
-    const failed = { status: "failed" as const, message };
+    const failed: VoiceTranscriptionState = { status: "failed", message, ...(transcriptRef.current ? { transcript: transcriptRef.current } : {}) };
     setTranscription(failed);
     onTranscriptionChangeRef.current(failed);
   }, [releaseCapture]);
 
   const stopRecording = useCallback((reason: "manual" | "silence") => {
-    const recorder = recorderRef.current;
-    if (!recorder || recorder.state === "inactive") return;
-    stopReasonRef.current = reason;
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN || finalizationRequestedRef.current) return;
+    finalizationRequestedRef.current = true;
     setStatus("finalizing");
-    recorder.stop();
-  }, []);
+    const worklet = workletRef.current;
+    if (!worklet) {
+      socket.send(JSON.stringify({ type: "finalize", reason }));
+      releaseCapture();
+      return;
+    }
+    const previousHandler = worklet.port.onmessage;
+    worklet.port.onmessage = (event: MessageEvent<{ type?: string; samples?: ArrayBuffer }>) => {
+      previousHandler?.call(worklet.port, event);
+      if (event.data?.type === "flushed") {
+        worklet.port.onmessage = previousHandler;
+        socket.send(JSON.stringify({ type: "finalize", reason }));
+        const pending: VoiceTranscriptionState = { status: "pending" };
+        setTranscription(pending);
+        onTranscriptionChangeRef.current(pending);
+        releaseCapture();
+      }
+    };
+    worklet.port.postMessage({ type: "flush" });
+  }, [releaseCapture]);
 
   const cancelRecording = useCallback(() => {
     generationRef.current += 1;
-    stopReasonRef.current = "cancel";
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
+    finalizationRequestedRef.current = true;
     releaseCapture();
     const socket = socketRef.current;
     socketRef.current = null;
@@ -140,16 +178,16 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       socket.onmessage = null;
       socket.onclose = null;
       socket.onerror = null;
+      socket.close();
     }
-    socket?.close();
-    recorderRef.current = null;
-    containerHeaderSentRef.current = false;
-    preRollRef.current = [];
     setStatus("idle");
     setDuration(0);
     setError(null);
-    setTranscription({ status: "idle" });
-    onTranscriptionChangeRef.current({ status: "idle" });
+    transcriptRef.current = "";
+    const idle: VoiceTranscriptionState = { status: "idle" };
+    setTranscription(idle);
+    setAssessment(null);
+    onTranscriptionChangeRef.current(idle);
   }, [releaseCapture]);
 
   const startRecording = useCallback(async () => {
@@ -158,57 +196,65 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     setStatus("requesting");
     const generation = generationRef.current + 1;
     generationRef.current = generation;
+    finalizationRequestedRef.current = false;
+    transcriptRef.current = "";
     setDuration(0);
     setTranscription({ status: "idle" });
     setAssessment(null);
-    const attemptId = crypto.randomUUID();
     onTranscriptionChangeRef.current({ status: "idle" });
-    speechStartedRef.current = false;
-    stopReasonRef.current = "manual";
-    containerHeaderSentRef.current = false;
-    preRollRef.current = [];
+    const attemptId = crypto.randomUUID();
 
     try {
-      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined" || typeof WebSocket === "undefined") throw new Error("unsupported");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (generationRef.current !== generation) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
+      if (!navigator.mediaDevices?.getUserMedia || typeof AudioWorkletNode === "undefined" || typeof WebSocket === "undefined") throw new Error("unsupported");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      if (generationRef.current !== generation) { stream.getTracks().forEach((track) => track.stop()); return; }
       streamRef.current = stream;
       const context = new AudioContext();
       audioContextRef.current = context;
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 1024;
-      context.createMediaStreamSource(stream).connect(analyser);
-      analyserRef.current = analyser;
+      await context.audioWorklet.addModule("/pcm-capture-processor.js");
       await context.resume();
 
-      const calibrationSamples: number[] = [];
-      const calibrationBuffer = new Float32Array(new ArrayBuffer(analyser.fftSize));
-      const calibrationStart = performance.now();
-      while (performance.now() - calibrationStart < 500) {
-        if (generationRef.current !== generation) return;
-        calibrationSamples.push(measureRms(analyser, calibrationBuffer));
-        await new Promise((resolve) => window.setTimeout(resolve, sampleIntervalMs));
-      }
-      const speechThreshold = getSpeechThreshold(calibrationSamples);
+      const source = context.createMediaStreamSource(stream);
+      const worklet = new AudioWorkletNode(context, "pcm-capture-processor", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      const mute = context.createGain();
+      mute.gain.value = 0;
+      source.connect(worklet);
+      worklet.connect(mute);
+      mute.connect(context.destination);
+      sourceRef.current = source;
+      workletRef.current = worklet;
+      gainRef.current = mute;
+      startedAtRef.current = Date.now();
 
-      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type));
-      if (!mimeType) throw new Error("unsupported");
-      const recorder = new MediaRecorder(stream, { mimeType });
-      recorderRef.current = recorder;
+      const calibrationFrames: Array<{ samples: Float32Array; level: number }> = [];
+      const calibrationReady = new Promise<void>((resolve, reject) => {
+        const calibrationTimeout = window.setTimeout(() => reject(new Error("calibration")), 1_500);
+        worklet.port.onmessage = (event: MessageEvent<{ type?: string; samples?: ArrayBuffer }>) => {
+          if (!event.data?.samples || calibrationFrames.length >= 5) return;
+          const samples = new Float32Array(event.data.samples);
+          calibrationFrames.push({ samples, level: rootMeanSquare(samples) });
+          if (calibrationFrames.length === 5) {
+            window.clearTimeout(calibrationTimeout);
+            resolve();
+          }
+        };
+      });
+      await calibrationReady;
+      if (generationRef.current !== generation) return;
+      const speechThreshold = getSpeechThreshold(calibrationFrames.map(({ level }) => level));
+      const pendingFrames = [...calibrationFrames];
+      let streamReady = false;
 
       const socket = new WebSocket(getStreamUrl());
-      let assessmentEnabled = false;
-      let awaitingAssessment = false;
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
+      let assessmentEnabled = false;
+      let awaitingAssessment = false;
       const ready = new Promise<void>((resolve, reject) => {
         let connectionReady = false;
         const connectionTimeout = window.setTimeout(() => reject(new Error("timeout")), 5_000);
         connectionTimeoutRef.current = connectionTimeout;
-        socket.onopen = () => socket.send(JSON.stringify({ type: "start", mimeType: mimeType.startsWith("audio/webm") ? "audio/webm" : "audio/mp4", speechThreshold }));
+        socket.onopen = () => socket.send(JSON.stringify({ type: "start", version: 2, sampleRate: pcmSampleRate, channels: 1, encoding: "s16le", speechThreshold }));
         socket.onerror = () => { window.clearTimeout(connectionTimeout); connectionTimeoutRef.current = null; reject(new Error("connection")); };
         socket.onmessage = (event) => {
           let message: StreamMessage;
@@ -216,9 +262,9 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
           if (message.type === "assessment") {
             awaitingAssessment = false;
             assessmentSockets.finish(attemptId, socket);
-            const received = message.status === "available" && message.scores
-              ? { status: "available" as const, scores: message.scores }
-              : { status: "unavailable" as const };
+            const received: VoiceAssessmentState = message.status === "available" && message.scores
+              ? { status: "available", segmented: true, durationMs: message.durationMs ?? 0, scores: message.scores }
+              : { status: "unavailable", segmented: message.segmented === true };
             if (generationRef.current === generation) setAssessment(received);
             onAssessmentChangeRef.current?.(attemptId, received);
             socket.onmessage = null;
@@ -242,34 +288,53 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             reject(new Error(message.message ?? "Audio transcription is unavailable right now. You can continue with a written answer."));
             return;
           }
-          if (message.type === "speech-started") {
-            speechStartedRef.current = true;
-            preRollRef.current.forEach((chunk) => { if (socket.readyState === WebSocket.OPEN) socket.send(chunk); });
-            preRollRef.current = [];
+          if (message.type === "speech-started") return;
+          if (message.type === "silence-detected") { stopRecording("silence"); return; }
+          if (message.type === "partial" && message.transcript) {
+            transcriptRef.current = mergeTranscriptWindow(transcriptRef.current, message.transcript);
+            const partial: VoiceTranscriptionState = { status: "partial", provider: message.provider ?? "whisper-large-v3-turbo", transcript: transcriptRef.current };
+            setTranscription(partial);
+            onTranscriptionChangeRef.current(partial);
             return;
           }
-          if (message.type === "silence-detected") {
-            stopRecording("silence");
+          if (message.type === "partial-error") {
+            releaseCapture();
+            const failed: VoiceTranscriptionState = { status: "failed", message: message.message ?? "A transcrição foi interrompida.", ...(transcriptRef.current ? { transcript: transcriptRef.current } : {}) };
+            setStatus("error");
+            setError(failed.message);
+            setTranscription(failed);
+            onTranscriptionChangeRef.current(failed);
+            if (assessmentEnabled) {
+              awaitingAssessment = true;
+              assessmentSockets.register(attemptId, socket);
+              setAssessment({ status: "pending" });
+              onAssessmentChangeRef.current?.(attemptId, { status: "pending" });
+            }
             return;
           }
-          if (message.type === "finalizing") {
-            setStatus("finalizing");
-            return;
-          }
-          if (message.type === "result" && message.provider && message.transcript) {
-            const available = { status: "available" as const, value: { provider: message.provider, transcript: message.transcript } };
-            setTranscription(available);
-            setStatus("idle");
-            onTranscriptionChangeRef.current(available);
+          if (message.type === "finalizing") { setStatus("finalizing"); return; }
+          if (message.type === "complete") {
+            releaseCapture();
+            if (transcriptRef.current) {
+              const available: VoiceTranscriptionState = message.status === "complete"
+                ? { status: "available", value: { provider: "whisper-large-v3-turbo", transcript: transcriptRef.current } }
+                : { status: "failed", message: "A transcrição terminou com trechos indisponíveis. O texto recebido foi preservado.", transcript: transcriptRef.current };
+              setTranscription(available);
+              onTranscriptionChangeRef.current(available);
+              setStatus(message.status === "complete" ? "idle" : "error");
+              if (message.status !== "complete") setError(available.status === "failed" ? available.message : null);
+            } else {
+              const failed: VoiceTranscriptionState = { status: "failed", message: "Não foi possível reconhecer a fala. Você pode escrever sua resposta." };
+              setTranscription(failed);
+              onTranscriptionChangeRef.current(failed);
+              setStatus("error");
+            }
             awaitingAssessment = assessmentEnabled;
             if (awaitingAssessment) {
               assessmentSockets.register(attemptId, socket);
               setAssessment({ status: "pending" });
               onAssessmentChangeRef.current?.(attemptId, { status: "pending" });
-            }
-            releaseCapture();
-            socketRef.current = null;
-            if (!awaitingAssessment) {
+            } else {
               socket.onmessage = null;
               socket.onclose = null;
               socket.onerror = null;
@@ -282,7 +347,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
           if (awaitingAssessment) {
             awaitingAssessment = false;
             assessmentSockets.finish(attemptId, socket);
-            const unavailable = { status: "unavailable" as const };
+            const unavailable: VoiceAssessmentState = { status: "unavailable", segmented: true };
             if (generationRef.current === generation) setAssessment(unavailable);
             onAssessmentChangeRef.current?.(attemptId, unavailable);
             return;
@@ -295,6 +360,20 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
           }
         };
       });
+      const sendFrame = ({ samples, level }: { samples: Float32Array; level: number }) => {
+        if (socket.readyState !== WebSocket.OPEN) { fail("A conexão de áudio foi interrompida. Você pode escrever sua resposta."); return; }
+        if (socket.bufferedAmount > maximumSocketBufferBytes) { fail("A conexão de áudio está lenta. Os trechos transcritos foram preservados; você pode continuar por escrito."); return; }
+        const pcm = toPcm16(samples);
+        socket.send(pcm.buffer);
+        socket.send(JSON.stringify({ type: "level", value: level }));
+      };
+      worklet.port.onmessage = (event: MessageEvent<{ type?: string; samples?: ArrayBuffer }>) => {
+        if (generationRef.current !== generation || !event.data?.samples) return;
+        const samples = new Float32Array(event.data.samples);
+        const frame = { samples, level: rootMeanSquare(samples) };
+        if (!streamReady) pendingFrames.push(frame);
+        else sendFrame(frame);
+      };
       await ready;
       if (generationRef.current !== generation) {
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "cancel" }));
@@ -303,59 +382,15 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       }
       if (socket.readyState !== WebSocket.OPEN) throw new Error("connection");
 
-      recorder.ondataavailable = (event) => {
-        if (generationRef.current !== generation) return;
-        if (event.data.size === 0) return;
-        if (!containerHeaderSentRef.current) {
-          containerHeaderSentRef.current = true;
-          if (socket.readyState === WebSocket.OPEN) socket.send(event.data);
-          return;
-        }
-        if (speechStartedRef.current) {
-          if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 1024 * 1024) socket.send(event.data);
-          else fail("A conexão de áudio está lenta. Você pode escrever sua resposta.");
-          return;
-        }
-        preRollRef.current.push(event.data);
-        if (preRollRef.current.length > preRollChunkCount) preRollRef.current.shift();
-      };
-      recorder.onerror = () => { if (generationRef.current === generation) fail("A gravação falhou. Você pode escrever sua resposta."); };
-      recorder.onstop = () => {
-        releaseCapture();
-        recorderRef.current = null;
-        if (generationRef.current !== generation) return;
-        if (stopReasonRef.current === "cancel") return;
-        if (!speechStartedRef.current) {
-          fail("Não detectei fala nesta gravação. Você pode escrever sua resposta.");
-          return;
-        }
-        if (socket.readyState !== WebSocket.OPEN) {
-          fail("A conexão de áudio foi interrompida. Você pode escrever sua resposta.");
-          return;
-        }
-        setStatus("finalizing");
-        const reason = stopReasonRef.current;
-        socket.send(JSON.stringify({ type: "finalize", reason }));
-        const pending = { status: "pending" as const };
-        setTranscription(pending);
-        onTranscriptionChangeRef.current(pending);
-      };
-      recorder.start(250);
-      startedAtRef.current = Date.now();
+      streamReady = true;
+      pendingFrames.forEach(sendFrame);
       setStatus("recording");
       durationTimerRef.current = window.setInterval(() => {
         if (generationRef.current !== generation) return;
         const seconds = Math.floor((Date.now() - startedAtRef.current) / 1_000);
         setDuration(seconds);
-        if (seconds >= maxDurationSeconds) stopRecording("manual");
+        if (seconds >= maximumDurationSeconds) stopRecording("manual");
       }, 200);
-      const levelBuffer = new Float32Array(new ArrayBuffer(analyser.fftSize));
-      levelTimerRef.current = window.setInterval(() => {
-        if (generationRef.current !== generation) return;
-        if (socket.readyState === WebSocket.OPEN && analyserRef.current) {
-          socket.send(JSON.stringify({ type: "level", value: measureRms(analyser, levelBuffer) }));
-        }
-      }, sampleIntervalMs);
     } catch (captureError) {
       if (generationRef.current !== generation) return;
       fail(captureError instanceof Error && captureError.message === "unsupported"
@@ -364,17 +399,13 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
           ? "A conexão de áudio demorou para responder. Você pode escrever sua resposta."
           : captureError instanceof Error && captureError.message === "connection"
             ? "A conexão de áudio falhou. Você pode escrever sua resposta."
-          : microphoneError(captureError));
+            : microphoneError(captureError));
     }
   }, [assessmentSockets, disabled, fail, releaseCapture, status, stopRecording]);
 
   useEffect(() => () => {
     generationRef.current += 1;
-    if (connectionTimeoutRef.current !== null) window.clearTimeout(connectionTimeoutRef.current);
-    connectionTimeoutRef.current = null;
-    stopReasonRef.current = "cancel";
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
+    finalizationRequestedRef.current = true;
     releaseCapture();
     const socket = socketRef.current;
     socketRef.current = null;
@@ -383,13 +414,16 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       socket.onmessage = null;
       socket.onclose = null;
       socket.onerror = null;
+      socket.close();
     }
-    socket?.close();
   }, [releaseCapture]);
 
   const isRecording = status === "recording";
   const isPending = status === "requesting" || status === "finalizing" || transcription.status === "pending";
   const formattedDuration = `${String(Math.floor(duration / 60)).padStart(2, "0")}:${String(duration % 60).padStart(2, "0")}`;
+  const displayedTranscript = transcription.status === "available" ? transcription.value.transcript
+    : transcription.status === "partial" ? transcription.transcript
+      : transcription.status === "failed" ? transcription.transcript : "";
 
   return (
     <section className="rounded-lg border border-dashed border-base-300 bg-base-200/60 p-4" aria-label="Resposta opcional pelo microfone">
@@ -399,22 +433,23 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
           <div>
             <p className="text-sm font-medium">Responda com sua voz <span className="font-normal text-muted-foreground">(opcional)</span></p>
             <p className="text-xs text-muted-foreground" aria-live="polite">
-              {isRecording ? `Gravando · ${formattedDuration}` : status === "requesting" ? "Conectando ao transcritor…" : isPending ? "Preparando a transcrição…" : transcription.status === "available" ? "Transcrição pronta." : status === "error" ? "A gravação não foi concluída." : "A gravação para após uma pausa ou pelo botão."}
+              {isRecording ? `Gravando · ${formattedDuration}` : status === "requesting" ? "Conectando ao transcritor…" : isPending ? "Preparando a transcrição…" : transcription.status === "available" ? "Transcrição pronta." : transcription.status === "partial" ? "Transcrição parcial recebida…" : status === "error" ? "A gravação foi interrompida." : "A gravação para após 2 segundos de silêncio ou pelo botão."}
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!isRecording && status !== "requesting" && status !== "finalizing" && transcription.status !== "available" && <button type="button" className="btn btn-sm btn-outline gap-2" onClick={() => void startRecording()} disabled={disabled}><Mic className="size-4" aria-hidden="true" />{status === "error" ? "Tentar de novo" : "Iniciar gravação"}</button>}
+          {!isRecording && status !== "requesting" && status !== "finalizing" && transcription.status !== "available" && !(transcription.status === "failed" && transcription.transcript) && <button type="button" className="btn btn-sm btn-outline gap-2" onClick={() => void startRecording()} disabled={disabled}><Mic className="size-4" aria-hidden="true" />{status === "error" ? "Tentar de novo" : "Iniciar gravação"}</button>}
           {isRecording && <><button type="button" className="btn btn-sm btn-primary gap-2" onClick={() => stopRecording("manual")}><Square className="size-3 fill-current" aria-hidden="true" />Concluir resposta</button><button type="button" className="btn btn-sm btn-ghost gap-2" onClick={cancelRecording}><X className="size-4" aria-hidden="true" />Cancelar</button></>}
           {isPending && <LoaderCircle className="size-5 animate-spin self-center text-muted-foreground" aria-hidden="true" />}
-          {transcription.status === "available" && <button type="button" className="btn btn-sm btn-ghost" onClick={cancelRecording} disabled={disabled}>Limpar transcrição</button>}
+          {displayedTranscript && onUseTranscript && <button type="button" className="btn btn-sm btn-outline" onClick={() => onUseTranscriptRef.current?.(displayedTranscript)}>Usar transcrição</button>}
+          {(transcription.status === "available" || (transcription.status === "failed" && transcription.transcript)) && <button type="button" className="btn btn-sm btn-ghost" onClick={cancelRecording} disabled={disabled}>Limpar transcrição</button>}
         </div>
       </div>
-      <p className="mt-3 text-xs leading-5 text-muted-foreground">Whisper Large V3 Turbo · até 30 segundos. O áudio é enviado em blocos e removido da memória após a transcrição.</p>
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">Whisper Large V3 Turbo · até 3 minutos. A transcrição é atualizada por segmentos; o áudio PCM é mantido apenas em memória e descartado ao concluir.</p>
       {error && transcription.status !== "failed" && <p className="mt-3 text-sm text-error" role="alert">{error}</p>}
-      {transcription.status === "available" && <div className="mt-4 border-t border-base-300 pt-4" aria-live="polite"><h3 className="text-sm font-medium">Transcrição</h3><p className="mt-1 text-sm leading-6 text-base-content/75">{transcription.value.transcript}</p></div>}
-      {transcription.status === "available" && assessment && <div className="mt-3 border-t border-base-300 pt-3" role="status"><p className="text-xs leading-5 text-muted-foreground">Sinais experimentais do Azure comparados à transcrição do Whisper; erros de transcrição também podem afetar os valores. Não representam um nível geral de inglês.{assessment.status === "pending" ? " A avaliação pode chegar após a transcrição." : assessment.status === "unavailable" ? " Avaliação indisponível para esta resposta." : ""}</p>{assessment.status === "available" && <dl className="mt-2 grid grid-cols-3 gap-3 text-xs"><AssessmentScore label="Precisão" value={assessment.scores.accuracy} /><AssessmentScore label="Fluência" value={assessment.scores.fluency} /><AssessmentScore label="Prosódia" value={assessment.scores.prosody} /></dl>}</div>}
-      {transcription.status === "failed" && <p className="mt-3 text-sm text-warning-content" role="status">{transcription.message} Você pode continuar com uma resposta escrita.</p>}
+      {displayedTranscript && <div className="mt-4 border-t border-base-300 pt-4" aria-live="polite"><h3 className="text-sm font-medium">{transcription.status === "partial" || transcription.status === "failed" ? "Transcrição parcial" : "Transcrição"}</h3><p className="mt-1 text-sm leading-6 text-base-content/75">{displayedTranscript}</p></div>}
+      {transcription.status === "failed" && <p className="mt-3 text-sm text-warning-content" role="status">{transcription.message} Você pode revisar o texto recebido ou continuar com uma resposta escrita.</p>}
+      {transcription.status === "available" && assessment && <div className="mt-3 border-t border-base-300 pt-3" role="status"><p className="text-xs leading-5 text-muted-foreground">Sinais experimentais do Azure agregados por segmentos e ponderados pela duração; erros de transcrição podem afetar os valores. Não representam um nível geral de inglês.{assessment.status === "pending" ? " A avaliação pode chegar após a transcrição." : assessment.status === "unavailable" ? " Avaliação indisponível para esta resposta." : ` Avaliados ${Math.round(assessment.durationMs / 1_000)} segundos de áudio.`}</p>{assessment.status === "available" && <dl className="mt-2 grid grid-cols-3 gap-3 text-xs"><AssessmentScore label="Precisão" value={assessment.scores.accuracy} /><AssessmentScore label="Fluência" value={assessment.scores.fluency} /><AssessmentScore label="Prosódia" value={assessment.scores.prosody} /></dl>}</div>}
     </section>
   );
 }

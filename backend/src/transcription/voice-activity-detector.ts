@@ -11,9 +11,9 @@ export const defaultVadConfig: VadConfig = {
   speechThreshold: 0.025,
   silenceThreshold: 0.018,
   minimumSpeechMs: 600,
-  trailingSilenceMs: 1_500,
-  maxDurationMs: 30_000,
-  maxBytes: 4 * 1024 * 1024,
+  trailingSilenceMs: 2_000,
+  maxDurationMs: 180_000,
+  maxBytes: 6 * 1024 * 1024,
 };
 
 export function getSilenceThreshold(speechThreshold: number): number {
