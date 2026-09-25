@@ -10,7 +10,10 @@ export type SpeechPlayback = {
 
 export type SpeechPlaybackOptions = {
   endpoint: string;
+  /** Deadline for the speech request and complete audio response body. */
   timeoutMs?: number;
+  /** Maximum time to wait for play() and the media ended event. Defaults to a text-length estimate. */
+  playbackTimeoutMs?: number;
   fetcher?: typeof fetch;
   makeAudio?: (url: string) => HTMLAudioElement;
   createObjectUrl?: (blob: Blob) => string;

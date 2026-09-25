@@ -127,6 +127,49 @@ test("a slow speech response times out and returns a text-fallback result", asyn
   });
 });
 
+for (const scenario of [
+  { name: "play() promise", play: () => new Promise(() => {}) },
+  { name: "ended event", play: () => Promise.resolve() },
+]) {
+  test(`a stalled ${scenario.name} falls back and releases its audio URL`, async () => {
+    const timers = new Map();
+    let nextTimerId = 0;
+    let revoked = false;
+    let audio;
+    const playback = synthesizeInterviewerQuestion("Tell me about your work.", {
+      endpoint: "http://speech.test/api/v1/speech",
+      timeoutMs: 1_000,
+      playbackTimeoutMs: 2_000,
+      fetcher: async () => ({ ok: true, blob: async () => new Blob(["mp3"]) }),
+      makeAudio: () => {
+        audio = new FakeAudio();
+        audio.play = scenario.play;
+        return audio;
+      },
+      createObjectUrl: () => "blob:stalled-playback",
+      revokeObjectUrl: (url) => { assert.equal(url, "blob:stalled-playback"); revoked = true; },
+      setTimeout: (callback) => {
+        const id = ++nextTimerId;
+        timers.set(id, callback);
+        return id;
+      },
+      clearTimeout: (id) => timers.delete(id),
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(timers.size, 1, "the network timer is replaced by a media deadline");
+    timers.values().next().value();
+    assert.deepEqual(await playback.promise, {
+      status: "unavailable",
+      message: "A reprodução do áudio demorou demais. Você pode continuar sem ele.",
+    });
+    assert.equal(audio.paused, true);
+    assert.equal(audio.removedSource, true);
+    assert.equal(revoked, true);
+    assert.equal(timers.size, 0);
+  });
+}
+
 test("interviewer excerpts are synthesized and played sequentially", async () => {
   const events = [];
   let blobIndex = 0;

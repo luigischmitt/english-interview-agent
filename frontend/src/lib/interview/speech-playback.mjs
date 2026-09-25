@@ -26,6 +26,8 @@ export function resolveInterviewerCaption({ audioEnabled, isSpeaking, playbackFa
 export function synthesizeInterviewerQuestion(text, options) {
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 15_000;
+  const playbackTimeoutMs = options.playbackTimeoutMs
+    ?? Math.min(45_000, Math.max(12_000, text.trim().split(/\s+/).length * 800));
   const fetcher = options.fetcher ?? fetch;
   const makeAudio = options.makeAudio ?? ((url) => new Audio(url));
   const createObjectUrl = options.createObjectUrl ?? ((blob) => URL.createObjectURL(blob));
@@ -37,8 +39,21 @@ export function synthesizeInterviewerQuestion(text, options) {
   let cancelled = false;
   let timedOut = false;
   let timeoutId = null;
-  let settlePlayback = null;
   let removeAudioListeners = null;
+  let resolveTimeout;
+  let resolveCancellation;
+
+  const timeoutResult = new Promise((resolve) => { resolveTimeout = resolve; });
+  const cancellationResult = new Promise((resolve) => { resolveCancellation = resolve; });
+
+  const scheduleTimeout = (delay, message) => {
+    if (timeoutId !== null) unschedule(timeoutId);
+    timeoutId = schedule(() => {
+      timedOut = true;
+      controller.abort();
+      resolveTimeout({ status: "unavailable", message });
+    }, delay);
+  };
 
   const cleanup = () => {
     removeAudioListeners?.();
@@ -59,27 +74,21 @@ export function synthesizeInterviewerQuestion(text, options) {
     if (cancelled) return;
     cancelled = true;
     controller.abort();
-    settlePlayback?.("cancelled");
+    resolveCancellation({ status: "cancelled" });
     cleanup();
   };
 
-  const promise = (async () => {
-    timeoutId = schedule(() => {
-      timedOut = true;
-      controller.abort();
-    }, timeoutMs);
-
+  const playbackWork = async () => {
     try {
+      scheduleTimeout(timeoutMs, "O áudio demorou demais para responder. Você pode continuar sem ele.");
       const response = await fetcher(options.endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text }),
         signal: controller.signal,
       });
-      if (timeoutId !== null) unschedule(timeoutId);
-      timeoutId = null;
-
       if (cancelled) return { status: "cancelled" };
+      if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
       if (!response.ok) {
         const data = await response.json().catch(() => null);
         return {
@@ -88,8 +97,12 @@ export function synthesizeInterviewerQuestion(text, options) {
         };
       }
 
-      objectUrl = createObjectUrl(await response.blob());
+      const blob = await response.blob();
       if (cancelled) return { status: "cancelled" };
+      if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
+      if (timeoutId !== null) unschedule(timeoutId);
+      timeoutId = null;
+      objectUrl = createObjectUrl(blob);
       audio = makeAudio(objectUrl);
 
       const playbackEnded = new Promise((resolve, reject) => {
@@ -101,25 +114,31 @@ export function synthesizeInterviewerQuestion(text, options) {
           audio?.removeEventListener("ended", onEnded);
           audio?.removeEventListener("error", onError);
         };
-        settlePlayback = resolve;
       });
 
-      await audio.play();
-      const outcome = await playbackEnded;
-      if (cancelled || outcome === "cancelled") return { status: "cancelled" };
+      scheduleTimeout(playbackTimeoutMs, "A reprodução do áudio demorou demais. Você pode continuar sem ele.");
+      const outcome = await Promise.race([
+        Promise.resolve(audio.play()).then(() => playbackEnded),
+        playbackEnded,
+        timeoutResult,
+        cancellationResult,
+      ]);
+      if (cancelled || outcome.status === "cancelled") return { status: "cancelled" };
+      if (outcome.status === "unavailable") return outcome;
       return { status: "completed" };
     } catch {
       if (cancelled) return { status: "cancelled" };
+      if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
       return {
         status: "unavailable",
-        message: timedOut
-          ? "O áudio demorou demais para responder. Você pode continuar sem ele."
-          : "O áudio não está disponível agora. Você pode continuar sem ele.",
+        message: "O áudio não está disponível agora. Você pode continuar sem ele.",
       };
     } finally {
       cleanup();
     }
-  })();
+  };
+
+  const promise = Promise.race([playbackWork(), timeoutResult, cancellationResult]).finally(cleanup);
 
   return { promise, cancel };
 }
