@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, AudioLines, Clock3, PhoneOff, Video, VideoOff, Volume2 } from "lucide-react";
 import { MicrophoneCapture, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
@@ -15,7 +15,7 @@ import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-regi
 import { canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback } from "../hooks/use-speech-playback";
-import { composeOpeningUtterance, getInterviewerCaption } from "@/lib/interview/speech-playback.mjs";
+import { composeOpeningUtterance, resolveInterviewerCaption, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; state: VoiceAssessmentState };
 type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
@@ -89,7 +89,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const elapsedSecondsRef = useRef(0);
   const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId } = useInterviewPersistence(config, question, questionSequenceNumber, phase);
   const { elapsed, seconds, remaining, timeLimitReached } = useInterviewSession(phase, durationMinutes);
-  const intro = `Welcome. We have ${durationMinutes} minutes to practice for the ${config.role} role. Take your time. Let's begin:`;
+  const intro = "Thanks for joining. Take your time.";
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { elapsedSecondsRef.current = seconds; }, [seconds]);
@@ -104,8 +104,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   }, [autoCaptureVoice, question.id]);
   const isInterviewerSpeaking = phase === "introducing" || phase === "speaking";
   const openingUtterance = composeOpeningUtterance(intro, question.prompt);
-  const speechText = phase === "introducing" ? openingUtterance : question.prompt;
-  const { speechMessage, setSpeechMessage } = useSpeechPlayback(speechText, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio);
+  const speechSegments = useMemo(
+    () => splitInterviewerSpeech(phase === "introducing" ? openingUtterance : question.prompt),
+    [openingUtterance, phase, question.prompt],
+  );
+  const { activeSegment, speechMessage, setSpeechMessage, cancelPlayback } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
   const currentAssessmentSamples = assessmentSamples(voiceAssessments);
   const currentAzureSummary = summarizeAzureAssessments(currentAssessmentSamples);
@@ -253,6 +256,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   const leaveInterview = () => {
     leftRef.current = true;
+    cancelPlayback();
     generationRef.current += 1;
     decisionAbortRef.current?.abort();
     decisionAbortRef.current = null;
@@ -315,10 +319,16 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const candidateCaptionIsFinal = voiceTranscription.status === "available";
   const candidateCaptureIsActive = voiceCaptureState === "listening" || voiceCaptureState === "detected" || voiceCaptureState === "finalizing";
   const showCandidateCaption = showCandidateTranscript && (Boolean(candidateCaption) || candidateCaptureIsActive);
-  const interviewerCaption = getInterviewerCaption({
-    isOpeningQuestion: currentIndex === 0 && questionSequenceNumber === 1 && !followUpUsed,
-    phase,
-    openingUtterance,
+  const isOpeningQuestion = currentIndex === 0 && questionSequenceNumber === 1 && !followUpUsed;
+  const interviewerFallbackText = phase === "introducing" && isOpeningQuestion ? openingUtterance : question.prompt;
+  const currentActiveSegment = activeSegment && speechSegments.includes(activeSegment) ? activeSegment : null;
+  const interviewerCaption = resolveInterviewerCaption({
+    audioEnabled: config.playInterviewerAudio,
+    isSpeaking: isInterviewerSpeaking,
+    playbackFailed: Boolean(speechMessage),
+    activeSegment: currentActiveSegment,
+    firstSegment: speechSegments[0],
+    fallbackText: interviewerFallbackText,
     questionPrompt: question.prompt,
   });
   const showInterviewerCaption = config.showQuestionCaptions || !config.playInterviewerAudio || Boolean(speechMessage);
@@ -411,8 +421,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             </div>
             {showInterviewerCaption && <div className="border-t border-base-300 bg-base-100/95 px-4 py-3 sm:px-6 sm:py-4">
               <p className="text-xs font-medium text-muted-foreground">ENTREVISTADOR</p>
-              <p className="mt-1 max-h-28 overflow-y-auto text-sm leading-6 sm:text-base">{interviewerCaption}</p>
-              <span className="sr-only" role="status" aria-live={isInterviewerSpeaking ? "off" : "polite"}>{isInterviewerSpeaking ? "" : interviewerCaption}</span>
+              <p className="mt-1 max-h-28 overflow-y-auto text-sm leading-6 sm:text-base" aria-live="polite">{interviewerCaption}</p>
             </div>}
           </section>
         </section>
