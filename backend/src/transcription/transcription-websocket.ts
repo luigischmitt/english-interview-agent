@@ -80,10 +80,8 @@ export function attachTranscriptionWebSocket(
     let transcriptionFailed = false;
     let silenceFinalizationPending = false;
     let lastWindowIndex = 0;
-    let nextWindowToEmit = 1;
-    let activeTranscriptions = 0;
+    let processing = false;
     let finishing = false;
-    const completedWindows = new Map<number, { window: NonNullable<ReturnType<StreamingTranscriptionSessions["takeNextWindow"]>>; wav: Buffer; result?: Awaited<ReturnType<TranscriptionService["transcribe"]>>; error?: unknown }>();
     const weightedAssessments: Array<{ assessment: PronunciationAssessment; durationMs: number }> = [];
     let assessmentChain = Promise.resolve();
     let timer: ReturnType<typeof setTimeout>;
@@ -128,67 +126,59 @@ export function attachTranscriptionWebSocket(
       }
     };
 
-    const processWindows = () => {
-      if (!sessionId) return;
+    const processWindows = async () => {
+      if (processing || !sessionId) return;
+      processing = true;
       const id = sessionId;
-      const session = sessions.get(id);
-      if (!session) return;
-      while (!transcriptionFailed && activeTranscriptions < 2) {
-        const window = sessions.takeNextWindow(id, finalRequested);
-        if (!window) break;
-        const wav = pcmToWav(window.pcm);
-        activeTranscriptions += 1;
-        void transcriptionService.transcribe(wav, "whisper-large-v3-turbo", "wav").then(
-          (result) => completedWindows.set(window.index, { window, wav, result }),
-          (error: unknown) => {
-            transcriptionFailed = true;
-            finalRequested = true;
-            completedWindows.set(window.index, { window, wav, error });
-          },
-        ).then(() => {
-          if (sessionId !== id || session.cancelled) return;
-          while (completedWindows.has(nextWindowToEmit)) {
-            const completed = completedWindows.get(nextWindowToEmit)!;
-            completedWindows.delete(nextWindowToEmit);
-            if (completed.error !== undefined) {
-              transcriptionFailed = true;
-              finalRequested = true;
-              send(socket, { type: "partial-error", code: safeTranscriptionErrorCode(completed.error), message: "A later audio segment could not be transcribed. Earlier text is read-only and cannot be submitted. Please try recording again or skip/end the practice." });
-              break;
-            }
-            const result = completed.result!;
-            lastWindowIndex = completed.window.index;
+      try {
+        while (sessionId === id && !transcriptionFailed) {
+          const session = sessions.get(id);
+          if (!session) break;
+          const window = sessions.takeNextWindow(id, finalRequested);
+          if (!window) break;
+          const wav = pcmToWav(window.pcm);
+          try {
+            const result = await transcriptionService.transcribe(wav, "whisper-large-v3-turbo", "wav");
+            if (sessionId !== id || session.cancelled) return;
+            lastWindowIndex = window.index;
             send(socket, {
               type: "partial",
               provider: result.provider,
-              windowIndex: completed.window.index,
-              startMs: completed.window.startSample / pcmSampleRate * 1_000,
-              endMs: completed.window.endSample / pcmSampleRate * 1_000,
-              durationMs: completed.window.durationMs,
+              windowIndex: window.index,
+              startMs: window.startSample / pcmSampleRate * 1_000,
+              endMs: window.endSample / pcmSampleRate * 1_000,
+              durationMs: window.durationMs,
               transcript: result.transcript,
             });
             if (assessmentService) {
               assessmentChain = assessmentChain.then(async () => {
                 if (session.cancelled) return;
                 try {
-                  const assessment = await assessmentService.assess(completed.wav, "wav", result.transcript);
-                  weightedAssessments.push({ assessment, durationMs: completed.window.newlyCoveredDurationMs });
+                  const assessment = await assessmentService.assess(wav, "wav", result.transcript);
+                  weightedAssessments.push({ assessment, durationMs: window.newlyCoveredDurationMs });
                 } catch {
                   // Optional Azure assessment never blocks transcription.
                 }
               });
             }
-            nextWindowToEmit += 1;
+          } catch (error) {
+            transcriptionFailed = true;
+            finalRequested = true;
+            send(socket, { type: "partial-error", code: safeTranscriptionErrorCode(error), message: "A later audio segment could not be transcribed. Earlier text is read-only and cannot be submitted. Please try recording again or skip/end the practice." });
+            break;
           }
-        }).finally(() => {
-          activeTranscriptions -= 1;
-          if (sessionId !== id || session.cancelled) return;
-          processWindows();
-          if (finalRequested && activeTranscriptions === 0) void finish();
-        });
-      }
-      if (finalRequested && activeTranscriptions === 0) {
-        void finish();
+        }
+      } finally {
+        processing = false;
+        if (finalRequested && sessionId === id) {
+          void finish();
+        } else if (sessionId === id) {
+          const session = sessions.get(id);
+          const nextWindowEnd = session?.lastWindowEndSample === 0
+            ? pcmSampleRate * initialTranscriptionWindowMs / 1_000
+            : (session?.lastWindowEndSample ?? 0) + pcmSampleRate * (transcriptionWindowMs - transcriptionOverlapMs) / 1_000;
+          if (session && session.samplesReceived >= nextWindowEnd) void processWindows();
+        }
       }
     };
 

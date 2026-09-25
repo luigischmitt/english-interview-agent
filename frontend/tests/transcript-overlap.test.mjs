@@ -20,8 +20,8 @@ test("does not remove unrelated text", () => {
   assert.equal(mergeTranscriptWindow("I designed an API", "Then I added caching"), "I designed an API Then I added caching");
 });
 
-test("tolerates one ASR divergence inside a strongly matching overlap", () => {
-  assert.equal(mergeTranscriptWindow("I reviewed the database queries carefully", "I reviewed the database request carefully and added indexes"), "I reviewed the database queries carefully and added indexes");
+test("merges a newly recognized article without duplicating repeated words", () => {
+  assert.equal(mergeTranscriptWindow("We need to improve performance", "We need to improve the performance and cache results"), "We need to improve the performance and cache results");
 });
 
 test("keeps all new content when the apparent overlap is weak", () => {

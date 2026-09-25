@@ -312,17 +312,18 @@ describe("versioned transcription WebSocket", () => {
     }
   });
 
-  it("transcribes queued windows concurrently but emits them in audio order", async () => {
-    let resolveFirst!: (value: { provider: "whisper-large-v3-turbo"; transcript: string }) => void;
-    let resolveSecondFinished!: () => void;
-    const secondFinished = new Promise<void>((resolve) => { resolveSecondFinished = resolve; });
+  it("drains finalized windows sequentially and emits each in audio order", async () => {
+    let active = 0;
+    let maximumActive = 0;
     let calls = 0;
     const service: TranscriptionService = {
       availableProviders: () => ["whisper-large-v3-turbo"],
       transcribe: vi.fn(async () => {
         const index = calls++;
-        if (index === 0) return new Promise<{ provider: "whisper-large-v3-turbo"; transcript: string }>((resolve) => { resolveFirst = resolve; });
-        if (calls === 2) resolveSecondFinished();
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        await delay(10);
+        active -= 1;
         return { provider: "whisper-large-v3-turbo" as const, transcript: `window ${index + 1}` };
       }),
     };
@@ -347,13 +348,12 @@ describe("versioned transcription WebSocket", () => {
       const complete = waitForType(socket, "complete");
       sendFrames(socket, 140);
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
-      await secondFinished;
-      expect(service.transcribe).toHaveBeenCalledTimes(2);
-      resolveFirst({ provider: "whisper-large-v3-turbo", transcript: "first window" });
-      await expect(firstPartial).resolves.toMatchObject({ windowIndex: 1, transcript: "first window" });
+      await expect(firstPartial).resolves.toMatchObject({ windowIndex: 1, transcript: "window 1" });
       await expect(secondPartial).resolves.toMatchObject({ windowIndex: 2, transcript: "window 2" });
       await expect(thirdPartial).resolves.toMatchObject({ windowIndex: 3, transcript: "window 3" });
       await expect(complete).resolves.toMatchObject({ status: "complete", windows: 3 });
+      expect(service.transcribe).toHaveBeenCalledTimes(3);
+      expect(maximumActive).toBe(1);
     } finally {
       socket.close();
       await fixture.close();

@@ -2,6 +2,8 @@ function normalizeToken(token) {
   return token.toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}']/gu, "");
 }
 
+const overlapFillers = new Set(["a", "an", "the", "to", "of", "in", "on", "at", "for", "and", "or"]);
+
 /** Merge the repeated speech at the boundary of adjacent Whisper audio windows. */
 export function mergeTranscriptWindow(previous, next) {
   const currentText = previous.trim();
@@ -14,21 +16,28 @@ export function mergeTranscriptWindow(previous, next) {
   const previousNormalized = previousWords.map(normalizeToken);
   const nextNormalized = nextWords.map(normalizeToken);
   const maximumOverlap = Math.min(previousWords.length, nextWords.length, 20);
-  let overlap = 0;
   for (let size = maximumOverlap; size >= 2; size -= 1) {
     const suffix = previousNormalized.slice(-size);
     const prefix = nextNormalized.slice(0, size);
-    const exactMatches = suffix.reduce((count, token, index) => count + Number(Boolean(token && token === prefix[index])), 0);
-    const exact = exactMatches === size;
-    // Tolerate one ASR substitution only when a long boundary strongly confirms
-    // the overlap. This avoids dropping genuinely new words on weak matches.
-    const oneDivergence = size >= 4 && exactMatches >= size - 1 && size - exactMatches === 1;
-    if (exact || oneDivergence) {
-      overlap = size;
-      break;
+    if (suffix.every((token, index) => token && token === prefix[index])) {
+      const addition = nextWords.slice(size).join(" ");
+      return addition ? `${currentText} ${addition}`.trim() : currentText;
     }
   }
 
-  const addition = nextWords.slice(overlap).join(" ");
-  return addition ? `${currentText} ${addition}`.trim() : currentText;
+  for (let size = maximumOverlap; size >= 4; size -= 1) {
+    if (nextWords.length < size + 1) continue;
+    const suffix = previousNormalized.slice(-size);
+    const prefix = nextNormalized.slice(0, size + 1);
+    for (let insertion = 1; insertion < size; insertion += 1) {
+      if (!overlapFillers.has(prefix[insertion])) continue;
+      const aligned = [...prefix.slice(0, insertion), ...prefix.slice(insertion + 1)];
+      if (suffix.every((token, index) => token && token === aligned[index])) {
+        const preservedPrefix = previousWords.slice(0, previousWords.length - size);
+        return [...preservedPrefix, ...nextWords].join(" ").trim();
+      }
+    }
+  }
+
+  return `${currentText} ${nextText}`.trim();
 }

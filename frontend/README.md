@@ -168,8 +168,9 @@ limites configuráveis de duração, bytes por resposta, fila por resposta e
 sessões ativas. Uma janela inicial de 4 segundos e depois janelas de 6 segundos
 com 1 segundo de overlap são enviadas sequencialmente ao Whisper Large V3 Turbo;
 novas parciais chegam a cada 5 segundos após a primeira. O cliente consolida e
-deduplica o texto das janelas, tolerando uma divergência isolada em uma
-sobreposição longa e confirmada. 3,5 segundos de
+deduplica o texto das janelas e conserva artigos curtos reconhecidos em uma
+janela posterior quando o restante da sobreposição confirma a repetição.
+3,5 segundos de
 silêncio ou o botão manual concluem a
 captura. O app não salva nem reproduz áudio. Somente uma transcrição final, não
 vazia e enviada pela pessoa pode ser salva como turno da sessão privada;

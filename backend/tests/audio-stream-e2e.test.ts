@@ -116,9 +116,9 @@ describe("real-time audio E2E harness utilities", () => {
       .toBe("first answer new words here");
   });
 
-  it("tolerates one ASR divergence inside a strongly matching overlap", () => {
-    expect(mergeTranscriptWindow("I reviewed the database queries carefully", "I reviewed the database request carefully and added indexes"))
-      .toBe("I reviewed the database queries carefully and added indexes");
+  it("merges a newly recognized article without duplicating repeated words", () => {
+    expect(mergeTranscriptWindow("We need to improve performance", "We need to improve the performance and cache results"))
+      .toBe("We need to improve the performance and cache results");
   });
 
   it("keeps all new content when the apparent overlap is weak", () => {
