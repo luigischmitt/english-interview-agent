@@ -6,8 +6,10 @@ import type { TranscriptionService } from "./types.js";
 export const pcmSampleRate = 16_000;
 export const transcriptionWindowMs = 6_000;
 export const transcriptionOverlapMs = 1_000;
+export const initialTranscriptionWindowMs = 4_000;
 const bytesPerSample = 2;
 const windowSamples = pcmSampleRate * transcriptionWindowMs / 1_000;
+const initialWindowSamples = pcmSampleRate * initialTranscriptionWindowMs / 1_000;
 const overlapSamples = pcmSampleRate * transcriptionOverlapMs / 1_000;
 const windowStepSamples = windowSamples - overlapSamples;
 
@@ -121,14 +123,13 @@ export class StreamingTranscriptionSessions {
   takeNextWindow(id: string, flush = false): AudioWindow | null {
     const session = this.sessions.get(id);
     if (!session || session.cancelled) throw new Error("STREAM_NOT_FOUND");
-    const nextEnd = session.lastWindowEndSample === 0 ? windowSamples : session.lastWindowEndSample + windowStepSamples;
+    const nextEnd = session.lastWindowEndSample === 0 ? initialWindowSamples : session.lastWindowEndSample + windowStepSamples;
     if (!flush && session.samplesReceived < nextEnd) return null;
     if (flush && session.samplesReceived <= session.lastWindowEndSample) return null;
 
     const endSample = Math.min(session.samplesReceived, nextEnd);
     const startSample = session.lastWindowEndSample === 0 ? 0 : Math.max(0, session.lastWindowEndSample - overlapSamples);
-    const audio = Buffer.concat(session.chunks, session.bytes);
-    const pcm = audio.subarray(startSample * bytesPerSample, endSample * bytesPerSample);
+    const pcm = readSampleRange(session, startSample, endSample);
     const newlyCoveredSamples = endSample - session.lastWindowEndSample;
     const newlyCoveredBytes = newlyCoveredSamples * bytesPerSample;
     session.queuedBytes = Math.max(0, session.queuedBytes - newlyCoveredBytes);
@@ -170,4 +171,27 @@ export class StreamingTranscriptionSessions {
       if (now - session.startedAt > expirationMs) this.cancel(id);
     }
   }
+}
+
+function readSampleRange(session: StreamingSession, startSample: number, endSample: number): Buffer {
+  const startByte = startSample * bytesPerSample;
+  const endByte = endSample * bytesPerSample;
+  let remaining = endByte - startByte;
+  const output = Buffer.allocUnsafe(remaining);
+  let chunkStart = 0;
+  let outputOffset = 0;
+  for (const chunk of session.chunks) {
+    const chunkEnd = chunkStart + chunk.length;
+    const copyStart = Math.max(startByte, chunkStart);
+    const copyEnd = Math.min(endByte, chunkEnd);
+    if (copyEnd > copyStart) {
+      const length = copyEnd - copyStart;
+      chunk.copy(output, outputOffset, copyStart - chunkStart, copyStart - chunkStart + length);
+      outputOffset += length;
+      remaining -= length;
+    }
+    chunkStart = chunkEnd;
+    if (remaining === 0) break;
+  }
+  return output;
 }

@@ -20,6 +20,14 @@ test("does not remove unrelated text", () => {
   assert.equal(mergeTranscriptWindow("I designed an API", "Then I added caching"), "I designed an API Then I added caching");
 });
 
+test("tolerates one ASR divergence inside a strongly matching overlap", () => {
+  assert.equal(mergeTranscriptWindow("I reviewed the database queries carefully", "I reviewed the database request carefully and added indexes"), "I reviewed the database queries carefully and added indexes");
+});
+
+test("keeps all new content when the apparent overlap is weak", () => {
+  assert.equal(mergeTranscriptWindow("I reviewed the database", "I changed the service and added indexes"), "I reviewed the database I changed the service and added indexes");
+});
+
 test("calibrates RMS thresholds using the existing average-times-2.5 rule", () => {
   assert.equal(getSpeechThreshold([0.01, 0.03]), 0.05);
   assert.equal(getSpeechThreshold([0.001, 0.001]), 0.025);

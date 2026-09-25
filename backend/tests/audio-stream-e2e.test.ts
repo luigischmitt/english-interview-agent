@@ -116,6 +116,16 @@ describe("real-time audio E2E harness utilities", () => {
       .toBe("first answer new words here");
   });
 
+  it("tolerates one ASR divergence inside a strongly matching overlap", () => {
+    expect(mergeTranscriptWindow("I reviewed the database queries carefully", "I reviewed the database request carefully and added indexes"))
+      .toBe("I reviewed the database queries carefully and added indexes");
+  });
+
+  it("keeps all new content when the apparent overlap is weak", () => {
+    expect(mergeTranscriptWindow("I reviewed the database", "I changed the service and added indexes"))
+      .toBe("I reviewed the database I changed the service and added indexes");
+  });
+
   it("keeps the speech timeout active while a response body is stalled", async () => {
     let signalAborted = false;
     const fetcher: typeof fetch = async (_input, init) => {

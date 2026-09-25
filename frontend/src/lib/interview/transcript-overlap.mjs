@@ -18,7 +18,12 @@ export function mergeTranscriptWindow(previous, next) {
   for (let size = maximumOverlap; size >= 2; size -= 1) {
     const suffix = previousNormalized.slice(-size);
     const prefix = nextNormalized.slice(0, size);
-    if (suffix.every((token, index) => token && token === prefix[index])) {
+    const exactMatches = suffix.reduce((count, token, index) => count + Number(Boolean(token && token === prefix[index])), 0);
+    const exact = exactMatches === size;
+    // Tolerate one ASR substitution only when a long boundary strongly confirms
+    // the overlap. This avoids dropping genuinely new words on weak matches.
+    const oneDivergence = size >= 4 && exactMatches >= size - 1 && size - exactMatches === 1;
+    if (exact || oneDivergence) {
       overlap = size;
       break;
     }

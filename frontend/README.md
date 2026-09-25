@@ -24,8 +24,9 @@ prática da resposta em inglês da análise futura de áudio.
   leitura. Apenas uma transcrição final e não vazia pode ser enviada; trechos
   parciais e vazios nunca avançam nem são persistidos. O
   navegador envia PCM mono s16le a 16 kHz em frames de 100 ms pelo WebSocket v2.
-  Whisper Large V3 Turbo transcreve janelas sequenciais de 6 segundos com
-  1 segundo de áudio sobreposto, gerando novas parciais a cada 5 segundos;
+  Whisper Large V3 Turbo transcreve uma janela inicial de 4 segundos e depois
+  janelas sequenciais de 6 segundos com 1 segundo de áudio sobreposto, gerando
+  novas parciais a cada 5 segundos;
   quando a legenda está ligada, o texto aparece durante a fala e o cliente
   consolida palavras repetidas entre janelas. VAD encerra após 3,5 segundos de
   silêncio; o botão
@@ -164,9 +165,11 @@ aparecer como evidência no relatório.
 O navegador transmite PCM mono s16le a 16 kHz pelo
 WebSocket v2. O backend retém áudio em memória até 3 minutos (por padrão), com
 limites configuráveis de duração, bytes por resposta, fila por resposta e
-sessões ativas. Janelas de 6 segundos com 1 segundo de overlap são enviadas
-sequencialmente ao Whisper Large V3 Turbo; novas parciais chegam a cada 5
-segundos. O cliente consolida e deduplica o texto das janelas. 3,5 segundos de
+sessões ativas. Uma janela inicial de 4 segundos e depois janelas de 6 segundos
+com 1 segundo de overlap são enviadas sequencialmente ao Whisper Large V3 Turbo;
+novas parciais chegam a cada 5 segundos após a primeira. O cliente consolida e
+deduplica o texto das janelas, tolerando uma divergência isolada em uma
+sobreposição longa e confirmada. 3,5 segundos de
 silêncio ou o botão manual concluem a
 captura. O app não salva nem reproduz áudio. Somente uma transcrição final, não
 vazia e enviada pela pessoa pode ser salva como turno da sessão privada;
