@@ -241,7 +241,7 @@ export function InterviewSetup({
               <h3 id="room-options-title" className="text-base font-semibold">Preferências da sala</h3>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.showQuestionCaptions} disabled={!config.playInterviewerAudio} onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
+                  <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel="Sempre visível" onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
                 <SettingToggle id="show-candidate-transcript" label="Transcrição da minha fala" description="Mostre ou oculte o texto reconhecido. Isso não desliga a captura nem o envio da resposta." checked={config.showCandidateTranscript} onChange={(checked) => updateOption("showCandidateTranscript", checked)} />
                 <SettingToggle id="candidate-camera" label="Prévia da câmera" description="Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
                 <SettingToggle id="auto-capture-voice" label="Iniciar microfone automaticamente" description="Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala." checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
@@ -281,6 +281,7 @@ function SettingToggle({
   description,
   checked,
   disabled = false,
+  disabledStatusLabel,
   onChange,
 }: {
   id: string;
@@ -288,15 +289,21 @@ function SettingToggle({
   description: string;
   checked: boolean;
   disabled?: boolean;
+  disabledStatusLabel?: string;
   onChange: (checked: boolean) => void;
 }) {
+  const stateLabel = disabled ? (disabledStatusLabel ?? "Desligado") : checked ? "Ligado" : "Desligado";
+
   return (
-    <label htmlFor={id} className={`flex min-h-[4.5rem] items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-100 p-4 ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-base-200/70"}`}>
-      <span className="min-w-0">
-        <span className="block text-sm font-medium">{label}</span>
+    <label htmlFor={id} className={`flex min-h-11 w-full items-start gap-3 rounded-lg border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${disabled ? "cursor-not-allowed border-base-300 bg-base-200/70" : checked ? "cursor-pointer border-primary bg-primary/10" : "cursor-pointer border-base-300 bg-base-100 hover:bg-base-200"}`}>
+      <input id={id} type="checkbox" className="checkbox checkbox-primary mt-0.5 size-5 shrink-0" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <span className="text-sm font-medium">{label}</span>
+          <span className={`shrink-0 text-xs font-semibold ${disabled ? "text-base-content/70" : checked ? "text-primary" : "text-muted-foreground"}`}>{stateLabel}</span>
+        </span>
         <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
       </span>
-      <input id={id} type="checkbox" className="toggle toggle-primary shrink-0" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
     </label>
   );
 }
