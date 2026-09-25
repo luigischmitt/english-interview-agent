@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { nullableQuestionCount } from "./session-policy.mjs";
 
 import type {
   InterviewConfig,
@@ -110,7 +111,7 @@ export async function createInterviewSession(config: InterviewConfig): Promise<P
       seniority: config.seniority,
       focus: config.focus,
       duration_minutes: Number(config.duration),
-      question_count: Number(config.questionCount),
+      question_count: nullableQuestionCount(config.questionCount),
       status: "in_progress",
       started_at: new Date().toISOString(),
     })

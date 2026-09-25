@@ -4,11 +4,17 @@ import { synthesizeInterviewerQuestion } from "@/lib/interview/speech";
 
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 
-export function useSpeechPlayback(prompt: string, onReady: () => void) {
+export function useSpeechPlayback(prompt: string, onReady: () => void, enabled = true) {
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    if (!enabled) {
+      queueMicrotask(() => { if (!cancelled) onReady(); });
+      return () => { cancelled = true; };
+    }
+
+    queueMicrotask(() => { if (!cancelled) setSpeechMessage(null); });
     const playback = synthesizeInterviewerQuestion(prompt, {
       endpoint: `${backendBaseUrl}/api/v1/speech`,
     });
@@ -23,7 +29,7 @@ export function useSpeechPlayback(prompt: string, onReady: () => void) {
       cancelled = true;
       playback.cancel();
     };
-  }, [onReady, prompt]);
+  }, [enabled, onReady, prompt]);
 
   return { speechMessage, setSpeechMessage };
 }

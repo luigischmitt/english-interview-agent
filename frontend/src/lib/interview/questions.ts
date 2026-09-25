@@ -13,13 +13,6 @@ const fixedQuestions: InterviewQuestion[] = [
 
 export function getFixedInterviewQuestions(config: InterviewConfig): InterviewQuestion[] {
   const role = config.role || "this role";
-  const requestedCount = Number.parseInt(config.questionCount, 10);
-  const fallbackCount = Math.min(5, fixedQuestions.length);
-  const count = Number.isInteger(requestedCount) && requestedCount >= 1
-    ? Math.min(requestedCount, fixedQuestions.length)
-    : fallbackCount;
-
   return fixedQuestions
-    .slice(0, count)
     .map((question) => ({ ...question, prompt: question.prompt.replace("{role}", role) }));
 }

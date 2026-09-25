@@ -5,9 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { VoiceTranscription } from "@/lib/interview/transcription";
 import { mergeTranscriptWindow } from "@/lib/interview/transcript-overlap.mjs";
 import { getSpeechThreshold } from "@/lib/interview/vad-threshold.mjs";
+import { nextAutoStartSignal, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import type { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 
 type RecorderStatus = "idle" | "requesting" | "recording" | "finalizing" | "error";
+export type VoiceCaptureState = "idle" | "requesting" | "listening" | "detected" | "finalizing" | "ready" | "unavailable";
 type StreamMessage = {
   type?: string;
   status?: string;
@@ -37,6 +39,8 @@ type MicrophoneCaptureProps = {
   onTranscriptionChange: (state: VoiceTranscriptionState) => void;
   onAssessmentChange?: (attemptId: string, state: VoiceAssessmentState) => void;
   onUseTranscript?: (transcript: string) => void;
+  onCaptureStateChange?: (state: VoiceCaptureState) => void;
+  autoStartSignal?: string | null;
   assessmentSockets: AssessmentSocketRegistry;
 };
 
@@ -75,7 +79,7 @@ function rootMeanSquare(samples: Float32Array): number {
   return Math.sqrt(sum / Math.max(1, samples.length));
 }
 
-export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onUseTranscript, assessmentSockets }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onUseTranscript, onCaptureStateChange, autoStartSignal = null, assessmentSockets }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -96,12 +100,15 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const onTranscriptionChangeRef = useRef(onTranscriptionChange);
   const onAssessmentChangeRef = useRef(onAssessmentChange);
   const onUseTranscriptRef = useRef(onUseTranscript);
+  const onCaptureStateChangeRef = useRef(onCaptureStateChange);
+  const lastAutoStartSignalRef = useRef<string | null>(null);
 
   useEffect(() => {
     onTranscriptionChangeRef.current = onTranscriptionChange;
     onAssessmentChangeRef.current = onAssessmentChange;
     onUseTranscriptRef.current = onUseTranscript;
-  }, [onTranscriptionChange, onAssessmentChange, onUseTranscript]);
+    onCaptureStateChangeRef.current = onCaptureStateChange;
+  }, [onTranscriptionChange, onAssessmentChange, onUseTranscript, onCaptureStateChange]);
 
   const releaseCapture = useCallback(() => {
     if (durationTimerRef.current !== null) window.clearInterval(durationTimerRef.current);
@@ -115,7 +122,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     workletRef.current = null;
     sourceRef.current = null;
     gainRef.current = null;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    stopMediaStreamTracks(streamRef.current);
     streamRef.current = null;
     const context = audioContextRef.current;
     audioContextRef.current = null;
@@ -135,6 +142,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       socket.close();
     }
     setStatus("error");
+    onCaptureStateChangeRef.current?.("unavailable");
     setError(message);
     const failed: VoiceTranscriptionState = { status: "failed", message, ...(transcriptRef.current ? { transcript: transcriptRef.current } : {}) };
     setTranscription(failed);
@@ -146,6 +154,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     if (!socket || socket.readyState !== WebSocket.OPEN || finalizationRequestedRef.current) return;
     finalizationRequestedRef.current = true;
     setStatus("finalizing");
+    onCaptureStateChangeRef.current?.("finalizing");
     const worklet = workletRef.current;
     if (!worklet) {
       socket.send(JSON.stringify({ type: "finalize", reason }));
@@ -181,6 +190,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       socket.close();
     }
     setStatus("idle");
+    onCaptureStateChangeRef.current?.("idle");
     setDuration(0);
     setError(null);
     transcriptRef.current = "";
@@ -194,6 +204,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     if (status === "requesting" || status === "recording" || status === "finalizing" || disabled) return;
     setError(null);
     setStatus("requesting");
+    onCaptureStateChangeRef.current?.("requesting");
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     finalizationRequestedRef.current = false;
@@ -207,7 +218,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof AudioWorkletNode === "undefined" || typeof WebSocket === "undefined") throw new Error("unsupported");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-      if (generationRef.current !== generation) { stream.getTracks().forEach((track) => track.stop()); return; }
+      if (generationRef.current !== generation) { stopMediaStreamTracks(stream); return; }
       streamRef.current = stream;
       const context = new AudioContext();
       audioContextRef.current = context;
@@ -288,7 +299,10 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             reject(new Error(message.message ?? "Audio transcription is unavailable right now. You can continue with a written answer."));
             return;
           }
-          if (message.type === "speech-started") return;
+          if (message.type === "speech-started") {
+            onCaptureStateChangeRef.current?.("detected");
+            return;
+          }
           if (message.type === "silence-detected") { stopRecording("silence"); return; }
           if (message.type === "partial" && message.transcript) {
             transcriptRef.current = mergeTranscriptWindow(transcriptRef.current, message.transcript);
@@ -301,12 +315,14 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             releaseCapture();
             const failed: VoiceTranscriptionState = { status: "failed", message: message.message ?? "A transcrição foi interrompida.", ...(transcriptRef.current ? { transcript: transcriptRef.current } : {}) };
             setStatus("error");
+            onCaptureStateChangeRef.current?.("unavailable");
             setError(failed.message);
             setTranscription(failed);
             onTranscriptionChangeRef.current(failed);
             if (assessmentEnabled) {
               awaitingAssessment = true;
               assessmentSockets.register(attemptId, socket);
+              socketRef.current = null;
               setAssessment({ status: "pending" });
               onAssessmentChangeRef.current?.(attemptId, { status: "pending" });
             }
@@ -321,23 +337,28 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
                 : { status: "failed", message: "A transcrição terminou com trechos indisponíveis. O texto recebido foi preservado.", transcript: transcriptRef.current };
               setTranscription(available);
               onTranscriptionChangeRef.current(available);
+              onCaptureStateChangeRef.current?.(message.status === "complete" ? "ready" : "unavailable");
               setStatus(message.status === "complete" ? "idle" : "error");
               if (message.status !== "complete") setError(available.status === "failed" ? available.message : null);
             } else {
               const failed: VoiceTranscriptionState = { status: "failed", message: "Não foi possível reconhecer a fala. Você pode escrever sua resposta." };
               setTranscription(failed);
               onTranscriptionChangeRef.current(failed);
+              onCaptureStateChangeRef.current?.("unavailable");
               setStatus("error");
             }
             awaitingAssessment = assessmentEnabled;
             if (awaitingAssessment) {
               assessmentSockets.register(attemptId, socket);
+              socketRef.current = null;
               setAssessment({ status: "pending" });
               onAssessmentChangeRef.current?.(attemptId, { status: "pending" });
             } else {
               socket.onmessage = null;
               socket.onclose = null;
               socket.onerror = null;
+              if (socket.readyState < WebSocket.CLOSING) socket.close();
+              socketRef.current = null;
             }
             return;
           }
@@ -385,6 +406,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       streamReady = true;
       pendingFrames.forEach(sendFrame);
       setStatus("recording");
+      onCaptureStateChangeRef.current?.("listening");
       durationTimerRef.current = window.setInterval(() => {
         if (generationRef.current !== generation) return;
         const seconds = Math.floor((Date.now() - startedAtRef.current) / 1_000);
@@ -402,6 +424,13 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             : microphoneError(captureError));
     }
   }, [assessmentSockets, disabled, fail, releaseCapture, status, stopRecording]);
+
+  useEffect(() => {
+    const nextSignal = nextAutoStartSignal(autoStartSignal, disabled, lastAutoStartSignalRef.current);
+    if (nextSignal === null) return;
+    lastAutoStartSignalRef.current = nextSignal;
+    void startRecording();
+  }, [autoStartSignal, disabled, startRecording]);
 
   useEffect(() => () => {
     generationRef.current += 1;

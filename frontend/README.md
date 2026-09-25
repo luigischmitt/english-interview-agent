@@ -8,12 +8,16 @@ prática da resposta em inglês da análise futura de áudio.
 
 - Página pública inicial, com links para criar conta e entrar.
 - Autenticação Supabase: cadastro, login, recuperação e atualização de senha.
-- Área protegida com configuração de entrevista, sequência fixa de perguntas,
-  respostas escritas e tela de progresso. Após uma resposta, o entrevistador
-  pode fazer no máximo um follow-up curto antes de continuar a sequência fixa;
-  se o serviço estiver indisponível, a entrevista avança normalmente.
-- Reprodução opcional da pergunta do entrevistador pelo backend de speech;
-  o texto da pergunta sempre permanece visível.
+- Área protegida com cargo, senioridade, foco e duração (5, 10, 15 ou 25
+  minutos), sem contagem fixa de perguntas. A sala respeita o tempo, permite
+  concluir uma resposta já iniciada e encerra sem repetir o banco interno de
+  oito perguntas. Após uma resposta, pode haver no máximo um follow-up curto.
+- Reprodução opcional da introdução e perguntas pelo backend Kokoro, legendas
+  independentes e captura automática opcional após o áudio. Falha de áudio ou
+  autoplay mantém o texto e a opção de iniciar o microfone manualmente.
+- Prévia local opcional da câmera do candidato. O vídeo não é enviado nem
+  persistido; a presença do entrevistador é apenas tipográfica/sonora, sem
+  avatar ou câmera simulada.
 - Captura opcional de microfone usando `AudioWorklet`. O navegador envia PCM
   mono s16le a 16 kHz em frames de 100 ms pelo WebSocket v2. Whisper Large V3
   Turbo transcreve janelas sequenciais de 10 segundos com 1 segundo de áudio
@@ -25,17 +29,19 @@ prática da resposta em inglês da análise futura de áudio.
   recebido e mantêm a resposta escrita disponível.
 - Sessões e turnos de texto salvos nas tabelas Supabase quando a conta e a
   conexão estão disponíveis. As políticas RLS limitam os dados ao usuário.
-- Pipeline de relatório final disponível como helpers: uma chamada em lote ao
+- Relatório final em português disponível ao concluir: uma chamada em lote ao
   backend avalia conteúdo técnico e inglês escrito/transcrito; médias dos
   sinais experimentais do Azure são calculadas por dimensão, ignorando respostas
-  indisponíveis e valores ausentes. A tabela privada `interview_feedback`
+  indisponíveis e valores ausentes. A sala aguarda avaliações pendentes por até
+  1,2 segundo, sem bloquear a conclusão; resultados Azure tardios atualizam as
+  médias e a sincronização. A tabela privada `interview_feedback`
   persiste status, resumo Azure e análise estruturada, sem salvar áudio ou copiar
-  a transcrição completa. A interface ainda não exibe esse relatório.
+  a transcrição completa. Se a sincronização falhar, o relatório continua visível
+  localmente.
 
-Não há captura de câmera ou avatar de entrevistador real. A transcrição de voz
-aparece em segmentos durante a fala; isso não representa o relatório final,
-que ainda não é exibido pela interface.
-Os blocos visuais de câmera são apenas parte da sala de prática.
+O estado da câmera e do microfone é temporário e os tracks são encerrados ao
+desligar, sair da sala ou desmontar o componente. A transcrição de voz aparece
+em segmentos durante a fala; ela é separada das legendas das perguntas.
 
 ## Variáveis de ambiente
 
