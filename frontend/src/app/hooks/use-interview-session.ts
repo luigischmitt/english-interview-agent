@@ -19,7 +19,6 @@ export function useInterviewSession(phase: InterviewPhase, durationMinutes: numb
   return {
     seconds,
     elapsed: formatClock(seconds),
-    remainingSeconds: Math.max(0, durationMinutes * 60 - seconds),
     remaining: formatClock(Math.max(0, durationMinutes * 60 - seconds)),
     timeLimitReached: hasReachedTimeLimit(seconds, durationMinutes),
   };

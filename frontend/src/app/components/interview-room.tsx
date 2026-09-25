@@ -78,7 +78,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const reportPersistenceSignatureRef = useRef("");
   const reportTurnsRef = useRef(reportTurns);
   const voiceAssessmentsRef = useRef(voiceAssessments);
-  const reportResultRef = useRef<InterviewReportResult | null>(null);
   const phaseRef = useRef(phase);
   const elapsedSecondsRef = useRef(0);
   const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId } = useInterviewPersistence(config, question, questionSequenceNumber, phase);
@@ -254,7 +253,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
       try {
         const result = await requestInterviewReport(config, turns);
-        reportResultRef.current = result;
         if (mountedRef.current) setReportState({ status: "ready", result });
       } catch (reportError) {
         const message = reportError instanceof Error ? reportError.message : "A análise desta entrevista está indisponível agora.";

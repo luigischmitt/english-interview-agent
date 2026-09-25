@@ -264,7 +264,7 @@ function HomeView({
           <dl className="mt-6 space-y-3 border-t border-border pt-5 text-sm">
             <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Modo</dt><dd className="text-right font-medium">Inglês, respostas faladas</dd></div>
             <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Foco</dt><dd className="font-medium">Escolha na configuração</dd></div>
-            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Sala</dt><dd className="max-w-[18rem] text-right font-medium">Você responde no seu ritmo, com as perguntas sempre visíveis.</dd></div>
+            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Sala</dt><dd className="max-w-[18rem] text-right font-medium">Você responde no seu ritmo e escolhe quando ver as legendas.</dd></div>
           </dl>
         </aside>
       </section>

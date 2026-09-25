@@ -132,9 +132,9 @@ Se a autenticação, o banco ou uma gravação falhar, a interface informa a
 degradação e deixa o candidato continuar no estado da página. Nesse caso,
 dados que ainda não chegaram ao Supabase estão disponíveis somente durante a
 sessão atual do navegador e podem ser perdidos ao recarregar/fechar a página;
-eles não são uma cópia offline garantida. O estado exibido deve permanecer
-“salvo localmente para esta sessão; sincronização precisa de atenção”, nunca
-“salvo na conta”, quando a escrita falhou.
+eles não são uma cópia offline garantida. Quando sincronizada, a interface
+informa “sessão salva na conta”. Se a sincronização não estiver disponível,
+informa “salva apenas no estado local da sessão; sincronização pendente”.
 
 ## Relatório final, áudio, transcrição e privacidade
 
