@@ -38,7 +38,7 @@ export function InterviewSetup({
     }
   };
 
-  const updateOption = (field: "playInterviewerAudio" | "showQuestionCaptions" | "transcribeCandidateVoice" | "candidateCameraEnabled" | "autoCaptureVoice", value: boolean) => {
+  const updateOption = (field: "playInterviewerAudio" | "showQuestionCaptions" | "showCandidateTranscript" | "candidateCameraEnabled" | "autoCaptureVoice", value: boolean) => {
     setConfig((current) => ({ ...current, [field]: value }));
   };
 
@@ -153,12 +153,9 @@ export function InterviewSetup({
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <SettingToggle id="play-interviewer-audio" label="Áudio do entrevistador" description="Ouça a introdução e as perguntas em inglês." checked={config.playInterviewerAudio} onChange={(checked) => updateOption("playInterviewerAudio", checked)} />
                 <SettingToggle id="show-question-captions" label="Legenda das perguntas" description="Mantenha o texto do entrevistador visível." checked={config.showQuestionCaptions} onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
-                <SettingToggle id="transcribe-candidate-voice" label="Transcrever minha fala" description="Mostre a transcrição em inglês durante a resposta." checked={config.transcribeCandidateVoice} onChange={(checked) => {
-                  updateOption("transcribeCandidateVoice", checked);
-                  if (!checked) updateOption("autoCaptureVoice", false);
-                }} />
+                <SettingToggle id="show-candidate-transcript" label="Legenda da minha fala" description="Mostre ou oculte a transcrição em inglês durante a resposta; a captura continua ativa." checked={config.showCandidateTranscript} onChange={(checked) => updateOption("showCandidateTranscript", checked)} />
                 <SettingToggle id="candidate-camera" label="Câmera local" description="Ative a prévia da sua câmera na sala. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
-                <SettingToggle id="auto-capture-voice" label="Captura automática" description="Inicie o microfone após a pergunta terminar." checked={config.autoCaptureVoice} disabled={!config.transcribeCandidateVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
+                <SettingToggle id="auto-capture-voice" label="Captura automática" description="Inicie o microfone após a pergunta terminar; você também pode iniciar manualmente." checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
               </div>
             </section>
 

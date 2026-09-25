@@ -7,6 +7,7 @@ import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { decideNextTurn } from "@/lib/interview/orchestration";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewReport, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult } from "@/lib/interview/report";
+import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import type { AzureAssessmentSample, InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
@@ -51,6 +52,7 @@ function Metric({ label, value, sampleCount }: { label: string; value: number | 
 
 export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; onLeave: () => void }) {
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
+  const { showCandidateTranscript, autoCaptureVoice } = resolveCandidateVoicePreferences(config);
   const questions = getFixedInterviewQuestions(config);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [question, setQuestion] = useState<InterviewQuestion>(() => questions[0]);
@@ -97,8 +99,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (phaseRef.current !== "speaking") return;
     setPhase("answering");
     setVoiceCaptureState("idle");
-    if (config.transcribeCandidateVoice && config.autoCaptureVoice) setAutoCaptureQuestionId(question.id);
-  }, [config.autoCaptureVoice, config.transcribeCandidateVoice, question.id]);
+    if (autoCaptureVoice) setAutoCaptureQuestionId(question.id);
+  }, [autoCaptureVoice, question.id]);
   const isInterviewerSpeaking = phase === "introducing" || phase === "speaking";
   const speechText = phase === "introducing" ? intro : question.prompt;
   const { speechMessage, setSpeechMessage } = useSpeechPlayback(speechText, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio);
@@ -279,6 +281,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const persistenceLabel = persistenceState === "saved" ? "sessão salva na conta" : persistenceState === "local" ? "salva apenas no estado local da sessão; sincronização pendente" : "salvando na conta…";
   const reportCaption = reportState.status === "pending" ? "Montando seu relatório final…" : reportState.status === "unavailable" ? "O relatório detalhado não ficou disponível para esta sessão." : "Relatório da prática";
   const showQuestionText = config.showQuestionCaptions || !config.playInterviewerAudio || Boolean(speechMessage);
+  const voiceCaptureStatusCopy = voiceCaptureState === "ready" && !showCandidateTranscript
+    ? "Transcrição pronta para envio; legenda oculta."
+    : voiceCaptureCopy[voiceCaptureState];
 
   return (
     <main id="main-content" className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-7xl flex-col px-3 py-4 pb-36 sm:px-6 sm:py-5 sm:pb-28 lg:px-8 lg:pb-6">
@@ -391,18 +396,19 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
                   <textarea className={`textarea textarea-bordered min-h-32 w-full resize-y bg-base-100 text-base leading-6 ${answerError ? "textarea-error" : ""}`} value={answer} onChange={(event) => { setAnswer(event.target.value); if (answerError) setAnswerError(null); }} placeholder={isInterviewerSpeaking ? "O campo ficará disponível depois da pergunta." : "Escreva sua resposta em inglês..."} disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"} aria-invalid={Boolean(answerError)} aria-describedby={answerError ? "answer-error" : "answer-note"} />
                   {answerError ? <p id="answer-error" className="label text-error" role="alert">{answerError}</p> : <p id="answer-note" className="label text-muted-foreground">Sua resposta escrita pode ser usada mesmo se o microfone ou a transcrição não estiverem disponíveis.</p>}
                 </fieldset>
-                {config.transcribeCandidateVoice ? <MicrophoneCapture
+                <MicrophoneCapture
                   key={question.id}
                   disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"}
+                  showTranscript={showCandidateTranscript}
                   assessmentSockets={assessmentSockets}
                   onTranscriptionChange={setVoiceTranscription}
                   onCaptureStateChange={setVoiceCaptureState}
-                  autoStartSignal={config.autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
+                  autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
                   onUseTranscript={(transcript) => setAnswer((current) => current.trim() ? `${current.trim()} ${transcript}` : transcript)}
                   onAssessmentChange={(attemptId, assessment) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { questionLabel: question.prompt, sequenceNumber: questionSequenceNumber, state: assessment } }))}
-                /> : <div className="rounded-lg border border-dashed border-base-300 p-4 text-sm text-muted-foreground">A transcrição de voz está desligada. Escreva sua resposta para continuar.</div>}
+                />
                 <div className="flex flex-col gap-3 border-t border-base-300 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite"><Mic className="size-4" aria-hidden="true" />{voiceCaptureCopy[voiceCaptureState]}</p>
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite"><Mic className="size-4" aria-hidden="true" />{voiceCaptureStatusCopy}</p>
                   <div className="flex flex-wrap justify-end gap-2">
                     <button type="button" className="btn btn-ghost min-h-11 gap-2" onClick={finishNow} disabled={phase !== "answering" || isAdvancing}>Concluir agora</button>
                     <button type="button" className="btn btn-primary min-h-11 gap-2" onClick={() => void submitAnswer()} disabled={isInterviewerSpeaking || isAdvancing || phase === "ending" || ((voiceTranscription.status === "pending" || voiceTranscription.status === "partial") && !answer.trim())}>{isAdvancing ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}{isAdvancing ? "Avançando" : "Enviar resposta"}</button>
@@ -421,7 +427,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
                 </div>
                 <p className="text-sm leading-6 text-muted-foreground">A sessão usa até {durationMinutes} minutos. Não há uma contagem fixa de perguntas. Uma resposta já iniciada pode terminar depois do limite.</p>
                 {timeLimitReached && <p className="alert alert-warning alert-soft py-3 text-sm" role="status">O tempo chegou ao fim. Esta resposta pode ser concluída; uma nova pergunta não será iniciada.</p>}
-                <div className="border-t border-base-300 pt-4 text-sm"><p className="font-medium">Opções ativas</p><ul className="mt-2 space-y-2 text-muted-foreground"><li className="flex items-center gap-2"><Volume2 className="size-4" aria-hidden="true" /> Áudio {config.playInterviewerAudio ? "ligado" : "desligado"}</li><li className="flex items-center gap-2"><Captions className="size-4" aria-hidden="true" /> Legenda {config.showQuestionCaptions ? "ligada" : "desligada"}</li><li className="flex items-center gap-2"><Mic className="size-4" aria-hidden="true" /> Captura automática {config.autoCaptureVoice ? "ligada" : "desligada"}</li></ul></div>
+                <div className="border-t border-base-300 pt-4 text-sm"><p className="font-medium">Opções ativas</p><ul className="mt-2 space-y-2 text-muted-foreground"><li className="flex items-center gap-2"><Volume2 className="size-4" aria-hidden="true" /> Áudio {config.playInterviewerAudio ? "ligado" : "desligado"}</li><li className="flex items-center gap-2"><Captions className="size-4" aria-hidden="true" /> Legendas das perguntas {config.showQuestionCaptions ? "ligadas" : "desligadas"}</li><li className="flex items-center gap-2"><Captions className="size-4" aria-hidden="true" /> Legendas da fala {showCandidateTranscript ? "ligadas" : "ocultas"}</li><li className="flex items-center gap-2"><Mic className="size-4" aria-hidden="true" /> Captura automática {autoCaptureVoice ? "ligada" : "desligada"}</li></ul></div>
                 <p className="mt-auto border-t border-base-300 pt-4 text-xs leading-5 text-muted-foreground">Se o áudio ou o microfone falhar, você ainda pode ler, responder por texto e seguir.</p>
               </div>
             </aside>

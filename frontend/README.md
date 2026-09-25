@@ -18,11 +18,16 @@ prática da resposta em inglês da análise futura de áudio.
 - Prévia local opcional da câmera do candidato. O vídeo não é enviado nem
   persistido; a presença do entrevistador é apenas tipográfica/sonora, sem
   avatar ou câmera simulada.
-- Captura opcional de microfone usando `AudioWorklet`. O navegador envia PCM
-  mono s16le a 16 kHz em frames de 100 ms pelo WebSocket v2. Whisper Large V3
-  Turbo transcreve janelas sequenciais de 10 segundos com 1 segundo de áudio
-  sobreposto; o texto aparece durante a fala e o cliente consolida palavras
-  repetidas entre janelas. VAD encerra após 2 segundos de silêncio; o botão
+- Captura opcional de microfone usando `AudioWorklet`, que continua ativa
+  independentemente da preferência de legenda do candidato. A opção “Legenda
+  da minha fala” controla somente a exibição do texto parcial/final; mesmo
+  oculto, o texto transcrito continua disponível para envio e relatório. A
+  captura pode iniciar automaticamente após a pergunta ou manualmente. O
+  navegador envia PCM mono s16le a 16 kHz em frames de 100 ms pelo WebSocket v2.
+  Whisper Large V3 Turbo transcreve janelas sequenciais de 10 segundos com
+  1 segundo de áudio sobreposto; quando a legenda está ligada, o texto aparece
+  durante a fala e o cliente consolida palavras repetidas entre janelas. VAD
+  encerra após 2 segundos de silêncio; o botão
   manual continua disponível. A duração padrão máxima é 3 minutos, com limites
   de bytes, fila e sessões simultâneas configuráveis no backend. O áudio fica
   somente em memória e não é reproduzido nem salvo; falhas preservam texto já
