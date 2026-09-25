@@ -15,7 +15,7 @@ import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-regi
 import { canStartNextQuestion, createOnceGate, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback } from "../hooks/use-speech-playback";
-import { composeOpeningUtterance } from "@/lib/interview/speech-playback.mjs";
+import { composeOpeningUtterance, getInterviewerCaption } from "@/lib/interview/speech-playback.mjs";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; state: VoiceAssessmentState };
 type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
@@ -289,7 +289,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const candidateCaptionIsFinal = voiceTranscription.status === "available";
   const candidateCaptureIsActive = voiceCaptureState === "listening" || voiceCaptureState === "detected" || voiceCaptureState === "finalizing";
   const showCandidateCaption = showCandidateTranscript && (Boolean(candidateCaption) || candidateCaptureIsActive);
-  const interviewerCaption = phase === "introducing" ? openingUtterance : question.prompt;
+  const interviewerCaption = getInterviewerCaption({
+    isOpeningQuestion: currentIndex === 0 && questionSequenceNumber === 1 && !followUpUsed,
+    phase,
+    openingUtterance,
+    questionPrompt: question.prompt,
+  });
   const showInterviewerCaption = config.showQuestionCaptions || !config.playInterviewerAudio || Boolean(speechMessage);
 
   return (
