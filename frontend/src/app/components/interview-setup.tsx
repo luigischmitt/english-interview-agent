@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
+import { synthesizeInterviewerQuestion, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
+import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
 import { defaultInterviewConfig } from "../interview-config";
 import { interviewDurationOptions } from "@/lib/interview/session-policy.mjs";
@@ -21,6 +23,9 @@ const focusLabels: Record<InterviewConfig["focus"], string> = {
   mixed: "Prática equilibrada",
 };
 
+const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
+const audioTestPhrase = "Hello, thanks for joining me today. Could you tell me about a recent project?";
+
 export function InterviewSetup({
   onBack,
   onStart,
@@ -30,6 +35,18 @@ export function InterviewSetup({
 }) {
   const [config, setConfig] = useState<InterviewConfig>(defaultInterviewConfig);
   const [showErrors, setShowErrors] = useState(false);
+  const [audioTestStatus, setAudioTestStatus] = useState<{ kind: "idle" | "loading" | "success" | "error"; message?: string }>({ kind: "idle" });
+  const audioTestRef = useRef<SpeechPlayback | null>(null);
+
+  const cancelAudioTest = () => {
+    audioTestRef.current?.cancel();
+    audioTestRef.current = null;
+  };
+
+  useEffect(() => () => {
+    audioTestRef.current?.cancel();
+    audioTestRef.current = null;
+  }, []);
 
   const updateConfig = (field: keyof InterviewConfig, value: string) => {
     setConfig((current) => ({ ...current, [field]: value }));
@@ -42,14 +59,54 @@ export function InterviewSetup({
     setConfig((current) => ({ ...current, [field]: value }));
   };
 
+  const updateInterviewerAudioMode = (mode: "audio" | "text") => {
+    setConfig((current) => withInterviewerAudioMode(current, mode));
+    if (mode === "text") {
+      cancelAudioTest();
+      setAudioTestStatus({ kind: "idle" });
+    }
+  };
+
+  const testAudio = async () => {
+    if (!config.playInterviewerAudio) return;
+    if (audioTestRef.current) {
+      cancelAudioTest();
+      setAudioTestStatus({ kind: "idle" });
+      return;
+    }
+
+    setAudioTestStatus({ kind: "loading", message: "Gerando e reproduzindo uma frase em inglês…" });
+    const playback = synthesizeInterviewerQuestion(audioTestPhrase, {
+      endpoint: `${backendBaseUrl}/api/v1/speech`,
+    });
+    audioTestRef.current = playback;
+    const result = await playback.promise;
+    if (audioTestRef.current !== playback) return;
+    audioTestRef.current = null;
+
+    if (result.status === "completed") {
+      setAudioTestStatus({ kind: "success", message: "A reprodução terminou neste dispositivo." });
+    } else if (result.status === "unavailable") {
+      setAudioTestStatus({
+        kind: "error",
+        message: `${result.message} Confira o volume e a conexão e tente novamente. Sua escolha com áudio foi mantida; as perguntas também ficam visíveis na sala.`,
+      });
+    } else {
+      setAudioTestStatus({ kind: "idle" });
+    }
+  };
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!config.role.trim()) {
       setShowErrors(true);
       return;
     }
+    cancelAudioTest();
     onStart({ ...config, role: config.role.trim() });
   };
+
+  const setupSummary = getInterviewSetupSummary(config, seniorityLabels, focusLabels);
 
   return (
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
@@ -147,47 +204,69 @@ export function InterviewSetup({
               </fieldset>
             </div>
 
+            <section className="border-t pt-6" aria-labelledby="interviewer-audio-title">
+              <h3 id="interviewer-audio-title" className="text-lg font-semibold">Como o entrevistador fala</h3>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.</p>
+              <fieldset className="mt-4 space-y-3">
+                <legend className="sr-only">Como o entrevistador fala</legend>
+                <label className={`flex min-h-20 cursor-pointer items-start gap-4 rounded-lg border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${config.playInterviewerAudio ? "border-primary bg-primary/10" : "border-base-300 bg-base-100 hover:bg-base-200"}`}>
+                  <input type="radio" name="interviewer-audio-mode" value="audio" className="radio radio-primary mt-1" checked={getInterviewerAudioMode(config) === "audio"} onChange={() => updateInterviewerAudioMode("audio")} />
+                  <span className="min-w-0">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">Com áudio <span className="badge badge-sm badge-outline">Recomendado</span></span>
+                    <span className="mt-1 block text-sm leading-6 text-muted-foreground">O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.</span>
+                  </span>
+                </label>
+                <label className={`flex min-h-20 cursor-pointer items-start gap-4 rounded-lg border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${!config.playInterviewerAudio ? "border-primary bg-primary/10" : "border-base-300 bg-base-100 hover:bg-base-200"}`}>
+                  <input type="radio" name="interviewer-audio-mode" value="text" className="radio radio-primary mt-1" checked={getInterviewerAudioMode(config) === "text"} onChange={() => updateInterviewerAudioMode("text")} />
+                  <span className="min-w-0">
+                    <span className="block font-medium">Somente texto</span>
+                    <span className="mt-1 block text-sm leading-6 text-muted-foreground">O entrevistador não terá voz. A introdução e as perguntas aparecem por escrito.</span>
+                  </span>
+                </label>
+              </fieldset>
+
+              {config.playInterviewerAudio && (
+                <div className="mt-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+                  <button type="button" className="btn btn-outline min-h-11" onClick={() => void testAudio()}>
+                    {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
+                  </button>
+                  <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "text-error" : audioTestStatus.kind === "success" ? "text-success" : "text-muted-foreground"}`}>
+                    {audioTestStatus.message ?? "Clique para gerar e ouvir uma frase curta antes de começar."}
+                  </p>
+                </div>
+              )}
+            </section>
+
             <section className="border-t pt-6" aria-labelledby="room-options-title">
-              <h3 id="room-options-title" className="text-base font-semibold">Opções da sala</h3>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">Você pode ajustar essas opções antes de cada prática.</p>
+              <h3 id="room-options-title" className="text-base font-semibold">Preferências da sala</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <SettingToggle id="play-interviewer-audio" label="Áudio do entrevistador" description="Ouça a introdução e as perguntas em inglês." checked={config.playInterviewerAudio} onChange={(checked) => updateOption("playInterviewerAudio", checked)} />
-                <SettingToggle id="show-question-captions" label="Legenda das perguntas" description="Mantenha o texto do entrevistador visível." checked={config.showQuestionCaptions} onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
-                <SettingToggle id="show-candidate-transcript" label="Legenda da minha fala" description="Mostre ou oculte a transcrição em inglês durante a resposta; a captura continua ativa." checked={config.showCandidateTranscript} onChange={(checked) => updateOption("showCandidateTranscript", checked)} />
-                <SettingToggle id="candidate-camera" label="Câmera local" description="Ative a prévia da sua câmera na sala. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
-                <SettingToggle id="auto-capture-voice" label="Captura automática" description="Inicie o microfone após a pergunta terminar; você também pode iniciar manualmente." checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
+                  <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.showQuestionCaptions} disabled={!config.playInterviewerAudio} onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
+                <SettingToggle id="show-candidate-transcript" label="Transcrição da minha fala" description="Mostre ou oculte o texto reconhecido. Isso não desliga a captura nem o envio da resposta." checked={config.showCandidateTranscript} onChange={(checked) => updateOption("showCandidateTranscript", checked)} />
+                <SettingToggle id="candidate-camera" label="Prévia da câmera" description="Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
+                <SettingToggle id="auto-capture-voice" label="Iniciar microfone automaticamente" description="Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala." checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
               </div>
             </section>
 
             <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-end">
               <button type="button" className="btn btn-ghost order-2 sm:order-1" onClick={onBack}>Cancelar</button>
-              <button type="submit" className="btn btn-primary order-1 gap-2 sm:order-2">Começar entrevista <ArrowUpRight className="size-4" aria-hidden="true" /></button>
+              <button type="submit" className="btn btn-primary order-1 gap-2 sm:order-2">{config.playInterviewerAudio ? "Iniciar com áudio" : "Iniciar somente com texto"} <ArrowUpRight className="size-4" aria-hidden="true" /></button>
             </div>
           </div>
         </section>
 
         <aside className="border-y border-border py-6 lg:py-8" aria-labelledby="session-preview-title" data-aos="fade-up" data-aos-delay="80" data-aos-duration="450">
           <h2 id="session-preview-title" className="text-lg font-semibold tracking-[-0.02em]">Sua sessão</h2>
-          <dl className="mt-6 space-y-4 text-sm">
-            <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-              <dt className="text-muted-foreground">Cargo</dt>
-              <dd className="max-w-[14rem] truncate text-right font-medium">{config.role || "Não selecionado"}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-              <dt className="text-muted-foreground">Nível</dt>
-              <dd className="font-medium">{seniorityLabels[config.seniority]}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-              <dt className="text-muted-foreground">Foco</dt>
-              <dd className="max-w-[14rem] text-right font-medium">{focusLabels[config.focus]}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-              <dt className="text-muted-foreground">Formato</dt>
-              <dd className="font-medium">Até {config.duration} min</dd>
-            </div>
+          <dl className="mt-5 space-y-3 text-sm">
+            {setupSummary.map(({ label, value }) => (
+              <div key={label} className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
+                <dt className="shrink-0 text-muted-foreground">{label}</dt>
+                <dd className="min-w-0 text-right font-medium [overflow-wrap:anywhere]">{value}</dd>
+              </div>
+            ))}
           </dl>
-          <p className="mt-8 text-sm leading-6 text-muted-foreground">
-            A entrevista acontece em inglês. Você pode encerrar a qualquer momento; uma resposta já iniciada pode terminar após o tempo planejado.
+          <p className="mt-6 text-sm leading-6 text-muted-foreground">
+            Você pode encerrar a qualquer momento. Uma resposta já iniciada pode terminar após o tempo planejado.
           </p>
         </aside>
       </form>
