@@ -97,6 +97,7 @@ not a gate for interview practice.
 | `WS` | `/api/v1/transcriptions/stream` | Protocol v2 receives 16 kHz mono signed 16-bit PCM frames plus RMS `level`, then `finalize` or `cancel`. It processes sequential 10-second windows with 1-second audio overlap, returns `partial` text per window and a final `complete` status, and holds audio only in bounded memory. Total duration, bytes, queued bytes, and concurrent sessions are configurable. When enabled, each Whisper window is sent to Azure scripted assessment using that window's Whisper text as `ReferenceText`; `assessment` reports duration-weighted Accuracy, Fluency, and Prosody as segmented experimental signals or `unavailable`. Azure failures do not block transcription. |
 | `POST` | `/api/v1/thinking` | Assesses technical answer coverage and written English communication. Uses OpenRouter credentials held by the backend. |
 | `POST` | `/api/v1/thinking/next-turn` | Chooses one brief follow-up or advances to the next fixed interview question. Provider errors and invalid output deterministically return `NEXT`. |
+| `POST` | `/api/v1/thinking/report` | Generates one structured final report from up to 30 ordered question/answer pairs and role context. It separates technical content, written English communication, and practical priorities; it does not assess vocal delivery or return numeric scores. |
 | `POST` | `/api/v1/formulations` | Reserved for answer formulation in English; returns `501` until connected. |
 | `GET` | `/api/v1/speech/health` | Reports whether the configured speech provider is ready. |
 | `GET` | `/api/v1/speech/voices` | Returns the sole approved interviewer persona. |
@@ -157,6 +158,19 @@ credentials return `THINKING_NOT_CONFIGURED`; upstream rate limits, timeouts,
 provider failures, and malformed or inconsistent model output use standardized
 error objects with `THINKING_RATE_LIMITED`, `THINKING_TIMEOUT`,
 `THINKING_PROVIDER_UNAVAILABLE`, or `THINKING_INVALID_PROVIDER_RESPONSE`.
+
+The final report endpoint accepts only `roleContext` and ordered `turns`
+(`sequenceNumber`, `question`, and `answer`). It rejects interview IDs, duplicate
+or out-of-order sequence numbers, more than 30 pairs, text over the per-field
+limits, or more than 30,000 total question/answer characters. It makes exactly
+one OpenRouter request with structured output and provider data collection
+denial. Candidate text is untrusted input. English evidence must be an exact
+excerpt from one of the supplied answers. The response includes the configured
+model and analysis version for persistence; it has no invented scores, full
+transcript copy, or hidden reasoning. The backend does not fetch or persist
+sessions and does not authorize an interview ID; the authenticated frontend
+persists results through Supabase RLS. Provider/configuration errors use the
+standardized thinking error object.
 
 ### Configure Azure Speech locally
 

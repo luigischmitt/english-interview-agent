@@ -11,7 +11,8 @@ import type { SpeechProvider } from "./speech/types.js";
 import { loadThinkingConfig, type ThinkingConfig } from "./thinking/config.js";
 import { createThinkingService } from "./thinking/openrouter-thinking-service.js";
 import { createOrchestrationService } from "./thinking/openrouter-orchestration-service.js";
-import type { InterviewOrchestrationService, ThinkingService } from "./thinking/types.js";
+import { createInterviewReportService } from "./thinking/openrouter-interview-report-service.js";
+import type { InterviewOrchestrationService, InterviewReportService, ThinkingService } from "./thinking/types.js";
 import { loadTranscriptionConfig, type TranscriptionConfig } from "./transcription/config.js";
 import { createTranscriptionService } from "./transcription/create-transcription-service.js";
 import { createPronunciationAssessmentService } from "./transcription/create-pronunciation-assessment-service.js";
@@ -29,9 +30,10 @@ type AppDependencies = {
   thinkingConfig?: ThinkingConfig;
   thinkingService?: ThinkingService | null;
   orchestrationService?: InterviewOrchestrationService;
+  reportService?: InterviewReportService | null;
 };
 
-export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService }: AppDependencies = {}) {
+export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService }: AppDependencies = {}) {
   const resolvedSpeechConfig = speechConfig ?? loadSpeechConfig();
   const resolvedSpeechProvider = speechProvider ?? createSpeechProvider(resolvedSpeechConfig);
   const resolvedTranscriptionService = transcriptionService
@@ -39,6 +41,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
   const resolvedThinkingConfig = thinkingConfig ?? loadThinkingConfig();
   const resolvedThinkingService = thinkingService === undefined ? createThinkingService(resolvedThinkingConfig) : thinkingService;
   const resolvedOrchestrationService = orchestrationService ?? createOrchestrationService(resolvedThinkingConfig);
+  const resolvedReportService = reportService === undefined ? createInterviewReportService(resolvedThinkingConfig) : reportService;
   const app = express();
 
   app.use(
@@ -52,7 +55,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
     response.status(200).json({ status: "ok" });
   });
 
-  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService));
+  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService));
   app.use(notFoundHandler);
   app.use(errorHandler);
 

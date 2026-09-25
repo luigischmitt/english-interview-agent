@@ -34,6 +34,36 @@ export interface ThinkingService {
   assess(input: InterviewThinkingInput): Promise<ThinkingAssessment>;
 }
 
+export type InterviewReportInput = {
+  roleContext: InterviewThinkingInput["roleContext"];
+  turns: Array<{ sequenceNumber: number; question: string; answer: string }>;
+};
+
+export type InterviewReport = {
+  technicalContent: {
+    summary: string;
+    strengths: string[];
+    gaps: string[];
+  };
+  englishCommunication: {
+    clarity: CommunicationClarity;
+    patterns: Array<{
+      type: CommunicationObservationType;
+      evidence: string;
+      suggestion: string;
+    }>;
+  };
+  priorities: Array<{
+    area: "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION";
+    focus: string;
+    exercise: string;
+  }>;
+};
+
+export interface InterviewReportService {
+  generate(input: InterviewReportInput): Promise<InterviewReport & { model: string; analysisVersion: "v1" }>;
+}
+
 export type InterviewOrchestrationInput = InterviewThinkingInput & {
   nextFixedQuestion: string | null;
   followUpUsed: boolean;
