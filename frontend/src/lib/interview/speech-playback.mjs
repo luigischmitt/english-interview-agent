@@ -1,3 +1,12 @@
+export function composeOpeningUtterance(introduction, firstQuestion) {
+  return [introduction.trim(), firstQuestion.trim()].filter(Boolean).join(" ");
+}
+
+export function getInterviewerCaption({ isOpeningQuestion, phase, openingUtterance, questionPrompt }) {
+  const openingQuestionIsActive = isOpeningQuestion && (phase === "introducing" || phase === "speaking" || phase === "answering");
+  return openingQuestionIsActive ? openingUtterance : questionPrompt;
+}
+
 export function synthesizeInterviewerQuestion(text, options) {
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 15_000;

@@ -1,6 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+import { composeOpeningUtterance, getInterviewerCaption, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+
+test("the first interviewer playback combines a short introduction and the first question", () => {
+  assert.equal(
+    composeOpeningUtterance("Welcome. Take your time.", "Tell me about yourself."),
+    "Welcome. Take your time. Tell me about yourself.",
+  );
+  assert.equal(composeOpeningUtterance(" Welcome. ", " Tell me about yourself. "), "Welcome. Tell me about yourself.");
+});
+
+test("the opening caption remains through the first answer, then returns to the active question", () => {
+  const caption = (overrides = {}) => getInterviewerCaption({
+    isOpeningQuestion: true,
+    phase: "answering",
+    openingUtterance: "Welcome. Tell me about yourself.",
+    questionPrompt: "Tell me about yourself.",
+    ...overrides,
+  });
+
+  assert.equal(caption(), "Welcome. Tell me about yourself.");
+  assert.equal(caption({ phase: "advancing" }), "Tell me about yourself.");
+  assert.equal(caption({ isOpeningQuestion: false }), "Tell me about yourself.");
+});
 
 class FakeAudio {
   listeners = new Map();

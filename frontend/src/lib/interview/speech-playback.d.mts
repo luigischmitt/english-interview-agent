@@ -19,4 +19,11 @@ export type SpeechPlaybackOptions = {
   clearTimeout?: (id: number) => void;
 };
 
+export function composeOpeningUtterance(introduction: string, firstQuestion: string): string;
+export function getInterviewerCaption(input: {
+  isOpeningQuestion: boolean;
+  phase: "introducing" | "speaking" | "answering" | "advancing" | "ending";
+  openingUtterance: string;
+  questionPrompt: string;
+}): string;
 export function synthesizeInterviewerQuestion(text: string, options: SpeechPlaybackOptions): SpeechPlayback;

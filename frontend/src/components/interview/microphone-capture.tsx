@@ -85,7 +85,6 @@ export function MicrophoneCapture({ disabled = false, showTranscript = true, onT
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [transcription, setTranscription] = useState<VoiceTranscriptionState>({ status: "idle" });
-  const [assessment, setAssessment] = useState<VoiceAssessmentState | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -197,7 +196,6 @@ export function MicrophoneCapture({ disabled = false, showTranscript = true, onT
     transcriptRef.current = "";
     const idle: VoiceTranscriptionState = { status: "idle" };
     setTranscription(idle);
-    setAssessment(null);
     onTranscriptionChangeRef.current(idle);
   }, [releaseCapture]);
 
@@ -212,7 +210,6 @@ export function MicrophoneCapture({ disabled = false, showTranscript = true, onT
     transcriptRef.current = "";
     setDuration(0);
     setTranscription({ status: "idle" });
-    setAssessment(null);
     onTranscriptionChangeRef.current({ status: "idle" });
     const attemptId = crypto.randomUUID();
 
@@ -277,7 +274,6 @@ export function MicrophoneCapture({ disabled = false, showTranscript = true, onT
             const received: VoiceAssessmentState = message.status === "available" && message.scores
               ? { status: "available", segmented: true, durationMs: message.durationMs ?? 0, scores: message.scores }
               : { status: "unavailable", segmented: message.segmented === true };
-            if (generationRef.current === generation) setAssessment(received);
             onAssessmentChangeRef.current?.(attemptId, received);
             socket.onmessage = null;
             socket.onclose = null;
@@ -324,7 +320,6 @@ export function MicrophoneCapture({ disabled = false, showTranscript = true, onT
               awaitingAssessment = true;
               assessmentSockets.register(attemptId, socket);
               socketRef.current = null;
-              setAssessment({ status: "pending" });
               onAssessmentChangeRef.current?.(attemptId, { status: "pending" });
             }
             return;
@@ -352,7 +347,6 @@ export function MicrophoneCapture({ disabled = false, showTranscript = true, onT
             if (awaitingAssessment) {
               assessmentSockets.register(attemptId, socket);
               socketRef.current = null;
-              setAssessment({ status: "pending" });
               onAssessmentChangeRef.current?.(attemptId, { status: "pending" });
             } else {
               socket.onmessage = null;
@@ -370,7 +364,6 @@ export function MicrophoneCapture({ disabled = false, showTranscript = true, onT
             awaitingAssessment = false;
             assessmentSockets.finish(attemptId, socket);
             const unavailable: VoiceAssessmentState = { status: "unavailable", segmented: true };
-            if (generationRef.current === generation) setAssessment(unavailable);
             onAssessmentChangeRef.current?.(attemptId, unavailable);
             return;
           }
@@ -463,7 +456,7 @@ export function MicrophoneCapture({ disabled = false, showTranscript = true, onT
           <div>
             <p className="text-sm font-medium">Responda com sua voz <span className="font-normal text-muted-foreground">(opcional)</span></p>
             <p className="text-xs text-muted-foreground" aria-live="polite">
-              {isRecording ? `Gravando · ${formattedDuration}` : status === "requesting" ? "Conectando ao transcritor…" : isPending ? "Preparando a transcrição…" : transcription.status === "available" ? showTranscript ? "Transcrição pronta." : "Transcrição pronta para envio; legenda oculta." : transcription.status === "partial" ? showTranscript ? "Transcrição parcial recebida…" : "Transcrição em andamento; legenda oculta." : status === "error" ? "A gravação foi interrompida." : "A gravação para após 2 segundos de silêncio ou pelo botão."}
+              {isRecording ? `Gravando · ${formattedDuration}` : status === "requesting" ? "Conectando ao transcritor…" : isPending ? "Preparando a transcrição…" : transcription.status === "available" ? showTranscript ? "Transcrição pronta." : "Transcrição pronta para envio; legenda oculta." : transcription.status === "partial" ? showTranscript ? "Transcrição parcial recebida…" : "Transcrição em andamento; legenda oculta." : status === "error" ? "A gravação foi interrompida." : "A gravação para após 3,5 segundos de silêncio ou pelo botão."}
             </p>
           </div>
         </div>
@@ -475,15 +468,8 @@ export function MicrophoneCapture({ disabled = false, showTranscript = true, onT
           {showTranscript && (transcription.status === "available" || (transcription.status === "failed" && transcription.transcript)) && <button type="button" className="btn btn-sm btn-ghost" onClick={cancelRecording} disabled={disabled}>Limpar transcrição</button>}
         </div>
       </div>
-      <p className="mt-3 text-xs leading-5 text-muted-foreground">Whisper Large V3 Turbo · até 3 minutos. A transcrição é atualizada por segmentos; o áudio PCM é mantido apenas em memória e descartado ao concluir.</p>
       {error && transcription.status !== "failed" && <p className="mt-3 text-sm text-error" role="alert">{error}</p>}
-      {showTranscript && displayedTranscript && <div className="mt-4 border-t border-base-300 pt-4" aria-live="polite"><h3 className="text-sm font-medium">{transcription.status === "partial" || transcription.status === "failed" ? "Transcrição parcial" : "Transcrição"}</h3><p className="mt-1 text-sm leading-6 text-base-content/75">{displayedTranscript}</p></div>}
       {transcription.status === "failed" && <p className="mt-3 text-sm text-warning-content" role="status">{transcription.message} {showTranscript ? "Você pode revisar o texto recebido ou continuar com uma resposta escrita." : transcription.transcript ? "A transcrição parcial continua disponível para envio; você também pode continuar com uma resposta escrita." : "A legenda está oculta; você pode continuar com uma resposta escrita."}</p>}
-      {transcription.status === "available" && assessment && <div className="mt-3 border-t border-base-300 pt-3" role="status"><p className="text-xs leading-5 text-muted-foreground">Sinais experimentais do Azure agregados por segmentos e ponderados pela duração; erros de transcrição podem afetar os valores. Não representam um nível geral de inglês.{assessment.status === "pending" ? " A avaliação pode chegar após a transcrição." : assessment.status === "unavailable" ? " Avaliação indisponível para esta resposta." : ` Avaliados ${Math.round(assessment.durationMs / 1_000)} segundos de áudio.`}</p>{assessment.status === "available" && <dl className="mt-2 grid grid-cols-3 gap-3 text-xs"><AssessmentScore label="Precisão" value={assessment.scores.accuracy} /><AssessmentScore label="Fluência" value={assessment.scores.fluency} /><AssessmentScore label="Prosódia" value={assessment.scores.prosody} /></dl>}</div>}
     </section>
   );
-}
-
-function AssessmentScore({ label, value }: { label: string; value: number | null }) {
-  return <div><dt className="text-muted-foreground">{label}</dt><dd className="mt-1 font-semibold tabular-nums">{value === null ? "—" : `${Math.round(value)} / 100`}</dd></div>;
 }
