@@ -41,7 +41,7 @@ export function createTranscriptionController(service: TranscriptionService): { 
     } catch (error) {
       if (error instanceof TranscriptionUnavailableError) {
         response.status(503).json({
-          error: { code: "TRANSCRIPTION_UNAVAILABLE", message: "Speech transcription is unavailable right now. You can continue with a written answer." },
+          error: { code: "TRANSCRIPTION_UNAVAILABLE", message: "Speech transcription is unavailable right now. Retry voice capture or skip/end the practice." },
         });
         return;
       }

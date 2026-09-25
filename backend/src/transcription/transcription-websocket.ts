@@ -85,7 +85,7 @@ export function attachTranscriptionWebSocket(
       if (!session.vad.hasSpeech || session.vad.speechDurationMs < session.config.minimumSpeechMs || session.bytes === 0) {
         sessions.cancel(id);
         sessionId = null;
-        send(socket, { type: "error", code: "STREAM_TOO_SHORT", message: "Say a little more before finishing. You can continue with a written answer." });
+        send(socket, { type: "error", code: "STREAM_TOO_SHORT", message: "The recording was too short to transcribe. Please try again or skip this question." });
         socket.close(1011, "Audio too short");
         return;
       }
@@ -153,7 +153,7 @@ export function attachTranscriptionWebSocket(
           } catch {
             transcriptionFailed = true;
             finalRequested = true;
-            send(socket, { type: "partial-error", message: "A later audio segment could not be transcribed. Your earlier transcript is still available; you can continue with a written answer." });
+            send(socket, { type: "partial-error", message: "A later audio segment could not be transcribed. Earlier text is read-only and cannot be submitted. Please try recording again or skip/end the practice." });
             break;
           }
         }
@@ -174,7 +174,7 @@ export function attachTranscriptionWebSocket(
     timer = setTimeout(() => {
       if (sessionId) {
         finalRequested = true;
-        send(socket, { type: "partial-error", message: "The audio session expired. Your earlier transcript is still available; you can continue with a written answer." });
+        send(socket, { type: "partial-error", message: "The audio session expired. Earlier text is read-only and cannot be submitted. Please try recording again or skip/end the practice." });
         void processWindows();
       } else socket.close(1008, "Stream timeout");
     }, limits.maxDurationMs + 60_000);
@@ -193,10 +193,10 @@ export function attachTranscriptionWebSocket(
           const code = error instanceof Error ? error.message : "STREAM_SIZE_LIMIT";
           if (code === "STREAM_QUEUE_LIMIT" || code === "STREAM_SIZE_LIMIT" || code === "STREAM_DURATION_LIMIT") {
             finalRequested = true;
-            send(socket, { type: "partial-error", code, message: "The audio limit was reached. Your earlier transcript is still available; you can continue with a written answer." });
+            send(socket, { type: "partial-error", code, message: "The audio limit was reached. Earlier text is read-only and cannot be submitted. Please try recording again or skip/end the practice." });
             void processWindows();
           } else {
-            send(socket, { type: "error", code, message: "The audio stream is invalid. You can continue with a written answer." });
+            send(socket, { type: "error", code, message: "The audio stream is invalid. Please try recording again or skip/end the practice." });
             if (sessionId) sessions.cancel(sessionId);
             sessionId = null;
             socket.close(1009, "Invalid audio stream");
@@ -214,7 +214,7 @@ export function attachTranscriptionWebSocket(
       if (message.type === "start") {
         if (started) return;
         if (message.version !== 2 || message.sampleRate !== pcmSampleRate || message.channels !== 1 || message.encoding !== "s16le") {
-          send(socket, { type: "error", code: "UNSUPPORTED_PCM_PROTOCOL", message: "This browser's audio format is not supported. You can continue with a written answer." });
+          send(socket, { type: "error", code: "UNSUPPORTED_PCM_PROTOCOL", message: "This browser's audio format is not supported. Try a compatible browser or skip/end the practice." });
           socket.close(1003, "Unsupported audio protocol");
           return;
         }
@@ -226,7 +226,7 @@ export function attachTranscriptionWebSocket(
           send(socket, { type: "ready", protocol: 2, sessionId, sampleRate: pcmSampleRate, limits: { maximumDurationMs: session.limits.maxDurationMs, maximumBytes: session.limits.maxBytes, maximumQueueBytes: session.limits.maxQueueBytes }, window: { durationMs: transcriptionWindowMs, overlapMs: transcriptionOverlapMs }, features: { pronunciationAssessment: assessmentService !== null } });
         } catch (error) {
           const code = error instanceof Error ? error.message : "STREAM_UNAVAILABLE";
-          send(socket, { type: "error", code, message: "Audio transcription is unavailable right now. You can continue with a written answer." });
+          send(socket, { type: "error", code, message: "Audio transcription is unavailable right now. Please try again or skip/end the practice." });
           socket.close(1011, "Stream unavailable");
         }
         return;

@@ -2,6 +2,8 @@ export function hasReachedTimeLimit(elapsedSeconds: number, durationMinutes: num
 export function canStartNextQuestion(elapsedSeconds: number, durationMinutes: number, nextIndex: number, questionCount: number): boolean;
 export function createOnceGate(): () => boolean;
 export function nextAutoStartSignal(signal: string | null, disabled: boolean, lastSignal: string | null): string | null;
+export function finalTranscriptForSubmission(transcription: { status?: string; value?: { transcript?: string | null } } | null | undefined): string | null;
+export function canSkipVoiceQuestion(captureState: string, transcriptionStatus: string): boolean;
 export function stopMediaStreamTracks(stream: { getTracks(): Array<{ stop(): void }> } | null): void;
 export function nullableQuestionCount(value: string | number | null | undefined): number | null;
 export const interviewDurationOptions: readonly number[];

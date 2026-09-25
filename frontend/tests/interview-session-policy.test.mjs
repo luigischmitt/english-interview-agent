@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canStartNextQuestion, createOnceGate, hasReachedTimeLimit, interviewDurationOptions, nextAutoStartSignal, nullableQuestionCount, stopMediaStreamTracks } from "../src/lib/interview/session-policy.mjs";
+import { canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, interviewDurationOptions, nextAutoStartSignal, nullableQuestionCount, stopMediaStreamTracks } from "../src/lib/interview/session-policy.mjs";
 
 test("the time limit never cuts an active answer, but blocks starting another question", () => {
   const durationMinutes = 5;
@@ -26,6 +26,24 @@ test("automatic microphone start only accepts each enabled signal once", () => {
   assert.equal(nextAutoStartSignal("question-1", false, null), "question-1");
   assert.equal(nextAutoStartSignal("question-1", false, "question-1"), null);
   assert.equal(nextAutoStartSignal("question-2", true, "question-1"), null);
+});
+
+test("only a non-empty final voice transcript can be submitted", () => {
+  assert.equal(finalTranscriptForSubmission({ status: "partial", transcript: "I built" }), null);
+  assert.equal(finalTranscriptForSubmission({ status: "failed", transcript: "I built" }), null);
+  assert.equal(finalTranscriptForSubmission({ status: "pending" }), null);
+  assert.equal(finalTranscriptForSubmission({ status: "available", value: { transcript: "  " } }), null);
+  assert.equal(finalTranscriptForSubmission({ status: "available", value: { transcript: "  I built the service.  " } }), "I built the service.");
+});
+
+test("an unfinished capture or transcript cannot silently skip a question", () => {
+  for (const captureState of ["requesting", "listening", "detected", "finalizing"]) {
+    assert.equal(canSkipVoiceQuestion(captureState, "idle"), false);
+  }
+  assert.equal(canSkipVoiceQuestion("idle", "pending"), false);
+  assert.equal(canSkipVoiceQuestion("idle", "partial"), false);
+  assert.equal(canSkipVoiceQuestion("idle", "failed"), true);
+  assert.equal(canSkipVoiceQuestion("ready", "available"), true);
 });
 
 test("camera and microphone stream cleanup stops every local track", () => {

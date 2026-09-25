@@ -18,11 +18,11 @@ prática da resposta em inglês da análise futura de áudio.
 - Prévia local opcional da câmera do candidato. O vídeo não é enviado nem
   persistido; a presença do entrevistador é apenas tipográfica/sonora, sem
   avatar ou câmera simulada.
-- Captura opcional de microfone usando `AudioWorklet`, que continua ativa
-  independentemente da preferência de legenda do candidato. A opção “Legenda
-  da minha fala” controla somente a exibição do texto parcial/final; mesmo
-  oculto, o texto transcrito continua disponível para envio e relatório. A
-  captura pode iniciar automaticamente após a pergunta ou manualmente. O
+- Respostas somente por voz usando `AudioWorklet`. O microfone pode iniciar
+  automaticamente após a pergunta ou manualmente. A opção “Legenda da minha
+  fala” controla a exibição da transcrição; quando visível, ela é somente
+  leitura. Apenas uma transcrição final e não vazia pode ser enviada; trechos
+  parciais e vazios nunca avançam nem são persistidos. O
   navegador envia PCM mono s16le a 16 kHz em frames de 100 ms pelo WebSocket v2.
   Whisper Large V3 Turbo transcreve janelas sequenciais de 6 segundos com
   1 segundo de áudio sobreposto, gerando novas parciais a cada 5 segundos;
@@ -31,12 +31,14 @@ prática da resposta em inglês da análise futura de áudio.
   silêncio; o botão
   manual continua disponível. A duração padrão máxima é 3 minutos, com limites
   de bytes, fila e sessões simultâneas configuráveis no backend. O áudio fica
-  somente em memória e não é reproduzido nem salvo; falhas preservam texto já
-  recebido e mantêm a resposta escrita disponível.
-- Sessões e turnos de texto salvos nas tabelas Supabase quando a conta e a
+  somente em memória e não é reproduzido nem salvo. Falhas oferecem nova
+  tentativa e ações explícitas para pular a pergunta ou encerrar a prática;
+  transcrições parciais não podem ser enviadas.
+- Sessões e transcrições finais submetidas são salvas nas tabelas Supabase quando a conta e a
   conexão estão disponíveis. As políticas RLS limitam os dados ao usuário.
 - Relatório final em português disponível ao concluir: uma chamada em lote ao
-  backend avalia conteúdo técnico e inglês escrito/transcrito; médias dos
+  backend avalia conteúdo técnico e comunicação em inglês a partir das
+  transcrições enviadas; médias dos
   sinais experimentais do Azure são calculadas por dimensão, ignorando respostas
   indisponíveis e valores ausentes. A sala aguarda avaliações pendentes por até
   1,2 segundo, sem bloquear a conclusão; resultados Azure tardios atualizam as
@@ -126,12 +128,14 @@ npm run dev
 
 Abra `http://localhost:3000`. Para reprodução de perguntas, execute também o
 backend (ou aponte `NEXT_PUBLIC_BACKEND_URL` para uma API compatível). Sem ele,
-o texto continua disponível e a falha de áudio não bloqueia a prática.
+o texto da pergunta continua disponível e a falha de reprodução não bloqueia a
+prática por voz.
 
 ## Persistência e falhas
 
 Ao iniciar uma entrevista, o app tenta criar uma sessão privada no Supabase e
-salvar cada pergunta e resposta escrita. Ao concluir, marca a sessão como
+salvar cada transcrição final de voz enviada. Perguntas puladas não criam turnos
+de resposta. Ao concluir, marca a sessão como
 `completed`; ao sair antes do fim, tenta marcá-la como `abandoned`.
 
 Se a autenticação, o banco ou uma gravação falhar, a interface informa a
@@ -157,19 +161,23 @@ aparecer como evidência no relatório.
 
 ## Áudio, transcrição e privacidade
 
-O microfone é opcional. O navegador transmite PCM mono s16le a 16 kHz pelo
+O navegador transmite PCM mono s16le a 16 kHz pelo
 WebSocket v2. O backend retém áudio em memória até 3 minutos (por padrão), com
 limites configuráveis de duração, bytes por resposta, fila por resposta e
 sessões ativas. Janelas de 6 segundos com 1 segundo de overlap são enviadas
 sequencialmente ao Whisper Large V3 Turbo; novas parciais chegam a cada 5
 segundos. O cliente consolida e deduplica o texto das janelas. 3,5 segundos de
 silêncio ou o botão manual concluem a
-captura. O app não salva nem reproduz áudio. A transcrição textual pode ser
-salva como turno da sessão privada. Quando Azure Pronunciation Assessment
+captura. O app não salva nem reproduz áudio. Somente uma transcrição final, não
+vazia e enviada pela pessoa pode ser salva como turno da sessão privada;
+parciais ficam apenas na captura atual e não são copiadas para o próximo turno.
+Falhas de microfone/WebSocket/Whisper permitem tentar novamente, pular a pergunta
+ou encerrar a prática; não há resposta digitada. Quando Azure Pronunciation Assessment
 está habilitado, cada janela é avaliada após a transcrição e as métricas são
 agregadas com peso pela duração; são sinais segmentados e experimentais, não
 um relatório geral de proficiência ou sotaque. Falhas posteriores do Whisper
-preservam o texto já recebido e permitem continuar com a resposta escrita.
+preservam o trecho apenas para leitura durante a captura atual e permitem nova
+tentativa, pular a pergunta ou encerrar a prática.
 
 ## Validação antes de abrir uma PR
 

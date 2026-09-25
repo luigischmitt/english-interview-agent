@@ -1,6 +1,6 @@
 # Backend
 
-The backend provides interviewer speech through Kokoro, completed-response transcription through OpenRouter Whisper Large V3 Turbo, and a technical-answer/English-communication assessment through OpenRouter. The English-formulation route remains a placeholder.
+The backend provides interviewer speech through Kokoro, completed spoken-response transcription through OpenRouter Whisper Large V3 Turbo, and a technical-answer/English-communication assessment from submitted voice transcripts through OpenRouter. The English-formulation route remains a placeholder.
 
 ## Run the complete local environment
 
@@ -95,9 +95,9 @@ not a gate for interview practice.
 | `GET` | `/api/v1/transcriptions/providers` | Returns the configured transcription choices for the local comparison selector. |
 | `POST` | `/api/v1/transcriptions` | Receives a completed 16 kHz mono WAV response (maximum 30 seconds), returns a transcription from the selected configured provider. This compatibility route is separate from streaming. Audio is not persisted. |
 | `WS` | `/api/v1/transcriptions/stream` | Protocol v2 receives 16 kHz mono signed 16-bit PCM frames plus RMS `level`, then `finalize` or `cancel`. It processes sequential 6-second windows with 1-second audio overlap, returns `partial` text per window and a final `complete` status, and holds audio only in bounded memory. Total duration, bytes, queued bytes, and concurrent sessions are configurable. When enabled, each Whisper window is sent to Azure scripted assessment using that window's Whisper text as `ReferenceText`; `assessment` reports duration-weighted Accuracy, Fluency, and Prosody as segmented experimental signals or `unavailable`. Azure failures do not block transcription. |
-| `POST` | `/api/v1/thinking` | Assesses technical answer coverage and written English communication. Uses OpenRouter credentials held by the backend. |
+| `POST` | `/api/v1/thinking` | Assesses technical answer coverage and English communication from a supplied transcript. Uses OpenRouter credentials held by the backend. |
 | `POST` | `/api/v1/thinking/next-turn` | Chooses one brief, transcript-grounded follow-up or advances to the next fixed interview question. The model must provide a short literal transcript anchor, validated server-side and omitted from the public response. Provider errors and invalid output deterministically return `NEXT`. |
-| `POST` | `/api/v1/thinking/report` | Generates one structured final report from up to 30 ordered question/answer pairs and role context. It separates technical content, written English communication, and practical priorities; it does not assess vocal delivery or return numeric scores. |
+| `POST` | `/api/v1/thinking/report` | Generates one structured final report from up to 30 ordered question/answer pairs and role context. In the voice-only room, candidate answers are final speech transcripts. It separates technical content, English communication, and practical priorities; it does not assess vocal delivery or return numeric scores. |
 | `POST` | `/api/v1/formulations` | Reserved for answer formulation in English; returns `501` until connected. |
 | `GET` | `/api/v1/speech/health` | Reports whether the configured speech provider is ready. |
 | `GET` | `/api/v1/speech/voices` | Returns the sole approved interviewer persona. |

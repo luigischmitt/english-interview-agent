@@ -12,7 +12,7 @@ import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuesti
 import type { AzureAssessmentSample, AzureMetricSummary, InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
-import { canStartNextQuestion, createOnceGate, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
+import { canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback } from "../hooks/use-speech-playback";
 import { composeOpeningUtterance, getInterviewerCaption } from "@/lib/interview/speech-playback.mjs";
@@ -65,7 +65,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const [questionSequenceNumber, setQuestionSequenceNumber] = useState(1);
   const [followUpUsed, setFollowUpUsed] = useState(false);
   const [phase, setPhase] = useState<InterviewPhase>("introducing");
-  const [answer, setAnswer] = useState("");
   const [answers, setAnswers] = useState<InterviewAnswers>({});
   const [reportTurns, setReportTurns] = useState<InterviewReportTurnSource[]>([]);
   const [answerError, setAnswerError] = useState<string | null>(null);
@@ -135,15 +134,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   const submitAnswer = async (finishAfter = false) => {
     if (submitInFlightRef.current || leftRef.current || !mountedRef.current) return;
-    const trimmedAnswer = answer.trim();
-    if ((voiceTranscription.status === "pending" || voiceTranscription.status === "partial") && !trimmedAnswer) {
-      setAnswerError("Aguarde a transcrição da resposta por voz antes de continuar.");
-      return;
-    }
-    const voiceTranscript = voiceTranscription.status === "available" ? voiceTranscription.value.transcript
-      : voiceTranscription.status === "failed" ? voiceTranscription.transcript ?? "" : "";
-    if (!trimmedAnswer && !voiceTranscript) {
-      setAnswerError("Escreva uma resposta curta ou conclua uma resposta por voz transcrita antes de continuar.");
+    const savedAnswer = finalTranscriptForSubmission(voiceTranscription);
+    if (!savedAnswer) {
+      setAnswerError(voiceTranscription.status === "partial" || voiceTranscription.status === "pending"
+        ? "A transcrição ainda não terminou. Aguarde a conclusão antes de enviar."
+        : "Grave sua resposta por voz e aguarde a transcrição final antes de enviar.");
       return;
     }
 
@@ -151,7 +146,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     const generation = ++generationRef.current;
     const abortController = new AbortController();
     decisionAbortRef.current = abortController;
-    const savedAnswer = trimmedAnswer || voiceTranscript;
     const candidateSequenceNumber = questionSequenceNumber + 1;
     setAnswers((current) => ({ ...current, [`${question.id}:${questionSequenceNumber}`]: savedAnswer }));
     const candidateTurn: InterviewTurnInput = {
@@ -165,7 +159,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       { sequenceNumber: questionSequenceNumber, speaker: "interviewer", content: question.prompt },
       { sequenceNumber: candidateSequenceNumber, speaker: "candidate", content: savedAnswer },
     ]);
-    setAnswer("");
     setVoiceTranscription({ status: "idle" });
     setVoiceCaptureState("idle");
     setAnswerError(null);
@@ -215,14 +208,47 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const finishNow = () => {
     if (phase !== "answering") return;
     if (voiceCaptureState === "requesting" || voiceCaptureState === "listening" || voiceCaptureState === "detected" || voiceCaptureState === "finalizing") {
-      setAnswerError("Conclua sua resposta por voz antes de encerrar a prática.");
+      setAnswerError("Finalize ou cancele a gravação antes de encerrar a prática.");
       return;
     }
-    if (answer.trim() || voiceTranscription.status === "available" || voiceTranscription.status === "failed") {
+    if (voiceTranscription.status === "partial" || voiceTranscription.status === "pending") {
+      setAnswerError("A transcrição ainda está sendo concluída. Aguarde, tente gravar novamente ou encerre depois.");
+      return;
+    }
+    if (finalTranscriptForSubmission(voiceTranscription)) {
       void submitAnswer(true);
       return;
     }
     setPhase("ending");
+  };
+
+  const skipQuestion = () => {
+    if (phase !== "answering" || submitInFlightRef.current) return;
+    if (!canSkipVoiceQuestion(voiceCaptureState, voiceTranscription.status)) {
+      setAnswerError("Aguarde a gravação ou transcrição terminar antes de pular a pergunta.");
+      return;
+    }
+
+    setAnswerError(null);
+    setVoiceTranscription({ status: "idle" });
+    setVoiceCaptureState("idle");
+    setPhase("advancing");
+    const generation = ++generationRef.current;
+    advanceTimerRef.current = window.setTimeout(() => {
+      advanceTimerRef.current = null;
+      if (!mountedRef.current || generation !== generationRef.current) return;
+      if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)
+        || !canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, currentIndex + 1, questions.length)) {
+        setPhase("ending");
+        return;
+      }
+      const nextIndex = currentIndex + 1;
+      setCurrentIndex(nextIndex);
+      setQuestion(questions[nextIndex]);
+      setFollowUpUsed(false);
+      setQuestionSequenceNumber((sequence) => sequence + 1);
+      setPhase("speaking");
+    }, 350);
   };
 
   const leaveInterview = () => {
@@ -393,14 +419,17 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
         <section className="mx-auto mt-4 w-full max-w-7xl border-t border-base-300 pt-4" aria-labelledby="answer-title">
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-            <fieldset className="fieldset w-full gap-2">
-              <legend id="answer-title" className="fieldset-legend text-sm font-medium">Sua resposta em inglês</legend>
-              <textarea className={`textarea textarea-bordered min-h-24 w-full resize-y bg-base-100 text-base leading-6 ${answerError ? "textarea-error" : ""}`} value={answer} onChange={(event) => { setAnswer(event.target.value); if (answerError) setAnswerError(null); }} placeholder={isInterviewerSpeaking ? "O campo ficará disponível depois da pergunta." : "Escreva sua resposta em inglês..."} disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"} aria-invalid={Boolean(answerError)} aria-describedby={answerError ? "answer-error" : "answer-note"} />
-              {answerError ? <p id="answer-error" className="label text-error" role="alert">{answerError}</p> : <p id="answer-note" className="label text-muted-foreground">Se o microfone ou a transcrição falharem, você pode continuar por texto.</p>}
-            </fieldset>
+            <div className="w-full" aria-labelledby="answer-title">
+              <h2 id="answer-title" className="text-sm font-medium">Sua resposta por voz</h2>
+              <p className="mt-2 text-sm text-muted-foreground" role="status" aria-live="polite">
+                {voiceCaptureState === "listening" || voiceCaptureState === "detected" ? "Pode falar. A transcrição aparecerá abaixo." : voiceTranscription.status === "pending" || voiceTranscription.status === "partial" ? "Aguardando a transcrição final da sua fala…" : voiceTranscription.status === "failed" ? "A transcrição falhou. Tente gravar novamente, pule a pergunta ou encerre a prática." : voiceTranscription.status === "available" ? "Confira a transcrição somente leitura e envie quando estiver pronta." : "Inicie a gravação e responda em inglês. Sua resposta só será enviada após a transcrição final."}
+              </p>
+              {answerError && <p id="answer-error" className="mt-2 text-sm text-error" role="alert">{answerError}</p>}
+            </div>
             <div className="flex flex-wrap justify-end gap-2">
-              <button type="button" className="btn btn-ghost min-h-11 gap-2" onClick={finishNow} disabled={phase !== "answering" || isAdvancing}>Concluir agora</button>
-              <button type="button" className="btn btn-primary min-h-11 gap-2" onClick={() => void submitAnswer()} disabled={isInterviewerSpeaking || isAdvancing || phase === "ending" || ((voiceTranscription.status === "pending" || voiceTranscription.status === "partial") && !answer.trim())}>{isAdvancing ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}{isAdvancing ? "Avançando" : "Enviar resposta"}</button>
+              <button type="button" className="btn btn-ghost min-h-11 gap-2" onClick={skipQuestion} disabled={phase !== "answering" || isAdvancing || !canSkipVoiceQuestion(voiceCaptureState, voiceTranscription.status)}>Pular sem enviar</button>
+              <button type="button" className="btn btn-primary min-h-11 gap-2" onClick={() => void submitAnswer()} disabled={isInterviewerSpeaking || isAdvancing || phase === "ending" || !finalTranscriptForSubmission(voiceTranscription)}>{isAdvancing ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}{isAdvancing ? "Avançando" : "Enviar transcrição"}</button>
+              <button type="button" className="btn btn-ghost min-h-11 gap-2" onClick={finishNow} disabled={phase !== "answering" || isAdvancing}>Encerrar prática</button>
             </div>
           </div>
           {speechMessage && <div role="status" className="alert alert-warning alert-soft mt-3 text-sm"><Volume2 className="size-4 shrink-0" aria-hidden="true" /><span>{speechMessage} O texto da pergunta continua disponível.</span></div>}
@@ -411,10 +440,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"}
             showTranscript={showCandidateTranscript}
             assessmentSockets={assessmentSockets}
-            onTranscriptionChange={setVoiceTranscription}
+            onTranscriptionChange={(transcription) => {
+              setVoiceTranscription(transcription);
+              if (transcription.status === "idle" || transcription.status === "available") setAnswerError(null);
+            }}
             onCaptureStateChange={setVoiceCaptureState}
             autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
-            onUseTranscript={(transcript) => setAnswer((current) => current.trim() ? `${current.trim()} ${transcript}` : transcript)}
             onAssessmentChange={(attemptId, assessment) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { questionLabel: question.prompt, sequenceNumber: questionSequenceNumber, state: assessment } }))}
           />
           <div className="mt-4 flex flex-col gap-3 border-t border-base-300 pt-4 sm:flex-row sm:items-center sm:justify-between">
