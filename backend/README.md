@@ -172,6 +172,51 @@ sessions and does not authorize an interview ID; the authenticated frontend
 persists results through Supabase RLS. Provider/configuration errors use the
 standardized thinking error object.
 
+### Run the real-time audio E2E harness
+
+This opt-in harness generates an English answer through `/api/v1/speech`,
+converts the returned audio to temporary mono 16 kHz s16le PCM with `ffmpeg`,
+and sends 100 ms frames at real-time pace through WebSocket protocol v2. It
+reports connection, first-speech, first-partial, silence, and completion
+latencies plus partial-window counts. It uses the normal Kokoro and Whisper
+paths, including VAD; it does not run as part of `npm test`.
+
+Requirements: start Kokoro and the backend with `SPEECH_PROVIDER=kokoro`, set
+`OPENROUTER_API_KEY` in the backend's ignored local `backend/.env`, and install
+`ffmpeg` on the machine running the harness. The backend must be reachable at
+port 3001. For example, with the local Docker services running:
+
+```bash
+cd backend
+npm run test:audio-e2e
+```
+
+The default synthetic answer is about 20 seconds. Options can be passed on the
+command line or through `AUDIO_E2E_*` environment variables:
+
+```bash
+npm run test:audio-e2e -- --backend-url http://localhost:3001 --speed 1 --timeout-ms 120000
+```
+
+Supported options are `--backend-url`, `--text`, `--speed`,
+`--speech-threshold`, `--timeout-ms`, `--max-duration-seconds`, and `--ffmpeg`.
+Their environment equivalents are `AUDIO_E2E_BACKEND_URL`, `AUDIO_E2E_TEXT`,
+`AUDIO_E2E_SPEED`, `AUDIO_E2E_SPEECH_THRESHOLD`, `AUDIO_E2E_TIMEOUT_MS`,
+`AUDIO_E2E_MAX_DURATION_SECONDS`, and `AUDIO_E2E_FFMPEG`. The URL must be a
+plain HTTP(S) origin/path without credentials or query parameters. Keep API
+keys in the backend's ignored `.env`; the harness has no credential option and
+does not print environment values or transcript text. Use the environment
+variable for custom text if it should not appear in shell history.
+
+The harness removes its temporary MP3 and PCM files on success or failure.
+Running it incurs local CPU time for Kokoro and usage charges from the
+configured Whisper provider; the number of transcription windows depends on
+answer duration. If Azure pronunciation assessment is enabled in the backend,
+each successful Whisper window may also incur Azure charges. Check current
+provider pricing before repeated runs. A short default answer keeps this
+exercise bounded; do not use real candidate recordings or credentials as the
+test text.
+
 ### Configure Azure Speech locally
 
 Create `backend/.env` locally (it is ignored by Git):
