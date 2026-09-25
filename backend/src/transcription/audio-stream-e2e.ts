@@ -15,7 +15,7 @@ const bytesPerFrame = samplesPerFrame * bytesPerSample;
 const trailingSilenceMs = 4_000;
 const defaultText = "In my last role, I improved a slow reporting service that our support team used every day. First, I reviewed the database queries and added indexes where the data showed they would help. Then I worked with the frontend team to remove a request that was repeated on every page. The response time went from about four seconds to under one second. We checked the change with realistic data, watched the service after release, and documented what we learned. I also shared the measurements with the team so we could use them when planning the next improvements.";
 
-type Options = {
+export type AudioE2EOptions = {
   backendUrl: URL;
   text: string;
   speed: number;
@@ -24,6 +24,8 @@ type Options = {
   ffmpeg: string;
   maxDurationMs: number;
 };
+
+type Options = AudioE2EOptions;
 
 type StreamMessage = {
   type?: string;
@@ -45,9 +47,15 @@ export type AudioE2EMetrics = {
   completeMs: number | null;
   partialCount: number;
   partialWindows: number[];
+  streamErrors: Array<{ type: "error" | "partial-error"; code?: string }>;
+  missingEvents: string[];
   transcriptCharacters: number;
   completionStatus: string | null;
 };
+
+export function isSuccessfulAudioE2ERun(metrics: AudioE2EMetrics): boolean {
+  return metrics.completionStatus === "complete" && metrics.streamErrors.length === 0 && metrics.missingEvents.length === 0;
+}
 
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): Options {
   const values: Record<string, string> = {
@@ -242,7 +250,12 @@ function send(socket: WebSocket, data: string | Buffer): Promise<void> {
   });
 }
 
-async function exerciseStream(options: Options, pcm: Buffer, speechGenerationMs: number): Promise<AudioE2EMetrics> {
+export async function exerciseStream(
+  options: Options,
+  pcm: Buffer,
+  speechGenerationMs: number,
+  trailingSilenceDurationMs = trailingSilenceMs,
+): Promise<AudioE2EMetrics> {
   const url = buildStreamUrl(options.backendUrl);
   const socket = new WebSocket(url, { handshakeTimeout: 10_000, perMessageDeflate: false });
   const metrics: AudioE2EMetrics = {
@@ -254,10 +267,12 @@ async function exerciseStream(options: Options, pcm: Buffer, speechGenerationMs:
     completeMs: null,
     partialCount: 0,
     partialWindows: [],
+    streamErrors: [],
+    missingEvents: [],
     transcriptCharacters: 0,
     completionStatus: null,
   };
-  const frames = framePcm(pcm);
+  const frames = framePcm(pcm, trailingSilenceDurationMs);
   let openedAt = 0;
   let streamStartedAt = 0;
   let ready = false;
@@ -317,8 +332,14 @@ async function exerciseStream(options: Options, pcm: Buffer, speechGenerationMs:
       resolveComplete?.();
       return;
     }
-    if (message.type === "error" || message.type === "partial-error") {
-      rejected = new Error(`WebSocket ${message.type}${message.code ? ` (${message.code})` : ""}.`);
+    if (message.type === "partial-error") {
+      metrics.streamErrors.push({ type: message.type, ...(message.code ? { code: message.code } : {}) });
+      shouldStopSending = true;
+      return;
+    }
+    if (message.type === "error") {
+      metrics.streamErrors.push({ type: message.type, ...(message.code ? { code: message.code } : {}) });
+      rejected = new Error(`WebSocket error${message.code ? ` (${message.code})` : ""}.`);
       shouldStopSending = true;
       rejectComplete?.(rejected);
     }
@@ -360,10 +381,11 @@ async function exerciseStream(options: Options, pcm: Buffer, speechGenerationMs:
     if (socket.readyState === WebSocket.OPEN) socket.close();
   }
   if (rejected) throw rejected;
-  if (!ready || metrics.firstSpeechMs === null || metrics.firstPartialMs === null || metrics.silenceDetectedMs === null || metrics.completeMs === null) {
-    throw new Error("The stream completed without all expected v2 events (ready, speech-started, partial, silence-detected, complete).");
-  }
-  if (metrics.completionStatus !== "complete") throw new Error(`Transcription completed with status ${metrics.completionStatus}.`);
+  if (!ready) metrics.missingEvents.push("ready");
+  if (metrics.firstSpeechMs === null) metrics.missingEvents.push("speech-started");
+  if (metrics.firstPartialMs === null) metrics.missingEvents.push("partial");
+  if (metrics.silenceDetectedMs === null) metrics.missingEvents.push("silence-detected");
+  if (metrics.completeMs === null) metrics.missingEvents.push("complete");
   return metrics;
 }
 
@@ -380,7 +402,9 @@ export async function runAudioStreamE2E(options: Options): Promise<AudioE2EMetri
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const metrics = await runAudioStreamE2E(options);
-  process.stdout.write(`${JSON.stringify({ ok: true, protocol: 2, sampleRate, channels: 1, encoding: "s16le", frameDurationMs, metrics }, null, 2)}\n`);
+  const ok = isSuccessfulAudioE2ERun(metrics);
+  process.stdout.write(`${JSON.stringify({ ok, ...(ok ? {} : { error: metrics.completionStatus === "partial" ? "Transcription completed partially." : "Audio stream did not complete successfully." }), protocol: 2, sampleRate, channels: 1, encoding: "s16le", frameDurationMs, metrics }, null, 2)}\n`);
+  if (!ok) process.exitCode = 1;
 }
 
 if (process.argv[1] && basename(process.argv[1]) === "audio-stream-e2e.ts") {

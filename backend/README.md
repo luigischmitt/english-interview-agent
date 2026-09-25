@@ -179,7 +179,10 @@ converts the returned audio to temporary mono 16 kHz s16le PCM with `ffmpeg`,
 and sends 100 ms frames at real-time pace through WebSocket protocol v2. It
 reports connection, first-speech, first-partial, silence, and completion
 latencies plus partial-window counts. It uses the normal Kokoro and Whisper
-paths, including VAD; it does not run as part of `npm test`.
+paths, including VAD; it does not run as part of `npm test`. If a transcription
+window fails, the harness waits for the protocol's `complete` event and prints
+an unsuccessful JSON result with accumulated timings, partial counts, and
+stream error types/codes when available, without exposing transcript text.
 
 Requirements: start Kokoro and the backend with `SPEECH_PROVIDER=kokoro`, set
 `OPENROUTER_API_KEY` in the backend's ignored local `backend/.env`, and install
