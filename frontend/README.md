@@ -24,10 +24,11 @@ prática da resposta em inglês da análise futura de áudio.
   oculto, o texto transcrito continua disponível para envio e relatório. A
   captura pode iniciar automaticamente após a pergunta ou manualmente. O
   navegador envia PCM mono s16le a 16 kHz em frames de 100 ms pelo WebSocket v2.
-  Whisper Large V3 Turbo transcreve janelas sequenciais de 10 segundos com
-  1 segundo de áudio sobreposto; quando a legenda está ligada, o texto aparece
-  durante a fala e o cliente consolida palavras repetidas entre janelas. VAD
-  encerra após 2 segundos de silêncio; o botão
+  Whisper Large V3 Turbo transcreve janelas sequenciais de 6 segundos com
+  1 segundo de áudio sobreposto, gerando novas parciais a cada 5 segundos;
+  quando a legenda está ligada, o texto aparece durante a fala e o cliente
+  consolida palavras repetidas entre janelas. VAD encerra após 3,5 segundos de
+  silêncio; o botão
   manual continua disponível. A duração padrão máxima é 3 minutos, com limites
   de bytes, fila e sessões simultâneas configuráveis no backend. O áudio fica
   somente em memória e não é reproduzido nem salvo; falhas preservam texto já
@@ -159,9 +160,10 @@ aparecer como evidência no relatório.
 O microfone é opcional. O navegador transmite PCM mono s16le a 16 kHz pelo
 WebSocket v2. O backend retém áudio em memória até 3 minutos (por padrão), com
 limites configuráveis de duração, bytes por resposta, fila por resposta e
-sessões ativas. Janelas de 10 segundos com 1 segundo de overlap são enviadas
-sequencialmente ao Whisper Large V3 Turbo; o cliente consolida e deduplica o
-texto das janelas. Dois segundos de silêncio ou o botão manual concluem a
+sessões ativas. Janelas de 6 segundos com 1 segundo de overlap são enviadas
+sequencialmente ao Whisper Large V3 Turbo; novas parciais chegam a cada 5
+segundos. O cliente consolida e deduplica o texto das janelas. 3,5 segundos de
+silêncio ou o botão manual concluem a
 captura. O app não salva nem reproduz áudio. A transcrição textual pode ser
 salva como turno da sessão privada. Quando Azure Pronunciation Assessment
 está habilitado, cada janela é avaliada após a transcrição e as métricas são

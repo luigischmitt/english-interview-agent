@@ -83,14 +83,14 @@ function sendFrames(socket: WebSocket, count: number) {
 }
 
 describe("voice activity detection", () => {
-  it("requires 200 ms of speech and 2 seconds of trailing silence", () => {
+  it("requires 200 ms of speech and 3.5 seconds of trailing silence", () => {
     const vad = new VoiceActivityDetector();
     expect(vad.update(0.04, 0).speechStarted).toBe(false);
     expect(vad.update(0.04, 100).speechStarted).toBe(false);
     expect(vad.update(0.04, 200).speechStarted).toBe(true);
     expect(vad.update(0.005, 800).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 2_799).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 2_800).shouldFinalize).toBe(true);
+    expect(vad.update(0.005, 4_299).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 4_300).shouldFinalize).toBe(true);
   });
 
   it("uses hysteresis above the calibrated noise floor and returns to noise after speech", () => {
@@ -101,24 +101,36 @@ describe("voice activity detection", () => {
     expect(vad.update(0.16, 100).speechStarted).toBe(false);
     expect(vad.update(0.16, 200).speechStarted).toBe(true);
     expect(vad.update(0.04, 900).shouldFinalize).toBe(false);
-    expect(vad.update(0.04, 2_899).shouldFinalize).toBe(false);
-    expect(vad.update(0.04, 2_900).shouldFinalize).toBe(true);
+    expect(vad.update(0.04, 4_399).shouldFinalize).toBe(false);
+    expect(vad.update(0.04, 4_400).shouldFinalize).toBe(true);
+  });
+
+  it("keeps a response open across a natural short pause", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    vad.update(0.04, 200);
+    expect(vad.update(0.005, 3_600).shouldFinalize).toBe(false);
+    expect(vad.update(0.04, 3_700).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 4_000).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 7_499).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 7_500).shouldFinalize).toBe(true);
   });
 });
 
 describe("PCM streaming sessions", () => {
-  it("creates independent 10 second windows with a one second audio overlap", () => {
+  it("creates independent 6 second windows with a one second audio overlap", () => {
     const { service } = createService();
     const sessions = new StreamingTranscriptionSessions(service);
     const session = sessions.create(0.025);
-    sessions.append(session.id, 0, Buffer.alloc(100 * frameBytes));
+    sessions.append(session.id, 0, Buffer.alloc(60 * frameBytes));
     const first = sessions.takeNextWindow(session.id);
-    expect(first).toMatchObject({ index: 1, startSample: 0, endSample: 160_000, durationMs: 10_000 });
-    expect(first?.pcm.byteLength).toBe(320_000);
+    expect(first).toMatchObject({ index: 1, startSample: 0, endSample: 96_000, durationMs: 6_000, newlyCoveredDurationMs: 6_000 });
+    expect(first?.pcm.byteLength).toBe(192_000);
 
-    sessions.append(session.id, 1, Buffer.alloc(90 * frameBytes));
+    sessions.append(session.id, 1, Buffer.alloc(50 * frameBytes));
     const second = sessions.takeNextWindow(session.id);
-    expect(second).toMatchObject({ index: 2, startSample: 144_000, endSample: 304_000, durationMs: 10_000 });
+    expect(second).toMatchObject({ index: 2, startSample: 80_000, endSample: 176_000, durationMs: 6_000, newlyCoveredDurationMs: 5_000 });
   });
 
   it("flushes the remaining tail only when the response is finalized", () => {
@@ -135,12 +147,12 @@ describe("PCM streaming sessions", () => {
     const session = sessions.create(0.025);
     const frame = Buffer.alloc(frameBytes);
     let sequence = 0;
-    for (const count of [100, 90, 90, 40]) {
+    for (const count of [60, 50, 50, 50, 50, 50, 10]) {
       for (let index = 0; index < count; index += 1) sessions.append(session.id, sequence++, frame);
-      if (count >= 90) sessions.takeNextWindow(session.id);
+      sessions.takeNextWindow(session.id);
     }
     expect(session.samplesReceived / 16_000).toBe(32);
-    expect(sessions.takeNextWindow(session.id, true)?.durationMs).toBe(5_000);
+    expect(sessions.takeNextWindow(session.id, true)?.durationMs).toBe(2_000);
   });
 
   it("rejects invalid chunk ordering, duration, byte, and provider queue limits", () => {
@@ -180,21 +192,21 @@ describe("PCM streaming sessions", () => {
 });
 
 describe("versioned transcription WebSocket", () => {
-  it("emits a Whisper partial at 10 seconds, then finalizes the remaining audio", async () => {
+  it("emits a Whisper partial at 6 seconds, then finalizes the remaining audio", async () => {
     const { service, transcribe } = createService(["I led the migration", "migration with lower risk"]);
     const fixture = await openStreamServer(service);
     const socket = await openSocket(fixture.url);
     try {
-      await expect(startStream(socket)).resolves.toMatchObject({ protocol: 2, sampleRate: 16_000, window: { durationMs: 10_000, overlapMs: 1_000 } });
+      await expect(startStream(socket)).resolves.toMatchObject({ protocol: 2, sampleRate: 16_000, window: { durationMs: 6_000, overlapMs: 1_000 } });
       await sendSpeechLevels(socket);
       const firstPartial = waitForType(socket, "partial");
-      sendFrames(socket, 100);
-      await expect(firstPartial).resolves.toMatchObject({ windowIndex: 1, startMs: 0, endMs: 10_000, transcript: "I led the migration" });
+      sendFrames(socket, 60);
+      await expect(firstPartial).resolves.toMatchObject({ windowIndex: 1, startMs: 0, endMs: 6_000, transcript: "I led the migration" });
       const secondPartial = waitForType(socket, "partial");
       const complete = waitForType(socket, "complete");
-      sendFrames(socket, 8);
+      sendFrames(socket, 50);
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
-      await expect(secondPartial).resolves.toMatchObject({ windowIndex: 2, startMs: 9_000, endMs: 10_800, transcript: "migration with lower risk" });
+      await expect(secondPartial).resolves.toMatchObject({ windowIndex: 2, startMs: 5_000, endMs: 11_000, transcript: "migration with lower risk" });
       await expect(complete).resolves.toMatchObject({ status: "complete", windows: 2 });
       expect(transcribe).toHaveBeenCalledTimes(2);
       for (const [audio, provider, format] of transcribe.mock.calls) {
@@ -208,7 +220,7 @@ describe("versioned transcription WebSocket", () => {
     }
   });
 
-  it("automatically requests finalization after two seconds of sustained silence", async () => {
+  it("automatically requests finalization after 3.5 seconds of sustained silence", async () => {
     const { service } = createService();
     const fixture = await openStreamServer(service);
     const socket = await openSocket(fixture.url);
@@ -217,7 +229,7 @@ describe("versioned transcription WebSocket", () => {
       await sendSpeechLevels(socket, 800);
       sendFrames(socket, 8);
       const silence = waitForType(socket, "silence-detected");
-      const end = Date.now() + 2_100;
+      const end = Date.now() + 3_600;
       while (Date.now() < end) {
         socket.send(JSON.stringify({ type: "level", value: 0.005 }));
         await delay(100);
@@ -246,16 +258,16 @@ describe("versioned transcription WebSocket", () => {
       await startStream(socket);
       await sendSpeechLevels(socket);
       const firstPartial = waitForType(socket, "partial");
-      sendFrames(socket, 100);
+      sendFrames(socket, 60);
       await firstPartial;
       const secondPartial = waitForType(socket, "partial");
       const complete = waitForType(socket, "complete");
       const result = waitForType(socket, "assessment");
-      sendFrames(socket, 8);
+      sendFrames(socket, 50);
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
       await secondPartial;
       await complete;
-      await expect(result).resolves.toMatchObject({ status: "available", segmented: true, durationMs: 11_800, scores: { accuracy: 77, fluency: 70, prosody: 50 } });
+      await expect(result).resolves.toMatchObject({ status: "available", segmented: true, durationMs: 11_000, scores: { accuracy: 71, fluency: 70, prosody: 50 } });
       expect(references).toEqual(["first segment", "second segment"]);
       expect(assess).toHaveBeenCalledTimes(2);
     } finally {
@@ -273,7 +285,7 @@ describe("versioned transcription WebSocket", () => {
       await startStream(socket);
       await sendSpeechLevels(socket);
       const partial = waitForType(socket, "partial");
-      sendFrames(socket, 100);
+      sendFrames(socket, 60);
       await partial;
       const complete = waitForType(socket, "complete");
       const assessment = waitForType(socket, "assessment");
@@ -281,7 +293,7 @@ describe("versioned transcription WebSocket", () => {
       await expect(complete).resolves.toMatchObject({ status: "complete", windows: 1 });
       expect(socket.readyState).toBe(WebSocket.OPEN);
       resolveAssessment({ provider: "azure", locale: "en-US", mode: "scripted", scores: { accuracy: 80, fluency: 75, prosody: 70 } });
-      await expect(assessment).resolves.toMatchObject({ status: "available", segmented: true, durationMs: 10_000 });
+      await expect(assessment).resolves.toMatchObject({ status: "available", segmented: true, durationMs: 6_000 });
     } finally {
       socket.close();
       await fixture.close();

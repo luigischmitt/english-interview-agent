@@ -4,7 +4,7 @@ import { defaultVadConfig, getSilenceThreshold, VoiceActivityDetector, type VadC
 import type { TranscriptionService } from "./types.js";
 
 export const pcmSampleRate = 16_000;
-export const transcriptionWindowMs = 10_000;
+export const transcriptionWindowMs = 6_000;
 export const transcriptionOverlapMs = 1_000;
 const bytesPerSample = 2;
 const windowSamples = pcmSampleRate * transcriptionWindowMs / 1_000;
@@ -30,6 +30,7 @@ export type AudioWindow = {
   startSample: number;
   endSample: number;
   durationMs: number;
+  newlyCoveredDurationMs: number;
   pcm: Buffer;
 };
 
@@ -128,7 +129,8 @@ export class StreamingTranscriptionSessions {
     const startSample = session.lastWindowEndSample === 0 ? 0 : Math.max(0, session.lastWindowEndSample - overlapSamples);
     const audio = Buffer.concat(session.chunks, session.bytes);
     const pcm = audio.subarray(startSample * bytesPerSample, endSample * bytesPerSample);
-    const newlyCoveredBytes = (endSample - session.lastWindowEndSample) * bytesPerSample;
+    const newlyCoveredSamples = endSample - session.lastWindowEndSample;
+    const newlyCoveredBytes = newlyCoveredSamples * bytesPerSample;
     session.queuedBytes = Math.max(0, session.queuedBytes - newlyCoveredBytes);
     session.lastWindowEndSample = endSample;
     session.windowIndex += 1;
@@ -137,6 +139,7 @@ export class StreamingTranscriptionSessions {
       startSample,
       endSample,
       durationMs: (endSample - startSample) / pcmSampleRate * 1_000,
+      newlyCoveredDurationMs: newlyCoveredSamples / pcmSampleRate * 1_000,
       pcm,
     };
   }

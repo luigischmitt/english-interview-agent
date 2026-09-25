@@ -144,7 +144,7 @@ export function attachTranscriptionWebSocket(
                 if (session.cancelled) return;
                 try {
                   const assessment = await assessmentService.assess(wav, "wav", result.transcript);
-                  weightedAssessments.push({ assessment, durationMs: window.durationMs });
+                  weightedAssessments.push({ assessment, durationMs: window.newlyCoveredDurationMs });
                 } catch {
                   // Optional Azure assessment never blocks transcription.
                 }

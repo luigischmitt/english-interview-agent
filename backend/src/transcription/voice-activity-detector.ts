@@ -11,7 +11,9 @@ export const defaultVadConfig: VadConfig = {
   speechThreshold: 0.025,
   silenceThreshold: 0.018,
   minimumSpeechMs: 600,
-  trailingSilenceMs: 2_000,
+  // Interview answers often include a short thinking pause between clauses.
+  // Keep silence finalization longer than a typical conversational pause.
+  trailingSilenceMs: 3_500,
   maxDurationMs: 180_000,
   maxBytes: 6 * 1024 * 1024,
 };

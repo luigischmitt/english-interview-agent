@@ -1,3 +1,7 @@
+export function composeOpeningUtterance(introduction, firstQuestion) {
+  return [introduction.trim(), firstQuestion.trim()].filter(Boolean).join(" ");
+}
+
 export function synthesizeInterviewerQuestion(text, options) {
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 15_000;

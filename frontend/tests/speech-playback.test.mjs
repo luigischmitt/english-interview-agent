@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+import { composeOpeningUtterance, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+
+test("the first interviewer playback combines a short introduction and the first question", () => {
+  assert.equal(
+    composeOpeningUtterance("Welcome. Take your time.", "Tell me about yourself."),
+    "Welcome. Take your time. Tell me about yourself.",
+  );
+  assert.equal(composeOpeningUtterance(" Welcome. ", " Tell me about yourself. "), "Welcome. Tell me about yourself.");
+});
 
 class FakeAudio {
   listeners = new Map();

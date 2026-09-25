@@ -19,4 +19,5 @@ export type SpeechPlaybackOptions = {
   clearTimeout?: (id: number) => void;
 };
 
+export function composeOpeningUtterance(introduction: string, firstQuestion: string): string;
 export function synthesizeInterviewerQuestion(text: string, options: SpeechPlaybackOptions): SpeechPlayback;
