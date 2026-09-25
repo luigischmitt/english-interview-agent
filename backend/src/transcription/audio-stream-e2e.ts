@@ -13,7 +13,7 @@ const frameDurationMs = 100;
 const samplesPerFrame = sampleRate * frameDurationMs / 1_000;
 const bytesPerFrame = samplesPerFrame * bytesPerSample;
 const trailingSilenceMs = 4_000;
-const defaultText = "In my last role, I improved a slow reporting service. I measured the queries, added the right indexes, and reduced the response time from four seconds to under one second. I worked with the team to verify the change and monitor it after release.";
+const defaultText = "In my last role, I improved a slow reporting service that our support team used every day. First, I reviewed the database queries and added indexes where the data showed they would help. Then I worked with the frontend team to remove a request that was repeated on every page. The response time went from about four seconds to under one second. We checked the change with realistic data, watched the service after release, and documented what we learned. I also shared the measurements with the team so we could use them when planning the next improvements.";
 
 type Options = {
   backendUrl: URL;
@@ -191,8 +191,26 @@ export async function fetchSpeechAudio(
   }
 }
 
+function backendEndpointUrl(backendUrl: URL, endpointPath: string): URL {
+  const url = new URL(backendUrl);
+  const basePath = backendUrl.pathname.replace(/\/+$/u, "");
+  const endpoint = endpointPath.replace(/^\/+/, "");
+  url.pathname = `${basePath}/${endpoint}`;
+  return url;
+}
+
+export function buildSpeechUrl(backendUrl: URL): URL {
+  return backendEndpointUrl(backendUrl, "/api/v1/speech");
+}
+
+export function buildStreamUrl(backendUrl: URL): URL {
+  const url = backendEndpointUrl(backendUrl, "/api/v1/transcriptions/stream");
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url;
+}
+
 async function generateAndConvert(options: Options, directory: string): Promise<{ pcm: Buffer; speechGenerationMs: number }> {
-  const speechUrl = new URL(`${options.backendUrl.pathname}/api/v1/speech`, options.backendUrl);
+  const speechUrl = buildSpeechUrl(options.backendUrl);
   const startedAt = performance.now();
   const audio = await fetchSpeechAudio(speechUrl, { text: options.text, speed: options.speed }, options.timeoutMs);
   const speechGenerationMs = Math.round(performance.now() - startedAt);
@@ -214,13 +232,6 @@ async function generateAndConvert(options: Options, directory: string): Promise<
   return { pcm, speechGenerationMs };
 }
 
-function streamUrl(backendUrl: URL): URL {
-  const url = new URL(backendUrl);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.pathname = `${backendUrl.pathname}/api/v1/transcriptions/stream`;
-  return url;
-}
-
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -232,7 +243,7 @@ function send(socket: WebSocket, data: string | Buffer): Promise<void> {
 }
 
 async function exerciseStream(options: Options, pcm: Buffer, speechGenerationMs: number): Promise<AudioE2EMetrics> {
-  const url = streamUrl(options.backendUrl);
+  const url = buildStreamUrl(options.backendUrl);
   const socket = new WebSocket(url, { handshakeTimeout: 10_000, perMessageDeflate: false });
   const metrics: AudioE2EMetrics = {
     speechGenerationMs,

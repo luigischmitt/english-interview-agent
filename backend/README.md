@@ -191,8 +191,9 @@ cd backend
 npm run test:audio-e2e
 ```
 
-The default synthetic answer is about 20 seconds. Options can be passed on the
-command line or through `AUDIO_E2E_*` environment variables:
+The default synthetic answer is about 35–45 seconds, so it exercises multiple
+overlapping Whisper windows. Options can be passed on the command line or
+through `AUDIO_E2E_*` environment variables:
 
 ```bash
 npm run test:audio-e2e -- --backend-url http://localhost:3001 --speed 1 --timeout-ms 120000

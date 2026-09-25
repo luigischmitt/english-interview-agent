@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fetchSpeechAudio, framePcm, mergeTranscriptWindow, parseArgs, rmsLevel } from "../src/transcription/audio-stream-e2e.js";
+import { buildSpeechUrl, buildStreamUrl, fetchSpeechAudio, framePcm, mergeTranscriptWindow, parseArgs, rmsLevel } from "../src/transcription/audio-stream-e2e.js";
 
 describe("real-time audio E2E harness utilities", () => {
   it("parses CLI configuration and rejects URLs that could expose credentials", () => {
@@ -10,6 +10,21 @@ describe("real-time audio E2E harness utilities", () => {
     expect(options.text).toBe("A short=answer.");
     expect(() => parseArgs(["--backend-url", "https://user:secret@example.test"], {})).toThrow(/without credentials/);
     expect(() => parseArgs(["--backend-url", "https://example.test/?token=secret"], {})).toThrow(/without credentials/);
+  });
+
+  it("builds speech and stream endpoints at the origin root or beneath a base path", () => {
+    const root = new URL("http://localhost:3001/");
+    expect(buildSpeechUrl(root).href).toBe("http://localhost:3001/api/v1/speech");
+    expect(buildStreamUrl(root).href).toBe("ws://localhost:3001/api/v1/transcriptions/stream");
+
+    const prefixed = new URL("https://example.test/interview-api/");
+    expect(buildSpeechUrl(prefixed).href).toBe("https://example.test/interview-api/api/v1/speech");
+    expect(buildStreamUrl(prefixed).href).toBe("wss://example.test/interview-api/api/v1/transcriptions/stream");
+  });
+
+  it("uses a default spoken answer long enough to exercise overlapping windows", () => {
+    const defaultAnswer = parseArgs([], {}).text;
+    expect(defaultAnswer.split(/\s+/u).length).toBeGreaterThanOrEqual(70);
   });
 
   it("splits PCM into 100 ms frames and pads trailing silence", () => {
