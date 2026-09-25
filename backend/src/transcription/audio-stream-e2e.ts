@@ -158,29 +158,43 @@ export function mergeTranscriptWindow(previous: string, next: string): string {
   return addition ? `${currentText} ${addition}`.trim() : currentText;
 }
 
-async function generateAndConvert(options: Options, directory: string): Promise<{ pcm: Buffer; speechGenerationMs: number }> {
-  const speechUrl = new URL(`${options.backendUrl.pathname}/api/v1/speech`, options.backendUrl);
+export async function fetchSpeechAudio(
+  speechUrl: URL,
+  payload: { text: string; speed: number },
+  timeoutMs: number,
+  fetcher: typeof fetch = fetch,
+): Promise<Buffer> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
-  const startedAt = performance.now();
-  let response: Response;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    response = await fetch(speechUrl, {
+    const response = await fetcher(speechUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: options.text, speed: options.speed }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
-  } catch {
+    if (!response.ok) throw new Error(`Speech generation failed with HTTP ${response.status}.`);
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("audio/")) throw new Error("Speech endpoint did not return audio.");
+    const audio = Buffer.from(await response.arrayBuffer());
+    if (audio.length === 0 || audio.length > 20 * 1024 * 1024) throw new Error("Generated audio is empty or exceeds the 20 MiB safety limit.");
+    if (controller.signal.aborted) throw new Error("Speech generation timed out while reading the audio body.");
+    return audio;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("Speech generation timed out. Check the local backend and Kokoro service.");
+    if (error instanceof Error && (error.message.startsWith("Speech generation failed with HTTP") || error.message.startsWith("Speech endpoint") || error.message.startsWith("Generated audio"))) {
+      throw error;
+    }
     throw new Error("Speech generation failed. Check the local backend and Kokoro service.");
   } finally {
     clearTimeout(timeout);
   }
-  if (!response.ok) throw new Error(`Speech generation failed with HTTP ${response.status}.`);
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().includes("audio/")) throw new Error("Speech endpoint did not return audio.");
-  const audio = Buffer.from(await response.arrayBuffer());
-  if (audio.length === 0 || audio.length > 20 * 1024 * 1024) throw new Error("Generated audio is empty or exceeds the 20 MiB safety limit.");
+}
+
+async function generateAndConvert(options: Options, directory: string): Promise<{ pcm: Buffer; speechGenerationMs: number }> {
+  const speechUrl = new URL(`${options.backendUrl.pathname}/api/v1/speech`, options.backendUrl);
+  const startedAt = performance.now();
+  const audio = await fetchSpeechAudio(speechUrl, { text: options.text, speed: options.speed }, options.timeoutMs);
   const speechGenerationMs = Math.round(performance.now() - startedAt);
 
   const sourcePath = join(directory, "speech-audio.mp3");

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { framePcm, mergeTranscriptWindow, parseArgs, rmsLevel } from "../src/transcription/audio-stream-e2e.js";
+import { fetchSpeechAudio, framePcm, mergeTranscriptWindow, parseArgs, rmsLevel } from "../src/transcription/audio-stream-e2e.js";
 
 describe("real-time audio E2E harness utilities", () => {
   it("parses CLI configuration and rejects URLs that could expose credentials", () => {
@@ -30,6 +30,28 @@ describe("real-time audio E2E harness utilities", () => {
       .toBe("I improved the reporting service and reduced latency");
     expect(mergeTranscriptWindow("first answer", "new words here"))
       .toBe("first answer new words here");
+  });
+
+  it("keeps the speech timeout active while a response body is stalled", async () => {
+    let signalAborted = false;
+    const fetcher: typeof fetch = async (_input, init) => {
+      const signal = init?.signal;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          signal?.addEventListener("abort", () => {
+            signalAborted = true;
+            controller.error(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        },
+      });
+      return new Response(body, { headers: { "content-type": "audio/mpeg" } });
+    };
+
+    const startedAt = Date.now();
+    await expect(fetchSpeechAudio(new URL("http://localhost:3001/api/v1/speech"), { text: "test", speed: 1 }, 25, fetcher))
+      .rejects.toThrow(/timed out/);
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(signalAborted).toBe(true);
   });
 
   it("rejects malformed PCM and unsafe parameter values", () => {
