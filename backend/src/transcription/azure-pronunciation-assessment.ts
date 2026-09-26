@@ -4,10 +4,22 @@ import type { AudioFormat } from "./types.js";
 export type PronunciationScores = { accuracy: number | null; fluency: number | null; prosody: number | null };
 export type PronunciationAssessment = { provider: "azure"; locale: "en-US"; mode: "scripted"; scores: PronunciationScores };
 export type AzureAssessmentFailureCategory = "cancelled" | "timeout" | "rate_limited" | "unauthorized" | "provider_rejected" | "provider_unavailable" | "no_match" | "invalid_response" | "conversion_failed" | "unknown";
+const categoryMessages: Record<AzureAssessmentFailureCategory, string> = {
+  cancelled: "Azure pronunciation assessment cancelled",
+  timeout: "Azure pronunciation assessment timed out",
+  rate_limited: "Azure pronunciation assessment unavailable",
+  unauthorized: "Azure pronunciation assessment unavailable",
+  provider_rejected: "Azure pronunciation assessment unavailable",
+  provider_unavailable: "Azure pronunciation assessment unavailable",
+  no_match: "Azure pronunciation assessment unavailable",
+  invalid_response: "Azure pronunciation assessment unavailable",
+  conversion_failed: "Azure pronunciation assessment unavailable",
+  unknown: "Azure pronunciation assessment unavailable",
+};
 
 export class AzureAssessmentError extends Error {
-  constructor(readonly category: AzureAssessmentFailureCategory) {
-    super(`Azure pronunciation assessment ${category.replaceAll("_", " ")}`);
+  constructor(readonly category: AzureAssessmentFailureCategory, message = categoryMessages[category]) {
+    super(message);
     this.name = "AzureAssessmentError";
   }
 }
@@ -61,7 +73,7 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
   }
 
   async assess(audio: Buffer, format: AudioFormat, referenceText: string, signal?: AbortSignal): Promise<PronunciationAssessment> {
-    if (!referenceText.trim()) throw new AzureAssessmentError("invalid_response");
+    if (!referenceText.trim()) throw new AzureAssessmentError("invalid_response", "Azure pronunciation assessment requires reference text");
     if (signal?.aborted) throw new AzureAssessmentError("cancelled");
     const deadline = Date.now() + this.options.timeoutMs;
     const remaining = () => Math.max(0, deadline - Date.now());
@@ -125,6 +137,7 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
     } finally {
       if (Date.now() >= deadline && !controller.signal.aborted) controller.abort();
       clearTimeout(abortTimer);
+      wav.fill(0);
     }
   }
 }
