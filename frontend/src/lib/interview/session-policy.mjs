@@ -27,7 +27,7 @@ export function finalTranscriptForSubmission(transcription) {
 
 export function canSkipVoiceQuestion(captureState, transcriptionStatus) {
   const activeCaptureStates = ["requesting", "listening", "detected", "finalizing"];
-  const unfinishedTranscriptionStates = ["pending", "partial"];
+  const unfinishedTranscriptionStates = ["pending"];
   return !activeCaptureStates.includes(captureState) && !unfinishedTranscriptionStates.includes(transcriptionStatus);
 }
 

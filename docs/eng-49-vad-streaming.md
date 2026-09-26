@@ -1,8 +1,10 @@
-# ENG-49 — streaming de áudio com VAD
+# ENG-49 — captura de áudio com VAD e transcrição ao finalizar
 
-## Captura e transcrição incremental
+## Captura e protocolo
 
-O browser captura mono PCM s16le a 16 kHz com `AudioWorklet`, agrupa até 100 ms por frame e envia binários pelo WebSocket. A taxa não muda durante a sessão. O protocolo v2 começa com:
+O browser captura mono PCM s16le a 16 kHz com `AudioWorklet`, agrupa até 100 ms por frame e envia binários pelo WebSocket v2. O WebSocket faz transporte de áudio e mensagens de RMS para o VAD. Nenhuma chamada Whisper ou texto de transcrição é produzido enquanto a pessoa fala.
+
+A abertura da sessão usa:
 
 ```json
 {
@@ -15,45 +17,53 @@ O browser captura mono PCM s16le a 16 kHz com `AudioWorklet`, agrupa até 100 ms
 }
 ```
 
-O servidor responde `ready` com protocolo, limites e política das janelas. Mensagens `level` carregam RMS para o VAD; `finalize` fecha a resposta e `cancel` descarta a sessão. O browser e backend usam frames independentes em PCM, então cada janela de Whisper é um WAV válido sem depender de cabeçalho WebM/MP4.
+O servidor responde `ready` com os limites e a política de transcrição. Mensagens `level` alimentam o VAD; `finalize` solicita o processamento da resposta inteira e `cancel` descarta a gravação. O backend mantém os frames em memória e monta um único WAV PCM ao finalizar.
 
 | Parâmetro | Valor | Motivo |
 | --- | ---: | --- |
-| Taxa / canais / formato | 16 kHz / mono / s16le | Entrada compacta e estável para Whisper e Azure. |
-| Frame de transporte | 100 ms (até 3,2 KiB) | Mantém latência baixa sem chamar o provedor a cada frame. |
-| Janela Whisper | 10 s | Atualiza o texto enquanto o candidato ainda responde. |
-| Overlap de áudio | 1 s | Reduz cortes de palavras nas bordas de segmentos. |
-| Agendamento | sequencial, no máximo uma chamada Whisper em andamento | Preserva ordem e limita fila/custo. |
-| Calibração de ruído / pré-roll | 500 ms / cinco frames PCM guardados em memória | O limiar é calculado antes de abrir a sessão e os frames calibrados são enviados em seguida, sem perder fala capturada. |
-| Limiar de fala | `clamp(média RMS × 2,5, 0,025, 0,15)` | Adapta-se ao ruído de fundo observado na calibração. |
-| Histerese de silêncio | `clamp(limiar de fala × 0,65, 0,012, 0,12)` | Separa o limiar de fala de ruído baixo. |
-| Início de fala | 200 ms acima do limiar calibrado | Ignora picos curtos. |
-| Fala mínima | 600 ms | Evita chamada por toque breve. |
-| Silêncio final | 2.000 ms | Dá espaço para pausas de formulação sem estender demais a captura. |
+| Taxa / canais / formato | 16 kHz / mono / s16le | Áudio compacto, aceito pelo fluxo Whisper. |
+| Frame de transporte | 100 ms (3,2 KiB) | Transporte responsivo sem chamadas ao provedor por frame. |
+| Calibração / pré-roll | 500 ms / cinco frames em memória | Estima o ruído e preserva o começo da fala capturada. |
+| Limiar de fala | `clamp(média RMS × 2,5, 0,025, 0,15)` | Adapta o início de fala ao ruído medido. |
+| Histerese de silêncio | `clamp(limiar de fala × 0,65, 0,012, 0,12)` | Distingue fala de ruído baixo. |
+| Início de fala | 200 ms acima do limiar | Ignora picos curtos. |
+| Fala mínima | 600 ms | Evita enviar toques breves como respostas. |
+| Silêncio final | 3.500 ms | Tolera pausas de formulação antes de sugerir finalização. |
 
-O primeiro Whisper roda após 10 segundos de áudio. Janelas seguintes cobrem 9 segundos novos e repetem 1 segundo da janela anterior. Ao finalizar, uma última janela pode conter menos de 10 segundos. O cliente recebe um evento `partial` por janela com índice e intervalo de áudio; ele junta as transcrições na ordem e remove somente o overlap textual que encontra na fronteira. O evento `complete` informa se todos os segmentos foram transcritos ou se o texto é parcial.
+O cliente finaliza ao detectar o silêncio ou quando a pessoa usa o botão manual. O servidor valida se houve fala; silêncio sem fala retorna `NO_SPEECH_DETECTED` sem chamar Whisper. Áudio válido não é rejeitado por ter uma cauda silenciosa. Na finalização, o servidor envia `finalizing`, pode enviar `transcription-queued` enquanto aguarda um slot, e emite `transcription-started` quando a chamada começa. Em sucesso, `complete` contém a transcrição final, provedor e duração. Não há mensagens `partial` nem montagem de texto entre janelas.
 
-## Limites e privacidade
+## Limites, concorrência e privacidade
 
-O padrão é até 180 segundos, 6 MiB por sessão, 512 KiB aguardando Whisper por sessão e 8 sessões simultâneas. Os controles são de backend e podem ser alterados por ambiente:
+Os limites por instância são:
 
-- `TRANSCRIPTION_STREAM_MAX_DURATION_MS` (padrão `180000`)
-- `TRANSCRIPTION_STREAM_MAX_BYTES` (padrão `6291456`)
-- `TRANSCRIPTION_STREAM_MAX_QUEUE_BYTES` (padrão `524288`)
-- `TRANSCRIPTION_STREAM_MAX_ACTIVE_SESSIONS` (padrão `8`)
+- até 180 segundos e 6 MiB por resposta;
+- até 8 sessões de captura ativas;
+- até 4 chamadas Whisper simultâneas;
+- até 4 respostas finalizadas aguardando um slot.
 
-Uma resposta PCM máxima representa cerca de 5,5 MiB de áudio bruto; o teto de bytes é um limite técnico separado do teto de tempo. A fila e a concorrência protegem o processo quando o provedor fica mais lento que a captura. O limite é validado também no servidor, não apenas no timer visual do browser. A rota HTTP WAV de compatibilidade permanece separada e ainda aceita até 30 segundos.
+Os valores podem ser reduzidos por ambiente, mas têm tetos no backend para manter uso de memória e concorrência limitados. Saturação da fila retorna `TRANSCRIPTION_CAPACITY_REACHED` e permite uma nova tentativa. As variáveis são:
 
-O backend mantém buffers apenas em memória. Não grava áudio em arquivo, banco, log ou armazenamento de sessão. Uma janela é enviada ao Whisper Large V3 Turbo somente quando está pronta; chamadas são sequenciais, nunca por frame. Cada pedido usa a chave do OpenRouter no servidor. `finalize`, `cancel`, desconexão, timeout e falhas liberam buffers. O texto final pode compor o turno privado da entrevista; o áudio não é persistido.
+- `TRANSCRIPTION_STREAM_MAX_DURATION_MS` (padrão `180000`, teto `180000`)
+- `TRANSCRIPTION_STREAM_MAX_BYTES` (padrão `6291456`, teto `6291456`)
+- `TRANSCRIPTION_STREAM_MAX_ACTIVE_SESSIONS` (padrão `8`, teto `8`)
+- `TRANSCRIPTION_STREAM_MAX_CONCURRENT_TRANSCRIPTIONS` (padrão `4`, teto `4`)
+- `TRANSCRIPTION_STREAM_MAX_QUEUED_TRANSCRIPTIONS` (padrão `4`, teto `4`)
+- `TRANSCRIPTION_TIMEOUT_MS` (padrão `55000`, teto `60000`; inclui tentativas limitadas por HTTP 429)
 
-Se uma janela Whisper posterior falhar, o backend emite `partial-error` e `complete` com estado parcial. O browser preserva o trecho para leitura somente durante a captura atual, mas ele não pode ser submetido como resposta. A pessoa pode tentar gravar novamente, pular a pergunta ou encerrar a prática. Falhas antes do primeiro resultado oferecem as mesmas ações; não há entrada escrita de resposta.
+PCM mono s16le a 16 kHz ocupa 32.000 bytes por segundo; 180 segundos representam 5.760.000 bytes, abaixo do limite de 6 MiB. O servidor monta WAV diretamente dos frames para evitar uma cópia PCM intermediária e envia o arquivo ao OpenRouter em multipart, sem expansão Base64. Cada transcrição lógica tenta no máximo três requisições quando recebe HTTP 429, respeitando `Retry-After` por até dois segundos e backoff limitado, dentro do orçamento total de `TRANSCRIPTION_TIMEOUT_MS`. Outros erros não são repetidos. O limite da sessão de captura é substituído ao receber `finalize` por um orçamento separado que cobre a espera máxima da fila, o processamento Whisper e a avaliação Azure curta; assim, uma resposta de 180 segundos não perde o resultado por causa do timer de captura.
+
+O áudio permanece apenas em memória: não é gravado em arquivo, banco, log ou armazenamento de sessão. Buffers são zerados em sucesso, erro, cancelamento, timeout e desconexão. O cancelamento aborta a chamada upstream ativa quando suportado. A transcrição final pode compor o turno privado da entrevista; o áudio não é persistido. A rota HTTP WAV de compatibilidade permanece separada e aceita no máximo 30 segundos.
+
+## Falhas recuperáveis
+
+Ausência de fala, fala curta, limite de gravação, fila cheia, timeout e falha do Whisper retornam eventos `error` com códigos e mensagens sem texto da transcrição nem detalhes do provedor. A interface pode oferecer gravar novamente, pular a pergunta ou encerrar a prática. Respostas escritas não são aceitas.
 
 ## Azure Pronunciation Assessment
 
-Com `AZURE_SPEECH_ASSESSMENT_ENABLED=true`, cada janela é avaliada somente depois que seu Whisper retorna. A janela WAV e apenas o texto Whisper correspondente são enviados ao Azure scripted assessment como `ReferenceText`; não há uma segunda chamada de transcrição. Azure é opcional: falhas ou timeout não bloqueiam Whisper nem substituem seus resultados.
+Com `AZURE_SPEECH_ASSESSMENT_ENABLED=true`, o backend envia ao Azure a gravação final e a transcrição Whisper completa como `ReferenceText`; não faz uma segunda chamada de reconhecimento. A avaliação só é solicitada para gravações de até 30 segundos, limite do contrato de áudio curto usado por esta integração. Respostas maiores recebem `assessment: unavailable` sem chamada ao Azure.
 
-O evento final `assessment` contém Accuracy, Fluency e Prosody experimentais, agregados pela média ponderada das durações avaliadas, além de `durationMs` (soma das durações dos segmentos avaliados; a região de overlap conta em ambos os segmentos). As métricas são explicitamente segmentadas e não equivalem à avaliação única da gravação inteira. Não são medidas validadas de nível geral, prontidão, proficiência ou sotaque e não são persistidas. Confirme custos e limites atuais do recurso Azure antes de habilitar em produção.
+O resultado `complete` do Whisper é entregue antes da avaliação Azure. O trabalho de Azure não ocupa um slot da fila Whisper. Falhas, timeout ou cancelamento no Azure não removem nem substituem a transcrição. Accuracy, Fluency e Prosody são sinais experimentais do fornecedor, não medidas validadas de nível geral, prontidão, proficiência ou sotaque. Confirme custos e limites atuais do recurso Azure antes de habilitá-lo em produção.
 
 ## Verificação
 
-Os testes cobrem frames PCM ordenados, construção de WAV, janelas de 10 s / overlap de 1 s, cauda final, limites, VAD de 2 s, protocolo v2, segmentos incrementais, falha Whisper com texto parcial preservado e avaliação Azure por segmento com duração agregada.
+Os testes cobrem transporte PCM, construção do WAV completo, ausência de chamadas antes de `finalize`, uma chamada lógica depois, silêncio sem fala, cauda silenciosa após fala válida, duração/bytes/sessões, fila e concorrência, cancelamento e desconexão, falha do Whisper, avaliação Azure tardia e limite de 30 segundos. O harness opt-in gera uma resposta sintética, envia frames pelo WebSocket e informa latências e tamanho do texto sem imprimir a transcrição.

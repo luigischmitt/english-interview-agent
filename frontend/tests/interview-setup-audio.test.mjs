@@ -9,7 +9,6 @@ const baseConfig = {
   duration: "15",
   playInterviewerAudio: true,
   showQuestionCaptions: true,
-  showCandidateTranscript: true,
   autoCaptureVoice: true,
   candidateCameraEnabled: false,
 };
@@ -24,7 +23,7 @@ test("spoken interviewer audio is the default and the explicit text mode is reve
   assert.equal(textConfig.autoCaptureVoice, true);
 });
 
-test("session summary reports audio, captions, microphone, camera, duration, and long role text", () => {
+test("session summary reports interviewer audio, captions, microphone, camera, duration, and long role text", () => {
   const summary = getInterviewSetupSummary(baseConfig, { senior: "Sênior" }, { communication: "Comunicação e clareza" });
   assert.deepEqual(summary, [
     { label: "Cargo", value: "Staff Platform Engineer" },
@@ -33,16 +32,15 @@ test("session summary reports audio, captions, microphone, camera, duration, and
     { label: "Duração", value: "Até 15 min" },
     { label: "Como o entrevistador fala", value: "Com áudio" },
     { label: "Legendas das perguntas", value: "Ligadas" },
-    { label: "Minha fala", value: "Transcrição visível" },
     { label: "Microfone", value: "Inicia após cada pergunta" },
     { label: "Câmera", value: "Desligada" },
   ]);
 
-  const textSummary = getInterviewSetupSummary({ ...baseConfig, role: " ", playInterviewerAudio: false, showQuestionCaptions: false, showCandidateTranscript: false, autoCaptureVoice: false, candidateCameraEnabled: true }, {}, {});
+  const textSummary = getInterviewSetupSummary({ ...baseConfig, role: " ", playInterviewerAudio: false, showQuestionCaptions: false, autoCaptureVoice: false, candidateCameraEnabled: true }, {}, {});
   assert.equal(textSummary[0].value, "Não selecionado");
   assert.equal(textSummary[4].value, "Somente texto");
   assert.equal(textSummary[5].value, "Sempre visíveis (somente texto)");
-  assert.equal(textSummary[6].value, "Transcrição oculta");
-  assert.equal(textSummary[7].value, "Início manual");
-  assert.equal(textSummary[8].value, "Prévia local ligada");
+  assert.equal(textSummary[6].value, "Início manual");
+  assert.equal(textSummary[7].value, "Prévia local ligada");
+  assert.equal(summary.some(({ label }) => label.toLowerCase().includes("minha fala")), false);
 });

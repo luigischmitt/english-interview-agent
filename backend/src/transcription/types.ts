@@ -11,5 +11,5 @@ export type AudioFormat = "wav" | "webm" | "mp4";
 
 export interface TranscriptionService {
   availableProviders(): TranscriptionProvider[];
-  transcribe(audio: Buffer, provider: TranscriptionProvider, format?: AudioFormat): Promise<TranscriptionResult>;
+  transcribe(audio: Buffer, provider: TranscriptionProvider, format?: AudioFormat, signal?: AbortSignal): Promise<TranscriptionResult>;
 }

@@ -1,5 +1,5 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { app, createApp } from "../src/app.js";
 import type { SpeechConfig } from "../src/speech/config.js";
@@ -7,6 +7,8 @@ import { SpeechProviderUnavailableError } from "../src/speech/errors.js";
 import { KokoroSpeechProvider } from "../src/speech/kokoro-speech-provider.js";
 import { AzureSpeechTranscriptionService } from "../src/transcription/azure-speech-transcription-service.js";
 import { OpenRouterWhisperTranscriptionService } from "../src/transcription/openrouter-whisper-transcription-service.js";
+import { loadTranscriptionConfig } from "../src/transcription/config.js";
+import { createTranscriptionService } from "../src/transcription/create-transcription-service.js";
 import type {
   SpeechProvider,
   SpeechProviderHealth,
@@ -233,29 +235,31 @@ describe("Azure Speech transcription", () => {
 });
 
 describe("OpenRouter Whisper transcription", () => {
-  it("sends the selected Whisper model and WAV to OpenRouter", async () => {
-    let requestBody: unknown;
+  it("sends the selected model, audio, and timeout as multipart form data", async () => {
+    let form: FormData | undefined;
+    let signal: AbortSignal | undefined;
     const service = new OpenRouterWhisperTranscriptionService({
       key: "test-key",
-      timeoutMs: 1_000,
+      timeoutMs: 55_000,
       fetchImplementation: async (_input, init) => {
-        requestBody = JSON.parse(String(init?.body));
+        form = init?.body as FormData;
+        signal = init?.signal as AbortSignal;
         return new Response(JSON.stringify({ text: "I led the migration." }), { status: 200 });
       },
     });
 
-    const result = await service.transcribe(Buffer.from("wav bytes"), "whisper-large-v3");
+    const result = await service.transcribe(Buffer.from("wav bytes"), "whisper-large-v3", "wav");
 
     expect(result).toEqual({ provider: "whisper-large-v3", transcript: "I led the migration." });
-    expect(requestBody).toEqual({
-      model: "openai/whisper-large-v3",
-      input_audio: { data: Buffer.from("wav bytes").toString("base64"), format: "wav" },
-      language: "en",
-      temperature: 0,
-    });
+    expect(form?.get("model")).toBe("openai/whisper-large-v3");
+    expect(form?.get("language")).toBe("en");
+    expect(form?.get("temperature")).toBe("0");
+    expect(form?.get("file")).toBeInstanceOf(Blob);
+    expect((form?.get("file") as Blob).type).toBe("audio/wav");
+    expect(signal?.aborted).toBe(false);
   });
 
-  it("retries 429 responses with bounded Retry-After and fallback backoff, discarding each response body", async () => {
+  it("retries one final transcription up to three times and respects bounded Retry-After", async () => {
     let requests = 0;
     const delays: number[] = [];
     let discarded = 0;
@@ -264,15 +268,9 @@ describe("OpenRouter Whisper transcription", () => {
       timeoutMs: 1_000,
       sleepImplementation: async (milliseconds) => { delays.push(milliseconds); },
       fetchImplementation: async (_input, init) => {
-        expect(init?.signal).toBeDefined();
-        expect(JSON.parse(String(init?.body))).toMatchObject({ input_audio: { format: "wav" } });
         requests += 1;
-        if (requests === 1) {
-          return new Response("limited", {
-            status: 429,
-            headers: { "Retry-After": "3" },
-          });
-        }
+        expect((init?.body as FormData).get("model")).toBe("openai/whisper-large-v3");
+        if (requests === 1) return new Response("limited", { status: 429, headers: { "Retry-After": "3" } });
         if (requests === 2) {
           const body = new ReadableStream<Uint8Array>({
             start(controller) { controller.enqueue(new TextEncoder().encode("limited")); },
@@ -284,15 +282,14 @@ describe("OpenRouter Whisper transcription", () => {
       },
     });
 
-    const result = await service.transcribe(Buffer.from("wav bytes"), "whisper-large-v3-turbo");
-
-    expect(result).toEqual({ provider: "whisper-large-v3-turbo", transcript: "A clear answer." });
+    await expect(service.transcribe(Buffer.from("wav bytes"), "whisper-large-v3"))
+      .resolves.toEqual({ provider: "whisper-large-v3", transcript: "A clear answer." });
     expect(requests).toBe(3);
     expect(delays).toEqual([2_000, 800]);
     expect(discarded).toBe(1);
   });
 
-  it("returns a standardized error after at most three rate-limited attempts", async () => {
+  it("returns a standardized error after three rate-limited attempts", async () => {
     let requests = 0;
     const service = new OpenRouterWhisperTranscriptionService({
       key: "test-key",
@@ -307,5 +304,28 @@ describe("OpenRouter Whisper transcription", () => {
     await expect(service.transcribe(Buffer.from("wav bytes"), "whisper-large-v3"))
       .rejects.toThrow("OpenRouter returned HTTP 429 after retries.");
     expect(requests).toBe(3);
+  });
+
+  it("forwards cancellation through the production transcription service wrapper", async () => {
+    let requestSignal: AbortSignal | undefined;
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      requestSignal = init?.signal as AbortSignal;
+      const abort = () => reject(new DOMException("Aborted", "AbortError"));
+      if (requestSignal?.aborted) abort();
+      else requestSignal?.addEventListener("abort", abort, { once: true });
+    }));
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      const service = createTranscriptionService(loadTranscriptionConfig({ OPENROUTER_API_KEY: "test-key", TRANSCRIPTION_TIMEOUT_MS: "60000" }));
+      const controller = new AbortController();
+      const result = service.transcribe(Buffer.from("audio"), "whisper-large-v3-turbo", "wav", controller.signal);
+      await Promise.resolve();
+      controller.abort();
+      await expect(result).rejects.toThrow("OpenRouter transcription is unavailable right now.");
+      expect(requestSignal?.aborted).toBe(true);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

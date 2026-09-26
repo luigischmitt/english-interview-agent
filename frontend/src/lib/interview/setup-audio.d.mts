@@ -16,7 +16,6 @@ export function getInterviewSetupSummary(
     duration: string;
     playInterviewerAudio: boolean;
     showQuestionCaptions: boolean;
-    showCandidateTranscript: boolean;
     autoCaptureVoice: boolean;
     candidateCameraEnabled: boolean;
   },

@@ -13,6 +13,7 @@ const frameDurationMs = 100;
 const samplesPerFrame = sampleRate * frameDurationMs / 1_000;
 const bytesPerFrame = samplesPerFrame * bytesPerSample;
 const trailingSilenceMs = 4_000;
+const minimumTranscriptSimilarity = 0.75;
 const defaultText = "In my last role, I improved a slow reporting service that our support team used every day. First, I reviewed the database queries and added indexes where the data showed they would help. Then I worked with the frontend team to remove a request that was repeated on every page. The response time went from about four seconds to under one second. We checked the change with realistic data, watched the service after release, and documented what we learned. I also shared the measurements with the team so we could use them when planning the next improvements.";
 
 export type AudioE2EOptions = {
@@ -32,29 +33,61 @@ type StreamMessage = {
   code?: string;
   protocol?: number;
   status?: string;
-  windowIndex?: number;
   durationMs?: number;
   transcript?: string;
   reason?: string;
+  position?: number;
 };
 
 export type AudioE2EMetrics = {
   speechGenerationMs: number;
   connectToReadyMs: number | null;
   firstSpeechMs: number | null;
-  firstPartialMs: number | null;
+  transcriptionMs: number | null;
+  queueWaitMs: number | null;
   silenceDetectedMs: number | null;
   completeMs: number | null;
-  partialCount: number;
-  partialWindows: number[];
-  streamErrors: Array<{ type: "error" | "partial-error"; code?: string }>;
+  streamErrors: Array<{ type: "error"; code?: string }>;
   missingEvents: string[];
   transcriptCharacters: number;
+  transcriptSimilarity: number | null;
   completionStatus: string | null;
 };
 
 export function isSuccessfulAudioE2ERun(metrics: AudioE2EMetrics): boolean {
-  return metrics.completionStatus === "complete" && metrics.streamErrors.length === 0 && metrics.missingEvents.length === 0;
+  return metrics.completionStatus === "complete"
+    && metrics.transcriptCharacters > 0
+    && metrics.transcriptSimilarity !== null
+    && metrics.transcriptSimilarity >= minimumTranscriptSimilarity
+    && metrics.streamErrors.length === 0
+    && metrics.missingEvents.length === 0;
+}
+
+export function calculateTranscriptSimilarity(reference: string, transcript: string): number {
+  const tokenize = (value: string) => value
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase("en-US")
+    .match(/[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu) ?? [];
+  const expected = tokenize(reference);
+  const actual = tokenize(transcript);
+  if (expected.length === 0) return actual.length === 0 ? 1 : 0;
+
+  let previous = Array.from({ length: actual.length + 1 }, (_, index) => index);
+  for (let expectedIndex = 1; expectedIndex <= expected.length; expectedIndex += 1) {
+    const current = [expectedIndex];
+    for (let actualIndex = 1; actualIndex <= actual.length; actualIndex += 1) {
+      const substitutionCost = expected[expectedIndex - 1] === actual[actualIndex - 1] ? 0 : 1;
+      current[actualIndex] = Math.min(
+        previous[actualIndex] + 1,
+        current[actualIndex - 1] + 1,
+        previous[actualIndex - 1] + substitutionCost,
+      );
+    }
+    previous = current;
+  }
+  const wordErrorRate = previous[actual.length] / expected.length;
+  return Math.round(Math.max(0, 1 - wordErrorRate) * 1_000) / 1_000;
 }
 
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): Options {
@@ -140,49 +173,6 @@ export function rmsLevel(frame: Buffer): number {
     squareSum += sample * sample;
   }
   return Math.sqrt(squareSum / (frame.length / bytesPerSample));
-}
-
-export function mergeTranscriptWindow(previous: string, next: string): string {
-  const currentText = previous.trim();
-  const nextText = next.trim();
-  if (!currentText) return nextText;
-  if (!nextText) return currentText;
-  const previousWords = currentText.split(/\s+/u);
-  const nextWords = nextText.split(/\s+/u);
-  const normalize = (token: string) => token.toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}']/gu, "");
-  const previousNormalized = previousWords.map(normalize);
-  const nextNormalized = nextWords.map(normalize);
-  const maximumOverlap = Math.min(previousWords.length, nextWords.length, 20);
-  let overlap = 0;
-  for (let size = maximumOverlap; size >= 2; size -= 1) {
-    const suffix = previousNormalized.slice(-size);
-    const prefix = nextNormalized.slice(0, size);
-    if (suffix.every((token, index) => token && token === prefix[index])) {
-      overlap = size;
-      break;
-    }
-  }
-  if (overlap > 0) {
-    const addition = nextWords.slice(overlap).join(" ");
-    return addition ? `${currentText} ${addition}`.trim() : currentText;
-  }
-
-  const overlapFillers = new Set(["a", "an", "the", "to", "of", "in", "on", "at", "for", "and", "or"]);
-  for (let size = maximumOverlap; size >= 4; size -= 1) {
-    if (nextWords.length < size + 1) continue;
-    const suffix = previousNormalized.slice(-size);
-    const prefix = nextNormalized.slice(0, size + 1);
-    for (let insertion = 1; insertion < size; insertion += 1) {
-      if (!overlapFillers.has(prefix[insertion])) continue;
-      const aligned = [...prefix.slice(0, insertion), ...prefix.slice(insertion + 1)];
-      if (suffix.every((token, index) => token && token === aligned[index])) {
-        const preservedPrefix = previousWords.slice(0, previousWords.length - size);
-        return [...preservedPrefix, ...nextWords].join(" ").trim();
-      }
-    }
-  }
-
-  return `${currentText} ${nextText}`.trim();
 }
 
 export async function fetchSpeechAudio(
@@ -281,14 +271,14 @@ export async function exerciseStream(
     speechGenerationMs,
     connectToReadyMs: null,
     firstSpeechMs: null,
-    firstPartialMs: null,
+    transcriptionMs: null,
+    queueWaitMs: null,
     silenceDetectedMs: null,
     completeMs: null,
-    partialCount: 0,
-    partialWindows: [],
     streamErrors: [],
     missingEvents: [],
     transcriptCharacters: 0,
+    transcriptSimilarity: null,
     completionStatus: null,
   };
   const frames = framePcm(pcm, trailingSilenceDurationMs);
@@ -298,6 +288,8 @@ export async function exerciseStream(
   let shouldStopSending = false;
   let rejected: Error | null = null;
   let mergedTranscript = "";
+  let queuedAt: number | null = null;
+  let transcriptionStartedAt: number | null = null;
   let resolveComplete: (() => void) | null = null;
   let rejectComplete: ((error: Error) => void) | null = null;
   const completed = new Promise<void>((resolve, reject) => { resolveComplete = resolve; rejectComplete = reject; });
@@ -327,14 +319,13 @@ export async function exerciseStream(
       metrics.firstSpeechMs ??= Math.round(now - streamStartedAt);
       return;
     }
-    if (message.type === "partial") {
-      metrics.firstPartialMs ??= Math.round(now - streamStartedAt);
-      metrics.partialCount += 1;
-      if (typeof message.windowIndex === "number") metrics.partialWindows.push(message.windowIndex);
-      if (typeof message.transcript === "string") {
-        mergedTranscript = mergeTranscriptWindow(mergedTranscript, message.transcript);
-        metrics.transcriptCharacters = mergedTranscript.length;
-      }
+    if (message.type === "transcription-queued") {
+      queuedAt = now;
+      return;
+    }
+    if (message.type === "transcription-started") {
+      transcriptionStartedAt = now;
+      if (queuedAt !== null) metrics.queueWaitMs = Math.max(0, Math.round(now - queuedAt));
       return;
     }
     if (message.type === "silence-detected") {
@@ -348,12 +339,11 @@ export async function exerciseStream(
     if (message.type === "complete") {
       metrics.completionStatus = message.status ?? "unknown";
       metrics.completeMs = Math.round(now - streamStartedAt);
+      metrics.transcriptionMs = transcriptionStartedAt === null ? null : Math.round(now - transcriptionStartedAt);
+      if (typeof message.transcript === "string") mergedTranscript = message.transcript;
+      metrics.transcriptCharacters = mergedTranscript.length;
+      metrics.transcriptSimilarity = calculateTranscriptSimilarity(options.text, mergedTranscript);
       resolveComplete?.();
-      return;
-    }
-    if (message.type === "partial-error") {
-      metrics.streamErrors.push({ type: message.type, ...(message.code ? { code: message.code } : {}) });
-      shouldStopSending = true;
       return;
     }
     if (message.type === "error") {
@@ -402,7 +392,6 @@ export async function exerciseStream(
   if (rejected) throw rejected;
   if (!ready) metrics.missingEvents.push("ready");
   if (metrics.firstSpeechMs === null) metrics.missingEvents.push("speech-started");
-  if (metrics.firstPartialMs === null) metrics.missingEvents.push("partial");
   if (metrics.silenceDetectedMs === null) metrics.missingEvents.push("silence-detected");
   if (metrics.completeMs === null) metrics.missingEvents.push("complete");
   return metrics;
@@ -422,7 +411,7 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const metrics = await runAudioStreamE2E(options);
   const ok = isSuccessfulAudioE2ERun(metrics);
-  process.stdout.write(`${JSON.stringify({ ok, ...(ok ? {} : { error: metrics.completionStatus === "partial" ? "Transcription completed partially." : "Audio stream did not complete successfully." }), protocol: 2, sampleRate, channels: 1, encoding: "s16le", frameDurationMs, metrics }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ ok, ...(ok ? {} : { error: "Audio stream did not complete successfully." }), protocol: 2, sampleRate, channels: 1, encoding: "s16le", frameDurationMs, metrics }, null, 2)}\n`);
   if (!ok) process.exitCode = 1;
 }
 

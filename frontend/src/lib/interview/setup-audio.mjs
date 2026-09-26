@@ -20,7 +20,6 @@ export function getInterviewSetupSummary(config, seniorityLabels, focusLabels) {
     { label: "Duração", value: `Até ${config.duration} min` },
     { label: "Como o entrevistador fala", value: config.playInterviewerAudio ? "Com áudio" : "Somente texto" },
     { label: "Legendas das perguntas", value: config.playInterviewerAudio ? (config.showQuestionCaptions ? "Ligadas" : "Desligadas") : "Sempre visíveis (somente texto)" },
-    { label: "Minha fala", value: config.showCandidateTranscript ? "Transcrição visível" : "Transcrição oculta" },
     { label: "Microfone", value: config.autoCaptureVoice ? "Inicia após cada pergunta" : "Início manual" },
     { label: "Câmera", value: config.candidateCameraEnabled ? "Prévia local ligada" : "Desligada" },
   ];

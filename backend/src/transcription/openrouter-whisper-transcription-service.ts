@@ -28,26 +28,24 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
     return ["whisper-large-v3", "whisper-large-v3-turbo"];
   }
 
-  async transcribe(audio: Buffer, provider: TranscriptionProvider, format: AudioFormat = "wav"): Promise<TranscriptionResult> {
+  async transcribe(audio: Buffer, provider: TranscriptionProvider, format: AudioFormat = "wav", signal?: AbortSignal): Promise<TranscriptionResult> {
     if (provider === "azure") throw new TranscriptionUnavailableError("This transcription provider is not configured.");
 
     try {
+      const timeoutSignal = AbortSignal.timeout(this.options.timeoutMs);
+      const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+      const form = new FormData();
+      form.set("model", modelForProvider[provider]);
+      form.set("file", new Blob([new Uint8Array(audio)], { type: format === "wav" ? "audio/wav" : `audio/${format}` }), `response.${format}`);
+      form.set("language", "en");
+      form.set("temperature", "0");
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const response = await this.fetchImplementation("https://openrouter.ai/api/v1/audio/transcriptions", {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${this.options.key}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: modelForProvider[provider],
-            input_audio: { data: audio.toString("base64"), format },
-            language: "en",
-            temperature: 0,
-          }),
-          signal: AbortSignal.timeout(this.options.timeoutMs),
+          headers: { Authorization: `Bearer ${this.options.key}` },
+          body: form,
+          signal: requestSignal,
         });
-
         if (response.status === 429 && attempt < 2) {
           const delayMs = retryAfterMilliseconds(response.headers.get("retry-after")) ?? Math.min(2_000, 400 * (2 ** attempt));
           try {
@@ -55,10 +53,9 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
           } catch {
             // A failed body discard should not prevent a bounded retry.
           }
-          await this.sleepImplementation(delayMs);
+          await sleepWithSignal(this.sleepImplementation, delayMs, requestSignal);
           continue;
         }
-
         if (!response.ok) {
           if (response.status === 429) throw new TranscriptionUnavailableError("OpenRouter returned HTTP 429 after retries.");
           throw new TranscriptionUnavailableError(`OpenRouter returned HTTP ${response.status}.`);
@@ -74,6 +71,15 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
       throw new TranscriptionUnavailableError("OpenRouter transcription is unavailable right now.", { cause: error });
     }
   }
+}
+
+function sleepWithSignal(sleep: (milliseconds: number) => Promise<void>, milliseconds: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    sleep(milliseconds).then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
 }
 
 function retryAfterMilliseconds(value: string | null): number | null {
