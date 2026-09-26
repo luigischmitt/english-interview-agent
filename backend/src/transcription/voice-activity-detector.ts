@@ -14,7 +14,7 @@ export const defaultVadConfig: VadConfig = {
   minimumSpeechMs: 600,
   // Interview answers often include a short thinking pause between clauses.
   // Preserve thinking pauses while keeping response handoff reasonably quick.
-  trailingSilenceMs: 2_700,
+  trailingSilenceMs: 3_500,
   // Brief noise must not reset the full silence timer.
   resumedSpeechConfirmationMs: 300,
   maxDurationMs: 180_000,
@@ -32,6 +32,9 @@ export class VoiceActivityDetector {
   private speechStartedAt: number | null = null;
   private silenceStartedAt: number | null = null;
   private resumedSpeechCandidateStartedAt: number | null = null;
+  private resumedActivityCandidateStartedAt: number | null = null;
+  private midBandStartedAt: number | null = null;
+  private readonly midBandSamples: Array<{ level: number; at: number }> = [];
   private lastUpdatedAt = 0;
 
   constructor(private readonly config: VadConfig = defaultVadConfig) {}
@@ -54,13 +57,37 @@ export class VoiceActivityDetector {
     }
 
     if (level >= this.config.speechThreshold) {
+      // A single speech-level frame makes the fallback ambiguous. Do not wait
+      // for the normal 300 ms speech confirmation before disabling it.
+      this.midBandStartedAt = null;
+      this.midBandSamples.length = 0;
       this.resumedSpeechCandidateStartedAt ??= now;
       if (now - this.resumedSpeechCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
         this.silenceStartedAt = null;
         this.resumedSpeechCandidateStartedAt = null;
+        this.resumedActivityCandidateStartedAt = null;
+        this.midBandStartedAt = null;
+      }
+    } else if (level >= this.config.silenceThreshold) {
+      this.resumedActivityCandidateStartedAt ??= now;
+      this.midBandSamples.push({ level, at: now });
+      while (this.midBandSamples.length && now - this.midBandSamples[0].at > 1_000) this.midBandSamples.shift();
+      const levels = this.midBandSamples.map((sample) => sample.level);
+      const levelRange = levels.length ? Math.max(...levels) - Math.min(...levels) : Infinity;
+      // Only use the fallback when a full second of mid-band activity is
+      // nearly constant. Variation is treated as potentially quiet speech.
+      if (levels.length < 10 || levelRange <= 0.0015) this.midBandStartedAt ??= now;
+      else this.midBandStartedAt = null;
+      if (now - this.resumedActivityCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
+        // Sustained low-level voice/activity cancels a pending silence decision.
+        this.silenceStartedAt = null;
+        this.resumedActivityCandidateStartedAt = null;
       }
     } else {
       this.resumedSpeechCandidateStartedAt = null;
+      this.resumedActivityCandidateStartedAt = null;
+      this.midBandStartedAt = null;
+      this.midBandSamples.length = 0;
     }
 
     if (level < this.config.silenceThreshold) {
@@ -71,9 +98,11 @@ export class VoiceActivityDetector {
     return {
       speechStarted: false,
       shouldFinalize: duration >= this.config.minimumSpeechMs
-        && this.silenceStartedAt !== null
-        && this.resumedSpeechCandidateStartedAt === null
-        && now - this.silenceStartedAt >= this.config.trailingSilenceMs,
+        && ((this.silenceStartedAt !== null
+          && this.resumedSpeechCandidateStartedAt === null
+          && this.resumedActivityCandidateStartedAt === null
+          && now - this.silenceStartedAt >= this.config.trailingSilenceMs)
+          || (this.midBandStartedAt !== null && now - this.midBandStartedAt >= 5_800)),
     };
   }
 

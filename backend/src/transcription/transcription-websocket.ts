@@ -88,6 +88,11 @@ function logAzureAssessment(details: Record<string, string | number | boolean>):
   console.info(JSON.stringify({ event: "azure_assessment", ...details }));
 }
 
+function logStreamDiagnostic(details: Record<string, string | number | boolean>): void {
+  // Operational metadata only; never include transcript, audio, session IDs, or provider errors.
+  console.info(JSON.stringify({ event: "transcription_stream", ...details }));
+}
+
 export function attachTranscriptionWebSocket(
   server: Server,
   transcriptionService: TranscriptionService,
@@ -121,6 +126,7 @@ export function attachTranscriptionWebSocket(
 
     const fail = (code: string, message: string, closeCode = 1011) => {
       if (finishing) return;
+      logStreamDiagnostic({ status: "failed", code, durationMs: retainedSession?.bytes ? Math.round(retainedSession.bytes / (pcmSampleRate * 2) * 1_000) : 0 });
       finishing = true;
       clearTimeout(timer);
       requestAbortController?.abort();
@@ -140,6 +146,7 @@ export function attachTranscriptionWebSocket(
       const session = sessions.get(id);
       if (!session) return fail("STREAM_NOT_FOUND", "The audio session expired. Please record your answer again or skip/end the practice.");
       finalRequested = true;
+      logStreamDiagnostic({ status: "finalizing", reason, durationMs: Math.round(session.bytes / (pcmSampleRate * 2) * 1_000), speechDurationMs: Math.round(session.vad.speechDurationMs) });
       clearTimeout(timer);
       timer = setTimeout(() => fail("UPSTREAM_UNAVAILABLE", "Transcription took too long. Please try recording again or skip/end the practice."), limits.finalizationTimeoutMs);
       send(socket, { type: "finalizing", reason });
@@ -179,6 +186,7 @@ export function attachTranscriptionWebSocket(
               fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
               return;
             }
+            logStreamDiagnostic({ status: "complete", reason, durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs });
             send(socket, {
               type: "complete",
               status: "complete",
@@ -313,6 +321,11 @@ export function attachTranscriptionWebSocket(
       }
 
       if (message.type === "finalize") {
+        if (message.reason !== "manual" && message.reason !== "silence") {
+          logStreamDiagnostic({ status: "invalid_message", field: "finalize.reason" });
+          send(socket, { type: "error", code: "INVALID_STREAM_MESSAGE", message: "The audio connection sent an invalid message." });
+          return;
+        }
         finalize(message.reason);
         return;
       }
