@@ -102,6 +102,12 @@ describe("OpenRouter next-turn orchestration", () => {
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
   });
 
+  it.each(["Redis", "Go", "C++"]) ("allows a grounded technology trade-off question (%s)", async (technology) => {
+    const answer = { ...input, transcript: `We chose ${technology} for this service.`, askedQuestions: [input.currentQuestion] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: `What trade-offs did you consider when choosing ${technology}?`, nextQuestion: null, anchor: technology, acknowledgement: null };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
+  });
+
   it("checks every occurrence when the first anchor occurrence is only a fragment", async () => {
     const answer = { ...input, transcript: "Redis. We used Redis to cache account profiles.", askedQuestions: [input.currentQuestion] };
     const raw = { decision: "FOLLOW_UP", followUpQuestion: "Why did you choose Redis for caching?", nextQuestion: null, anchor: "Redis", acknowledgement: null };
@@ -112,11 +118,14 @@ describe("OpenRouter next-turn orchestration", () => {
     { anchor: "Kafka", transcript: "We used Redis to cache account profiles.", reason: "anchor_not_in_transcript" },
     { anchor: "C++", transcript: "We use C# for this service.", reason: "anchor_not_in_transcript" },
     { anchor: "Redis", transcript: "I used Redis to cache profiles, and coached the marketing team on user interviews and onboarding copy.", reason: "anchor_not_referenced" },
+    { anchor: "Redis", transcript: "I used Redis. I also researched onboarding.", reason: "anchor_not_referenced" },
     { anchor: "Redis", transcript: "We used Redis on the project.", reason: "anchor_not_referenced" },
   ])("reports a safe, distinct anchor validation reason ($reason)", async ({ anchor, transcript, reason }) => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const followUpQuestion = transcript.includes("user interviews")
       ? "You mentioned Redis; how did the user interviews change the onboarding copy?"
+      : transcript.includes("researched onboarding")
+        ? "You mentioned Redis; how did the onboarding research change your copy?"
       : transcript.includes("on the project")
         ? "How did Redis help with your project?"
         : "How did you improve customer onboarding?";

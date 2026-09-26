@@ -64,7 +64,7 @@ function repeatsTranscriptPhrase(text: string, transcript: string): boolean {
 const trivialSingleWordAnchors = new Set(["a", "an", "and", "are", "as", "at", "but", "by", "for", "from", "he", "her", "i", "in", "is", "it", "me", "my", "of", "on", "or", "our", "she", "so", "that", "the", "their", "them", "they", "this", "to", "us", "was", "we", "were", "what", "when", "where", "which", "who", "why", "with", "you", "your"]);
 const lowInformationWords = new Set(["a", "about", "ah", "am", "an", "and", "are", "as", "at", "but", "by", "for", "from", "hmm", "i", "is", "it", "like", "maybe", "me", "mm", "my", "of", "oh", "okay", "ok", "on", "or", "so", "the", "this", "uh", "um", "uhm", "well", "yeah", "yes", "you"]);
 const questionStopWords = new Set(["a", "about", "an", "and", "are", "as", "at", "can", "could", "describe", "did", "do", "for", "from", "give", "had", "have", "how", "i", "in", "is", "it", "me", "of", "on", "or", "please", "tell", "that", "the", "there", "to", "was", "way", "what", "when", "where", "which", "who", "why", "with", "would", "you", "your"]);
-const followUpStopWords = new Set([...questionStopWords, "also", "any", "choose", "choosing", "chosen", "didn", "does", "during", "else", "ever", "exactly", "happen", "happened", "impact", "make", "made", "much", "one", "particular", "project", "select", "selected", "selecting", "specific", "system", "thing", "things", "through", "use", "used", "using", "way", "work", "worked"]);
+const followUpStopWords = new Set([...questionStopWords, "also", "any", "choose", "choosing", "chosen", "consider", "considered", "cons", "didn", "does", "during", "else", "ever", "exactly", "factor", "factors", "happen", "happened", "impact", "make", "made", "much", "off", "offs", "one", "particular", "pro", "pros", "project", "reason", "reasons", "select", "selected", "selecting", "specific", "system", "thing", "things", "through", "trade", "tradeoff", "tradeoffs", "use", "used", "using", "way", "work", "worked"]);
 const acknowledgementGenericWords = new Set(["a", "about", "another", "area", "at", "clear", "clearer", "context", "different", "experience", "for", "give", "gives", "helpful", "i", "me", "move", "now", "of", "on", "okay", "ok", "part", "picture", "see", "sense", "shift", "talk", "thanks", "that", "the", "to", "understand", "understanding", "way", "with", "your", "approach"]);
 
 function canonicalContentWords(text: string): Set<string> {
@@ -88,15 +88,17 @@ function canonicalContentWords(text: string): Set<string> {
 
 function anchorContextWindows(transcript: string, anchor: string): Set<string>[] {
   const normalizeToken = (token: string) => token.replace(/^[^\p{L}\p{N}]+/gu, "").replace(/[^\p{L}\p{N}+#]+$/gu, "").toLocaleLowerCase();
-  const transcriptTokens = transcript.split(/\s+/u).map(normalizeToken).filter(Boolean);
   const anchorTokens = anchor.split(/\s+/u).map(normalizeToken).filter(Boolean);
   const windows: Set<string>[] = [];
-  for (let start = 0; start <= transcriptTokens.length - anchorTokens.length; start += 1) {
-    if (!anchorTokens.every((token, offset) => transcriptTokens[start + offset] === token)) continue;
-    const contextStart = Math.max(0, start - 5);
-    const contextEnd = Math.min(transcriptTokens.length, start + anchorTokens.length + 5);
-    const words = canonicalContentWords(transcriptTokens.slice(contextStart, contextEnd).join(" "));
-    windows.push(words);
+  const sentences = transcript.split(/(?<=[.!?])\s+/u);
+  for (const sentence of sentences) {
+    const sentenceTokens = sentence.split(/\s+/u).map(normalizeToken).filter(Boolean);
+    for (let start = 0; start <= sentenceTokens.length - anchorTokens.length; start += 1) {
+      if (!anchorTokens.every((token, offset) => sentenceTokens[start + offset] === token)) continue;
+      const contextStart = Math.max(0, start - 5);
+      const contextEnd = Math.min(sentenceTokens.length, start + anchorTokens.length + 5);
+      windows.push(canonicalContentWords(sentenceTokens.slice(contextStart, contextEnd).join(" ")));
+    }
   }
   return windows;
 }
@@ -113,7 +115,7 @@ function meaningfullyReferencesAnchor(question: string, anchor: string, transcri
   if (maxSharedLocalWords >= 2) return true;
   if (anchorTermCount !== 1) return false;
 
-  const safeChoiceQuestion = /^(?:why (?:did you )?(?:choose|select|use)|what made you (?:choose|select|use)|how did you (?:choose|select|use))\b/iu.test(question.trim());
+  const safeChoiceQuestion = /^(?:why (?:did you )?(?:choose|select|use)|what made you (?:choose|select|use)|how did you (?:choose|select|use)|what trade[- ]?offs? did you consider when (?:choosing|selecting|using))\b/iu.test(question.trim());
   const questionSpecificWords = new Set([...questionWords].filter((word) => !canonicalAnchorWords.has(word)));
   const novelSpecificWords = [...questionSpecificWords].filter((word) => !contextWindows.some((context) => context.has(word)));
   return questionContainsAnchor && novelSpecificWords.length === 0 && safeChoiceQuestion;
