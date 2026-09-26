@@ -12,6 +12,12 @@ prática da resposta em inglês da análise futura de áudio.
   minutos), sem contagem fixa de perguntas. A sala respeita o tempo, permite
   concluir uma resposta já iniciada e encerra sem repetir o banco interno de
   oito perguntas. Após uma resposta, pode haver no máximo um follow-up curto.
+- A abertura menciona cargo, senioridade, foco e duração configurados. Após
+  cada resposta final, o entrevistador dá um reconhecimento curto com trecho
+  literal da transcrição e faz no máximo um follow-up útil ou segue para a
+  próxima pergunta adaptada ao cargo e foco. A sequência fixa continua como
+  fallback. As legendas acompanham cada frase falada; falhas de raciocínio ou
+  TTS mantêm a pergunta fixa e o texto disponível.
 - Reprodução opcional da introdução e perguntas pelo backend Kokoro, legendas
   independentes e captura automática opcional após o áudio. Falha de áudio ou
   autoplay mantém o texto e a opção de iniciar o microfone manualmente.

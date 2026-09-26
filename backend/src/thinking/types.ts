@@ -72,6 +72,8 @@ export type InterviewOrchestrationInput = InterviewThinkingInput & {
 export type InterviewOrchestrationResult = {
   decision: "FOLLOW_UP" | "NEXT";
   followUpQuestion: string | null;
+  nextQuestion: string | null;
+  acknowledgement: string;
   diagnostics?: { model: string; latencyMs: number; costUsd: number | null };
 };
 

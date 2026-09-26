@@ -1,6 +1,6 @@
 import type { InterviewConfig } from "./types";
 
-export type TurnDecision = { decision: "FOLLOW_UP"; followUpQuestion: string } | { decision: "NEXT"; followUpQuestion: null };
+export type TurnDecision = { decision: "FOLLOW_UP"; followUpQuestion: string; nextQuestion: null; acknowledgement: string } | { decision: "NEXT"; followUpQuestion: null; nextQuestion: string | null; acknowledgement: string };
 
 export async function decideNextTurn(input: {
   config: InterviewConfig;
@@ -10,7 +10,8 @@ export async function decideNextTurn(input: {
   followUpUsed: boolean;
   signal: AbortSignal;
 }): Promise<TurnDecision> {
-  const fallback: TurnDecision = { decision: "NEXT", followUpQuestion: null };
+  const firstSentence = input.transcript.trim().split(/(?<=[.!?])\s+/u)[0] ?? input.transcript.trim();
+  const fallback: TurnDecision = { decision: "NEXT", followUpQuestion: null, nextQuestion: input.nextFixedQuestion, acknowledgement: `Thanks for sharing “${firstSentence.split(/\s+/).slice(0, 6).join(" ")}”` };
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
     const response = await fetch(`${baseUrl}/api/v1/thinking/next-turn`, {
@@ -29,12 +30,19 @@ export async function decideNextTurn(input: {
     const value: unknown = await response.json();
     if (typeof value !== "object" || value === null || Array.isArray(value)) return fallback;
     const result = value as Record<string, unknown>;
-    if (result.decision === "NEXT" && result.followUpQuestion === null) return fallback;
+    const acknowledgement = typeof result.acknowledgement === "string" ? result.acknowledgement.trim() : "";
+    const quoted = acknowledgement.match(/[“"]([^”"]+)[”"]/u)?.[1];
+    const quotedWords = quoted?.split(/\s+/).filter(Boolean).length ?? 0;
+    if (result.decision === "NEXT" && result.followUpQuestion === null && typeof result.nextQuestion === "string" && quoted && quotedWords >= 2 && quotedWords <= 6 && input.transcript.includes(quoted)) {
+      const prompt = result.nextQuestion.trim();
+      const words = prompt.split(/\s+/).filter(Boolean).length;
+      if (prompt.length >= 12 && prompt.length <= 220 && words >= 5 && words <= 28 && prompt.endsWith("?") && (prompt.match(/\?/g) ?? []).length === 1 && !/[\r\n]/.test(prompt)) return { ...fallback, nextQuestion: prompt, acknowledgement };
+    }
     if (result.decision === "FOLLOW_UP" && typeof result.followUpQuestion === "string") {
       const prompt = result.followUpQuestion.trim();
       const words = prompt.split(/\s+/).filter(Boolean).length;
       if (!input.followUpUsed && prompt.length <= 180 && words >= 5 && words <= 24 && prompt.endsWith("?") && (prompt.match(/\?/g) ?? []).length === 1 && !/[\r\n]/.test(prompt)) {
-        return { decision: "FOLLOW_UP", followUpQuestion: prompt };
+        if (result.nextQuestion === null && quoted && quotedWords >= 2 && quotedWords <= 6 && input.transcript.includes(quoted)) return { decision: "FOLLOW_UP", followUpQuestion: prompt, nextQuestion: null, acknowledgement };
       }
     }
   } catch {

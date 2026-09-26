@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+import { composeAcknowledgedQuestion, composeContextualOpening, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
 
 test("the first interviewer playback combines a short introduction and the first question", () => {
   assert.equal(
@@ -8,6 +8,43 @@ test("the first interviewer playback combines a short introduction and the first
     "Welcome. Take your time. Tell me about yourself.",
   );
   assert.equal(composeOpeningUtterance(" Welcome. ", " Tell me about yourself. "), "Welcome. Tell me about yourself.");
+});
+
+test("the opening speaks natural labels for every configured seniority and focus", () => {
+  const seniorityLabels = { junior: "junior", "mid-level": "mid-level", senior: "senior", staff: "staff-level" };
+  const focusLabels = {
+    "technical-depth": "technical depth",
+    communication: "communication and clarity",
+    behavioral: "behavioral questions",
+    mixed: "balanced practice",
+  };
+  for (const [value, label] of Object.entries(seniorityLabels)) {
+    const opening = composeContextualOpening({ role: "Backend Engineer", seniority: value, focus: "mixed", duration: "10" }, "Tell me about a project.");
+    assert.ok(opening.includes(`an interview for a ${label} Backend Engineer role`));
+  }
+  for (const [value, label] of Object.entries(focusLabels)) {
+    const opening = composeContextualOpening({ role: "Backend Engineer", seniority: "mid-level", focus: value, duration: "10" }, "Tell me about a project.");
+    assert.ok(opening.includes(`We’ll focus on ${label}.`));
+  }
+});
+
+test("unknown opening labels use a safe generic fallback without leaking identifiers", () => {
+  const opening = composeContextualOpening({ role: "Backend Engineer", seniority: "principal-engineer", focus: "technical-depth-plus", duration: "10" }, "Tell me about a project.");
+  assert.ok(opening.includes("for an interview for the Backend Engineer role"));
+  assert.ok(opening.includes("I’ll ask about your experience and decisions."));
+  assert.ok(!opening.includes("principal-engineer"));
+  assert.ok(!opening.includes("technical-depth-plus"));
+  assert.ok(!opening.includes("your staff Backend Engineer interview"));
+});
+
+test("the next spoken and captioned utterance includes acknowledgment and the full question", () => {
+  assert.equal(composeAcknowledgedQuestion("Thanks for sharing “bounded retries.”", "What limit would you set?"), "Thanks for sharing “bounded retries.” What limit would you set?");
+});
+
+test("a skipped question's next fixed prompt does not carry the previous acknowledgment", () => {
+  const transition = resolveSkippedQuestion("Tell me about your recent project.");
+  assert.deepEqual(transition, { question: "Tell me about your recent project.", acknowledgement: "" });
+  assert.equal(composeAcknowledgedQuestion(transition.acknowledgement, transition.question), "Tell me about your recent project.");
 });
 
 test("interviewer speech is split into complete natural sentence excerpts", () => {
