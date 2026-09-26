@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pairInterviewTurns, summarizeAzureAssessments } from "../src/lib/interview/report-metrics.mjs";
+import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments } from "../src/lib/interview/report-metrics.mjs";
 
 test("Azure means ignore unavailable, pending, null, and invalid dimension values while counting valid samples", () => {
   const summary = summarizeAzureAssessments([
@@ -46,4 +46,16 @@ test("pairs ordered interviewer prompts and candidate answers without storing du
     { sequenceNumber: 2, question: "Main question?", answer: "Main answer." },
     { sequenceNumber: 4, question: "Follow-up?", answer: "A follow-up answer." },
   ]);
+});
+
+test("maps internal turn sequences to the same visible answer ordinal used in the report", () => {
+  const turns = [
+    { sequenceNumber: 1, question: "First?", answer: "First answer." },
+    { sequenceNumber: 3, question: "Second?", answer: "Second answer." },
+    { sequenceNumber: 6, question: "Third?", answer: "Third answer." },
+  ];
+  assert.equal(answerOrdinalForSequence(turns, 1), 1);
+  assert.equal(answerOrdinalForSequence(turns, 3), 2);
+  assert.equal(answerOrdinalForSequence(turns, 6), 3);
+  assert.equal(answerOrdinalForSequence(turns, 5), null);
 });

@@ -1,6 +1,6 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { InterviewConfig, PersistenceResult } from "./types";
-import { pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";
+import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";
 
 export type InterviewReport = {
   technicalContent: {
@@ -56,7 +56,7 @@ const toFeedback = (row: FeedbackRow): InterviewFeedback => ({
   updatedAt: row.updated_at,
 });
 
-export { pairInterviewTurns };
+export { answerOrdinalForSequence, pairInterviewTurns };
 
 export const interviewReportTimeoutMs = 65_000;
 

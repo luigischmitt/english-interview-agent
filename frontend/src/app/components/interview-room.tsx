@@ -6,7 +6,7 @@ import { MicrophoneCapture, type VoiceAssessmentState, type VoiceCaptureState, t
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { decideNextTurn } from "@/lib/interview/orchestration";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
-import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewReport, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult } from "@/lib/interview/report";
+import { answerOrdinalForSequence, createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewReport, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult } from "@/lib/interview/report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import type { AzureAssessmentSample, AzureMetricSummary, InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
@@ -64,7 +64,7 @@ function CapturedAnswers({ turns }: { turns: ReturnType<typeof pairInterviewTurn
         <ol className="mt-4 space-y-5">
           {turns.map((turn, index) => (
             <li key={`${turn.sequenceNumber}-${index}`} className="border-t border-base-300 pt-4">
-              <p className="text-sm font-medium">Pergunta {index + 1}</p>
+              <p className="text-sm font-medium">Pergunta {answerOrdinalForSequence(turns, turn.sequenceNumber) ?? index + 1}</p>
               <p lang="en" className="mt-2 text-sm leading-6"><span className="font-medium">Pergunta:</span> {turn.question}</p>
               <p lang="en" className="mt-2 text-sm leading-6"><span className="font-medium">Sua resposta:</span> {turn.answer}</p>
             </li>
@@ -389,22 +389,22 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
                   <h2 id="technical-report-title" className="text-lg font-semibold">Conteúdo técnico</h2>
                   <p className="mt-2 max-w-[70ch] text-sm leading-6">{reportState.result.technicalContent.summary}</p>
                   <div className="mt-4 grid gap-6 sm:grid-cols-2">
-                    <div><h3 className="text-sm font-medium">O que correspondeu à pergunta</h3>{reportState.result.technicalContent.strengths.length ? <ul className="mt-2 space-y-3 text-sm leading-6">{reportState.result.technicalContent.strengths.map((item, index) => <li key={`${item.sequenceNumber}-${index}`} className="border-t border-base-300 pt-2"><p className="text-muted-foreground">Resposta {item.sequenceNumber}: “{item.evidence}”</p><p className="mt-1">{item.explanation}</p></li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">Evidência insuficiente para identificar pontos específicos de aderência.</p>}</div>
-                    <div><h3 className="text-sm font-medium">O que precisava de mais explicação</h3>{reportState.result.technicalContent.gaps.length ? <ul className="mt-2 space-y-3 text-sm leading-6">{reportState.result.technicalContent.gaps.map((item, index) => <li key={`${item.sequenceNumber}-${index}`} className="border-t border-base-300 pt-2"><p className="text-muted-foreground">Resposta {item.sequenceNumber}: “{item.evidence}”</p><p className="mt-1">{item.explanation}</p></li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">Evidência insuficiente para apontar algo específico que faltou.</p>}</div>
+                    <div><h3 className="text-sm font-medium">O que correspondeu à pergunta</h3>{reportState.result.technicalContent.strengths.length ? <ul className="mt-2 space-y-3 text-sm leading-6">{reportState.result.technicalContent.strengths.map((item, index) => <li key={`${item.sequenceNumber}-${index}`} className="border-t border-base-300 pt-2"><p className="text-muted-foreground">Resposta {answerOrdinalForSequence(capturedReportTurns, item.sequenceNumber) ?? "—"}: “{item.evidence}”</p><p className="mt-1">{item.explanation}</p></li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">Evidência insuficiente para identificar pontos específicos de aderência.</p>}</div>
+                    <div><h3 className="text-sm font-medium">O que precisava de mais explicação</h3>{reportState.result.technicalContent.gaps.length ? <ul className="mt-2 space-y-3 text-sm leading-6">{reportState.result.technicalContent.gaps.map((item, index) => <li key={`${item.sequenceNumber}-${index}`} className="border-t border-base-300 pt-2"><p className="text-muted-foreground">Resposta {answerOrdinalForSequence(capturedReportTurns, item.sequenceNumber) ?? "—"}: “{item.evidence}”</p><p className="mt-1">{item.explanation}</p></li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">Evidência insuficiente para apontar algo específico que faltou.</p>}</div>
                   </div>
                 </section>
 
                 <section className="border-t border-base-300 pt-6" aria-labelledby="english-report-title">
                   <h2 id="english-report-title" className="text-lg font-semibold">Comunicação em inglês</h2>
                   <p className="mt-2 text-sm leading-6">Clareza geral: <span className="font-medium">{clarityLabel(reportState.result.englishCommunication.clarity)}</span></p>
-                  {reportState.result.englishCommunication.patterns.length ? <ul className="mt-4 space-y-4">{reportState.result.englishCommunication.patterns.map((pattern, index) => <li key={`${pattern.sequenceNumber}-${pattern.type}-${index}`} className="border-t border-base-300 pt-3 text-sm"><p className="font-medium">{patternLabel(pattern.type)} · resposta {pattern.sequenceNumber}</p><p className="mt-1 text-muted-foreground">Trecho: “{pattern.evidence}”</p><p className="mt-1">Sugestão: {pattern.suggestion}</p><p className="mt-2"><span className="font-medium">Exemplo:</span> <span lang="en">“{pattern.rephrasedExample}”</span></p></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">Evidência insuficiente para apontar um padrão de inglês com segurança.</p>}
+                  {reportState.result.englishCommunication.patterns.length ? <ul className="mt-4 space-y-4">{reportState.result.englishCommunication.patterns.map((pattern, index) => <li key={`${pattern.sequenceNumber}-${pattern.type}-${index}`} className="border-t border-base-300 pt-3 text-sm"><p className="font-medium">{patternLabel(pattern.type)} · resposta {answerOrdinalForSequence(capturedReportTurns, pattern.sequenceNumber) ?? "—"}</p><p className="mt-1 text-muted-foreground">Trecho: “{pattern.evidence}”</p><p className="mt-1">Sugestão: {pattern.suggestion}</p><p className="mt-2"><span className="font-medium">Exemplo:</span> <span lang="en">“{pattern.rephrasedExample}”</span></p></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">Evidência insuficiente para apontar um padrão de inglês com segurança.</p>}
                 </section>
 
                 <AzureVoiceReport summary={currentAzureSummary} coverage={coverage} />
 
                 <section className="border-t border-base-300 pt-6" aria-labelledby="priorities-title">
                   <h2 id="priorities-title" className="text-lg font-semibold">Prioridades para praticar</h2>
-                  {reportState.result.priorities.length ? <ol className="mt-4 space-y-4">{reportState.result.priorities.map((priority, index) => <li key={`${priority.sequenceNumber}-${index}`} className="border-t border-base-300 pt-3"><p className="text-sm font-medium">{priority.focus}</p><p className="mt-1 text-sm text-muted-foreground">Baseado na resposta {priority.sequenceNumber}: “{priority.evidence}”</p><p className="mt-1 text-sm leading-6">{priority.exercise}</p></li>)}</ol> : <p className="mt-3 text-sm text-muted-foreground">Evidência insuficiente para priorizar um exercício específico.</p>}
+                  {reportState.result.priorities.length ? <ol className="mt-4 space-y-4">{reportState.result.priorities.map((priority, index) => <li key={`${priority.sequenceNumber}-${index}`} className="border-t border-base-300 pt-3"><p className="text-sm font-medium">{priority.focus}</p><p className="mt-1 text-sm text-muted-foreground">Baseado na resposta {answerOrdinalForSequence(capturedReportTurns, priority.sequenceNumber) ?? "—"}: “{priority.evidence}”</p><p className="mt-1 text-sm leading-6">{priority.exercise}</p></li>)}</ol> : <p className="mt-3 text-sm text-muted-foreground">Evidência insuficiente para priorizar um exercício específico.</p>}
                 </section>
               </div>
             ) : null}

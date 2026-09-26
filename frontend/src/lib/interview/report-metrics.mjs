@@ -31,3 +31,9 @@ export function pairInterviewTurns(turns) {
   }
   return result;
 }
+
+/** Return the user's visible 1-based answer number for an internal turn sequence. */
+export function answerOrdinalForSequence(turns, sequenceNumber) {
+  const index = turns.findIndex((turn) => turn.sequenceNumber === sequenceNumber);
+  return index < 0 ? null : index + 1;
+}
