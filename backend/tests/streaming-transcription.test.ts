@@ -5,7 +5,7 @@ import { WebSocket } from "ws";
 import { defaultVadConfig, getSilenceThreshold, VoiceActivityDetector } from "../src/transcription/voice-activity-detector.js";
 import type { TranscriptionResult, TranscriptionService } from "../src/transcription/types.js";
 import { attachTranscriptionWebSocket } from "../src/transcription/transcription-websocket.js";
-import type { PronunciationAssessmentService } from "../src/transcription/azure-pronunciation-assessment.js";
+import { AzureAssessmentError, type PronunciationAssessmentService } from "../src/transcription/azure-pronunciation-assessment.js";
 import { defaultStreamingLimits, FinalTranscriptionQueue, pcmToWav, StreamingTranscriptionSessions } from "../src/transcription/streaming-transcription.js";
 import { getAllowedOrigins, isOriginAllowed } from "../src/middlewares/allowed-origins.js";
 
@@ -213,6 +213,62 @@ describe("bounded final transcription queue", () => {
 });
 
 describe("versioned transcription WebSocket", () => {
+  it("delivers six late assessments across independent answer sockets with safe timing metadata", async () => {
+    const { service } = createService("I led the migration");
+    const assessmentService: PronunciationAssessmentService = {
+      assess: vi.fn(async () => {
+        await delay(2);
+        return { provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 82, fluency: 79, prosody: 75 } };
+      }),
+    };
+    const fixture = await openStreamServer(service, assessmentService);
+    const sockets = await Promise.all(Array.from({ length: 6 }, () => openSocket(fixture.url)));
+    try {
+      await Promise.all(sockets.map((socket) => startStream(socket)));
+      await Promise.all(sockets.map((socket) => prepareAnswer(socket, 8)));
+      const completeWaiters = sockets.map((socket) => waitForType(socket, "complete"));
+      const assessmentWaiters = sockets.map((socket) => waitForType(socket, "assessment"));
+      sockets.forEach((socket) => socket.send(JSON.stringify({ type: "finalize", reason: "silence" })));
+      const completed = await Promise.all(completeWaiters);
+      expect(completed).toHaveLength(6);
+      const assessments = await Promise.all(assessmentWaiters);
+      expect(assessments).toHaveLength(6);
+      for (const assessment of assessments) {
+        expect(assessment).toMatchObject({
+          type: "assessment", status: "available", blockCount: 1, assessedBlockCount: 1, failedBlockCount: 0,
+          diagnostics: { transcriptionDurationMs: expect.any(Number), azureQueueWaitMs: expect.any(Number), azureServiceDurationMs: expect.any(Number), totalDurationMs: expect.any(Number) },
+        });
+        expect(assessment).not.toHaveProperty("transcript");
+        expect(assessment).not.toHaveProperty("referenceText");
+      }
+      expect(assessmentService.assess).toHaveBeenCalledTimes(6);
+    } finally {
+      sockets.forEach((socket) => socket.close());
+      await fixture.close();
+    }
+  });
+
+  it("reports a safe category when every Azure block fails", async () => {
+    const { service } = createService("I led the migration");
+    const assessmentService: PronunciationAssessmentService = {
+      assess: vi.fn(async () => { throw new AzureAssessmentError("rate_limited"); }),
+    };
+    const fixture = await openStreamServer(service, assessmentService);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const completeWaiter = waitForType(socket, "complete");
+      const assessmentWaiter = waitForType(socket, "assessment");
+      socket.send(JSON.stringify({ type: "finalize", reason: "silence" }));
+      await completeWaiter;
+      await expect(assessmentWaiter).resolves.toMatchObject({ type: "assessment", status: "unavailable", reason: "rate_limited", blockCount: 1, assessedBlockCount: 0, failedBlockCount: 1 });
+    } finally {
+      socket.close();
+      await fixture.close();
+    }
+  });
+
   it("handles eight complete sockets as four active and four queued, once each, then clears audio", async () => {
     const requests: Array<{ audio: Buffer; resolve: (result: TranscriptionResult) => void }> = [];
     const transcribe = vi.fn((audio: Buffer, provider: "whisper-large-v3-turbo") => new Promise<TranscriptionResult>((resolve) => {

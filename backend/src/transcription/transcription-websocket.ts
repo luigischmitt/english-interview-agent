@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { getAllowedOrigins, isOriginAllowed } from "../middlewares/allowed-origins.js";
 import type { TranscriptionService } from "./types.js";
 import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
-import type { PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
+import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
 import { createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
@@ -67,6 +67,25 @@ function safeTranscriptionErrorCode(error: unknown): string {
   if (/could not recognize|no speech/i.test(message)) return "NO_SPEECH_RECOGNIZED";
   if (/\b4\d\d\b/i.test(message)) return "UPSTREAM_REJECTED";
   return "TRANSCRIPTION_FAILED";
+}
+
+type AzureBlockResult = {
+  assessment: PronunciationAssessment | null;
+  durationMs: number;
+  queueWaitMs: number;
+  serviceDurationMs: number;
+  failureCategory: AzureAssessmentFailureCategory | null;
+};
+
+function mostCommonFailure(results: AzureBlockResult[]): AzureAssessmentFailureCategory {
+  const counts = new Map<AzureAssessmentFailureCategory, number>();
+  for (const result of results) if (result.failureCategory) counts.set(result.failureCategory, (counts.get(result.failureCategory) ?? 0) + 1);
+  return [...counts].sort((first, second) => second[1] - first[1])[0]?.[0] ?? "unknown";
+}
+
+function logAzureAssessment(details: Record<string, string | number | boolean>): void {
+  // Diagnostics intentionally contain operational metadata only: never transcript, audio, scores, or credentials.
+  console.info(JSON.stringify({ event: "azure_assessment", ...details }));
 }
 
 export function attachTranscriptionWebSocket(
@@ -152,7 +171,9 @@ export function attachTranscriptionWebSocket(
             audio = sessions.toWav(id);
             const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
             send(socket, { type: "transcription-started" });
+            const transcriptionStartedAt = Date.now();
             const result = await transcriptionService.transcribe(audio, "whisper-large-v3-turbo", "wav", abortController.signal);
+            const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
             if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
             if (!result.transcript.trim()) {
               fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
@@ -170,12 +191,20 @@ export function attachTranscriptionWebSocket(
             if (!assessmentService) return;
             const blocks = result.words ? createAzureAlignedBlocks(audio, result.words) : [];
             if (blocks.length === 0) {
-              send(socket, { type: "assessment", status: "unavailable" });
+              const reason = result.words ? "no_valid_word_timing" : "missing_word_timing";
+              logAzureAssessment({ status: "unavailable", reason, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs: 0 });
+              send(socket, { type: "assessment", status: "unavailable", reason, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs: 0 } });
               return;
             }
             assessmentOwnsAudio = true;
+            const assessmentStartedAt = Date.now();
             void assessBlocks(audio, blocks, assessmentService, abortController.signal).then((assessments) => {
               if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
+              const assessed = assessments.filter(({ assessment }) => assessment !== null).length;
+              const queueWaitMs = assessments.reduce((sum, item) => sum + item.queueWaitMs, 0);
+              const serviceDurationMs = assessments.reduce((sum, item) => sum + item.serviceDurationMs, 0);
+              const totalDurationMs = Date.now() - assessmentStartedAt;
+              const failureCategory = mostCommonFailure(assessments);
               const scores = { accuracy: null as number | null, fluency: null as number | null, prosody: null as number | null };
               for (const dimension of Object.keys(scores) as (keyof typeof scores)[]) {
                 const available = assessments.flatMap(({ assessment, durationMs: assessedDuration }) => {
@@ -186,9 +215,14 @@ export function attachTranscriptionWebSocket(
                   / available.reduce((sum, item) => sum + item.durationMs, 0);
               }
               const assessedDurationMs = assessments.reduce((sum, item) => sum + (item.assessment ? item.durationMs : 0), 0);
+              const diagnostics = { transcriptionDurationMs, azureQueueWaitMs: queueWaitMs, azureServiceDurationMs: serviceDurationMs, totalDurationMs };
               if (Object.values(scores).some((score) => score !== null)) {
-                send(socket, { type: "assessment", status: "available", provider: "azure", locale: "en-US", mode: "scripted", scores, durationMs: assessedDurationMs, segmented: true });
-              } else send(socket, { type: "assessment", status: "unavailable" });
+                logAzureAssessment({ status: "available", blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, audioDurationMs: Math.round(durationMs), assessedDurationMs, ...diagnostics });
+                send(socket, { type: "assessment", status: "available", provider: "azure", locale: "en-US", mode: "scripted", scores, durationMs: assessedDurationMs, segmented: true, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, diagnostics });
+              } else {
+                logAzureAssessment({ status: "unavailable", reason: failureCategory, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, audioDurationMs: Math.round(durationMs), ...diagnostics });
+                send(socket, { type: "assessment", status: "unavailable", reason: failureCategory, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, durationMs: 0, diagnostics });
+              }
             }).finally(release);
           } catch (error) {
             if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
@@ -316,8 +350,8 @@ async function assessBlocks(
   blocks: AzureAudioBlock[],
   service: PronunciationAssessmentService,
   signal: AbortSignal,
-): Promise<Array<{ assessment: Awaited<ReturnType<PronunciationAssessmentService["assess"]>> | null; durationMs: number }>> {
-  const results: Array<{ assessment: Awaited<ReturnType<PronunciationAssessmentService["assess"]>> | null; durationMs: number }> = blocks.map((block) => ({ assessment: null, durationMs: block.durationMs }));
+): Promise<AzureBlockResult[]> {
+  const results: AzureBlockResult[] = blocks.map((block) => ({ assessment: null, durationMs: block.durationMs, queueWaitMs: 0, serviceDurationMs: 0, failureCategory: null }));
   let next = 0;
   const worker = async () => {
     while (next < blocks.length && !signal.aborted) {
@@ -325,13 +359,21 @@ async function assessBlocks(
       const block = blocks[index]!;
       let releaseSlot: (() => void) | null = null;
       let slice: Buffer | null = null;
+      const waitingAt = Date.now();
       try {
         releaseSlot = await acquireAzureSlot(signal);
+        results[index]!.queueWaitMs = Date.now() - waitingAt;
         if (signal.aborted) continue;
         slice = materializeAzureBlock(sourceWav, block);
-        results[index] = { assessment: await service.assess(slice, "wav", block.referenceText, signal), durationMs: block.durationMs };
-      } catch {
-        results[index] = { assessment: null, durationMs: block.durationMs };
+        const serviceStartedAt = Date.now();
+        try {
+          const assessment = await service.assess(slice, "wav", block.referenceText, signal);
+          results[index] = { ...results[index]!, assessment, serviceDurationMs: Date.now() - serviceStartedAt };
+        } catch (error) {
+          results[index] = { ...results[index]!, serviceDurationMs: Date.now() - serviceStartedAt, failureCategory: categorizeAzureAssessmentFailure(error, signal) };
+        }
+      } catch (error) {
+        results[index] = { ...results[index]!, failureCategory: categorizeAzureAssessmentFailure(error, signal) };
       } finally {
         slice?.fill(0);
         releaseSlot?.();
