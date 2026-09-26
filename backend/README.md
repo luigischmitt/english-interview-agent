@@ -276,13 +276,15 @@ collection. The next-turn route receives the active question, final text
 transcript, minimal role context, next fixed question, and whether a follow-up
 has already been used for the current planned question. Transcript is treated
 as untrusted data. Every decision includes a separate `acknowledgementAnchor`
-of 2–6 exact contiguous transcript words; the brief acknowledgement must
-contain those words, with no quotation marks required. For `FOLLOW_UP`, the
-model must return an `anchor` of 2–8 words copied literally from the transcript
+of 1–6 exact contiguous transcript words; one word is allowed only for a
+meaningful technology or proper term, never an article, pronoun, or generic
+filler. The brief acknowledgement must contain those words, with no quotation
+marks required. For `FOLLOW_UP`, the model must return an `anchor` of 1–8 words copied literally from the transcript
 and naturally include that exact
 anchor in one short question that acknowledges and deepens a stated technology,
 decision, action, difficulty, or result without inventing details. The backend
-requires the anchor to occur in both the transcript and question, then removes
+allows one word only for a meaningful technology or proper term, requires the
+anchor to occur in both the transcript and question, then removes
 it from the public response. `NEXT` requires a null anchor. At most one brief
 follow-up is accepted; timeout, rate limiting,
 provider errors, missing credentials, or malformed output fall back to
