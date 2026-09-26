@@ -641,6 +641,30 @@ describe("versioned transcription WebSocket", () => {
     }
   });
 
+  it("uses valid Whisper segment timing when word timing is unavailable", async () => {
+    const service = createService().service;
+    service.transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({
+      provider, transcript: "A clear answer", segments: [{ text: "A clear answer", start: 0.1, end: 0.7 }],
+    }));
+    const assess = vi.fn(async (_audio: Buffer, _format: "wav", _referenceText: string) => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 86, fluency: null, prosody: null } }));
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const complete = waitForType(socket, "complete");
+      const assessment = waitForType(socket, "assessment");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await expect(complete).resolves.toMatchObject({ status: "complete", transcript: "A clear answer" });
+      await expect(assessment).resolves.toMatchObject({ status: "available", blockCount: 1, assessedBlockCount: 1, scores: { accuracy: 86 } });
+      expect(assess).toHaveBeenCalledOnce();
+      expect(assess.mock.calls[0]?.[2]).toBe("A clear answer");
+    } finally {
+      socket.close();
+      await fixture.close();
+    }
+  });
+
   it("keeps the Azure concurrency limit at two across separate response sockets", async () => {
     let active = 0;
     let maximumActive = 0;

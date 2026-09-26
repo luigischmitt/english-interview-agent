@@ -27,4 +27,20 @@ describe("OpenRouter Whisper final request", () => {
     expect(result).toEqual({ provider: "whisper-large-v3-turbo", transcript: "still usable", words: undefined });
     expect(fetcher).toHaveBeenCalledOnce();
   });
+
+  it("preserves valid segment timing when word timing is missing in the same response", async () => {
+    let fields: FormData | undefined;
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      fields = init?.body as FormData;
+      return new Response(JSON.stringify({ text: "hello there", segments: [
+        { text: "hello", start: 0.1, end: 0.4 }, { text: " there", start: 0.5, end: 0.9 },
+      ] }), { status: 200 });
+    });
+    const result = await new OpenRouterWhisperTranscriptionService({ key: "test", timeoutMs: 1_000, fetchImplementation: fetcher })
+      .transcribe(pcmToWav(Buffer.alloc(32_000)), "whisper-large-v3-turbo");
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fields?.get("response_format")).toBe("verbose_json");
+    expect(fields?.getAll("timestamp_granularities[]")).toEqual(["word"]);
+    expect(result).toMatchObject({ transcript: "hello there", words: undefined, segments: [{ text: "hello", start: 0.1 }, { text: " there", end: 0.9 }] });
+  });
 });

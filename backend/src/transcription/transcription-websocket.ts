@@ -197,9 +197,10 @@ export function attachTranscriptionWebSocket(
             clearTimeout(timer);
 
             if (!assessmentService) return;
-            const blocks = result.words ? createAzureAlignedBlocks(audio, result.words) : [];
+            const wordBlocks = result.words ? createAzureAlignedBlocks(audio, result.words) : [];
+            const blocks = wordBlocks.length ? wordBlocks : (result.segments ? createAzureAlignedBlocks(audio, result.segments) : []);
             if (blocks.length === 0) {
-              const reason = result.words ? "no_valid_word_timing" : "missing_word_timing";
+              const reason = result.words ? "no_valid_word_timing" : result.segments ? "no_valid_segment_timing" : "missing_word_timing";
               logAzureAssessment({ status: "unavailable", reason, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs: 0 });
               send(socket, { type: "assessment", status: "unavailable", reason, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs: 0 } });
               return;

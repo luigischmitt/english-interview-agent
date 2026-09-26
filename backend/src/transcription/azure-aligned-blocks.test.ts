@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createAzureAlignedBlocks, materializeAzureBlock } from "./azure-aligned-blocks.js";
 import { pcmToWav } from "./streaming-transcription.js";
-import { parseWhisperWords } from "./openrouter-whisper-transcription-service.js";
+import { parseWhisperSegments, parseWhisperWords } from "./openrouter-whisper-transcription-service.js";
 
 const word = (text: string, start: number, end: number) => ({ text, start, end });
 const wavOfSeconds = (seconds: number) => pcmToWav(Buffer.alloc(seconds * 16_000 * 2));
@@ -14,6 +14,15 @@ describe("Whisper word timestamps", () => {
     expect(parseWhisperWords([{ word: "x", start: 1, end: 3 }], 2)).toBeUndefined();
     expect(parseWhisperWords([{ word: " ", start: 0, end: 1 }], 2)).toBeUndefined();
     expect(parseWhisperWords(undefined, 2)).toBeUndefined();
+  });
+});
+
+describe("Whisper segment timestamps", () => {
+  it("accepts ordered in-range segment text and rejects malformed, overlapping, or oversized segments", () => {
+    expect(parseWhisperSegments([{ text: " hello", start: 0, end: 1 }, { text: " world", start: 1, end: 2 }], 3)).toHaveLength(2);
+    expect(parseWhisperSegments([{ text: "ok", start: 0, end: 1 }, { text: "bad", start: 0.9, end: 1.5 }], 3)).toBeUndefined();
+    expect(parseWhisperSegments([{ text: "bad", start: 0, end: 26 }], 30)).toBeUndefined();
+    expect(parseWhisperSegments([{ text: " ", start: 0, end: 1 }], 3)).toBeUndefined();
   });
 });
 
