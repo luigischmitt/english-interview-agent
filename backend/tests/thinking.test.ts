@@ -71,14 +71,14 @@ describe("thinking configuration", () => {
       INTERVIEW_REASONING_MODEL: "  vendor/model  ",
       INTERVIEW_REASONING_TIMEOUT_MS: "4500",
       INTERVIEW_ORCHESTRATION_TIMEOUT_MS: "6000",
-      INTERVIEW_REPORT_TIMEOUT_MS: "30000",
+      INTERVIEW_REPORT_TIMEOUT_MS: "45000",
       INTERVIEW_REASONING_DIAGNOSTICS: "true",
     } as NodeJS.ProcessEnv)).toEqual({
       openRouterApiKey: "secret",
       model: "vendor/model",
       timeoutMs: 4_500,
       orchestrationTimeoutMs: 6_000,
-      reportTimeoutMs: 30_000,
+      reportTimeoutMs: 45_000,
       diagnosticsEnabled: true,
     });
   });
@@ -92,6 +92,7 @@ describe("thinking configuration", () => {
       .toThrow("Interview reasoning timeout must be a positive number.");
     expect(() => loadThinkingConfig({ INTERVIEW_REPORT_TIMEOUT_MS: "60001" } as NodeJS.ProcessEnv))
       .toThrow("Interview report timeout must not exceed 60000 milliseconds.");
+    expect(loadThinkingConfig({ INTERVIEW_REPORT_TIMEOUT_MS: "60000" } as NodeJS.ProcessEnv).reportTimeoutMs).toBe(60_000);
   });
 });
 

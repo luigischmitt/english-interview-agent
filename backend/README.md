@@ -56,7 +56,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `INTERVIEW_REASONING_MODEL` | `mistralai/mistral-small-3.2-24b-instruct` | OpenRouter model for interview reasoning and next-turn orchestration. Keep this configuration server-side. |
 | `INTERVIEW_REASONING_TIMEOUT_MS` | `15000` | Positive timeout in milliseconds for interview reasoning requests. |
 | `INTERVIEW_ORCHESTRATION_TIMEOUT_MS` | `6000` | Positive timeout in milliseconds for next-turn orchestration. |
-| `INTERVIEW_REPORT_TIMEOUT_MS` | `30000` | Report-only provider deadline in milliseconds; accepts positive values up to `60000`. The browser deadline is 65 seconds by default. |
+| `INTERVIEW_REPORT_TIMEOUT_MS` | `45000` | Report-only provider deadline in milliseconds; accepts positive values up to `60000`. The browser deadline is 65 seconds by default. |
 | `INTERVIEW_REASONING_DIAGNOSTICS` | `false` | Set to `true` to include model, latency, and provider-reported cost in next-turn responses. Keep disabled outside local testing. |
 
 Do not add Supabase `service_role` keys or other private credentials to this
@@ -172,7 +172,7 @@ English patterns, and exercises cite a turn number and short exact excerpt from
 that answer; English observations also include a concrete rephrasing. The server
 validates each excerpt against its specific answer and discards an invalid
 optional item while preserving other valid sections. When language evidence is
-missing, the response marks it insufficient. The report has a separate 30-second
+missing, the response marks it insufficient. The report has a separate 45-second
 provider deadline; the browser waits 65 seconds, and the server deadline can be
 raised to at most 60 seconds. The response includes model and analysis version
 `v2` for persistence; it has no invented scores, full transcript copy, or hidden
