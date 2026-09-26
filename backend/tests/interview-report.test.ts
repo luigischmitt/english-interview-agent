@@ -27,7 +27,7 @@ const validReport: InterviewReport = {
   },
   englishCommunication: {
     clarity: "MOSTLY_CLEAR", evidenceStatus: "LIMITED",
-    patterns: [{ type: "GRAMMAR", sequenceNumber: 4, evidence: "monitor errors", suggestion: "Use o presente simples de forma consistente.", rephrasedExample: "We monitor errors and latency." }],
+    patterns: [{ type: "GRAMMAR", sequenceNumber: 4, evidence: "We monitor errors", suggestion: "Use o presente simples de forma consistente.", rephrasedExample: "We monitor errors and latency." }],
   },
   priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "errors and latency", focus: "Limites de alerta", exercise: "Explique em um minuto quais limites acionariam um alerta." }],
 };
@@ -59,8 +59,15 @@ describe("final interview report service", () => {
     expect(body.response_format.json_schema.schema.properties).not.toHaveProperty("score");
     expect(body.response_format.json_schema.schema.properties).not.toHaveProperty("internal_rationale");
     expect(body.messages[0].content).toContain("Write the report in Brazilian Portuguese");
-    expect(body.messages[0].content).toContain("cite the sequenceNumber and a short exact contiguous excerpt from that answer");
+    expect(body.messages[0].content).toContain("Cite the matching sequenceNumber and a short exact excerpt from that answer");
+    expect(body.messages[0].content).toContain("Review each question and its answer as a separate pair");
+    expect(body.messages[0].content).toContain("Do not infer mastery, correctness, ownership, impact, or expertise from merely naming a tool");
+    expect(body.messages[0].content).toContain("Do not criticize isolated acronyms, names, technical terms, fillers, repeated syllables, phonetic fragments");
     expect(body.messages[0].content).toContain("include a concrete, corrected English rephrasing grounded in that answer");
+    const schema = body.response_format.json_schema.schema.properties;
+    expect((schema.englishCommunication as { properties: { patterns: { maxItems: number } } }).properties.patterns.maxItems).toBe(8);
+    expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.strengths.maxItems).toBe(8);
+    expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.gaps.maxItems).toBe(8);
     expect(JSON.parse(body.messages[1].content)).toEqual({ roleContext: input.roleContext, turns: input.turns });
   });
 
@@ -114,6 +121,81 @@ describe("final interview report service", () => {
     expect(report).toMatchObject(validReport);
     expect(report.technicalContent.summary).toBe(validReport.technicalContent.summary);
     expect(report.technicalContent.strengths).toEqual(validReport.technicalContent.strengths);
+  });
+
+  it("keeps eight distinct English findings", async () => {
+    const answer = "I build reliable services. I design clear APIs. I deploy tested changes. I explain technical choices. I review code carefully. I monitor service health. I document useful decisions. I support production systems.";
+    const turns = [{ sequenceNumber: 1, question: "Tell me about your work.", answer }];
+    const evidence = [
+      "I build reliable services", "I design clear APIs", "I deploy tested changes", "I explain technical choices",
+      "I review code carefully", "I monitor service health", "I document useful decisions", "I support production systems",
+    ];
+    const patterns = evidence.map((excerpt, index) => ({
+      type: "GRAMMAR",
+      sequenceNumber: 1,
+      evidence: excerpt,
+      suggestion: `Sugestão distinta ${index + 1} para esta resposta.`,
+      rephrasedExample: `I can express point ${index + 1} more clearly.`,
+    }));
+    const report = await makeService(async () => providerResponse(JSON.stringify({
+      ...providerReport,
+      englishCommunication: { clarity: "MOSTLY_CLEAR", patterns },
+    }))).generate({ ...input, turns });
+
+    expect(report.englishCommunication.patterns).toHaveLength(8);
+    expect(report.englishCommunication.patterns.map((pattern) => pattern.evidence)).toEqual(evidence);
+  });
+
+  it("preserves valid short English evidence", async () => {
+    const answer = "This request depends of the cache. I use AWS.";
+    const turns = [{ sequenceNumber: 1, question: "How does the service work?", answer }];
+    const patterns = [
+      { type: "WORD_CHOICE", sequenceNumber: 1, evidence: "depends of", suggestion: "Use a preposição adequada para introduzir aquilo de que algo depende.", rephrasedExample: "This request depends on the cache." },
+      { type: "GRAMMAR", sequenceNumber: 1, evidence: "I use AWS", suggestion: "Revise a frase completa e mantenha o trecho curto como evidência.", rephrasedExample: "I use AWS for this service." },
+    ];
+    const report = await makeService(async () => providerResponse(JSON.stringify({
+      ...providerReport,
+      englishCommunication: { clarity: "MOSTLY_CLEAR", patterns },
+    }))).generate({ ...input, turns });
+
+    expect(report.englishCommunication.patterns.map((pattern) => pattern.evidence)).toEqual(["depends of", "I use AWS"]);
+  });
+
+  it("removes duplicate findings and likely noise or acronym artifacts", async () => {
+    const answer = "I build reliable services. I design clear APIs. pfffff. I said TFFF. I heard hahaha. I said...";
+    const turns = [{ sequenceNumber: 1, question: "Tell me about your work.", answer }];
+    const first = { type: "GRAMMAR", sequenceNumber: 1, evidence: "I build reliable services", suggestion: "Use o presente simples para descrever o trabalho.", rephrasedExample: "I build reliable services every day." };
+    const patterns = [
+      first,
+      { ...first, evidence: " I build reliable services ", suggestion: " Mantenha o tempo presente para explicar o trabalho. " },
+      { ...first, evidence: "I design clear APIs" },
+      { ...first, evidence: "pfffff", suggestion: "Não corrija este ruído.", rephrasedExample: "This is not an English sentence." },
+      { ...first, evidence: "I said TFFF", suggestion: "Não corrija este fragmento.", rephrasedExample: "This is not an English sentence." },
+      { ...first, evidence: "I heard hahaha", suggestion: "Não corrija sílabas repetidas.", rephrasedExample: "This is not an English sentence." },
+      { ...first, evidence: "I said...", suggestion: "Não corrija este fragmento incompleto.", rephrasedExample: "This is not an English sentence." },
+    ];
+    const report = await makeService(async () => providerResponse(JSON.stringify({
+      ...providerReport,
+      englishCommunication: { clarity: "MOSTLY_CLEAR", patterns },
+    }))).generate({ ...input, turns });
+
+    expect(report.englishCommunication.patterns).toEqual([first]);
+  });
+
+  it("does not allow technical observations to cite evidence from a different answer", async () => {
+    const mismatched = {
+      ...providerReport,
+      technicalContent: {
+        ...providerReport.technicalContent,
+        strengths: [
+          { sequenceNumber: 2, evidence: "bounded retries", explanation: "Cita tentativas com limite explícito." },
+          { sequenceNumber: 4, evidence: "bounded retries", explanation: "Atribui a outra resposta uma informação que não contém." },
+        ],
+      },
+    };
+    const report = await makeService(async () => providerResponse(JSON.stringify(mismatched))).generate(input);
+
+    expect(report.technicalContent.strengths).toEqual([mismatched.technicalContent.strengths[0]]);
   });
 
   it("rejects unsupported top-level fields", async () => {
