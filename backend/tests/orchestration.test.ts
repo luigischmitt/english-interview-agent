@@ -73,6 +73,32 @@ describe("OpenRouter next-turn orchestration", () => {
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(contextualInput)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: contextualQuestion });
   });
 
+  it("accepts a meaningful inflectional reference instead of requiring the full anchor verbatim", async () => {
+    const answer = {
+      ...input,
+      currentQuestion: "How did you handle a data migration?",
+      transcript: "I kept older clients working while moving to a new data model.",
+      askedQuestions: ["How did you handle a data migration?"],
+    };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "How did keeping the old client flow stable affect the data model?", nextQuestion: null, anchor: "older clients", acknowledgement: null };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
+  });
+
+  it.each([
+    { anchor: "Kafka", transcript: "We used Redis to cache account profiles.", reason: "anchor_not_in_transcript" },
+    { anchor: "Redis", transcript: "We used Redis to cache account profiles on the project.", reason: "anchor_not_referenced" },
+  ])("reports a safe, distinct anchor validation reason ($reason)", async ({ anchor, transcript, reason }) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const followUpQuestion = reason === "anchor_not_referenced" ? "How did Redis help with your project?" : "How did you improve customer onboarding?";
+    const raw = { decision: "FOLLOW_UP", followUpQuestion, nextQuestion: null, anchor, acknowledgement: null };
+    try {
+      await service(async () => providerResponse(JSON.stringify(raw))).decide({ ...input, transcript });
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: "interview_orchestration_fallback", reason }));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("accepts a grounded follow-up when a natural but transcript-echoing acknowledgement is discarded", async () => {
     const followUpInput = {
       ...input,
