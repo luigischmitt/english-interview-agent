@@ -5,7 +5,10 @@ export type TranscriptionProvider = (typeof transcriptionProviders)[number];
 export type TranscriptionResult = {
   provider: TranscriptionProvider;
   transcript: string;
+  words?: TranscriptionWord[];
 };
+
+export type TranscriptionWord = { text: string; start: number; end: number };
 
 export type AudioFormat = "wav" | "webm" | "mp4";
 

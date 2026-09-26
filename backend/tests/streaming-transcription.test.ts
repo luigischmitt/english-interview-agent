@@ -13,7 +13,9 @@ const frameBytes = 3_200;
 const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function createService(transcript = "I led the migration") {
-  const transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({ provider, transcript }));
+  const transcribe = vi.fn(async (audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({
+    provider, transcript, words: [{ text: transcript, start: 0, end: (audio.length - 44) / 32_000 }],
+  }));
   const service: TranscriptionService = { availableProviders: () => ["whisper-large-v3-turbo"], transcribe };
   return { service, transcribe };
 }
@@ -389,7 +391,7 @@ describe("versioned transcription WebSocket", () => {
   });
 
   it("assesses a short complete WAV after returning the transcript", async () => {
-    const assess = vi.fn(async () => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 80, fluency: 75, prosody: 70 } }));
+    const assess = vi.fn(async (_audio: Buffer, _format: "wav", _referenceText: string) => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 80, fluency: 75, prosody: 70 } }));
     const fixture = await openStreamServer(createService().service, { assess } as unknown as PronunciationAssessmentService);
     const socket = await openSocket(fixture.url);
     try {
@@ -399,7 +401,7 @@ describe("versioned transcription WebSocket", () => {
       const assessment = waitForType(socket, "assessment");
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
       await complete;
-      await expect(assessment).resolves.toMatchObject({ status: "available", durationMs: 800 });
+      await expect(assessment).resolves.toMatchObject({ status: "available", durationMs: 800, segmented: true });
       expect(assess).toHaveBeenCalledTimes(1);
     } finally {
       socket.close();
@@ -407,9 +409,13 @@ describe("versioned transcription WebSocket", () => {
     }
   });
 
-  it("skips Azure for a complete answer longer than 30 seconds", async () => {
-    const assess = vi.fn(async () => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 80, fluency: 75, prosody: 70 } }));
-    const fixture = await openStreamServer(createService().service, { assess } as unknown as PronunciationAssessmentService);
+  it("assesses long answers through timestamp-aligned blocks", async () => {
+    const assess = vi.fn(async (_audio: Buffer, _format: "wav", referenceText: string) => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: referenceText === "First block" ? 90 : 30, fluency: 75, prosody: 70 } }));
+    const service = createService().service;
+    service.transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({
+      provider, transcript: "First block second block", words: [{ text: "First block", start: 0, end: 24.9 }, { text: "second block", start: 25, end: 30 }],
+    }));
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService);
     const socket = await openSocket(fixture.url);
     try {
       await startStream(socket);
@@ -419,10 +425,139 @@ describe("versioned transcription WebSocket", () => {
       const assessment = waitForType(socket, "assessment");
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
       await expect(complete).resolves.toMatchObject({ status: "complete", durationMs: 30_100 });
-      await expect(assessment).resolves.toMatchObject({ status: "unavailable", reason: "AUDIO_TOO_LONG" });
+      await expect(assessment).resolves.toMatchObject({ status: "available", durationMs: 29_900, segmented: true });
+      const result = await assessment;
+      expect(result.scores.accuracy).toBeCloseTo((90 * 24_900 + 30 * 5_000) / 29_900);
+      expect(assess).toHaveBeenCalledTimes(2);
+      expect(assess.mock.calls.map((call) => call[2])).toEqual(["First block", "second block"]);
+    } finally {
+      socket.close();
+      await fixture.close();
+    }
+  });
+
+  it("keeps the Azure concurrency limit at two across separate response sockets", async () => {
+    let active = 0;
+    let maximumActive = 0;
+    const releases: Array<() => void> = [];
+    const service = createService().service;
+    service.transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({
+      provider, transcript: "First second", words: [{ text: "First", start: 0, end: 24 }, { text: "second", start: 25, end: 30.1 }],
+    }));
+    const assess = vi.fn((_audio: Buffer, _format: "wav", _referenceText: string) => new Promise<{ provider: "azure"; locale: "en-US"; mode: "scripted"; scores: { accuracy: number; fluency: number; prosody: number } }>((resolve) => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      releases.push(() => { active -= 1; resolve({ provider: "azure", locale: "en-US", mode: "scripted", scores: { accuracy: 80, fluency: 70, prosody: 60 } }); });
+    }));
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService);
+    const sockets = await Promise.all([openSocket(fixture.url), openSocket(fixture.url)]);
+    try {
+      for (const socket of sockets) await startStream(socket);
+      for (const socket of sockets) {
+        await prepareAnswer(socket, 8);
+        sendFrames(socket, 293);
+      }
+      const completes = sockets.map((socket) => waitForType(socket, "complete"));
+      const assessments = sockets.map((socket) => waitForType(socket, "assessment"));
+      for (const socket of sockets) socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await Promise.all(completes);
+      const deadline = Date.now() + 2_000;
+      while (assess.mock.calls.length < 2 && Date.now() < deadline) await delay(5);
+      expect(assess.mock.calls.length).toBe(2);
+      while (releases.length > 0 || assess.mock.calls.length < 4) {
+        for (const release of releases.splice(0)) release();
+        if (assess.mock.calls.length >= 4 && active === 0) break;
+        await delay(5);
+        if (Date.now() > deadline + 2_000) throw new Error("Azure assessment workers did not drain");
+      }
+      await Promise.all(assessments);
+      expect(assess).toHaveBeenCalledTimes(4);
+      expect(maximumActive).toBe(2);
+    } finally {
+      sockets.forEach((socket) => socket.close());
+      await fixture.close();
+    }
+  });
+
+  it("keeps successful Azure scores when another aligned block fails", async () => {
+    const service = createService().service;
+    service.transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({
+      provider, transcript: "First block second block", words: [{ text: "First block", start: 0, end: 24.9 }, { text: "second block", start: 25, end: 30 }],
+    }));
+    const assess = vi.fn(async (_audio: Buffer, _format: "wav", referenceText: string) => {
+      if (referenceText === "second block") throw new Error("Azure block failed");
+      return { provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 88, fluency: 77, prosody: null } };
+    });
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      sendFrames(socket, 293);
+      const complete = waitForType(socket, "complete");
+      const assessment = waitForType(socket, "assessment");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await complete;
+      await expect(assessment).resolves.toMatchObject({
+        status: "available", durationMs: 24_900, segmented: true,
+        scores: { accuracy: 88, fluency: 77, prosody: null },
+      });
+      expect(assess).toHaveBeenCalledTimes(2);
+    } finally {
+      socket.close();
+      await fixture.close();
+    }
+  });
+
+  it("returns complete then one unavailable assessment when word timing is missing", async () => {
+    const service = createService().service;
+    service.transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({ provider, transcript: "timing unavailable" }));
+    const assess = vi.fn();
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const complete = waitForType(socket, "complete");
+      const assessment = waitForType(socket, "assessment");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await expect(complete).resolves.toMatchObject({ status: "complete", transcript: "timing unavailable" });
+      await expect(assessment).resolves.toMatchObject({ status: "unavailable" });
       expect(assess).not.toHaveBeenCalled();
     } finally {
       socket.close();
+      await fixture.close();
+    }
+  });
+
+  it("aborts Azure on disconnect and zeros its temporary slice buffer", async () => {
+    let slice: Buffer | undefined;
+    let assessmentSignal: AbortSignal | undefined;
+    const assess = vi.fn((audio: Buffer, _format: "wav", _referenceText: string, signal?: AbortSignal) => {
+      slice = audio;
+      assessmentSignal = signal;
+      return new Promise<never>((_resolve, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+    });
+    const fixture = await openStreamServer(createService().service, { assess } as unknown as PronunciationAssessmentService);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const complete = waitForType(socket, "complete");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await complete;
+      const deadline = Date.now() + 1_000;
+      while (!slice && Date.now() < deadline) await delay(5);
+      expect(slice).toBeDefined();
+      const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+      socket.terminate();
+      await closed;
+      const cleanupDeadline = Date.now() + 1_000;
+      while (slice?.some((byte) => byte !== 0) && Date.now() < cleanupDeadline) await delay(5);
+      expect(assessmentSignal?.aborted).toBe(true);
+      expect(slice?.every((byte) => byte === 0)).toBe(true);
+    } finally {
+      socket.terminate();
       await fixture.close();
     }
   });

@@ -45,7 +45,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `AZURE_SPEECH_REGION` | — | Azure Speech resource region, such as `brazilsouth`. Required only for voice transcription. |
 | `AZURE_SPEECH_TIMEOUT_MS` | `20000` | Positive Azure Speech request timeout in milliseconds. |
 | `AZURE_SPEECH_ASSESSMENT_ENABLED` | `false` | Set to `true` to enable optional experimental pronunciation signals. Requires Azure Speech key and region. |
-| `AZURE_SPEECH_ASSESSMENT_TIMEOUT_MS` | `8000` | Positive total deadline shared by ffmpeg conversion and the Azure scripted assessment request. |
+| `AZURE_SPEECH_ASSESSMENT_TIMEOUT_MS` | `8000` | Positive per-block deadline shared by ffmpeg conversion and one Azure scripted assessment request. |
 | `OPENROUTER_API_KEY` | — | OpenRouter key. Enables the two Whisper transcription choices and stays server-side. |
 | `TRANSCRIPTION_TIMEOUT_MS` | `55000` | Overall OpenRouter time budget for the final Whisper transcription, including bounded 429 retries. |
 | `TRANSCRIPTION_STREAM_MAX_DURATION_MS` | `180000` | Maximum duration for one PCM WebSocket response. Must be a positive integer. |
@@ -96,7 +96,7 @@ not a gate for interview practice.
 | `GET` | `/health` | Returns `{ "status": "ok" }`. |
 | `GET` | `/api/v1/transcriptions/providers` | Returns the configured transcription choices for the local comparison selector. |
 | `POST` | `/api/v1/transcriptions` | Receives a completed 16 kHz mono WAV response (maximum 30 seconds), returns a transcription from the selected configured provider. This compatibility route is separate from streaming. Audio is not persisted. |
-| `WS` | `/api/v1/transcriptions/stream` | Protocol v2 receives 16 kHz mono signed 16-bit PCM frames plus RMS `level`, then `finalize` or `cancel`. It makes no Whisper requests during capture. On `finalize`, it assembles one WAV directly from in-memory frames, makes one final Whisper request, and returns one `complete` message with the final transcript. Audio is bounded by 180 seconds/6 MiB per session, up to 8 active sessions, 4 concurrent final Whisper requests, and 4 queued final requests by default. Capacity overflow returns a recoverable error. Audio is cleared on completion, error, cancellation, and disconnect; it is never persisted or logged. Optional Azure scripted assessment receives the final WAV and transcript only when audio is at most 30 seconds; longer audio reports `unavailable`. Azure never blocks delivery of the Whisper transcript. |
+| `WS` | `/api/v1/transcriptions/stream` | Protocol v2 receives 16 kHz mono signed 16-bit PCM frames plus RMS `level`, then `finalize` or `cancel`. It makes no Whisper requests during capture. On `finalize`, it assembles one WAV directly from in-memory frames and makes exactly one final Whisper request with `verbose_json` and word timestamps. It returns one `complete` message with the final transcript. Audio is bounded by 180 seconds/6 MiB per session, up to 8 active sessions, 4 concurrent final Whisper requests, and 4 queued final requests by default. Capacity overflow returns a recoverable error. Audio is cleared on completion, error, cancellation, and disconnect; it is never persisted or logged. Optional Azure assessment runs after `complete`, using timestamp-aligned word groups with a 25-second target (never over 30 seconds), and emits one aggregate `assessment` message. Missing or invalid word timing preserves the transcript and makes assessment unavailable. |
 | `POST` | `/api/v1/thinking` | Assesses technical answer coverage and English communication from a supplied transcript. Uses OpenRouter credentials held by the backend. |
 | `POST` | `/api/v1/thinking/next-turn` | Chooses one brief, transcript-grounded follow-up or advances to the next fixed interview question. The model must provide a short literal transcript anchor, validated server-side and omitted from the public response. Provider errors and invalid output deterministically return `NEXT`. |
 | `POST` | `/api/v1/thinking/report` | Generates one structured final report from up to 30 ordered question/answer pairs and role context. In the voice-only room, candidate answers are final speech transcripts. It separates technical content, English communication, and practical priorities; it does not assess vocal delivery or return numeric scores. |
@@ -211,11 +211,24 @@ through `AUDIO_E2E_*` environment variables:
 npm run test:audio-e2e -- --backend-url http://localhost:3001 --speed 1 --timeout-ms 120000
 ```
 
+To wait for the post-completion Azure assessment and require an available
+segmented result, add `--require-assessment` or set
+`AUDIO_E2E_REQUIRE_ASSESSMENT=true`. The wait is bounded to 30 seconds (or
+`--timeout-ms`, if shorter). The default remains off, so standard harness runs
+finish as soon as final transcription completes. When enabled, the JSON
+includes only assessment status, segmented status, assessed duration, and
+booleans indicating which aggregate score dimensions are available; it never
+prints score values or assessment text. If the socket closes first, or the
+assessment deadline expires, `assessmentStatus` is `closed` or `timeout` and
+the run fails without extending the wait indefinitely.
+
 Supported options are `--backend-url`, `--text`, `--speed`,
 `--speech-threshold`, `--timeout-ms`, `--max-duration-seconds`, and `--ffmpeg`.
 Their environment equivalents are `AUDIO_E2E_BACKEND_URL`, `AUDIO_E2E_TEXT`,
 `AUDIO_E2E_SPEED`, `AUDIO_E2E_SPEECH_THRESHOLD`, `AUDIO_E2E_TIMEOUT_MS`,
-`AUDIO_E2E_MAX_DURATION_SECONDS`, and `AUDIO_E2E_FFMPEG`. The URL must be a
+`AUDIO_E2E_MAX_DURATION_SECONDS`, `AUDIO_E2E_FFMPEG`, and
+`AUDIO_E2E_REQUIRE_ASSESSMENT` (`true` enables the optional assessment wait).
+The URL must be a
 plain HTTP(S) origin/path without credentials or query parameters. Keep API
 keys in the backend's ignored `.env`; the harness has no credential option and
 does not print environment values or transcript text. Use the environment
@@ -224,8 +237,9 @@ variable for custom text if it should not appear in shell history.
 The harness removes its temporary MP3 and PCM files on success or failure.
 Running it incurs local CPU time for Kokoro and one logical final transcription
 through the configured Whisper provider (a 429 can trigger up to two bounded
-retries). Azure assessment is skipped for this default answer because it is
-longer than 30 seconds. Check current provider pricing before repeated runs;
+retries). When Azure assessment is enabled and Whisper returns valid word
+timestamps, the long default answer can trigger multiple aligned Azure calls
+with at most two concurrent requests. Check current provider pricing before repeated runs;
 do not use real candidate recordings or credentials as test text.
 
 ### Configure Azure Speech locally
@@ -271,7 +285,7 @@ uses a separate 6-second timeout by default; answer assessment retains its
 15-second timeout. The browser cancels orchestration requests after 7 seconds
 so its fallback stays slightly outside the backend timeout.
 
-Set `AZURE_SPEECH_ASSESSMENT_ENABLED=true` to assess the complete final answer using the completed Whisper transcript as scripted `ReferenceText`. Azure short-audio REST assessment is attempted only for answers up to 30 seconds; longer answers receive `unavailable` without an Azure request. The assessment is experimental and may inherit recognition errors from Whisper. Azure failures/timeouts never block or replace the Whisper transcript. These signals are not an English-level, readiness, proficiency, or accent measure. Microsoft's pricing material lists some pronunciation-assessment enhanced features under Standard/pay-as-you-go and Prosody as an additional paid score, so verify current pricing and tier terms for the target resource; this implementation does not assume S0 is required. Keep the toggle off when these costs are not desired. See Microsoft's [Pronunciation Assessment guide](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/how-to-pronunciation-assessment), [short-audio REST format limits](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/rest-speech-to-text-short), and [pricing guidance](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/pronunciation-assessment-tool).
+Set `AZURE_SPEECH_ASSESSMENT_ENABLED=true` to assess the final answer using the completed Whisper transcript's word timestamps. The single final Whisper request asks OpenRouter for `verbose_json` and word-level timestamps. When valid, ordered, in-range word timings are available, the backend groups adjacent words deterministically into audio slices targeted at 25 seconds each, preserving pauses inside a group. Each Azure scripted `ReferenceText` contains only the words in its matching slice. At most two Azure requests run concurrently. Scores are duration-weighted across successful slices; any successful score dimensions are returned in one `available` assessment with `segmented: true`, and total Azure failure or unusable timing returns `unavailable`. Assessment starts after the `complete` transcript event, so it never delays or replaces the transcript. The assessment is experimental and may inherit recognition errors from Whisper. These signals are not an English-level, readiness, proficiency, or accent measure. Microsoft's pricing material lists some pronunciation-assessment enhanced features under Standard/pay-as-you-go and Prosody as an additional paid score, so verify current pricing and tier terms for the target resource; this implementation does not assume S0 is required. Keep the toggle off when these costs are not desired. See Microsoft's [Pronunciation Assessment guide](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/how-to-pronunciation-assessment), [short-audio REST format limits](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/rest-speech-to-text-short), and [pricing guidance](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/pronunciation-assessment-tool).
 
 ### Generate interviewer speech
 

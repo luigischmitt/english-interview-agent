@@ -1,5 +1,5 @@
 import { TranscriptionUnavailableError } from "./errors.js";
-import type { AudioFormat, TranscriptionProvider, TranscriptionResult, TranscriptionService } from "./types.js";
+import type { AudioFormat, TranscriptionProvider, TranscriptionResult, TranscriptionService, TranscriptionWord } from "./types.js";
 
 type OpenRouterWhisperTranscriptionServiceOptions = {
   key: string;
@@ -8,7 +8,7 @@ type OpenRouterWhisperTranscriptionServiceOptions = {
   sleepImplementation?: (milliseconds: number) => Promise<void>;
 };
 
-type OpenRouterResponse = { text?: string };
+type OpenRouterResponse = { text?: string; words?: unknown };
 
 const modelForProvider: Record<Exclude<TranscriptionProvider, "azure">, string> = {
   "whisper-large-v3": "openai/whisper-large-v3",
@@ -39,6 +39,8 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
       form.set("file", new Blob([new Uint8Array(audio)], { type: format === "wav" ? "audio/wav" : `audio/${format}` }), `response.${format}`);
       form.set("language", "en");
       form.set("temperature", "0");
+      form.set("response_format", "verbose_json");
+      form.append("timestamp_granularities[]", "word");
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const response = await this.fetchImplementation("https://openrouter.ai/api/v1/audio/transcriptions", {
           method: "POST",
@@ -63,7 +65,7 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
         const result = await response.json() as OpenRouterResponse;
         const transcript = result.text?.trim();
         if (!transcript) throw new TranscriptionUnavailableError("OpenRouter could not recognize a response in this recording.");
-        return { provider, transcript };
+        return { provider, transcript, words: parseWhisperWords(result.words, wavDurationSeconds(audio)) };
       }
       throw new TranscriptionUnavailableError("OpenRouter returned HTTP 429 after retries.");
     } catch (error) {
@@ -71,6 +73,31 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
       throw new TranscriptionUnavailableError("OpenRouter transcription is unavailable right now.", { cause: error });
     }
   }
+}
+
+export function parseWhisperWords(value: unknown, durationSeconds: number): TranscriptionWord[] | undefined {
+  if (!Array.isArray(value) || !Number.isFinite(durationSeconds) || durationSeconds <= 0) return undefined;
+  const words: TranscriptionWord[] = [];
+  let previousEnd = 0;
+  for (const item of value) {
+    if (!item || typeof item !== "object") return undefined;
+    const word = item as { word?: unknown; start?: unknown; end?: unknown };
+    if (typeof word.word !== "string" || !word.word.trim()
+      || typeof word.start !== "number" || !Number.isFinite(word.start) || word.start < 0
+      || typeof word.end !== "number" || !Number.isFinite(word.end) || word.end <= word.start
+      || word.end > durationSeconds || word.start < previousEnd) return undefined;
+    words.push({ text: word.word, start: word.start, end: word.end });
+    previousEnd = word.end;
+  }
+  return words.length ? words : undefined;
+}
+
+function wavDurationSeconds(audio: Buffer): number {
+  if (audio.length < 44 || audio.toString("ascii", 0, 4) !== "RIFF" || audio.toString("ascii", 8, 12) !== "WAVE") return 0;
+  const sampleRate = audio.readUInt32LE(24);
+  const bytesPerSecond = audio.readUInt32LE(28);
+  const dataLength = audio.readUInt32LE(40);
+  return sampleRate > 0 && bytesPerSecond > 0 ? Math.min(dataLength, audio.length - 44) / bytesPerSecond : 0;
 }
 
 function sleepWithSignal(sleep: (milliseconds: number) => Promise<void>, milliseconds: number, signal: AbortSignal): Promise<void> {
