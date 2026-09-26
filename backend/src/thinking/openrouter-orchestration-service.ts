@@ -51,6 +51,11 @@ function hasExactWordSequence(text: string, excerpt: string): boolean {
   return needle.length > 0 && haystack.some((_, index) => needle.every((word, offset) => haystack[index + offset] === word));
 }
 
+function hasExactAnchorMention(text: string, anchor: string): boolean {
+  const escapedAnchor = anchor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapedAnchor}(?![\\p{L}\\p{N}])`, "iu").test(text);
+}
+
 function repeatsTranscriptPhrase(text: string, transcript: string): boolean {
   const words = text.trim().split(/\s+/u).filter(Boolean);
   return words.some((_, index) => words.length - index >= 3 && hasExactWordSequence(transcript, words.slice(index, index + 3).join(" ")));
@@ -81,26 +86,37 @@ function canonicalContentWords(text: string): Set<string> {
   }));
 }
 
-function anchorContextWords(transcript: string, anchor: string): Set<string> {
-  const sentence = transcript.split(/(?<=[.!?])\s+/u).find((part) => hasExactWordSequence(part, anchor));
-  return sentence ? canonicalContentWords(sentence) : new Set();
+function anchorContextWindows(transcript: string, anchor: string): Set<string>[] {
+  const normalizeToken = (token: string) => token.replace(/^[^\p{L}\p{N}]+/gu, "").replace(/[^\p{L}\p{N}+#]+$/gu, "").toLocaleLowerCase();
+  const transcriptTokens = transcript.split(/\s+/u).map(normalizeToken).filter(Boolean);
+  const anchorTokens = anchor.split(/\s+/u).map(normalizeToken).filter(Boolean);
+  const windows: Set<string>[] = [];
+  for (let start = 0; start <= transcriptTokens.length - anchorTokens.length; start += 1) {
+    if (!anchorTokens.every((token, offset) => transcriptTokens[start + offset] === token)) continue;
+    const contextStart = Math.max(0, start - 5);
+    const contextEnd = Math.min(transcriptTokens.length, start + anchorTokens.length + 5);
+    const words = canonicalContentWords(transcriptTokens.slice(contextStart, contextEnd).join(" "));
+    windows.push(words);
+  }
+  return windows;
 }
 
 function meaningfullyReferencesAnchor(question: string, anchor: string, transcript: string): boolean {
   const questionWords = canonicalContentWords(question);
-  const localContextWords = anchorContextWords(transcript, anchor);
-  const sharedLocalWords = [...questionWords].filter((word) => localContextWords.has(word)).length;
-  const anchorWords = canonicalContentWords(anchor);
-  const sharedAnchorWords = [...questionWords].filter((word) => anchorWords.has(word)).length;
+  const questionContainsAnchor = hasExactAnchorMention(question, anchor);
+  const canonicalAnchorWords = canonicalContentWords(anchor);
+  const anchorTermCount = Math.max(1, canonicalAnchorWords.size);
+  const sharedAnchorWords = [...questionWords].filter((word) => canonicalAnchorWords.has(word)).length + (questionContainsAnchor && canonicalAnchorWords.size === 0 ? 1 : 0);
   if (sharedAnchorWords === 0) return false;
-  if (sharedLocalWords >= 2) return true;
-  if (anchorWords.size !== 1) return false;
+  const contextWindows = anchorContextWindows(transcript, anchor);
+  const maxSharedLocalWords = Math.max(0, ...contextWindows.map((context) => [...questionWords].filter((word) => context.has(word)).length + (questionContainsAnchor && canonicalAnchorWords.size === 0 ? 1 : 0)));
+  if (maxSharedLocalWords >= 2) return true;
+  if (anchorTermCount !== 1) return false;
 
-  const escapedAnchor = anchor.toLocaleLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const singleTechQuestion = new RegExp(`^(?:why (?:did you )?(?:choose|select|use)|what made you (?:choose|select|use)|how did you (?:choose|select|use))\\b.{0,70}\\b${escapedAnchor}\\b[^?]*\\?$`, "iu");
-  const questionSpecificWords = new Set([...questionWords].filter((word) => !anchorWords.has(word)));
-  const novelSpecificWords = [...questionSpecificWords].filter((word) => !localContextWords.has(word));
-  return novelSpecificWords.length === 0 && singleTechQuestion.test(question.trim());
+  const safeChoiceQuestion = /^(?:why (?:did you )?(?:choose|select|use)|what made you (?:choose|select|use)|how did you (?:choose|select|use))\b/iu.test(question.trim());
+  const questionSpecificWords = new Set([...questionWords].filter((word) => !canonicalAnchorWords.has(word)));
+  const novelSpecificWords = [...questionSpecificWords].filter((word) => !contextWindows.some((context) => context.has(word)));
+  return questionContainsAnchor && novelSpecificWords.length === 0 && safeChoiceQuestion;
 }
 
 function containsNoiseToken(text: string): boolean {
@@ -176,7 +192,8 @@ function hasValidAnchorWordCount(anchor: string, minimum: number, maximum: numbe
   if (words.length > 1) return true;
   const token = words[0].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLocaleLowerCase();
   const originalToken = words[0].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
-  return token.length >= 2 && /[\p{L}\p{N}]/u.test(token) && !trivialSingleWordAnchors.has(token) && /^[\p{Lu}\p{N}]/u.test(originalToken);
+  const symbolicTechnology = /[^\p{L}\p{N}]/u.test(words[0]) && /^[\p{Lu}]/u.test(originalToken);
+  return (token.length >= 2 || symbolicTechnology) && /[\p{L}\p{N}]/u.test(token) && !trivialSingleWordAnchors.has(token) && /^[\p{Lu}\p{N}]/u.test(originalToken);
 }
 
 function parseDecision(content: unknown, input: InterviewOrchestrationInput, onInvalid: (reason: OrchestrationFallbackReason) => void): Pick<InterviewOrchestrationResult, "decision" | "followUpQuestion" | "nextQuestion" | "acknowledgement"> | null {
@@ -202,7 +219,7 @@ function parseDecision(content: unknown, input: InterviewOrchestrationInput, onI
   const anchor = value.anchor.trim();
   const question = value.followUpQuestion.trim();
   if (anchor.length > 100 || containsNoiseToken(anchor) || containsNoiseToken(question) || !hasValidAnchorWordCount(anchor, 1, 8)) return reject("invalid_anchor");
-  if (!hasExactWordSequence(input.transcript, anchor)) return reject("anchor_not_in_transcript");
+  if (!hasExactAnchorMention(input.transcript, anchor)) return reject("anchor_not_in_transcript");
   if (!meaningfullyReferencesAnchor(question, anchor, input.transcript)) return reject("anchor_not_referenced");
   const wordCount = question.split(/\s+/).filter(Boolean).length;
   if (question.length < 8 || question.length > 180 || wordCount < 5 || wordCount > 24 || !question.endsWith("?") || (question.match(/\?/g) ?? []).length !== 1 || /[\r\n]/.test(question)) return reject("invalid_follow_up_question");

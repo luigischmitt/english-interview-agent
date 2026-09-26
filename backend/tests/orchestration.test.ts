@@ -96,9 +96,22 @@ describe("OpenRouter next-turn orchestration", () => {
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
   });
 
+  it.each(["Go", "C++"]) ("preserves short or symbolic technology anchors (%s)", async (technology) => {
+    const answer = { ...input, transcript: `We chose ${technology} for this service.`, askedQuestions: [input.currentQuestion] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: `Why did you choose ${technology}?`, nextQuestion: null, anchor: technology, acknowledgement: null };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
+  });
+
+  it("checks every occurrence when the first anchor occurrence is only a fragment", async () => {
+    const answer = { ...input, transcript: "Redis. We used Redis to cache account profiles.", askedQuestions: [input.currentQuestion] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "Why did you choose Redis for caching?", nextQuestion: null, anchor: "Redis", acknowledgement: null };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
+  });
+
   it.each([
     { anchor: "Kafka", transcript: "We used Redis to cache account profiles.", reason: "anchor_not_in_transcript" },
-    { anchor: "Redis", transcript: "I used Redis to cache profiles. I also coached the marketing team on user interviews and onboarding copy.", reason: "anchor_not_referenced" },
+    { anchor: "C++", transcript: "We use C# for this service.", reason: "anchor_not_in_transcript" },
+    { anchor: "Redis", transcript: "I used Redis to cache profiles, and coached the marketing team on user interviews and onboarding copy.", reason: "anchor_not_referenced" },
     { anchor: "Redis", transcript: "We used Redis on the project.", reason: "anchor_not_referenced" },
   ])("reports a safe, distinct anchor validation reason ($reason)", async ({ anchor, transcript, reason }) => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
