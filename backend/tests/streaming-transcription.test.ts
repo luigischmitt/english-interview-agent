@@ -84,14 +84,25 @@ async function prepareAnswer(socket: WebSocket, frames = 8) {
 }
 
 describe("voice activity detection", () => {
-  it("requires 200 ms of speech and 2.7 seconds of trailing silence", () => {
+  it("requires 200 ms of speech and 3.5 seconds of trailing silence", () => {
     const vad = new VoiceActivityDetector();
     expect(vad.update(0.04, 0).speechStarted).toBe(false);
     expect(vad.update(0.04, 100).speechStarted).toBe(false);
     expect(vad.update(0.04, 200).speechStarted).toBe(true);
     expect(vad.update(0.005, 800).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 3_499).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 3_500).shouldFinalize).toBe(true);
+    expect(vad.update(0.005, 4_299).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 4_300).shouldFinalize).toBe(true);
+  });
+
+  it("keeps a three-second thinking pause and finalizes after confident silence", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    vad.update(0.04, 200);
+    vad.update(0.005, 800);
+    expect(vad.update(0.005, 3_800).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 4_299).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 4_300).shouldFinalize).toBe(true);
   });
 
   it("does not reset the silence window for a brief transient noise", () => {
@@ -102,8 +113,8 @@ describe("voice activity detection", () => {
     vad.update(0.005, 800);
     vad.update(0.05, 2_500);
     vad.update(0.005, 2_600);
-    expect(vad.update(0.005, 3_499).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 3_500).shouldFinalize).toBe(true);
+    expect(vad.update(0.005, 4_299).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 4_300).shouldFinalize).toBe(true);
   });
 
   it("resets the silence window after sustained speech resumes", () => {
@@ -117,8 +128,8 @@ describe("voice activity detection", () => {
     vad.update(0.05, 2_700);
     vad.update(0.05, 2_800);
     vad.update(0.005, 2_900);
-    expect(vad.update(0.005, 5_599).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 5_600).shouldFinalize).toBe(true);
+    expect(vad.update(0.005, 6_399).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 6_400).shouldFinalize).toBe(true);
   });
 
   it("does not finalize when speech resumes just before the silence deadline", () => {
@@ -132,8 +143,56 @@ describe("voice activity detection", () => {
     vad.update(0.05, 3_600);
     vad.update(0.05, 3_700);
     vad.update(0.005, 3_800);
-    expect(vad.update(0.005, 6_499).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 6_500).shouldFinalize).toBe(true);
+    expect(vad.update(0.005, 7_299).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 7_300).shouldFinalize).toBe(true);
+  });
+
+  it("does not finalize on sustained mid-band activity, then uses the bounded fallback", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    vad.update(0.04, 200);
+    vad.update(0.005, 800);
+    let update = vad.update(0.02, 1_000);
+    for (let now = 1_100; now <= 6_799; now += 100) update = vad.update(0.02, now);
+    expect(update.shouldFinalize).toBe(false);
+    expect(vad.update(0.02, 6_800).shouldFinalize).toBe(true);
+  });
+
+  it("does not use the mid-band fallback for variable quiet speech lasting over 5.8 seconds", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    vad.update(0.04, 200);
+    vad.update(0.005, 800);
+    for (let now = 1_000; now <= 8_000; now += 100) {
+      const level = now % 400 < 200 ? 0.019 : 0.023;
+      expect(vad.update(level, now).shouldFinalize).toBe(false);
+    }
+  });
+
+  it("blocks the fallback immediately when a speech-level frame arrives at its deadline", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    vad.update(0.04, 200);
+    vad.update(0.005, 800);
+    for (let now = 1_000; now < 6_800; now += 100) vad.update(0.02, now);
+    expect(vad.update(0.04, 6_800).shouldFinalize).toBe(false);
+  });
+
+  it("cancels pending silence when low-level voice is sustained", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    vad.update(0.04, 200);
+    vad.update(0.005, 800);
+    vad.update(0.02, 3_000);
+    vad.update(0.02, 3_100);
+    expect(vad.update(0.02, 4_300).shouldFinalize).toBe(false);
+    vad.update(0.005, 4_400);
+    expect(vad.update(0.005, 7_899).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 7_900).shouldFinalize).toBe(true);
   });
 
   it("uses hysteresis above the calibrated noise floor", () => {
@@ -473,6 +532,7 @@ describe("versioned transcription WebSocket", () => {
   it("keeps Whisper failure generic and makes only one provider call", async () => {
     const { service, transcribe } = createService();
     transcribe.mockRejectedValue(new Error("OpenRouter returned HTTP 429 with secret transcript content"));
+    const diagnostic = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const fixture = await openStreamServer(service);
     const socket = await openSocket(fixture.url);
     try {
@@ -482,7 +542,34 @@ describe("versioned transcription WebSocket", () => {
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
       await expect(error).resolves.toMatchObject({ code: "UPSTREAM_RATE_LIMITED", message: expect.not.stringContaining("secret") });
       expect(transcribe).toHaveBeenCalledTimes(1);
+      const streamLogs = diagnostic.mock.calls.flat().filter((entry) => typeof entry === "string" && entry.includes('"event":"transcription_stream"'));
+      expect(streamLogs.length).toBeGreaterThan(0);
+      expect(streamLogs.join(" ")).not.toContain("secret");
+      expect(streamLogs.join(" ")).not.toContain("OpenRouter");
     } finally {
+      diagnostic.mockRestore();
+      socket.close();
+      await fixture.close();
+    }
+  });
+
+  it("rejects an untrusted finalize reason without logging its value", async () => {
+    const { service, transcribe } = createService();
+    const diagnostic = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fixture = await openStreamServer(service);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket);
+      const error = waitForType(socket, "error");
+      socket.send(JSON.stringify({ type: "finalize", reason: "secret-transcript-value" }));
+      await expect(error).resolves.toMatchObject({ code: "INVALID_STREAM_MESSAGE" });
+      expect(transcribe).not.toHaveBeenCalled();
+      const streamLogs = diagnostic.mock.calls.flat().filter((entry) => typeof entry === "string" && entry.includes('"event":"transcription_stream"'));
+      expect(streamLogs.join(" ")).toContain("invalid_message");
+      expect(streamLogs.join(" ")).not.toContain("secret-transcript-value");
+    } finally {
+      diagnostic.mockRestore();
       socket.close();
       await fixture.close();
     }
