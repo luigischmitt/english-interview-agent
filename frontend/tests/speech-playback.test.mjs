@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+import { composeAcknowledgedQuestion, composeContextualOpening, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
 
 test("the first interviewer playback combines a short introduction and the first question", () => {
   assert.equal(
@@ -8,6 +8,17 @@ test("the first interviewer playback combines a short introduction and the first
     "Welcome. Take your time. Tell me about yourself.",
   );
   assert.equal(composeOpeningUtterance(" Welcome. ", " Tell me about yourself. "), "Welcome. Tell me about yourself.");
+});
+
+test("the opening uses only configured role context and interview duration", () => {
+  assert.equal(
+    composeContextualOpening({ role: "Backend Engineer", seniority: "mid-level", focus: "reliability", duration: "10" }, "Tell me about a project."),
+    "Thanks for joining. We have about 10 minutes for your mid-level Backend Engineer interview. I’ll focus on reliability. Take your time. Tell me about a project.",
+  );
+});
+
+test("the next spoken and captioned utterance includes acknowledgment and the full question", () => {
+  assert.equal(composeAcknowledgedQuestion("Thanks for sharing “bounded retries.”", "What limit would you set?"), "Thanks for sharing “bounded retries.” What limit would you set?");
 });
 
 test("interviewer speech is split into complete natural sentence excerpts", () => {

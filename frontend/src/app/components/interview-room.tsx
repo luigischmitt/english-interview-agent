@@ -15,7 +15,7 @@ import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-regi
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback } from "../hooks/use-speech-playback";
-import { composeOpeningUtterance, resolveInterviewerCaption, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
+import { composeAcknowledgedQuestion, composeContextualOpening, resolveInterviewerCaption, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; state: VoiceAssessmentState };
 type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
@@ -64,6 +64,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const [question, setQuestion] = useState<InterviewQuestion>(() => questions[0]);
   const [questionSequenceNumber, setQuestionSequenceNumber] = useState(1);
   const [followUpUsed, setFollowUpUsed] = useState(false);
+  const [acknowledgement, setAcknowledgement] = useState("");
   const [phase, setPhase] = useState<InterviewPhase>("introducing");
   const [answers, setAnswers] = useState<InterviewAnswers>({});
   const [reportTurns, setReportTurns] = useState<InterviewReportTurnSource[]>([]);
@@ -88,9 +89,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const phaseRef = useRef(phase);
   const currentQuestionIdRef = useRef(question.id);
   const elapsedSecondsRef = useRef(0);
-  const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId } = useInterviewPersistence(config, question, questionSequenceNumber, phase);
+  const openingUtterance = composeContextualOpening(config, question.prompt);
+  const currentUtterance = phase === "introducing" ? openingUtterance : composeAcknowledgedQuestion(acknowledgement, question.prompt);
+  const persistenceQuestion = { ...question, prompt: currentUtterance };
+  const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId } = useInterviewPersistence(config, persistenceQuestion, questionSequenceNumber, phase);
   const { elapsed, seconds, remaining, timeLimitReached } = useInterviewSession(phase, durationMinutes);
-  const intro = "Thanks for joining. Take your time.";
 
   useLayoutEffect(() => {
     phaseRef.current = phase;
@@ -111,10 +114,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (autoCaptureVoice) setAutoCaptureQuestionId(question.id);
   }, [autoCaptureVoice, question.id]);
   const isInterviewerSpeaking = phase === "introducing" || phase === "speaking";
-  const openingUtterance = composeOpeningUtterance(intro, question.prompt);
   const speechSegments = useMemo(
-    () => splitInterviewerSpeech(phase === "introducing" ? openingUtterance : question.prompt),
-    [openingUtterance, phase, question.prompt],
+    () => splitInterviewerSpeech(currentUtterance),
+    [currentUtterance],
   );
   const { activeSegment, speechMessage, setSpeechMessage, cancelPlayback } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
@@ -163,7 +165,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     };
     enqueueTurn(candidateTurn);
     setReportTurns((current) => [...current,
-      { sequenceNumber: questionSequenceNumber, speaker: "interviewer", content: question.prompt },
+      { sequenceNumber: questionSequenceNumber, speaker: "interviewer", content: currentUtterance },
       { sequenceNumber: candidateSequenceNumber, speaker: "candidate", content: savedAnswer },
     ]);
     setVoiceTranscription({ status: "idle" });
@@ -195,6 +197,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) {
         transitionPhase("ending");
       } else if (decision.decision === "FOLLOW_UP") {
+        setAcknowledgement(decision.acknowledgement);
         setQuestion({ ...question, id: `${question.id}-follow-up`, prompt: decision.followUpQuestion, cue: "Uma pergunta curta para aprofundar sua resposta." });
         setFollowUpUsed(true);
         setQuestionSequenceNumber((sequence) => sequence + 2);
@@ -202,9 +205,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       } else if (!canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, currentIndex + 1, questions.length)) {
         transitionPhase("ending");
       } else {
+        setAcknowledgement(decision.acknowledgement);
         const nextIndex = currentIndex + 1;
         setCurrentIndex(nextIndex);
-        setQuestion(questions[nextIndex]);
+        setQuestion({ ...questions[nextIndex], prompt: decision.nextQuestion ?? questions[nextIndex].prompt });
         setFollowUpUsed(false);
         setQuestionSequenceNumber((sequence) => sequence + 2);
         transitionPhase("speaking");
@@ -318,7 +322,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const persistenceLabel = persistenceState === "saved" ? "sessão salva na conta" : persistenceState === "local" ? "salva apenas no estado local da sessão; sincronização pendente" : "salvando na conta…";
   const reportCaption = reportState.status === "pending" ? "Montando seu relatório final…" : reportState.status === "unavailable" ? "O relatório detalhado não ficou disponível para esta sessão." : "Relatório da prática";
   const isOpeningQuestion = currentIndex === 0 && questionSequenceNumber === 1 && !followUpUsed;
-  const interviewerFallbackText = phase === "introducing" && isOpeningQuestion ? openingUtterance : question.prompt;
+  const interviewerFallbackText = phase === "introducing" && isOpeningQuestion ? openingUtterance : currentUtterance;
   const currentActiveSegment = activeSegment && speechSegments.includes(activeSegment) ? activeSegment : null;
   const interviewerCaption = resolveInterviewerCaption({
     audioEnabled: config.playInterviewerAudio,
@@ -327,7 +331,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     activeSegment: currentActiveSegment,
     firstSegment: speechSegments[0],
     fallbackText: interviewerFallbackText,
-    questionPrompt: question.prompt,
+    questionPrompt: currentUtterance,
   });
   const showInterviewerCaption = config.showQuestionCaptions || !config.playInterviewerAudio || Boolean(speechMessage);
 

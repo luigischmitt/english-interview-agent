@@ -2,6 +2,20 @@ export function composeOpeningUtterance(introduction, firstQuestion) {
   return [introduction.trim(), firstQuestion.trim()].filter(Boolean).join(" ");
 }
 
+export function composeContextualOpening(config, firstQuestion) {
+  const role = config.role?.trim() || "the role";
+  const seniority = config.seniority?.trim();
+  const focus = config.focus?.trim();
+  const minutes = Number.parseInt(config.duration, 10) || 5;
+  const level = seniority ? `${seniority} ${role}` : role;
+  const focusLine = focus ? `I’ll focus on ${focus}.` : "I’ll ask about your experience and decisions.";
+  return `Thanks for joining. We have about ${minutes} minutes for your ${level} interview. ${focusLine} Take your time. ${firstQuestion.trim()}`;
+}
+
+export function composeAcknowledgedQuestion(acknowledgement, question) {
+  return [acknowledgement?.trim(), question.trim()].filter(Boolean).join(" ");
+}
+
 export function splitInterviewerSpeech(text) {
   const content = text.trim();
   if (!content) return [];
