@@ -114,6 +114,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const currentUtterance = phase === "introducing"
     ? openingUtterance
     : phase === "closing" ? closingUtterance : composeAcknowledgedQuestion(acknowledgement, question.prompt);
+  const stableQuestionCaption = phase === "introducing" || phase === "closing" ? currentUtterance : question.prompt;
   const persistenceQuestion = { ...question, prompt: currentUtterance };
   const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId } = useInterviewPersistence(config, persistenceQuestion, questionSequenceNumber, phase);
   const { elapsed, seconds, remaining, timeLimitReached } = useInterviewSession(phase, durationMinutes);
@@ -370,7 +371,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     activeSegment: currentActiveSegment,
     firstSegment: speechSegments[0],
     fallbackText: interviewerFallbackText,
-    questionPrompt: currentUtterance,
+    questionPrompt: stableQuestionCaption,
   });
   const showInterviewerCaption = phase === "closing" || config.showQuestionCaptions || !config.playInterviewerAudio || Boolean(speechMessage);
 

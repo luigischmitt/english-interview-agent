@@ -66,14 +66,14 @@ test("interviewer speech is split into complete natural sentence excerpts", () =
   assert.deepEqual(splitInterviewerSpeech("  "), []);
 });
 
-test("interviewer captions show only the active excerpt during audio and the full fallback when needed", () => {
+test("interviewer captions show active excerpts during playback and only the question after playback", () => {
   const caption = (overrides = {}) => resolveInterviewerCaption({
     audioEnabled: true,
     isSpeaking: true,
     playbackFailed: false,
     activeSegment: "Take your time.",
     firstSegment: "Thanks for joining.",
-    fallbackText: "Thanks for joining. Tell me about yourself.",
+    fallbackText: "Thanks. Let’s move on to another part of your experience. Tell me about yourself.",
     questionPrompt: "Tell me about yourself.",
     ...overrides,
   });
@@ -81,8 +81,8 @@ test("interviewer captions show only the active excerpt during audio and the ful
   assert.equal(caption(), "Take your time.");
   assert.equal(caption({ activeSegment: null }), "Thanks for joining.");
   assert.equal(caption({ isSpeaking: false }), "Tell me about yourself.");
-  assert.equal(caption({ audioEnabled: false }), "Thanks for joining. Tell me about yourself.");
-  assert.equal(caption({ playbackFailed: true }), "Thanks for joining. Tell me about yourself.");
+  assert.equal(caption({ audioEnabled: false }), "Thanks. Let’s move on to another part of your experience. Tell me about yourself.");
+  assert.equal(caption({ playbackFailed: true }), "Thanks. Let’s move on to another part of your experience. Tell me about yourself.");
 });
 
 class FakeAudio {

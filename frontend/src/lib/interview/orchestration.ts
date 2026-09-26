@@ -1,5 +1,6 @@
 import type { InterviewConfig } from "./types";
 import { firstUnaskedQuestion, repeatsAskedQuestion } from "./question-history.mjs";
+import { fallbackTurnDecision, normalizeNextTurnDecision } from "./orchestration-policy.mjs";
 
 function containsNoiseToken(text: string): boolean {
   return (text.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).some((word) => /^(?:p+f{2,}|tf{3,})$/u.test(word));
@@ -19,7 +20,7 @@ export async function decideNextTurn(input: {
 }): Promise<TurnDecision> {
   const askedQuestions = [...new Set([...input.askedQuestions, input.currentQuestion])];
   const fallbackQuestion = firstUnaskedQuestion(input.remainingFixedQuestions, askedQuestions);
-  const fallback: TurnDecision = { decision: "NEXT", followUpQuestion: null, nextQuestion: fallbackQuestion, acknowledgement: "Thanks. Let’s move on to another part of your experience." };
+  const fallback: TurnDecision = fallbackTurnDecision(fallbackQuestion);
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
     const response = await fetch(`${baseUrl}/api/v1/thinking/next-turn`, {
@@ -43,10 +44,10 @@ export async function decideNextTurn(input: {
     const acknowledgement = result.acknowledgement === null ? null : typeof result.acknowledgement === "string" ? result.acknowledgement.trim() : undefined;
     const validAcknowledgement = acknowledgement === null || (typeof acknowledgement === "string" && acknowledgement.length > 0 && acknowledgement.length <= 120 && acknowledgement.split(/\s+/u).length <= 14 && !/[\r\n“”"]/u.test(acknowledgement) && !containsNoiseToken(acknowledgement));
     if (validAcknowledgement && result.decision === "NEXT" && result.followUpQuestion === null && (result.nextQuestion === null || typeof result.nextQuestion === "string")) {
-      if (result.nextQuestion === null) return { ...fallback, acknowledgement };
+      if (result.nextQuestion === null) return normalizeNextTurnDecision(result, fallbackQuestion);
       const prompt = result.nextQuestion.trim();
       const words = prompt.split(/\s+/).filter(Boolean).length;
-      if (prompt.length >= 12 && prompt.length <= 220 && words >= 5 && words <= 28 && prompt.endsWith("?") && (prompt.match(/\?/g) ?? []).length === 1 && !/[\r\n]/.test(prompt) && !containsNoiseToken(prompt) && !repeatsAskedQuestion(prompt, askedQuestions)) return { ...fallback, nextQuestion: prompt, acknowledgement };
+      if (prompt.length >= 12 && prompt.length <= 220 && words >= 5 && words <= 28 && prompt.endsWith("?") && (prompt.match(/\?/g) ?? []).length === 1 && !/[\r\n]/.test(prompt) && !containsNoiseToken(prompt) && !repeatsAskedQuestion(prompt, askedQuestions)) return normalizeNextTurnDecision({ ...result, nextQuestion: prompt }, fallbackQuestion);
     }
     if (validAcknowledgement && result.decision === "FOLLOW_UP" && typeof result.followUpQuestion === "string") {
       const prompt = result.followUpQuestion.trim();
