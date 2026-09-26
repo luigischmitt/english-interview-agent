@@ -44,7 +44,12 @@ prática da resposta em inglês da análise futura de áudio.
   conexão estão disponíveis. As políticas RLS limitam os dados ao usuário.
 - Relatório final em português disponível ao concluir: uma chamada em lote ao
   backend avalia conteúdo técnico e comunicação em inglês a partir das
-  transcrições enviadas; médias dos
+  transcrições enviadas. Cada ponto técnico, observação de inglês e exercício
+  priorizado cita a resposta e um trecho literal; observações de inglês também
+  incluem uma reformulação concreta. Se a análise falhar, perguntas e respostas
+  enviadas continuam visíveis sem serem apresentadas como análise detalhada.
+  Sem respostas, o relatório informa a ausência de evidências sem solicitar
+  uma análise. Médias dos
   sinais experimentais do Azure são calculadas por dimensão, ignorando respostas
   indisponíveis e valores ausentes. A sala aguarda avaliações pendentes por até
   1,2 segundo, sem bloquear a conclusão; resultados Azure tardios atualizam as
@@ -160,13 +165,16 @@ informa “salva apenas no estado local da sessão; sincronização pendente”.
 Os helpers `src/lib/interview/report.ts` enviam ao endpoint
 `/api/v1/thinking/report` somente configuração da vaga e pares ordenados de
 pergunta/resposta. A rota não recebe ID de sessão e faz uma única chamada
-estruturada ao Mistral. O conteúdo de relatório e os resumos de métricas Azure
+estruturada ao Mistral com deadline de 65 segundos no navegador e 30 segundos
+no backend (configurável até 60 segundos). O conteúdo de relatório e os resumos de métricas Azure
 são salvos em `interview_feedback`; RLS limita o acesso à sessão Supabase do
 usuário. Os status são `pending`, `ready` e `unavailable`. Falhas na LLM não
 impedem carregar ou salvar o resumo Azure disponível. A média ponderada por
 duração de cada sinal inclui `sampleCount` e ignora valores nulos e avaliações
 indisponíveis. O pipeline não copia a transcrição; apenas trechos curtos podem
-aparecer como evidência no relatório.
+aparecer como evidência no relatório. A versão `v2` exige associação da
+evidência à resposta correta e remove itens opcionais cuja evidência não possa
+ser validada, preservando as demais partes válidas.
 
 ## Áudio, transcrição e privacidade
 

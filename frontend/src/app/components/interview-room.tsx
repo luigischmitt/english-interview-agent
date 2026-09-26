@@ -6,7 +6,7 @@ import { MicrophoneCapture, type VoiceAssessmentState, type VoiceCaptureState, t
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { decideNextTurn } from "@/lib/interview/orchestration";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
-import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewReport, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult } from "@/lib/interview/report";
+import { answerOrdinalForSequence, createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewReport, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult } from "@/lib/interview/report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import type { AzureAssessmentSample, AzureMetricSummary, InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
@@ -52,6 +52,25 @@ function AzureVoiceReport({ summary, coverage }: { summary: AzureMetricSummary; 
         <Metric label="Prosódia" value={summary.prosody.mean} sampleCount={summary.prosody.sampleCount} />
       </dl>
       <p className="mt-4 text-xs text-muted-foreground">Cobertura: {coverage.available} de {coverage.total} respostas com sinais disponíveis.{coverage.pending ? ` ${coverage.pending} avaliação(ões) ainda em processamento; a conclusão da sessão não espera por elas.` : ""}</p>
+    </section>
+  );
+}
+
+function CapturedAnswers({ turns }: { turns: ReturnType<typeof pairInterviewTurns> }) {
+  return (
+    <section className="border-t border-base-300 pt-6" aria-labelledby="captured-answers-title">
+      <h2 id="captured-answers-title" className="text-lg font-semibold">Respostas registradas</h2>
+      {turns.length ? (
+        <ol className="mt-4 space-y-5">
+          {turns.map((turn, index) => (
+            <li key={`${turn.sequenceNumber}-${index}`} className="border-t border-base-300 pt-4">
+              <p className="text-sm font-medium">Pergunta {answerOrdinalForSequence(turns, turn.sequenceNumber) ?? index + 1}</p>
+              <p lang="en" className="mt-2 text-sm leading-6"><span className="font-medium">Pergunta:</span> {turn.question}</p>
+              <p lang="en" className="mt-2 text-sm leading-6"><span className="font-medium">Sua resposta:</span> {turn.answer}</p>
+            </li>
+          ))}
+        </ol>
+      ) : <p className="mt-2 text-sm leading-6 text-muted-foreground">Nenhuma resposta foi enviada nesta sessão. Sem respostas, não há evidência para uma análise detalhada.</p>}
     </section>
   );
 }
@@ -165,7 +184,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     };
     enqueueTurn(candidateTurn);
     setReportTurns((current) => [...current,
-      { sequenceNumber: questionSequenceNumber, speaker: "interviewer", content: currentUtterance },
+      { sequenceNumber: questionSequenceNumber, speaker: "interviewer", content: question.prompt },
       { sequenceNumber: candidateSequenceNumber, speaker: "candidate", content: savedAnswer },
     ]);
     setVoiceTranscription({ status: "idle" });
@@ -289,7 +308,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       const samples = assessmentSamples(latestEntries);
       const turns = pairInterviewTurns(reportTurnsRef.current);
       if (turns.length === 0) {
-        if (mountedRef.current) setReportState({ status: "unavailable", message: "Não há respostas nesta sessão para gerar um relatório." });
+        if (mountedRef.current) setReportState({ status: "unavailable", message: "Nenhuma resposta foi enviada. Não foi solicitada uma análise sem evidências." });
         return;
       }
 
@@ -299,8 +318,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       try {
         const result = await requestInterviewReport(config, turns);
         if (mountedRef.current) setReportState({ status: "ready", result });
-      } catch (reportError) {
-        const message = reportError instanceof Error ? reportError.message : "A análise desta entrevista está indisponível agora.";
+      } catch {
+        const message = "A análise detalhada falhou ou excedeu o tempo limite. As respostas registradas continuam disponíveis abaixo.";
         if (mountedRef.current) setReportState({ status: "unavailable", message });
       }
     })();
@@ -323,6 +342,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const isAdvancing = phase === "advancing";
   const persistenceLabel = persistenceState === "saved" ? "sessão salva na conta" : persistenceState === "local" ? "salva apenas no estado local da sessão; sincronização pendente" : "salvando na conta…";
   const reportCaption = reportState.status === "pending" ? "Montando seu relatório final…" : reportState.status === "unavailable" ? "O relatório detalhado não ficou disponível para esta sessão." : "Relatório da prática";
+  const capturedReportTurns = pairInterviewTurns(reportTurns);
   const isOpeningQuestion = currentIndex === 0 && questionSequenceNumber === 1 && !followUpUsed;
   const interviewerFallbackText = phase === "introducing" && isOpeningQuestion ? openingUtterance : currentUtterance;
   const currentActiveSegment = activeSegment && speechSegments.includes(activeSegment) ? activeSegment : null;
@@ -354,12 +374,13 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
           {persistenceMessage && <div role="status" className="alert alert-warning alert-soft mt-5 text-sm"><span>{persistenceMessage}</span></div>}
           {feedbackSyncMessage && <div role="status" className="alert alert-warning alert-soft mt-4 text-sm"><span>{feedbackSyncMessage}</span></div>}
-          <section className="mt-7" aria-live="polite" aria-busy={reportState.status === "pending"}>
+          <section className="mt-7" aria-busy={reportState.status === "pending"}>
             {reportState.status === "pending" ? (
               <div className="flex items-center gap-3 border-y border-base-300 py-6" role="status"><span className="loading loading-spinner loading-sm" aria-hidden="true" /><p className="text-sm">{reportCaption} A análise não avalia seu sotaque.</p></div>
             ) : reportState.status === "unavailable" ? (
               <div className="space-y-6">
-                <div className="alert alert-warning alert-soft"><div><h2 className="font-semibold">Não foi possível montar o relatório detalhado.</h2><p className="mt-1 text-sm">{reportState.message} As respostas e os sinais vocais disponíveis continuam abaixo.</p></div></div>
+                <div role="status" className="alert alert-warning alert-soft"><div><h2 className="font-semibold">{capturedReportTurns.length ? "Não foi possível montar o relatório detalhado." : "Não há respostas para analisar."}</h2><p className="mt-1 text-sm">{reportState.message} Os sinais vocais disponíveis continuam abaixo.</p></div></div>
+                <CapturedAnswers turns={capturedReportTurns} />
                 <AzureVoiceReport summary={currentAzureSummary} coverage={coverage} />
               </div>
             ) : reportState.status === "ready" && reportState.result ? (
@@ -368,22 +389,22 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
                   <h2 id="technical-report-title" className="text-lg font-semibold">Conteúdo técnico</h2>
                   <p className="mt-2 max-w-[70ch] text-sm leading-6">{reportState.result.technicalContent.summary}</p>
                   <div className="mt-4 grid gap-6 sm:grid-cols-2">
-                    <div><h3 className="text-sm font-medium">Pontos fortes</h3>{reportState.result.technicalContent.strengths.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">{reportState.result.technicalContent.strengths.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">Nenhum ponto específico foi identificado.</p>}</div>
-                    <div><h3 className="text-sm font-medium">O que desenvolver</h3>{reportState.result.technicalContent.gaps.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">{reportState.result.technicalContent.gaps.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">Não há lacunas claras nas respostas enviadas.</p>}</div>
+                    <div><h3 className="text-sm font-medium">O que correspondeu à pergunta</h3>{reportState.result.technicalContent.strengths.length ? <ul className="mt-2 space-y-3 text-sm leading-6">{reportState.result.technicalContent.strengths.map((item, index) => <li key={`${item.sequenceNumber}-${index}`} className="border-t border-base-300 pt-2"><p className="text-muted-foreground">Resposta {answerOrdinalForSequence(capturedReportTurns, item.sequenceNumber) ?? "—"}: “{item.evidence}”</p><p className="mt-1">{item.explanation}</p></li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">Evidência insuficiente para identificar pontos específicos de aderência.</p>}</div>
+                    <div><h3 className="text-sm font-medium">O que precisava de mais explicação</h3>{reportState.result.technicalContent.gaps.length ? <ul className="mt-2 space-y-3 text-sm leading-6">{reportState.result.technicalContent.gaps.map((item, index) => <li key={`${item.sequenceNumber}-${index}`} className="border-t border-base-300 pt-2"><p className="text-muted-foreground">Resposta {answerOrdinalForSequence(capturedReportTurns, item.sequenceNumber) ?? "—"}: “{item.evidence}”</p><p className="mt-1">{item.explanation}</p></li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">Evidência insuficiente para apontar algo específico que faltou.</p>}</div>
                   </div>
                 </section>
 
                 <section className="border-t border-base-300 pt-6" aria-labelledby="english-report-title">
                   <h2 id="english-report-title" className="text-lg font-semibold">Comunicação em inglês</h2>
                   <p className="mt-2 text-sm leading-6">Clareza geral: <span className="font-medium">{clarityLabel(reportState.result.englishCommunication.clarity)}</span></p>
-                  {reportState.result.englishCommunication.patterns.length ? <ul className="mt-4 space-y-4">{reportState.result.englishCommunication.patterns.map((pattern, index) => <li key={`${pattern.type}-${index}`} className="border-t border-base-300 pt-3 text-sm"><p className="font-medium">{patternLabel(pattern.type)}</p><p className="mt-1 text-muted-foreground">Trecho: “{pattern.evidence}”</p><p className="mt-1">Sugestão: {pattern.suggestion}</p></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">Não apareceu um padrão claro para destacar nas respostas.</p>}
+                  {reportState.result.englishCommunication.patterns.length ? <ul className="mt-4 space-y-4">{reportState.result.englishCommunication.patterns.map((pattern, index) => <li key={`${pattern.sequenceNumber}-${pattern.type}-${index}`} className="border-t border-base-300 pt-3 text-sm"><p className="font-medium">{patternLabel(pattern.type)} · resposta {answerOrdinalForSequence(capturedReportTurns, pattern.sequenceNumber) ?? "—"}</p><p className="mt-1 text-muted-foreground">Trecho: “{pattern.evidence}”</p><p className="mt-1">Sugestão: {pattern.suggestion}</p><p className="mt-2"><span className="font-medium">Exemplo:</span> <span lang="en">“{pattern.rephrasedExample}”</span></p></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">Evidência insuficiente para apontar um padrão de inglês com segurança.</p>}
                 </section>
 
                 <AzureVoiceReport summary={currentAzureSummary} coverage={coverage} />
 
                 <section className="border-t border-base-300 pt-6" aria-labelledby="priorities-title">
                   <h2 id="priorities-title" className="text-lg font-semibold">Prioridades para praticar</h2>
-                  {reportState.result.priorities.length ? <ol className="mt-4 space-y-4">{reportState.result.priorities.map((priority, index) => <li key={`${index}-${priority.focus}`} className="border-t border-base-300 pt-3"><p className="text-sm font-medium">{priority.focus}</p><p className="mt-1 text-sm leading-6">{priority.exercise}</p></li>)}</ol> : <p className="mt-3 text-sm text-muted-foreground">Continue praticando respostas claras e específicas.</p>}
+                  {reportState.result.priorities.length ? <ol className="mt-4 space-y-4">{reportState.result.priorities.map((priority, index) => <li key={`${priority.sequenceNumber}-${index}`} className="border-t border-base-300 pt-3"><p className="text-sm font-medium">{priority.focus}</p><p className="mt-1 text-sm text-muted-foreground">Baseado na resposta {answerOrdinalForSequence(capturedReportTurns, priority.sequenceNumber) ?? "—"}: “{priority.evidence}”</p><p className="mt-1 text-sm leading-6">{priority.exercise}</p></li>)}</ol> : <p className="mt-3 text-sm text-muted-foreground">Evidência insuficiente para priorizar um exercício específico.</p>}
                 </section>
               </div>
             ) : null}

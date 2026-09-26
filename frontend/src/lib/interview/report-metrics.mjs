@@ -25,9 +25,15 @@ export function pairInterviewTurns(turns) {
     if (turn.speaker === "interviewer") {
       question = turn;
     } else if (turn.content?.trim() && question?.content?.trim()) {
-      result.push({ sequenceNumber: turn.sequenceNumber, question: question.content.trim(), answer: turn.content.trim() });
+      result.push({ sequenceNumber: question.sequenceNumber, question: question.content.trim(), answer: turn.content.trim() });
       question = null;
     }
   }
   return result;
+}
+
+/** Return the user's visible 1-based answer number for an internal turn sequence. */
+export function answerOrdinalForSequence(turns, sequenceNumber) {
+  const index = turns.findIndex((turn) => turn.sequenceNumber === sequenceNumber);
+  return index < 0 ? null : index + 1;
 }

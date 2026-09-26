@@ -8,3 +8,4 @@ export function summarizeAzureAssessments(assessments: AzureAssessmentSample[]):
 export type InterviewReportTurnSource = { sequenceNumber: number; speaker: "interviewer" | "candidate"; content: string | null };
 export type InterviewReportTurn = { sequenceNumber: number; question: string; answer: string };
 export function pairInterviewTurns(turns: InterviewReportTurnSource[]): InterviewReportTurn[];
+export function answerOrdinalForSequence(turns: InterviewReportTurn[], sequenceNumber: number): number | null;
