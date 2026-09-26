@@ -14,13 +14,17 @@ export function composeContextualOpening(config, firstQuestion) {
   const seniority = seniorityLabels[config.seniority?.trim()];
   const focus = focusLabels[config.focus?.trim()];
   const minutes = Number.parseInt(config.duration, 10) || 5;
-  const roleDescription = seniority ? `a ${seniority} ${role} role` : `the ${role} role`;
-  const focusLine = focus ? `We’ll focus on ${focus}.` : "I’ll ask about your experience and decisions.";
-  return `Thanks for joining. We have about ${minutes} minutes for an interview for ${roleDescription}. ${focusLine} Take your time. ${firstQuestion.trim()}`;
+  const roleDescription = seniority ? `the ${seniority} ${role} role` : `the ${role} role`;
+  const focusLine = focus ? `We’ll focus on ${focus} for ${roleDescription}.` : `I’ll ask about your experience and decisions for ${roleDescription}.`;
+  return `Thanks for joining me. We have about ${minutes} minutes today. ${focusLine} ${firstQuestion.trim()}`;
 }
 
 export function composeAcknowledgedQuestion(acknowledgement, question) {
   return [acknowledgement?.trim(), question.trim()].filter(Boolean).join(" ");
+}
+
+export function composeInterviewClosing() {
+  return "Thanks for your time today. That brings us to the end of the interview. I’ll prepare your feedback now.";
 }
 
 export function resolveSkippedQuestion(question) {

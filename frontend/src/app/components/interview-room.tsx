@@ -16,7 +16,7 @@ import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback } from "../hooks/use-speech-playback";
-import { composeAcknowledgedQuestion, composeContextualOpening, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
+import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; state: VoiceAssessmentState };
 type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
@@ -84,7 +84,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const [question, setQuestion] = useState<InterviewQuestion>(() => questions[0]);
   const [questionSequenceNumber, setQuestionSequenceNumber] = useState(1);
   const [followUpUsed, setFollowUpUsed] = useState(false);
-  const [acknowledgement, setAcknowledgement] = useState("");
+  const [acknowledgement, setAcknowledgement] = useState<string | null>(null);
   const [phase, setPhase] = useState<InterviewPhase>("introducing");
   const [answers, setAnswers] = useState<InterviewAnswers>({});
   const [reportTurns, setReportTurns] = useState<InterviewReportTurnSource[]>([]);
@@ -110,7 +110,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const currentQuestionIdRef = useRef(question.id);
   const elapsedSecondsRef = useRef(0);
   const openingUtterance = composeContextualOpening(config, question.prompt);
-  const currentUtterance = phase === "introducing" ? openingUtterance : composeAcknowledgedQuestion(acknowledgement, question.prompt);
+  const closingUtterance = composeInterviewClosing();
+  const currentUtterance = phase === "introducing"
+    ? openingUtterance
+    : phase === "closing" ? closingUtterance : composeAcknowledgedQuestion(acknowledgement, question.prompt);
   const persistenceQuestion = { ...question, prompt: currentUtterance };
   const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId } = useInterviewPersistence(config, persistenceQuestion, questionSequenceNumber, phase);
   const { elapsed, seconds, remaining, timeLimitReached } = useInterviewSession(phase, durationMinutes);
@@ -128,12 +131,19 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   useEffect(() => { voiceAssessmentsRef.current = voiceAssessments; }, [voiceAssessments]);
 
   const onInterviewerUtteranceReady = useCallback(() => {
+    if (phaseRef.current === "closing") {
+      advanceTimerRef.current = window.setTimeout(() => {
+        advanceTimerRef.current = null;
+        transitionPhase("ending");
+      }, 1_400);
+      return;
+    }
     if (phaseRef.current !== "introducing" && phaseRef.current !== "speaking") return;
     transitionPhase("answering");
     setVoiceCaptureState("idle");
     if (autoCaptureVoice) setAutoCaptureQuestionId(question.id);
   }, [autoCaptureVoice, question.id]);
-  const isInterviewerSpeaking = phase === "introducing" || phase === "speaking";
+  const isInterviewerSpeaking = phase === "introducing" || phase === "speaking" || phase === "closing";
   const speechSegments = useMemo(
     () => splitInterviewerSpeech(currentUtterance),
     [currentUtterance],
@@ -195,17 +205,23 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
     if (finishAfter || timeLimitReached || hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) {
       submitInFlightRef.current = false;
-      transitionPhase("ending");
+      transitionPhase("closing");
       return;
     }
 
     transitionPhase("advancing");
+    const askedQuestions = [...new Set([
+      ...reportTurnsRef.current.filter((turn): turn is InterviewReportTurnSource & { speaker: "interviewer"; content: string } => turn.speaker === "interviewer" && typeof turn.content === "string").map((turn) => turn.content),
+      question.prompt,
+    ])];
     const decision = await decideNextTurn({
       config,
       currentQuestion: question.prompt,
       transcript: savedAnswer,
       nextFixedQuestion: currentIndex < questions.length - 1 ? questions[currentIndex + 1].prompt : null,
+      remainingFixedQuestions: questions.slice(currentIndex + 1).map((plannedQuestion) => plannedQuestion.prompt),
       followUpUsed,
+      askedQuestions,
       signal: abortController.signal,
     });
     if (!mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
@@ -215,20 +231,23 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       decisionAbortRef.current = null;
       submitInFlightRef.current = false;
       if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) {
-        transitionPhase("ending");
+        transitionPhase("closing");
       } else if (decision.decision === "FOLLOW_UP") {
         setAcknowledgement(decision.acknowledgement);
         setQuestion({ ...question, id: `${question.id}-follow-up`, prompt: decision.followUpQuestion, cue: "Uma pergunta curta para aprofundar sua resposta." });
         setFollowUpUsed(true);
         setQuestionSequenceNumber((sequence) => sequence + 2);
         transitionPhase("speaking");
-      } else if (!canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, currentIndex + 1, questions.length)) {
-        transitionPhase("ending");
       } else {
         setAcknowledgement(decision.acknowledgement);
-        const nextIndex = currentIndex + 1;
+        const matchedFixedIndex = decision.nextQuestion === null ? -1 : questions.findIndex((plannedQuestion, index) => index > currentIndex && plannedQuestion.prompt === decision.nextQuestion);
+        const nextIndex = matchedFixedIndex >= 0 ? matchedFixedIndex : currentIndex + 1;
+        if (!decision.nextQuestion || !canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, nextIndex, questions.length)) {
+          transitionPhase("closing");
+          return;
+        }
         setCurrentIndex(nextIndex);
-        setQuestion({ ...questions[nextIndex], prompt: decision.nextQuestion ?? questions[nextIndex].prompt });
+        setQuestion({ ...questions[nextIndex], prompt: decision.nextQuestion });
         setFollowUpUsed(false);
         setQuestionSequenceNumber((sequence) => sequence + 2);
         transitionPhase("speaking");
@@ -239,7 +258,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const finishNow = () => {
     if (phase !== "answering") return;
     if (voiceCaptureState === "requesting" || voiceCaptureState === "listening" || voiceCaptureState === "detected" || voiceCaptureState === "finalizing") {
-      setAnswerError("Finalize ou cancele a gravação antes de encerrar a prática.");
+      setAnswerError("Aguarde a conclusão automática ou descarte a gravação antes de encerrar a prática.");
       return;
     }
     if (voiceTranscription.status === "pending") {
@@ -250,7 +269,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       void submitAnswer(voiceTranscription, true);
       return;
     }
-    transitionPhase("ending");
+    transitionPhase("closing");
   };
 
   const skipQuestion = () => {
@@ -270,7 +289,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       if (!mountedRef.current || generation !== generationRef.current) return;
       if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)
         || !canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, currentIndex + 1, questions.length)) {
-        transitionPhase("ending");
+        transitionPhase("closing");
         return;
       }
       const nextIndex = currentIndex + 1;
@@ -353,7 +372,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     fallbackText: interviewerFallbackText,
     questionPrompt: currentUtterance,
   });
-  const showInterviewerCaption = config.showQuestionCaptions || !config.playInterviewerAudio || Boolean(speechMessage);
+  const showInterviewerCaption = phase === "closing" || config.showQuestionCaptions || !config.playInterviewerAudio || Boolean(speechMessage);
 
   return (
     <main id="main-content" className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-7xl flex-col px-3 py-4 pb-36 sm:px-6 sm:py-5 sm:pb-28 lg:px-8 lg:pb-6">
@@ -438,7 +457,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
               <h2 className="mt-4 text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">Entrevistador</h2>
               <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite">
                 <span className={`status ${isInterviewerSpeaking ? "status-primary" : isAdvancing ? "status-warning" : "status-neutral"}`} aria-hidden="true" />
-                {phase === "introducing" ? "Apresentando a primeira pergunta" : phase === "speaking" ? "Fazendo a pergunta" : isAdvancing ? "Preparando a próxima pergunta" : "Aguardando sua resposta"}
+                {phase === "introducing" ? "Apresentando a primeira pergunta" : phase === "closing" ? "Encerrando a entrevista" : phase === "speaking" ? "Fazendo a pergunta" : isAdvancing ? "Preparando a próxima pergunta" : "Aguardando sua resposta"}
                 {isInterviewerSpeaking && <Volume2 className="size-4" aria-hidden="true" />}
               </p>
             </div>

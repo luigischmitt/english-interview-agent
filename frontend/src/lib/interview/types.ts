@@ -56,4 +56,4 @@ export type PersistenceResult<T> =
   | { ok: true; value: T }
   | { ok: false; message: string; code?: string };
 
-export type InterviewPhase = "introducing" | "speaking" | "answering" | "advancing" | "ending";
+export type InterviewPhase = "introducing" | "speaking" | "answering" | "advancing" | "closing" | "ending";

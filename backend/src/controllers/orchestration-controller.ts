@@ -14,11 +14,17 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
     || !validText(body.roleContext.targetRole, 120) || typeof body.followUpUsed !== "boolean"
     || !(body.nextFixedQuestion === null || validText(body.nextFixedQuestion, 500))) return null;
   const { roleContext } = body;
+  if (body.askedQuestions !== undefined && (!Array.isArray(body.askedQuestions) || body.askedQuestions.length > 30
+    || body.askedQuestions.some((question) => !validText(question, 500)))) return null;
+  if (body.remainingFixedQuestions !== undefined && (!Array.isArray(body.remainingFixedQuestions) || body.remainingFixedQuestions.length > 30
+    || body.remainingFixedQuestions.some((question) => !validText(question, 500)))) return null;
   if ((roleContext.seniority !== undefined && (typeof roleContext.seniority !== "string" || roleContext.seniority.length > 80))
     || (roleContext.focus !== undefined && (typeof roleContext.focus !== "string" || roleContext.focus.length > 80))) return null;
   const targetRole = roleContext.targetRole as string;
   return {
     currentQuestion: body.currentQuestion.trim(), transcript: body.transcript.trim(), nextFixedQuestion: body.nextFixedQuestion === null ? null : body.nextFixedQuestion.trim(), followUpUsed: body.followUpUsed,
+    ...(Array.isArray(body.remainingFixedQuestions) ? { remainingFixedQuestions: body.remainingFixedQuestions.map((question) => (question as string).trim()) } : {}),
+    ...(Array.isArray(body.askedQuestions) ? { askedQuestions: body.askedQuestions.map((question) => (question as string).trim()) } : {}),
     roleContext: { targetRole: targetRole.trim(), ...(typeof roleContext.seniority === "string" ? { seniority: roleContext.seniority.trim() } : {}), ...(typeof roleContext.focus === "string" ? { focus: roleContext.focus.trim() } : {}) },
   };
 }
