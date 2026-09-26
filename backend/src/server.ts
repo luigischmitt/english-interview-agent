@@ -21,6 +21,10 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
   maxActiveSessions: defaultTranscriptionConfig.streamMaxActiveSessions,
   maxConcurrentTranscriptions: defaultTranscriptionConfig.streamMaxConcurrentTranscriptions,
   maxQueuedTranscriptions: defaultTranscriptionConfig.streamMaxQueuedTranscriptions,
+  vadConfig: {
+    trailingSilenceMs: defaultTranscriptionConfig.vadTrailingSilenceMs,
+    ambientActivityHoldMs: defaultTranscriptionConfig.vadAmbientActivityHoldMs,
+  },
   finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
 });
 

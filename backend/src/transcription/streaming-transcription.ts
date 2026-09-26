@@ -13,6 +13,7 @@ export type StreamingLimits = {
   maxConcurrentTranscriptions: number;
   maxQueuedTranscriptions: number;
   finalizationTimeoutMs: number;
+  vadConfig?: Partial<VadConfig>;
 };
 
 export const defaultStreamingLimits: StreamingLimits = {
@@ -80,7 +81,7 @@ export class StreamingTranscriptionSessions {
     if (!this.transcriptionService.availableProviders().includes("whisper-large-v3-turbo")) throw new Error("TRANSCRIPTION_NOT_CONFIGURED");
 
     const threshold = Number.isFinite(speechThreshold) ? Math.min(0.15, Math.max(0.025, speechThreshold)) : 0.025;
-    const vadConfig = { ...this.config, maxDurationMs: this.limits.maxDurationMs, maxBytes: this.limits.maxBytes };
+    const vadConfig = { ...this.config, ...this.limits.vadConfig, maxDurationMs: this.limits.maxDurationMs, maxBytes: this.limits.maxBytes };
     const session: StreamingSession = {
       id: randomUUID(), chunks: [], bytes: 0, startedAt: this.now(), lastSequence: -1,
       vad: new VoiceActivityDetector({ ...vadConfig, speechThreshold: threshold, silenceThreshold: getSilenceThreshold(threshold) }),

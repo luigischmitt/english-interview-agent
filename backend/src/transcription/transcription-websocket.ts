@@ -146,7 +146,7 @@ export function attachTranscriptionWebSocket(
       const session = sessions.get(id);
       if (!session) return fail("STREAM_NOT_FOUND", "The audio session expired. Please record your answer again or skip/end the practice.");
       finalRequested = true;
-      logStreamDiagnostic({ status: "finalizing", reason, durationMs: Math.round(session.bytes / (pcmSampleRate * 2) * 1_000), speechDurationMs: Math.round(session.vad.speechDurationMs) });
+      logStreamDiagnostic({ status: "finalizing", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(session.bytes / (pcmSampleRate * 2) * 1_000), speechDurationMs: Math.round(session.vad.speechDurationMs) });
       clearTimeout(timer);
       timer = setTimeout(() => fail("UPSTREAM_UNAVAILABLE", "Transcription took too long. Please try recording again or skip/end the practice."), limits.finalizationTimeoutMs);
       send(socket, { type: "finalizing", reason });
@@ -186,7 +186,7 @@ export function attachTranscriptionWebSocket(
               fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
               return;
             }
-            logStreamDiagnostic({ status: "complete", reason, durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs });
+            logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs });
             send(socket, {
               type: "complete",
               status: "complete",
