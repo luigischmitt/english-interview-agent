@@ -28,7 +28,9 @@ prática da resposta em inglês da análise futura de áudio.
   automaticamente após a pergunta ou manualmente; não há resposta digitada nem
   legenda visível da fala do candidato. O navegador envia PCM mono s16le a
   16 kHz em frames de aproximadamente 100 ms pelo WebSocket v2. O VAD encerra
-  a captura após 3,5 segundos de silêncio; o botão manual continua disponível.
+  a captura automaticamente após 2,7 segundos de silêncio. Ruídos breves não
+  reiniciam esse intervalo; fala sustentada reinicia a contagem. Não há botão
+  para finalizar a resposta manualmente.
   Ao finalizar, o backend transcreve o áudio acumulado em uma única chamada ao
   Whisper Large V3 Turbo. Uma transcrição final e não vazia é submetida
   automaticamente ao concluir o processamento; a interface anuncia o estado
@@ -187,8 +189,10 @@ cheia, a sala informa que a transcrição está indisponível e permite gravar d
 novo, pular a pergunta ou encerrar a prática. A fila pode fazer a resposta
 esperar brevemente; a interface indica “Processando sua resposta”.
 
-O VAD encerra após 3,5 segundos de silêncio, e a pessoa também pode finalizar
-manualmente. Depois disso, uma única chamada ao Whisper recebe o áudio completo
+O VAD encerra automaticamente após 2,7 segundos de silêncio. Ruídos breves não
+reiniciam a contagem; atividade sustentada de fala reinicia o intervalo para
+preservar pausas entre frases. A pessoa não finaliza a resposta manualmente.
+Depois disso, uma única chamada ao Whisper recebe o áudio completo
 acumulado; não há chamadas por janelas nem texto parcial na tela. Quando a
 transcrição final não está vazia, ela fica em memória no cliente até ser
 submetida automaticamente e pode então compor o turno privado, a próxima
