@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, interviewDurationOptions, nextAutoStartSignal, nullableQuestionCount, stopMediaStreamTracks } from "../src/lib/interview/session-policy.mjs";
+import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, interviewDurationOptions, nextAutoStartSignal, nullableQuestionCount, stopMediaStreamTracks } from "../src/lib/interview/session-policy.mjs";
 
 test("the time limit never cuts an active answer, but blocks starting another question", () => {
   const durationMinutes = 5;
@@ -33,6 +33,18 @@ test("only a non-empty final voice transcript can be submitted", () => {
   assert.equal(finalTranscriptForSubmission({ status: "pending" }), null);
   assert.equal(finalTranscriptForSubmission({ status: "available", value: { transcript: "  " } }), null);
   assert.equal(finalTranscriptForSubmission({ status: "available", value: { transcript: "  I built the service.  " } }), "I built the service.");
+});
+
+test("automatic submission accepts only a current, final transcript while answering", () => {
+  const available = { status: "available", value: { transcript: "I led the migration." } };
+  const base = { transcription: available, phase: "answering", expectedQuestionId: "q1", currentQuestionId: "q1", submitting: false, left: false };
+  assert.equal(canAutoSubmitVoiceTranscript(base), true);
+  assert.equal(canAutoSubmitVoiceTranscript({ ...base, transcription: { status: "pending" } }), false);
+  assert.equal(canAutoSubmitVoiceTranscript({ ...base, transcription: { status: "available", value: { transcript: "  " } } }), false);
+  assert.equal(canAutoSubmitVoiceTranscript({ ...base, phase: "advancing" }), false);
+  assert.equal(canAutoSubmitVoiceTranscript({ ...base, currentQuestionId: "q2" }), false);
+  assert.equal(canAutoSubmitVoiceTranscript({ ...base, submitting: true }), false);
+  assert.equal(canAutoSubmitVoiceTranscript({ ...base, left: true }), false);
 });
 
 test("an unfinished capture or transcript cannot silently skip a question", () => {

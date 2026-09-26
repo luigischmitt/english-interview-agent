@@ -24,11 +24,11 @@ prática da resposta em inglês da análise futura de áudio.
   16 kHz em frames de aproximadamente 100 ms pelo WebSocket v2. O VAD encerra
   a captura após 3,5 segundos de silêncio; o botão manual continua disponível.
   Ao finalizar, o backend transcreve o áudio acumulado em uma única chamada ao
-  Whisper Large V3 Turbo. A sala mostra “Preparando microfone”, “Gravando”,
-  “Processando sua resposta” e “Resposta pronta para enviar”, conforme o estado;
-  o cronômetro de gravação não é anunciado a cada atualização. Só uma
-  transcrição final e não vazia habilita “Enviar resposta”. O áudio é mantido
-  temporariamente em memória, sem gravação em disco, reprodução ou persistência.
+  Whisper Large V3 Turbo. Uma transcrição final e não vazia é submetida
+  automaticamente ao concluir o processamento; a interface anuncia o estado
+  sem exibir o texto reconhecido. O cronômetro de gravação não é anunciado a
+  cada atualização. O áudio é mantido temporariamente em memória, sem gravação
+  em disco, reprodução ou persistência.
   Cada resposta tem limite padrão de 180
   segundos e 6 MiB; cada processo aceita até 8 capturas, 4 transcrições
   simultâneas e uma fila de até 4 respostas finalizadas. Uma fila cheia produz
@@ -51,7 +51,8 @@ O estado da câmera e do microfone é temporário e os tracks são encerrados ao
 desligar, sair da sala ou desmontar o componente. As legendas visíveis durante
 a entrevista são somente as do entrevistador; o texto final reconhecido da
 fala do candidato permanece interno para envio, raciocínio da entrevista e
-persistência autorizada.
+persistência autorizada. Uma transcrição final não vazia é submetida
+automaticamente quando o processamento termina.
 
 ## Variáveis de ambiente
 
@@ -175,10 +176,10 @@ esperar brevemente; a interface indica “Processando sua resposta”.
 O VAD encerra após 3,5 segundos de silêncio, e a pessoa também pode finalizar
 manualmente. Depois disso, uma única chamada ao Whisper recebe o áudio completo
 acumulado; não há chamadas por janelas nem texto parcial na tela. Quando a
-transcrição final não está vazia, ela fica em memória no cliente até ser enviada
-e pode então compor o turno privado, a próxima decisão da entrevista e o
-relatório. Respostas não enviadas não são persistidas. O app não grava áudio em
-disco, não o reproduz e não o salva no Supabase; os buffers temporários são
+transcrição final não está vazia, ela fica em memória no cliente até ser
+submetida automaticamente e pode então compor o turno privado, a próxima
+decisão da entrevista e o relatório. Perguntas puladas não são persistidas. O
+app não grava áudio em disco, não o reproduz e não o salva no Supabase; os buffers temporários são
 descartados ao concluir, falhar, cancelar ou desconectar.
 
 Erros estruturados de captura, limite, fila ou provedor são apresentados como

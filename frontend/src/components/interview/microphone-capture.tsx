@@ -438,7 +438,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
           <div>
             <p className="text-sm font-medium">Responda em voz alta</p>
             <p className="text-xs text-muted-foreground" aria-live="polite">
-              {isRecording ? "Gravando" : status === "requesting" ? "Preparando microfone…" : isPending ? "Processando sua resposta…" : transcription.status === "available" ? "Resposta pronta para enviar." : status === "error" ? "Não foi possível concluir. Você pode tentar novamente." : "Inicie a gravação para responder em voz alta."}
+              {isRecording ? "Gravando" : status === "requesting" ? "Preparando microfone…" : isPending ? "Processando sua resposta…" : transcription.status === "available" ? "Resposta concluída." : status === "error" ? "Não foi possível concluir. Você pode tentar novamente." : "Inicie a gravação para responder em voz alta."}
             </p>
           </div>
         </div>
