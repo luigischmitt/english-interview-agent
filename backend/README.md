@@ -177,6 +177,12 @@ provider deadline; the browser waits 65 seconds, and the server deadline can be
 raised to at most 60 seconds. The response includes model and analysis version
 `v2` for persistence; it has no invented scores, full transcript copy, or hidden
 reasoning. Vocal delivery remains exclusively Azure-derived in the frontend.
+Technical strengths and gaps are evaluated for each question/answer pair; a gap
+describes an explanation that was missing from the answer, not a conclusion that
+the candidate lacks knowledge. The report avoids classifying tools or claiming
+mastery, correctness, ownership, or impact when the answer does not provide
+evidence. English feedback can include up to eight distinct prioritized patterns
+and omits duplicate findings and excerpts likely to be transcription artifacts.
 The backend does not fetch or persist sessions and does not authorize an
 interview ID; the authenticated frontend persists results through Supabase RLS.
 Provider/configuration errors use the standardized thinking error object.
