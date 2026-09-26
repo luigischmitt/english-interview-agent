@@ -22,6 +22,11 @@ type StreamMessage = {
   scores?: { accuracy: number | null; fluency: number | null; prosody: number | null };
   durationMs?: number;
   segmented?: boolean;
+  reason?: string;
+  blockCount?: number;
+  assessedBlockCount?: number;
+  failedBlockCount?: number;
+  diagnostics?: { transcriptionDurationMs?: number; azureQueueWaitMs?: number; azureServiceDurationMs?: number; totalDurationMs?: number };
 };
 
 class StreamSetupError extends Error {
@@ -31,8 +36,10 @@ class StreamSetupError extends Error {
 }
 export type VoiceAssessmentState =
   | { status: "pending" }
-  | { status: "unavailable"; segmented?: boolean }
-  | { status: "available"; segmented: true; durationMs: number; scores: { accuracy: number | null; fluency: number | null; prosody: number | null } };
+  | { status: "unavailable"; segmented?: boolean; reason?: string; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] }
+  | { status: "available"; segmented: true; durationMs: number; scores: { accuracy: number | null; fluency: number | null; prosody: number | null }; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] };
+
+type AssessmentContext = { questionLabel: string; sequenceNumber: number };
 
 export type VoiceTranscriptionState =
   | { status: "idle" }
@@ -43,10 +50,11 @@ export type VoiceTranscriptionState =
 type MicrophoneCaptureProps = {
   disabled?: boolean;
   onTranscriptionChange: (state: VoiceTranscriptionState) => void;
-  onAssessmentChange?: (attemptId: string, state: VoiceAssessmentState) => void;
+  onAssessmentChange?: (attemptId: string, state: VoiceAssessmentState, context: AssessmentContext) => void;
   onCaptureStateChange?: (state: VoiceCaptureState) => void;
   autoStartSignal?: string | null;
   assessmentSockets: AssessmentSocketRegistry;
+  assessmentContext: AssessmentContext;
 };
 
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
@@ -84,7 +92,7 @@ function rootMeanSquare(samples: Float32Array): number {
   return Math.sqrt(sum / Math.max(1, samples.length));
 }
 
-export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, autoStartSignal = null, assessmentSockets }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, autoStartSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -103,13 +111,15 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const onTranscriptionChangeRef = useRef(onTranscriptionChange);
   const onAssessmentChangeRef = useRef(onAssessmentChange);
   const onCaptureStateChangeRef = useRef(onCaptureStateChange);
+  const assessmentContextRef = useRef(assessmentContext);
   const lastAutoStartSignalRef = useRef<string | null>(null);
 
   useEffect(() => {
     onTranscriptionChangeRef.current = onTranscriptionChange;
     onAssessmentChangeRef.current = onAssessmentChange;
     onCaptureStateChangeRef.current = onCaptureStateChange;
-  }, [onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+    assessmentContextRef.current = assessmentContext;
+  }, [assessmentContext, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
 
   const releaseCapture = useCallback(() => {
     if (durationTimerRef.current !== null) window.clearInterval(durationTimerRef.current);
@@ -211,6 +221,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     setTranscription({ status: "idle" });
     onTranscriptionChangeRef.current({ status: "idle" });
     const attemptId = crypto.randomUUID();
+    const attemptAssessmentContext = assessmentContextRef.current;
 
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof AudioWorkletNode === "undefined" || typeof WebSocket === "undefined") throw new Error("unsupported");
@@ -271,9 +282,9 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             awaitingAssessment = false;
             assessmentSockets.finish(attemptId, socket);
             const received: VoiceAssessmentState = message.status === "available" && message.scores
-              ? { status: "available", segmented: true, durationMs: message.durationMs ?? 0, scores: message.scores }
-              : { status: "unavailable", segmented: message.segmented === true };
-            onAssessmentChangeRef.current?.(attemptId, received);
+              ? { status: "available", segmented: true, durationMs: message.durationMs ?? 0, scores: message.scores, blockCount: message.blockCount, assessedBlockCount: message.assessedBlockCount, failedBlockCount: message.failedBlockCount, diagnostics: message.diagnostics }
+              : { status: "unavailable", segmented: message.segmented === true, reason: message.reason, blockCount: message.blockCount, assessedBlockCount: message.assessedBlockCount, failedBlockCount: message.failedBlockCount, diagnostics: message.diagnostics };
+            onAssessmentChangeRef.current?.(attemptId, received, attemptAssessmentContext);
             socket.onmessage = null;
             socket.onclose = null;
             socket.onerror = null;
@@ -327,8 +338,9 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             if (awaitingAssessment) {
               assessmentSockets.register(attemptId, socket);
               socketRef.current = null;
-              onAssessmentChangeRef.current?.(attemptId, { status: "pending" });
+              onAssessmentChangeRef.current?.(attemptId, { status: "pending" }, attemptAssessmentContext);
             } else {
+              onAssessmentChangeRef.current?.(attemptId, { status: "unavailable", reason: "not_enabled" }, attemptAssessmentContext);
               socket.onmessage = null;
               socket.onclose = null;
               socket.onerror = null;
@@ -346,7 +358,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             awaitingAssessment = false;
             assessmentSockets.finish(attemptId, socket);
             const unavailable: VoiceAssessmentState = { status: "unavailable", segmented: true };
-            onAssessmentChangeRef.current?.(attemptId, unavailable);
+            onAssessmentChangeRef.current?.(attemptId, { ...unavailable, reason: "socket_closed" }, attemptAssessmentContext);
             return;
           }
           if (socketRef.current === socket && event.code !== 1000) {

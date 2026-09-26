@@ -12,6 +12,7 @@ import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuesti
 import type { AzureAssessmentSample, AzureMetricSummary, InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
+import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback } from "../hooks/use-speech-playback";
@@ -300,10 +301,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (phase !== "ending" || !reportStartedRef.current()) return;
     setReportState({ status: "pending" });
     void (async () => {
-      const assessmentDeadline = Date.now() + 1_200;
-      while (Date.now() < assessmentDeadline && Object.values(voiceAssessmentsRef.current).some((entry) => entry.state.status === "pending")) {
-        await new Promise((resolve) => window.setTimeout(resolve, 100));
-      }
+      await waitForPendingAssessments(() => Object.values(voiceAssessmentsRef.current).filter((entry) => entry.state.status === "pending").length);
       const latestEntries = voiceAssessmentsRef.current;
       const samples = assessmentSamples(latestEntries);
       const turns = pairInterviewTurns(reportTurnsRef.current);
@@ -327,7 +325,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   useEffect(() => {
     if (!sessionId || phase !== "ending" || (reportState.status !== "ready" && reportState.status !== "unavailable")) return;
-    const signature = JSON.stringify({ sessionId, status: reportState.status, result: reportState.status === "ready" ? reportState.result : null, azure: currentAzureSummary });
+    const signature = createFeedbackPersistenceSignature({ sessionId, status: reportState.status, result: reportState.result, azureSummary: currentAzureSummary });
     if (signature === reportPersistenceSignatureRef.current) return;
     reportPersistenceSignatureRef.current = signature;
     const persistence = reportState.status === "ready" && reportState.result
@@ -472,6 +470,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             key={question.id}
             disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"}
             assessmentSockets={assessmentSockets}
+            assessmentContext={{ questionLabel: question.prompt, sequenceNumber: questionSequenceNumber }}
             onTranscriptionChange={(transcription) => {
               setVoiceTranscription(transcription);
               if (transcription.status === "idle" || transcription.status === "available") setAnswerError(null);
@@ -487,7 +486,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             }}
             onCaptureStateChange={setVoiceCaptureState}
             autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
-            onAssessmentChange={(attemptId, assessment) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { questionLabel: question.prompt, sequenceNumber: questionSequenceNumber, state: assessment } }))}
+            onAssessmentChange={(attemptId, assessment, context) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { ...context, state: assessment } }))}
           />
           <div className="mt-4 flex flex-col gap-3 border-t border-base-300 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs leading-5 text-muted-foreground" role="status" aria-live="polite">{persistenceLabel}</p>

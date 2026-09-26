@@ -54,7 +54,7 @@ prática da resposta em inglês da análise futura de áudio.
   uma análise. Médias dos
   sinais experimentais do Azure são calculadas por dimensão, ignorando respostas
   indisponíveis e valores ausentes. A sala aguarda avaliações pendentes por até
-  1,2 segundo, sem bloquear a conclusão; resultados Azure tardios atualizam as
+  10 segundos ao preparar o relatório, sem bloquear a entrevista; resultados Azure tardios atualizam as
   médias e a sincronização. A tabela privada `interview_feedback`
   persiste status, resumo Azure e análise estruturada, sem salvar áudio ou copiar
   a transcrição completa. Se a sincronização falhar, o relatório continua visível

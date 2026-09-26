@@ -8,6 +8,13 @@ import { attachTranscriptionWebSocket } from "./transcription/transcription-webs
 const port = Number(process.env.PORT ?? 3001);
 
 const server = createServer(app);
+if (!defaultPronunciationAssessmentService) {
+  const unavailableReason = !defaultTranscriptionConfig.assessmentEnabled
+    ? "disabled_by_config"
+    : !defaultTranscriptionConfig.azureSpeechKey ? "missing_key"
+      : !defaultTranscriptionConfig.azureSpeechRegion ? "missing_region" : "unavailable";
+  console.info(JSON.stringify({ event: "azure_assessment_configuration", enabled: false, reason: unavailableReason }));
+}
 attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunciationAssessmentService, {
   maxDurationMs: defaultTranscriptionConfig.streamMaxDurationMs,
   maxBytes: defaultTranscriptionConfig.streamMaxBytes,
