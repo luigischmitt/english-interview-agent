@@ -11,7 +11,7 @@ export function useInterviewSession(phase: InterviewPhase, durationMinutes: numb
   const [seconds, setSeconds] = useState(0);
 
   useEffect(() => {
-    if (phase === "ending") return;
+    if (phase === "closing" || phase === "ending") return;
     const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
   }, [phase]);

@@ -99,7 +99,7 @@ not a gate for interview practice.
 | `POST` | `/api/v1/transcriptions` | Receives a completed 16 kHz mono WAV response (maximum 30 seconds), returns a transcription from the selected configured provider. This compatibility route is separate from streaming. Audio is not persisted. |
 | `WS` | `/api/v1/transcriptions/stream` | Protocol v2 receives 16 kHz mono signed 16-bit PCM frames plus RMS `level`, then `finalize` or `cancel`. It makes no Whisper requests during capture. On `finalize`, it assembles one WAV directly from in-memory frames and makes exactly one final Whisper request with `verbose_json` and word timestamps. It returns one `complete` message with the final transcript. Audio is bounded by 180 seconds/6 MiB per session, up to 8 active sessions, 4 concurrent final Whisper requests, and 4 queued final requests by default. Capacity overflow returns a recoverable error. Audio is cleared on completion, error, cancellation, and disconnect; it is never persisted or logged. Optional Azure assessment runs after `complete`, using timestamp-aligned word groups with a 25-second target (never over 30 seconds), and emits one aggregate `assessment` message with safe timing, block counts, and a fixed failure category when unavailable. Missing or invalid word timing preserves the transcript and makes assessment unavailable. |
 | `POST` | `/api/v1/thinking` | Assesses technical answer coverage and English communication from a supplied transcript. Uses OpenRouter credentials held by the backend. |
-| `POST` | `/api/v1/thinking/next-turn` | Returns a brief respectful acknowledgment grounded in a separate exact transcript excerpt, then chooses one useful follow-up or a role/focus-adapted main question. The server validates literal transcript anchors and question bounds. Provider errors and invalid output deterministically use the fixed question sequence and a short transcript-derived acknowledgment. |
+| `POST` | `/api/v1/thinking/next-turn` | Prefers one useful, transcript-grounded follow-up when the answer supports it, otherwise chooses a role/focus-adapted main question. The server validates transcript anchors, question bounds, low-information transcripts, and repeated questions. A brief bridge is optional and never quotes the transcript. Provider errors use a neutral transition and the first supplied fixed question that does not repeat covered context; if none remains, the room closes. |
 | `POST` | `/api/v1/thinking/report` | Generates one structured final report from up to 30 ordered question/answer pairs and role context. In the voice-only room, candidate answers are final speech transcripts. It separates technical content, English communication, and practical priorities; it does not assess vocal delivery or return numeric scores. |
 | `POST` | `/api/v1/formulations` | Reserved for answer formulation in English; returns `501` until connected. |
 | `GET` | `/api/v1/speech/health` | Reports whether the configured speech provider is ready. |
@@ -279,22 +279,21 @@ variables must not be exposed to the browser. The selected default is a stable
 Mistral Small 3.2 model, and the reasoning request has a 15-second default
 timeout. Provider routing requires structured-output support and denies data
 collection. The next-turn route receives the active question, final text
-transcript, minimal role context, next fixed question, and whether a follow-up
-has already been used for the current planned question. Transcript is treated
-as untrusted data. Every decision includes a separate `acknowledgementAnchor`
-of 1–6 exact contiguous transcript words; one word is allowed only for a
-meaningful technology or proper term, never an article, pronoun, or generic
-filler. The brief acknowledgement must contain those words, with no quotation
-marks required. For `FOLLOW_UP`, the model must return an `anchor` of 1–8 words copied literally from the transcript
-and naturally include that exact
-anchor in one short question that acknowledges and deepens a stated technology,
-decision, action, difficulty, or result without inventing details. The backend
-allows one word only for a meaningful technology or proper term, requires the
-anchor to occur in both the transcript and question, then removes
-it from the public response. `NEXT` requires a null anchor. At most one brief
-follow-up is accepted; timeout, rate limiting,
-provider errors, missing credentials, or malformed output fall back to
-`{"decision":"NEXT","followUpQuestion":null}`. Model, latency, and
+transcript, minimal role context, next fixed question, whether a follow-up
+has already been used for the current planned question, and the questions
+already asked. Transcript is treated as untrusted data. The model looks for a
+useful follow-up first, but can proceed when no safe, specific thread exists.
+For `FOLLOW_UP`, it returns an `anchor` of 1–8 literal transcript words and
+one short question that deepens a stated technology, decision, action,
+difficulty, or result. The backend requires the anchor to occur in both the
+transcript and question, rejects obvious noise and duplicate questions, then
+removes the anchor from the public response. `NEXT` requires a null anchor. A
+brief natural bridge is optional and cannot quote transcript text. Noise-only
+answers skip the provider call and use a neutral transition. At most one
+follow-up is accepted per planned question; timeout, rate limiting, provider
+errors, missing credentials, or malformed output use a neutral transition and
+the first remaining fixed question that is not repetitive, or close the room
+when no safe planned question remains. Model, latency, and
 provider-reported cost diagnostics can be enabled with the server-only
 `INTERVIEW_REASONING_DIAGNOSTICS=true` flag; it defaults off and should remain
 off outside local testing. Diagnostics include only model, latency, and

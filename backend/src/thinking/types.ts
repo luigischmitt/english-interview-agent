@@ -71,14 +71,16 @@ export interface InterviewReportService {
 
 export type InterviewOrchestrationInput = InterviewThinkingInput & {
   nextFixedQuestion: string | null;
+  remainingFixedQuestions?: string[];
   followUpUsed: boolean;
+  askedQuestions?: string[];
 };
 
 export type InterviewOrchestrationResult = {
   decision: "FOLLOW_UP" | "NEXT";
   followUpQuestion: string | null;
   nextQuestion: string | null;
-  acknowledgement: string;
+  acknowledgement: string | null;
   diagnostics?: { model: string; latencyMs: number; costUsd: number | null };
 };
 

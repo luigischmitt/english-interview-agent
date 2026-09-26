@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { composeAcknowledgedQuestion, composeContextualOpening, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
 
-test("the first interviewer playback combines a short introduction and the first question", () => {
-  assert.equal(
-    composeOpeningUtterance("Welcome. Take your time.", "Tell me about yourself."),
-    "Welcome. Take your time. Tell me about yourself.",
-  );
+test("the first interviewer playback combines the introduction and the first question", () => {
+  assert.equal(composeOpeningUtterance("Welcome.", "Tell me about yourself."), "Welcome. Tell me about yourself.");
   assert.equal(composeOpeningUtterance(" Welcome. ", " Tell me about yourself. "), "Welcome. Tell me about yourself.");
 });
 
@@ -20,25 +17,38 @@ test("the opening speaks natural labels for every configured seniority and focus
   };
   for (const [value, label] of Object.entries(seniorityLabels)) {
     const opening = composeContextualOpening({ role: "Backend Engineer", seniority: value, focus: "mixed", duration: "10" }, "Tell me about a project.");
-    assert.ok(opening.includes(`an interview for a ${label} Backend Engineer role`));
+    assert.ok(opening.includes(`for the ${label} Backend Engineer role`));
   }
   for (const [value, label] of Object.entries(focusLabels)) {
     const opening = composeContextualOpening({ role: "Backend Engineer", seniority: "mid-level", focus: value, duration: "10" }, "Tell me about a project.");
-    assert.ok(opening.includes(`We’ll focus on ${label}.`));
+    assert.ok(opening.includes(`We’ll focus on ${label} for the mid-level Backend Engineer role.`));
   }
 });
 
 test("unknown opening labels use a safe generic fallback without leaking identifiers", () => {
   const opening = composeContextualOpening({ role: "Backend Engineer", seniority: "principal-engineer", focus: "technical-depth-plus", duration: "10" }, "Tell me about a project.");
-  assert.ok(opening.includes("for an interview for the Backend Engineer role"));
-  assert.ok(opening.includes("I’ll ask about your experience and decisions."));
+  assert.ok(opening.includes("for the Backend Engineer role"));
+  assert.ok(opening.includes("I’ll ask about your experience and decisions for the Backend Engineer role."));
   assert.ok(!opening.includes("principal-engineer"));
   assert.ok(!opening.includes("technical-depth-plus"));
   assert.ok(!opening.includes("your staff Backend Engineer interview"));
+  assert.ok(!opening.includes("Take your time"));
+  assert.ok(opening.startsWith("Thanks for joining me. We have about 10 minutes today."));
 });
 
-test("the next spoken and captioned utterance includes acknowledgment and the full question", () => {
-  assert.equal(composeAcknowledgedQuestion("Thanks for sharing “bounded retries.”", "What limit would you set?"), "Thanks for sharing “bounded retries.” What limit would you set?");
+test("the next spoken and captioned utterance uses an optional natural transition", () => {
+  assert.equal(composeAcknowledgedQuestion("I see. That helps me understand your approach.", "What limit would you set?"), "I see. That helps me understand your approach. What limit would you set?");
+  assert.equal(composeAcknowledgedQuestion(null, "What limit would you set?"), "What limit would you set?");
+});
+
+test("the interview closing is a short natural line that can be captioned by sentence", () => {
+  const closing = composeInterviewClosing();
+  assert.equal(closing, "Thanks for your time today. That brings us to the end of the interview. I’ll prepare your feedback now.");
+  assert.deepEqual(splitInterviewerSpeech(closing), [
+    "Thanks for your time today.",
+    "That brings us to the end of the interview.",
+    "I’ll prepare your feedback now.",
+  ]);
 });
 
 test("a skipped question's next fixed prompt does not carry the previous acknowledgment", () => {
