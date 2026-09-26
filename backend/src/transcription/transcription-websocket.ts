@@ -5,14 +5,46 @@ import { getAllowedOrigins, isOriginAllowed } from "../middlewares/allowed-origi
 import type { TranscriptionService } from "./types.js";
 import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
 import type { PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
-
-const maximumAzureAssessmentDurationMs = 30_000;
+import { createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
   | { type: "start"; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number }
   | { type: "level"; value: number }
   | { type: "finalize"; reason: "manual" | "silence" }
   | { type: "cancel" };
+
+const azureWaiters: Array<{ resolve: (release: () => void) => void; reject: (error: Error) => void; signal: AbortSignal; abort: () => void }> = [];
+let activeAzureAssessments = 0;
+
+function acquireAzureSlot(signal: AbortSignal): Promise<() => void> {
+  if (signal.aborted) return Promise.reject(new Error("Azure pronunciation assessment cancelled"));
+  if (activeAzureAssessments < 2) {
+    activeAzureAssessments += 1;
+    return Promise.resolve(releaseAzureSlot);
+  }
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject, signal, abort: () => undefined };
+    waiter.abort = () => {
+      const index = azureWaiters.indexOf(waiter);
+      if (index >= 0) azureWaiters.splice(index, 1);
+      reject(new Error("Azure pronunciation assessment cancelled"));
+    };
+    signal.addEventListener("abort", waiter.abort, { once: true });
+    azureWaiters.push(waiter);
+  });
+}
+
+function releaseAzureSlot(): void {
+  activeAzureAssessments -= 1;
+  while (azureWaiters.length) {
+    const waiter = azureWaiters.shift()!;
+    waiter.signal.removeEventListener("abort", waiter.abort);
+    if (waiter.signal.aborted) continue;
+    activeAzureAssessments += 1;
+    waiter.resolve(releaseAzureSlot);
+    return;
+  }
+}
 
 function send(socket: WebSocket, message: unknown): void {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
@@ -133,21 +165,30 @@ export function attachTranscriptionWebSocket(
               durationMs,
               transcript: result.transcript,
             });
+            clearTimeout(timer);
 
             if (!assessmentService) return;
-            if (durationMs > maximumAzureAssessmentDurationMs) {
-              send(socket, { type: "assessment", status: "unavailable", reason: "AUDIO_TOO_LONG" });
+            const blocks = result.words ? createAzureAlignedBlocks(audio, result.words) : [];
+            if (blocks.length === 0) {
+              send(socket, { type: "assessment", status: "unavailable" });
               return;
             }
             assessmentOwnsAudio = true;
-            void assessmentService.assess(audio, "wav", result.transcript, abortController.signal).then((assessment) => {
-              if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
-                send(socket, { type: "assessment", status: "available", ...assessment, durationMs });
+            void assessBlocks(audio, blocks, assessmentService, abortController.signal).then((assessments) => {
+              if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
+              const scores = { accuracy: null as number | null, fluency: null as number | null, prosody: null as number | null };
+              for (const dimension of Object.keys(scores) as (keyof typeof scores)[]) {
+                const available = assessments.flatMap(({ assessment, durationMs: assessedDuration }) => {
+                  const score = assessment?.scores[dimension];
+                  return score === null || score === undefined ? [] : [{ score, durationMs: assessedDuration }];
+                });
+                if (available.length) scores[dimension] = available.reduce((sum, item) => sum + item.score * item.durationMs, 0)
+                  / available.reduce((sum, item) => sum + item.durationMs, 0);
               }
-            }).catch(() => {
-              if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
-                send(socket, { type: "assessment", status: "unavailable" });
-              }
+              const assessedDurationMs = assessments.reduce((sum, item) => sum + (item.assessment ? item.durationMs : 0), 0);
+              if (Object.values(scores).some((score) => score !== null)) {
+                send(socket, { type: "assessment", status: "available", provider: "azure", locale: "en-US", mode: "scripted", scores, durationMs: assessedDurationMs, segmented: true });
+              } else send(socket, { type: "assessment", status: "unavailable" });
             }).finally(release);
           } catch (error) {
             if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
@@ -268,4 +309,35 @@ export function attachTranscriptionWebSocket(
       retainedSession = null;
     });
   });
+}
+
+async function assessBlocks(
+  sourceWav: Buffer,
+  blocks: AzureAudioBlock[],
+  service: PronunciationAssessmentService,
+  signal: AbortSignal,
+): Promise<Array<{ assessment: Awaited<ReturnType<PronunciationAssessmentService["assess"]>> | null; durationMs: number }>> {
+  const results: Array<{ assessment: Awaited<ReturnType<PronunciationAssessmentService["assess"]>> | null; durationMs: number }> = blocks.map((block) => ({ assessment: null, durationMs: block.durationMs }));
+  let next = 0;
+  const worker = async () => {
+    while (next < blocks.length && !signal.aborted) {
+      const index = next++;
+      const block = blocks[index]!;
+      let releaseSlot: (() => void) | null = null;
+      let slice: Buffer | null = null;
+      try {
+        releaseSlot = await acquireAzureSlot(signal);
+        if (signal.aborted) continue;
+        slice = materializeAzureBlock(sourceWav, block);
+        results[index] = { assessment: await service.assess(slice, "wav", block.referenceText, signal), durationMs: block.durationMs };
+      } catch {
+        results[index] = { assessment: null, durationMs: block.durationMs };
+      } finally {
+        slice?.fill(0);
+        releaseSlot?.();
+      }
+    }
+  };
+  await Promise.all([worker(), worker()]);
+  return results;
 }

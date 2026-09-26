@@ -44,6 +44,11 @@ describe("real-time audio E2E harness utilities", () => {
       transcriptCharacters: 42,
       transcriptSimilarity: null,
       completionStatus: null,
+      requireAssessment: false,
+      assessmentStatus: null,
+      segmented: null,
+      assessedDurationMs: null,
+      assessmentScoresAvailable: null,
     };
     expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
     metrics.streamErrors = [];
@@ -56,6 +61,35 @@ describe("real-time audio E2E harness utilities", () => {
     metrics.transcriptSimilarity = 0.74;
     expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
     metrics.transcriptCharacters = 0;
+    expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
+  });
+
+  it("parses the opt-in assessment switch from CLI and environment", () => {
+    expect(parseArgs([], {}).requireAssessment).toBe(false);
+    expect(parseArgs(["--require-assessment"], {}).requireAssessment).toBe(true);
+    expect(parseArgs(["--require-assessment=false"], {}).requireAssessment).toBe(false);
+    expect(parseArgs([], { AUDIO_E2E_REQUIRE_ASSESSMENT: "true" }).requireAssessment).toBe(true);
+    expect(parseArgs([], { AUDIO_E2E_REQUIRE_ASSESSMENT: "1" }).requireAssessment).toBe(false);
+    expect(() => parseArgs(["--require-assessment=yes"], {})).toThrow(/boolean flag/);
+  });
+
+  it("requires a segmented available assessment only when enabled", () => {
+    const metrics: AudioE2EMetrics = {
+      speechGenerationMs: 100, connectToReadyMs: 1, firstSpeechMs: 2,
+      transcriptionMs: 3, queueWaitMs: null, silenceDetectedMs: 4,
+      completeMs: 5, streamErrors: [], missingEvents: [], transcriptCharacters: 30,
+      transcriptSimilarity: 1, completionStatus: "complete", requireAssessment: true,
+      assessmentStatus: "available", segmented: true, assessedDurationMs: 5,
+      assessmentScoresAvailable: { accuracy: true, fluency: false, prosody: false },
+    };
+    expect(isSuccessfulAudioE2ERun(metrics)).toBe(true);
+    metrics.segmented = false;
+    expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
+    metrics.segmented = true;
+    metrics.assessmentStatus = "unavailable";
+    expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
+    metrics.assessmentStatus = "available";
+    metrics.assessmentScoresAvailable = { accuracy: false, fluency: false, prosody: false };
     expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
   });
 
@@ -106,6 +140,81 @@ describe("real-time audio E2E harness utilities", () => {
       expect(isSuccessfulAudioE2ERun(metrics)).toBe(true);
       expect(metrics).not.toHaveProperty("transcript");
       expect(JSON.stringify(metrics)).not.toContain(reference);
+    } finally {
+      await new Promise<void>((resolve) => websocketServer.close(() => resolve()));
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("waits for one assessment after complete and exposes only safe assessment metadata", async () => {
+    const reference = "Known spoken answer.";
+    const server = createServer();
+    const websocketServer = new WebSocketServer({ server });
+    websocketServer.on("connection", (socket) => {
+      socket.on("message", (data, isBinary) => {
+        if (isBinary) return;
+        const message = JSON.parse(data.toString()) as { type?: string };
+        if (message.type === "start") socket.send(JSON.stringify({ type: "ready", protocol: 2 }));
+        if (message.type === "level") {
+          socket.send(JSON.stringify({ type: "speech-started" }));
+          socket.send(JSON.stringify({ type: "silence-detected" }));
+        }
+        if (message.type === "finalize") {
+          socket.send(JSON.stringify({ type: "complete", status: "complete", transcript: reference }));
+          setTimeout(() => socket.send(JSON.stringify({
+            type: "assessment", status: "available", segmented: true, durationMs: 1_200,
+            scores: { accuracy: 91, fluency: null, prosody: 82 }, words: [{ word: "SECRET" }],
+          })), 10);
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Test WebSocket server did not bind to a TCP port.");
+    try {
+      const options = parseArgs(["--backend-url", `http://127.0.0.1:${address.port}`, "--text", reference, "--require-assessment"], {});
+      const metrics = await exerciseStream(options, Buffer.alloc(3_200), 42, 0);
+      expect(metrics.assessmentStatus).toBe("available");
+      expect(metrics.segmented).toBe(true);
+      expect(metrics.assessedDurationMs).toBe(1_200);
+      expect(metrics.assessmentScoresAvailable).toEqual({ accuracy: true, fluency: false, prosody: true });
+      expect(isSuccessfulAudioE2ERun(metrics)).toBe(true);
+      expect(JSON.stringify(metrics)).not.toContain("SECRET");
+      expect(JSON.stringify(metrics)).not.toContain("91");
+    } finally {
+      await new Promise<void>((resolve) => websocketServer.close(() => resolve()));
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("treats unavailable assessment as a bounded unsuccessful run", async () => {
+    const server = createServer();
+    const websocketServer = new WebSocketServer({ server });
+    websocketServer.on("connection", (socket) => {
+      socket.on("message", (data, isBinary) => {
+        if (isBinary) return;
+        const message = JSON.parse(data.toString()) as { type?: string };
+        if (message.type === "start") socket.send(JSON.stringify({ type: "ready", protocol: 2 }));
+        if (message.type === "level") {
+          socket.send(JSON.stringify({ type: "speech-started" }));
+          socket.send(JSON.stringify({ type: "silence-detected" }));
+        }
+        if (message.type === "finalize") {
+          socket.send(JSON.stringify({ type: "complete", status: "complete", transcript: "Known spoken answer." }));
+          setTimeout(() => socket.send(JSON.stringify({ type: "assessment", status: "unavailable" })), 10);
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Test WebSocket server did not bind to a TCP port.");
+    try {
+      const options = parseArgs(["--backend-url", `http://127.0.0.1:${address.port}`, "--require-assessment"], {});
+      const metrics = await exerciseStream(options, Buffer.alloc(3_200), 42, 0);
+      expect(metrics.assessmentStatus).toBe("unavailable");
+      expect(metrics.segmented).toBeNull();
+      expect(metrics.assessmentScoresAvailable).toEqual({ accuracy: false, fluency: false, prosody: false });
+      expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
     } finally {
       await new Promise<void>((resolve) => websocketServer.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));

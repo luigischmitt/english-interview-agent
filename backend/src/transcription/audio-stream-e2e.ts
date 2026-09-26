@@ -14,6 +14,7 @@ const samplesPerFrame = sampleRate * frameDurationMs / 1_000;
 const bytesPerFrame = samplesPerFrame * bytesPerSample;
 const trailingSilenceMs = 4_000;
 const minimumTranscriptSimilarity = 0.75;
+const assessmentWaitMs = 30_000;
 const defaultText = "In my last role, I improved a slow reporting service that our support team used every day. First, I reviewed the database queries and added indexes where the data showed they would help. Then I worked with the frontend team to remove a request that was repeated on every page. The response time went from about four seconds to under one second. We checked the change with realistic data, watched the service after release, and documented what we learned. I also shared the measurements with the team so we could use them when planning the next improvements.";
 
 export type AudioE2EOptions = {
@@ -24,6 +25,7 @@ export type AudioE2EOptions = {
   timeoutMs: number;
   ffmpeg: string;
   maxDurationMs: number;
+  requireAssessment: boolean;
 };
 
 type Options = AudioE2EOptions;
@@ -37,9 +39,12 @@ type StreamMessage = {
   transcript?: string;
   reason?: string;
   position?: number;
+  segmented?: boolean;
+  scores?: { accuracy?: unknown; fluency?: unknown; prosody?: unknown };
 };
 
 export type AudioE2EMetrics = {
+  requireAssessment: boolean;
   speechGenerationMs: number;
   connectToReadyMs: number | null;
   firstSpeechMs: number | null;
@@ -52,6 +57,10 @@ export type AudioE2EMetrics = {
   transcriptCharacters: number;
   transcriptSimilarity: number | null;
   completionStatus: string | null;
+  assessmentStatus: string | null;
+  segmented: boolean | null;
+  assessedDurationMs: number | null;
+  assessmentScoresAvailable: { accuracy: boolean; fluency: boolean; prosody: boolean } | null;
 };
 
 export function isSuccessfulAudioE2ERun(metrics: AudioE2EMetrics): boolean {
@@ -60,7 +69,11 @@ export function isSuccessfulAudioE2ERun(metrics: AudioE2EMetrics): boolean {
     && metrics.transcriptSimilarity !== null
     && metrics.transcriptSimilarity >= minimumTranscriptSimilarity
     && metrics.streamErrors.length === 0
-    && metrics.missingEvents.length === 0;
+    && metrics.missingEvents.length === 0
+    && (!metrics.requireAssessment || (metrics.assessmentStatus === "available"
+      && metrics.segmented === true
+      && metrics.assessmentScoresAvailable !== null
+      && Object.values(metrics.assessmentScoresAvailable).some(Boolean)));
 }
 
 export function calculateTranscriptSimilarity(reference: string, transcript: string): number {
@@ -101,12 +114,19 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     "max-duration-seconds": env.AUDIO_E2E_MAX_DURATION_SECONDS ?? "180",
   };
   const allowed = new Set(Object.keys(values));
+  let requireAssessment = env.AUDIO_E2E_REQUIRE_ASSESSMENT === "true";
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (!argument.startsWith("--")) throw new Error("Arguments must use --option value syntax.");
     const separator = argument.indexOf("=");
     const name = argument.slice(2, separator === -1 ? undefined : separator);
     const inlineValue = separator === -1 ? undefined : argument.slice(separator + 1);
+    if (name === "require-assessment") {
+      if (inlineValue === undefined) requireAssessment = true;
+      else if (inlineValue === "true" || inlineValue === "false") requireAssessment = inlineValue === "true";
+      else throw new Error("--require-assessment must be a boolean flag.");
+      continue;
+    }
     if (!allowed.has(name)) throw new Error(`Unknown option --${name}.`);
     const value = inlineValue ?? argv[++index];
     if (!value || value.startsWith("--")) throw new Error(`Missing value for --${name}.`);
@@ -132,7 +152,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   if (!text || text.length > 4_000) throw new Error("--text must contain between 1 and 4000 characters.");
   if (!values.ffmpeg.trim()) throw new Error("--ffmpeg cannot be empty.");
 
-  return { backendUrl, text, speed, speechThreshold, timeoutMs, ffmpeg: values.ffmpeg, maxDurationMs };
+  return { backendUrl, text, speed, speechThreshold, timeoutMs, ffmpeg: values.ffmpeg, maxDurationMs, requireAssessment };
 }
 
 function parseBoundedNumber(value: string, name: string, minimum: number, maximum: number): number {
@@ -268,6 +288,7 @@ export async function exerciseStream(
   const url = buildStreamUrl(options.backendUrl);
   const socket = new WebSocket(url, { handshakeTimeout: 10_000, perMessageDeflate: false });
   const metrics: AudioE2EMetrics = {
+    requireAssessment: options.requireAssessment,
     speechGenerationMs,
     connectToReadyMs: null,
     firstSpeechMs: null,
@@ -280,6 +301,10 @@ export async function exerciseStream(
     transcriptCharacters: 0,
     transcriptSimilarity: null,
     completionStatus: null,
+    assessmentStatus: null,
+    segmented: null,
+    assessedDurationMs: null,
+    assessmentScoresAvailable: null,
   };
   const frames = framePcm(pcm, trailingSilenceDurationMs);
   let openedAt = 0;
@@ -292,9 +317,11 @@ export async function exerciseStream(
   let transcriptionStartedAt: number | null = null;
   let resolveComplete: (() => void) | null = null;
   let rejectComplete: ((error: Error) => void) | null = null;
+  let completeReceived = false;
+  let assessmentWaitTimer: ReturnType<typeof setTimeout> | null = null;
   const completed = new Promise<void>((resolve, reject) => { resolveComplete = resolve; rejectComplete = reject; });
   void completed.catch(() => undefined);
-  const timeout = setTimeout(() => rejectComplete?.(new Error("Audio stream timed out.")), options.timeoutMs);
+  let timeout = setTimeout(() => rejectComplete?.(new Error("Audio stream timed out.")), options.timeoutMs);
 
   socket.on("open", () => {
     openedAt = performance.now();
@@ -337,12 +364,35 @@ export async function exerciseStream(
       return;
     }
     if (message.type === "complete") {
+      if (completeReceived) return;
+      completeReceived = true;
       metrics.completionStatus = message.status ?? "unknown";
       metrics.completeMs = Math.round(now - streamStartedAt);
       metrics.transcriptionMs = transcriptionStartedAt === null ? null : Math.round(now - transcriptionStartedAt);
       if (typeof message.transcript === "string") mergedTranscript = message.transcript;
       metrics.transcriptCharacters = mergedTranscript.length;
       metrics.transcriptSimilarity = calculateTranscriptSimilarity(options.text, mergedTranscript);
+      if (options.requireAssessment) {
+        clearTimeout(timeout);
+        assessmentWaitTimer = setTimeout(() => {
+          metrics.assessmentStatus = "timeout";
+          resolveComplete?.();
+        }, Math.min(assessmentWaitMs, options.timeoutMs));
+      } else resolveComplete?.();
+      return;
+    }
+    if (message.type === "assessment") {
+      if (!options.requireAssessment || metrics.assessmentStatus !== null) return;
+      metrics.assessmentStatus = typeof message.status === "string" ? message.status : "unknown";
+      metrics.segmented = typeof message.segmented === "boolean" ? message.segmented : null;
+      metrics.assessedDurationMs = Number.isFinite(message.durationMs) && (message.durationMs ?? -1) >= 0 ? message.durationMs! : null;
+      const scores = message.scores;
+      metrics.assessmentScoresAvailable = scores ? {
+        accuracy: typeof scores.accuracy === "number" && Number.isFinite(scores.accuracy),
+        fluency: typeof scores.fluency === "number" && Number.isFinite(scores.fluency),
+        prosody: typeof scores.prosody === "number" && Number.isFinite(scores.prosody),
+      } : { accuracy: false, fluency: false, prosody: false };
+      if (assessmentWaitTimer) clearTimeout(assessmentWaitTimer);
       resolveComplete?.();
       return;
     }
@@ -356,6 +406,10 @@ export async function exerciseStream(
   socket.on("error", () => rejectComplete?.(new Error("WebSocket connection failed.")));
   socket.on("close", (code) => {
     if (metrics.completeMs === null) rejectComplete?.(new Error(`WebSocket closed before completion (code ${code}).`));
+    else if (options.requireAssessment && metrics.assessmentStatus === null) {
+      metrics.assessmentStatus = "closed";
+      resolveComplete?.();
+    }
   });
 
   try {
@@ -387,6 +441,7 @@ export async function exerciseStream(
     rejected = error instanceof Error ? error : new Error("Audio stream failed.");
   } finally {
     clearTimeout(timeout);
+    if (assessmentWaitTimer) clearTimeout(assessmentWaitTimer);
     if (socket.readyState === WebSocket.OPEN) socket.close();
   }
   if (rejected) throw rejected;
@@ -394,6 +449,7 @@ export async function exerciseStream(
   if (metrics.firstSpeechMs === null) metrics.missingEvents.push("speech-started");
   if (metrics.silenceDetectedMs === null) metrics.missingEvents.push("silence-detected");
   if (metrics.completeMs === null) metrics.missingEvents.push("complete");
+  if (options.requireAssessment && metrics.assessmentStatus === null) metrics.missingEvents.push("assessment");
   return metrics;
 }
 
