@@ -5,7 +5,7 @@ describe("optional Azure assessment configuration", () => {
   it("is off by default and uses a bounded positive timeout", () => {
     const config = loadTranscriptionConfig({});
     expect(config.assessmentEnabled).toBe(false);
-    expect(config.assessmentTimeoutMs).toBe(8_000);
+    expect(config.assessmentTimeoutMs).toBe(15_000);
     expect(config.streamMaxDurationMs).toBe(180_000);
     expect(config.streamMaxBytes).toBe(6 * 1024 * 1024);
     expect(config.streamMaxActiveSessions).toBe(8);
