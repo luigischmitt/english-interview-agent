@@ -454,7 +454,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             <div className="w-full" aria-labelledby="answer-title">
               <h2 id="answer-title" className="text-sm font-medium">Sua resposta por voz</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                {isAdvancing ? "Preparando a próxima etapa…" : voiceCaptureState === "requesting" ? "Preparando microfone…" : voiceCaptureState === "listening" || voiceCaptureState === "detected" ? "Pode falar. A resposta será concluída após uma pausa ou quando você finalizar a gravação." : voiceCaptureState === "finalizing" || voiceTranscription.status === "pending" ? "Processando sua resposta…" : voiceTranscription.status === "failed" ? "Não foi possível concluir. Tente gravar novamente, pule a pergunta ou encerre a prática." : voiceTranscription.status === "available" ? "Resposta concluída." : "Inicie a gravação e responda em inglês."}
+                {isAdvancing ? "Preparando a próxima etapa…" : voiceCaptureState === "requesting" ? "Preparando microfone…" : voiceCaptureState === "listening" || voiceCaptureState === "detected" ? "Pode falar. A resposta será concluída automaticamente após uma pausa." : voiceCaptureState === "finalizing" || voiceTranscription.status === "pending" ? "Processando sua resposta…" : voiceTranscription.status === "failed" ? "Não foi possível concluir. Tente gravar novamente, pule a pergunta ou encerre a prática." : voiceTranscription.status === "available" ? "Resposta concluída." : "Inicie a gravação e responda em inglês."}
               </p>
               {answerError && <p id="answer-error" className="mt-2 text-sm text-error" role="alert">{answerError}</p>}
             </div>

@@ -28,9 +28,9 @@ O servidor responde `ready` com os limites e a política de transcrição. Mensa
 | Histerese de silêncio | `clamp(limiar de fala × 0,65, 0,012, 0,12)` | Distingue fala de ruído baixo. |
 | Início de fala | 200 ms acima do limiar | Ignora picos curtos. |
 | Fala mínima | 600 ms | Evita enviar toques breves como respostas. |
-| Silêncio final | 3.500 ms | Tolera pausas de formulação antes de sugerir finalização. |
+| Silêncio final | 2.700 ms | Tolera pausas de formulação antes de finalizar automaticamente. |
 
-O cliente finaliza ao detectar o silêncio ou quando a pessoa usa o botão manual. O servidor valida se houve fala; silêncio sem fala retorna `NO_SPEECH_DETECTED` sem chamar Whisper. Áudio válido não é rejeitado por ter uma cauda silenciosa. Na finalização, o servidor envia `finalizing`, pode enviar `transcription-queued` enquanto aguarda um slot, e emite `transcription-started` quando a chamada começa. Em sucesso, `complete` contém a transcrição final, provedor e duração. Não há mensagens `partial` nem montagem de texto entre janelas.
+O cliente finaliza automaticamente ao detectar o silêncio; não há controle para finalizar a resposta manualmente. Ruído breve não reinicia a contagem: uma retomada precisa manter atividade compatível com fala por 300 ms para reiniciar o intervalo. O servidor valida se houve fala; silêncio sem fala retorna `NO_SPEECH_DETECTED` sem chamar Whisper. Áudio válido não é rejeitado por ter uma cauda silenciosa. Na finalização, o servidor envia `finalizing`, pode enviar `transcription-queued` enquanto aguarda um slot, e emite `transcription-started` quando a chamada começa. Em sucesso, `complete` contém a transcrição final, provedor e duração. Não há mensagens `partial` nem montagem de texto entre janelas.
 
 ## Limites, concorrência e privacidade
 

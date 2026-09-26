@@ -84,14 +84,56 @@ async function prepareAnswer(socket: WebSocket, frames = 8) {
 }
 
 describe("voice activity detection", () => {
-  it("requires 200 ms of speech and 3.5 seconds of trailing silence", () => {
+  it("requires 200 ms of speech and 2.7 seconds of trailing silence", () => {
     const vad = new VoiceActivityDetector();
     expect(vad.update(0.04, 0).speechStarted).toBe(false);
     expect(vad.update(0.04, 100).speechStarted).toBe(false);
     expect(vad.update(0.04, 200).speechStarted).toBe(true);
     expect(vad.update(0.005, 800).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 4_299).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 4_300).shouldFinalize).toBe(true);
+    expect(vad.update(0.005, 3_499).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 3_500).shouldFinalize).toBe(true);
+  });
+
+  it("does not reset the silence window for a brief transient noise", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    vad.update(0.04, 200);
+    vad.update(0.005, 800);
+    vad.update(0.05, 2_500);
+    vad.update(0.005, 2_600);
+    expect(vad.update(0.005, 3_499).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 3_500).shouldFinalize).toBe(true);
+  });
+
+  it("resets the silence window after sustained speech resumes", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    vad.update(0.04, 200);
+    vad.update(0.005, 800);
+    vad.update(0.05, 2_500);
+    vad.update(0.05, 2_600);
+    vad.update(0.05, 2_700);
+    vad.update(0.05, 2_800);
+    vad.update(0.005, 2_900);
+    expect(vad.update(0.005, 5_599).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 5_600).shouldFinalize).toBe(true);
+  });
+
+  it("does not finalize when speech resumes just before the silence deadline", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    vad.update(0.04, 200);
+    vad.update(0.005, 800);
+    vad.update(0.05, 3_400);
+    expect(vad.update(0.05, 3_500).shouldFinalize).toBe(false);
+    vad.update(0.05, 3_600);
+    vad.update(0.05, 3_700);
+    vad.update(0.005, 3_800);
+    expect(vad.update(0.005, 6_499).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 6_500).shouldFinalize).toBe(true);
   });
 
   it("uses hysteresis above the calibrated noise floor", () => {
