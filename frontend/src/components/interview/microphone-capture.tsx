@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, Mic, Square, X } from "lucide-react";
+import { LoaderCircle, Mic, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { VoiceTranscription } from "@/lib/interview/transcription";
 import { getSpeechThreshold } from "@/lib/interview/vad-threshold.mjs";
@@ -150,7 +150,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     onTranscriptionChangeRef.current(failed);
   }, [releaseCapture]);
 
-  const stopRecording = useCallback((reason: "manual" | "silence") => {
+  const stopRecording = useCallback(() => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN || finalizationRequestedRef.current) return;
     finalizationRequestedRef.current = true;
@@ -158,7 +158,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     onCaptureStateChangeRef.current?.("finalizing");
     const worklet = workletRef.current;
     if (!worklet) {
-      socket.send(JSON.stringify({ type: "finalize", reason }));
+      socket.send(JSON.stringify({ type: "finalize", reason: "silence" }));
       releaseCapture();
       return;
     }
@@ -167,7 +167,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       previousHandler?.call(worklet.port, event);
       if (event.data?.type === "flushed") {
         worklet.port.onmessage = previousHandler;
-        socket.send(JSON.stringify({ type: "finalize", reason }));
+        socket.send(JSON.stringify({ type: "finalize", reason: "silence" }));
         const pending: VoiceTranscriptionState = { status: "pending" };
         setTranscription(pending);
         onTranscriptionChangeRef.current(pending);
@@ -299,7 +299,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             onCaptureStateChangeRef.current?.("detected");
             return;
           }
-          if (message.type === "silence-detected") { stopRecording("silence"); return; }
+          if (message.type === "silence-detected") { stopRecording(); return; }
           if (message.type === "transcription-queued" || message.type === "finalizing") {
             setStatus("finalizing");
             const pending: VoiceTranscriptionState = { status: "pending" };
@@ -387,7 +387,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
         if (generationRef.current !== generation) return;
         const seconds = Math.floor((Date.now() - startedAtRef.current) / 1_000);
         setDuration(seconds);
-        if (seconds >= maximumDurationSeconds) stopRecording("manual");
+        if (seconds >= maximumDurationSeconds) stopRecording();
       }, 200);
     } catch (captureError) {
       if (generationRef.current !== generation) return;
@@ -445,7 +445,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
         {isRecording && <time className="text-sm tabular-nums text-muted-foreground" aria-label={`Tempo de gravação ${formattedDuration}`}>{formattedDuration}</time>}
         <div className="flex flex-wrap gap-2">
           {canStart && <button type="button" className="btn btn-sm btn-outline gap-2" onClick={() => void startRecording()} disabled={disabled}><Mic className="size-4" aria-hidden="true" />{transcription.status === "available" ? "Gravar novamente" : status === "error" || transcription.status === "failed" ? "Tentar novamente" : "Iniciar gravação"}</button>}
-          {isRecording && <><button type="button" className="btn btn-sm btn-primary gap-2" onClick={() => stopRecording("manual")}><Square className="size-3 fill-current" aria-hidden="true" />Finalizar resposta</button><button type="button" className="btn btn-sm btn-ghost gap-2" onClick={cancelRecording}><X className="size-4" aria-hidden="true" />Descartar gravação</button></>}
+          {isRecording && <button type="button" className="btn btn-sm btn-ghost gap-2" onClick={cancelRecording}><X className="size-4" aria-hidden="true" />Descartar gravação</button>}
           {isPending && <LoaderCircle className="size-5 motion-safe:animate-spin self-center text-muted-foreground" aria-hidden="true" />}
         </div>
       </div>

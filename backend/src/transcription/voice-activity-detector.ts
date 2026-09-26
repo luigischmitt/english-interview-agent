@@ -3,6 +3,7 @@ export type VadConfig = {
   silenceThreshold: number;
   minimumSpeechMs: number;
   trailingSilenceMs: number;
+  resumedSpeechConfirmationMs: number;
   maxDurationMs: number;
   maxBytes: number;
 };
@@ -12,8 +13,10 @@ export const defaultVadConfig: VadConfig = {
   silenceThreshold: 0.018,
   minimumSpeechMs: 600,
   // Interview answers often include a short thinking pause between clauses.
-  // Keep silence finalization longer than a typical conversational pause.
-  trailingSilenceMs: 3_500,
+  // Preserve thinking pauses while keeping response handoff reasonably quick.
+  trailingSilenceMs: 2_700,
+  // Brief noise must not reset the full silence timer.
+  resumedSpeechConfirmationMs: 300,
   maxDurationMs: 180_000,
   maxBytes: 6 * 1024 * 1024,
 };
@@ -28,6 +31,7 @@ export class VoiceActivityDetector {
   private speechCandidateStartedAt: number | null = null;
   private speechStartedAt: number | null = null;
   private silenceStartedAt: number | null = null;
+  private resumedSpeechCandidateStartedAt: number | null = null;
   private lastUpdatedAt = 0;
 
   constructor(private readonly config: VadConfig = defaultVadConfig) {}
@@ -49,10 +53,18 @@ export class VoiceActivityDetector {
       return { speechStarted: false, shouldFinalize: false };
     }
 
+    if (level >= this.config.speechThreshold) {
+      this.resumedSpeechCandidateStartedAt ??= now;
+      if (now - this.resumedSpeechCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
+        this.silenceStartedAt = null;
+        this.resumedSpeechCandidateStartedAt = null;
+      }
+    } else {
+      this.resumedSpeechCandidateStartedAt = null;
+    }
+
     if (level < this.config.silenceThreshold) {
       this.silenceStartedAt ??= now;
-    } else {
-      this.silenceStartedAt = null;
     }
 
     const duration = now - this.speechStartedAt;
@@ -60,6 +72,7 @@ export class VoiceActivityDetector {
       speechStarted: false,
       shouldFinalize: duration >= this.config.minimumSpeechMs
         && this.silenceStartedAt !== null
+        && this.resumedSpeechCandidateStartedAt === null
         && now - this.silenceStartedAt >= this.config.trailingSilenceMs,
     };
   }
