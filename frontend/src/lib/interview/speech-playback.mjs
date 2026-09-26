@@ -4,12 +4,19 @@ export function composeOpeningUtterance(introduction, firstQuestion) {
 
 export function composeContextualOpening(config, firstQuestion) {
   const role = config.role?.trim() || "the role";
-  const seniority = config.seniority?.trim();
-  const focus = config.focus?.trim();
+  const seniorityLabels = { junior: "junior", "mid-level": "mid-level", senior: "senior", staff: "staff-level" };
+  const focusLabels = {
+    "technical-depth": "technical depth",
+    communication: "communication and clarity",
+    behavioral: "behavioral questions",
+    mixed: "balanced practice",
+  };
+  const seniority = seniorityLabels[config.seniority?.trim()];
+  const focus = focusLabels[config.focus?.trim()];
   const minutes = Number.parseInt(config.duration, 10) || 5;
-  const level = seniority ? `${seniority} ${role}` : role;
-  const focusLine = focus ? `I’ll focus on ${focus}.` : "I’ll ask about your experience and decisions.";
-  return `Thanks for joining. We have about ${minutes} minutes for your ${level} interview. ${focusLine} Take your time. ${firstQuestion.trim()}`;
+  const roleDescription = seniority ? `a ${seniority} ${role} role` : `the ${role} role`;
+  const focusLine = focus ? `We’ll focus on ${focus}.` : "I’ll ask about your experience and decisions.";
+  return `Thanks for joining. We have about ${minutes} minutes for an interview for ${roleDescription}. ${focusLine} Take your time. ${firstQuestion.trim()}`;
 }
 
 export function composeAcknowledgedQuestion(acknowledgement, question) {

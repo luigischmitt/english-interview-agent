@@ -10,11 +10,31 @@ test("the first interviewer playback combines a short introduction and the first
   assert.equal(composeOpeningUtterance(" Welcome. ", " Tell me about yourself. "), "Welcome. Tell me about yourself.");
 });
 
-test("the opening uses only configured role context and interview duration", () => {
-  assert.equal(
-    composeContextualOpening({ role: "Backend Engineer", seniority: "mid-level", focus: "reliability", duration: "10" }, "Tell me about a project."),
-    "Thanks for joining. We have about 10 minutes for your mid-level Backend Engineer interview. I’ll focus on reliability. Take your time. Tell me about a project.",
-  );
+test("the opening speaks natural labels for every configured seniority and focus", () => {
+  const seniorityLabels = { junior: "junior", "mid-level": "mid-level", senior: "senior", staff: "staff-level" };
+  const focusLabels = {
+    "technical-depth": "technical depth",
+    communication: "communication and clarity",
+    behavioral: "behavioral questions",
+    mixed: "balanced practice",
+  };
+  for (const [value, label] of Object.entries(seniorityLabels)) {
+    const opening = composeContextualOpening({ role: "Backend Engineer", seniority: value, focus: "mixed", duration: "10" }, "Tell me about a project.");
+    assert.ok(opening.includes(`an interview for a ${label} Backend Engineer role`));
+  }
+  for (const [value, label] of Object.entries(focusLabels)) {
+    const opening = composeContextualOpening({ role: "Backend Engineer", seniority: "mid-level", focus: value, duration: "10" }, "Tell me about a project.");
+    assert.ok(opening.includes(`We’ll focus on ${label}.`));
+  }
+});
+
+test("unknown opening labels use a safe generic fallback without leaking identifiers", () => {
+  const opening = composeContextualOpening({ role: "Backend Engineer", seniority: "principal-engineer", focus: "technical-depth-plus", duration: "10" }, "Tell me about a project.");
+  assert.ok(opening.includes("for an interview for the Backend Engineer role"));
+  assert.ok(opening.includes("I’ll ask about your experience and decisions."));
+  assert.ok(!opening.includes("principal-engineer"));
+  assert.ok(!opening.includes("technical-depth-plus"));
+  assert.ok(!opening.includes("your staff Backend Engineer interview"));
 });
 
 test("the next spoken and captioned utterance includes acknowledgment and the full question", () => {
