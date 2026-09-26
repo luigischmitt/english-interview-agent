@@ -71,6 +71,23 @@ describe("final interview report service", () => {
     expect(JSON.parse(body.messages[1].content)).toEqual({ roleContext: input.roleContext, turns: input.turns });
   });
 
+  it("sends all eight completed answers in one report request with enough output budget", async () => {
+    const turns = Array.from({ length: 8 }, (_, index) => ({
+      sequenceNumber: (index + 1) * 2,
+      question: `Question ${index + 1}?`,
+      answer: index === 1 ? "We monitor errors and latency." : `Answer ${index + 1} describes the implementation clearly.`,
+    }));
+    let requestBody: { max_tokens: number; messages: Array<{ content: string }> } | undefined;
+    const report = await makeService(async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return providerResponse(JSON.stringify(providerReport));
+    }).generate({ ...input, turns });
+
+    expect(report.analysisVersion).toBe("v2");
+    expect(requestBody?.max_tokens).toBeGreaterThanOrEqual(4_096);
+    expect(JSON.parse(requestBody?.messages[1].content ?? "{}").turns).toEqual(turns);
+  });
+
   it("salvages valid report content when an optional evidence item is fabricated", async () => {
     const partiallyInvalid = {
       ...providerReport,

@@ -189,7 +189,10 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
             { role: "user", content: JSON.stringify({ roleContext: input.roleContext, turns: input.turns }) },
           ],
           temperature: 0,
-          max_tokens: 1_600,
+          // Eight completed answers can produce several cited report sections;
+          // leave enough room for a complete structured response instead of
+          // turning provider truncation into an all-or-nothing report failure.
+          max_tokens: 4_096,
           provider: { require_parameters: true, data_collection: "deny" },
           response_format: { type: "json_schema", json_schema: { name: "final_interview_report", strict: true, schema } },
         }),
