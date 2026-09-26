@@ -82,6 +82,40 @@ describe("final interview report service", () => {
     expect(report.analysisVersion).toBe("v2");
   });
 
+  it("keeps complete feedback and drops truncated optional prose while recovering a truncated summary", async () => {
+    const truncated = {
+      ...providerReport,
+      technicalContent: {
+        ...providerReport.technicalContent,
+        summary: "O",
+        strengths: [
+          { ...providerReport.technicalContent.strengths[0], explanation: "Nomeia uma proteção para solu" },
+          { sequenceNumber: 2, evidence: "timeouts", explanation: "A resposta identifica timeouts como proteção." },
+        ],
+      },
+      englishCommunication: {
+        ...providerReport.englishCommunication,
+        patterns: [{ ...providerReport.englishCommunication.patterns[0], suggestion: "Use o presente simples de forma corre" }],
+      },
+      priorities: [{ ...providerReport.priorities[0], exercise: "Explique em um minuto quais limites acionariam a documenta" }],
+    };
+    const report = await makeService(async () => providerResponse(JSON.stringify(truncated))).generate(input);
+
+    expect(report.technicalContent.summary).toBe("As respostas foram analisadas quanto ao conteúdo técnico apresentado.");
+    expect(report.technicalContent.strengths).toEqual([{ sequenceNumber: 2, evidence: "timeouts", explanation: "A resposta identifica timeouts como proteção." }]);
+    expect(report.englishCommunication.patterns).toEqual([]);
+    expect(report.priorities).toEqual([]);
+    expect(report.englishCommunication.evidenceStatus).toBe("INSUFFICIENT");
+  });
+
+  it("preserves complete user-facing sentences", async () => {
+    const report = await makeService(async () => providerResponse(JSON.stringify(providerReport))).generate(input);
+
+    expect(report).toMatchObject(validReport);
+    expect(report.technicalContent.summary).toBe(validReport.technicalContent.summary);
+    expect(report.technicalContent.strengths).toEqual(validReport.technicalContent.strengths);
+  });
+
   it("rejects unsupported top-level fields", async () => {
     await expect(makeService(async () => providerResponse(JSON.stringify({ ...providerReport, score: 94 }))).generate(input))
       .rejects.toMatchObject({ code: "THINKING_INVALID_PROVIDER_RESPONSE", status: 502 });
