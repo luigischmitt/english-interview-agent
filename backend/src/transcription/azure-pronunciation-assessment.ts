@@ -77,29 +77,24 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
     if (signal?.aborted) throw new AzureAssessmentError("cancelled");
     const deadline = Date.now() + this.options.timeoutMs;
     const remaining = () => Math.max(0, deadline - Date.now());
-    let wav: Buffer;
+    let wav: Buffer | null = null;
+    let abortTimer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
     try {
       wav = await withinDeadline(this.convert(audio, format, remaining()), deadline);
-    } catch (error) {
       if (signal?.aborted) throw new AzureAssessmentError("cancelled");
-      if (error instanceof Error && /timed out|timeout/i.test(error.message)) throw new AzureAssessmentError("timeout");
-      throw new AzureAssessmentError("conversion_failed");
-    }
-    if (signal?.aborted) throw new AzureAssessmentError("cancelled");
-    const requestBudget = remaining();
-    if (requestBudget <= 0) throw new AzureAssessmentError("timeout");
+      const requestBudget = remaining();
+      if (requestBudget <= 0) throw new AzureAssessmentError("timeout");
 
-    const assessmentHeader = Buffer.from(JSON.stringify({
-      ReferenceText: referenceText,
-      GradingSystem: "HundredMark",
-      Granularity: "Word",
-      Dimension: "Comprehensive",
-      EnableProsodyAssessment: "True",
-    })).toString("base64");
-    const controller = new AbortController();
-    const abortTimer = setTimeout(() => controller.abort(), requestBudget);
-    const abortRequest = () => controller.abort();
-    try {
+      const assessmentHeader = Buffer.from(JSON.stringify({
+        ReferenceText: referenceText,
+        GradingSystem: "HundredMark",
+        Granularity: "Word",
+        Dimension: "Comprehensive",
+        EnableProsodyAssessment: "True",
+      })).toString("base64");
+      abortTimer = setTimeout(() => controller.abort(), requestBudget);
+      const abortRequest = () => controller.abort();
       const response = await withinDeadline(this.fetcher(this.endpoint, {
         method: "POST",
         headers: {
@@ -119,8 +114,16 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
             : response.status >= 500 ? "provider_unavailable" : "provider_rejected";
         throw new AzureAssessmentError(category);
       }
-      const result = await withinDeadline(response.json() as Promise<AzureResponse>, deadline, abortRequest);
+      let result: AzureResponse;
+      try {
+        result = await withinDeadline(response.json() as Promise<AzureResponse>, deadline, abortRequest);
+      } catch (error) {
+        if (signal?.aborted) throw new AzureAssessmentError("cancelled");
+        if (error instanceof Error && /timed out|timeout/i.test(error.message)) throw new AzureAssessmentError("timeout");
+        throw new AzureAssessmentError("invalid_response");
+      }
       if (remaining() <= 0) throw new AzureAssessmentError("timeout");
+      if (!result || typeof result !== "object" || Array.isArray(result)) throw new AzureAssessmentError("invalid_response");
       if (result.RecognitionStatus !== "Success") throw new AzureAssessmentError("no_match");
 
       const candidate = result.NBest?.[0];
@@ -133,11 +136,12 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
       if (signal?.aborted) throw new AzureAssessmentError("cancelled");
       if (error instanceof AzureAssessmentError) throw error;
       if (error instanceof Error && /timed out|timeout/i.test(error.message)) throw new AzureAssessmentError("timeout");
+      if (wav === null) throw new AzureAssessmentError("conversion_failed");
       throw new AzureAssessmentError("provider_unavailable");
     } finally {
       if (Date.now() >= deadline && !controller.signal.aborted) controller.abort();
-      clearTimeout(abortTimer);
-      wav.fill(0);
+      if (abortTimer) clearTimeout(abortTimer);
+      wav?.fill(0);
     }
   }
 }

@@ -12,7 +12,7 @@ import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuesti
 import type { AzureAssessmentSample, AzureMetricSummary, InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
-import { waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
+import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback } from "../hooks/use-speech-playback";
@@ -325,7 +325,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   useEffect(() => {
     if (!sessionId || phase !== "ending" || (reportState.status !== "ready" && reportState.status !== "unavailable")) return;
-    const signature = JSON.stringify({ sessionId, status: reportState.status, result: reportState.status === "ready" ? reportState.result : null, azure: currentAzureSummary });
+    const signature = createFeedbackPersistenceSignature({ sessionId, status: reportState.status, result: reportState.result, azureSummary: currentAzureSummary });
     if (signature === reportPersistenceSignatureRef.current) return;
     reportPersistenceSignatureRef.current = signature;
     const persistence = reportState.status === "ready" && reportState.result

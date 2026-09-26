@@ -6,3 +6,8 @@ export async function waitForPendingAssessments(readPendingCount, { timeoutMs = 
   }
   return readPendingCount();
 }
+
+/** Include Azure summary changes in the idempotency key for feedback upserts. */
+export function createFeedbackPersistenceSignature({ sessionId, status, result, azureSummary }) {
+  return JSON.stringify({ sessionId, status, result: status === "ready" ? result : null, azure: azureSummary });
+}
