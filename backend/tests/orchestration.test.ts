@@ -20,7 +20,7 @@ const followUp = "You mentioned bounded retries; what limit would you set?";
 const anchor = "bounded retries";
 const acknowledgement = "That helps me understand your approach.";
 const nextQuestion = "How do you monitor reliability in production systems?";
-const fallback = { decision: "NEXT", followUpQuestion: null, nextQuestion: input.nextFixedQuestion, acknowledgement: "Thanks. Let’s move on to another part of your experience." };
+const fallback = { decision: "NEXT", followUpQuestion: null, nextQuestion: input.nextFixedQuestion, acknowledgement: null };
 
 function providerResponse(content: string, extras: Record<string, unknown> = {}, status = 200): Response {
   return new Response(JSON.stringify({ choices: [{ message: { content } }], usage: { cost: 0.00004 }, model: "mistralai/mistral-small-3.2-24b-instruct", ...extras }), { status });
@@ -238,7 +238,7 @@ describe("OpenRouter next-turn orchestration", () => {
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: null });
   });
 
-  it("keeps NEXT acknowledgements neutral instead of claiming a specific understanding", async () => {
+  it("omits generic NEXT acknowledgements even when the model supplies one", async () => {
     const raw = { decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: "I understand your API design choices." };
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: null });
   });
@@ -254,9 +254,9 @@ describe("OpenRouter next-turn orchestration", () => {
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(usefulInput)).resolves.toEqual(fallback);
   });
 
-  it("accepts a distinct next question with a brief transition", async () => {
+  it("omits a repetitive transition from a distinct next question", async () => {
     const raw = { decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: "Thanks. Let’s move on to another part of your experience." };
-    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: raw.acknowledgement });
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: null });
   });
 
   it("keeps diagnostics absent unless the explicit server-side flag is enabled", async () => {
@@ -264,7 +264,7 @@ describe("OpenRouter next-turn orchestration", () => {
       openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs,
       orchestrationTimeoutMs: defaultOrchestrationTimeoutMs, diagnosticsEnabled: false,
     }, async () => providerResponse(JSON.stringify({ decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: "Thanks. Let’s move on to another part of your experience." })));
-    await expect(noDiagnosticsService.decide(input)).resolves.toEqual({ decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: "Thanks. Let’s move on to another part of your experience." });
+    await expect(noDiagnosticsService.decide(input)).resolves.toEqual({ decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: null });
   });
 
   it("falls back deterministically for 429, timeout, network, malformed body, and upstream errors", async () => {
