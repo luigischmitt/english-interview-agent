@@ -99,7 +99,7 @@ not a gate for interview practice.
 | `POST` | `/api/v1/transcriptions` | Receives a completed 16 kHz mono WAV response (maximum 30 seconds), returns a transcription from the selected configured provider. This compatibility route is separate from streaming. Audio is not persisted. |
 | `WS` | `/api/v1/transcriptions/stream` | Protocol v2 receives 16 kHz mono signed 16-bit PCM frames plus RMS `level`, then `finalize` or `cancel`. It makes no Whisper requests during capture. On `finalize`, it assembles one WAV directly from in-memory frames and makes exactly one final Whisper request with `verbose_json` and word timestamps. It returns one `complete` message with the final transcript. Audio is bounded by 180 seconds/6 MiB per session, up to 8 active sessions, 4 concurrent final Whisper requests, and 4 queued final requests by default. Capacity overflow returns a recoverable error. Audio is cleared on completion, error, cancellation, and disconnect; it is never persisted or logged. Optional Azure assessment runs after `complete`, using timestamp-aligned word groups with a 25-second target (never over 30 seconds), and emits one aggregate `assessment` message. Missing or invalid word timing preserves the transcript and makes assessment unavailable. |
 | `POST` | `/api/v1/thinking` | Assesses technical answer coverage and English communication from a supplied transcript. Uses OpenRouter credentials held by the backend. |
-| `POST` | `/api/v1/thinking/next-turn` | Returns a brief respectful acknowledgment grounded in a quoted transcript excerpt, then chooses one useful follow-up or a role/focus-adapted main question. The server validates literal transcript anchors and question bounds. Provider errors and invalid output deterministically use the fixed question sequence and a short transcript-derived acknowledgment. |
+| `POST` | `/api/v1/thinking/next-turn` | Returns a brief respectful acknowledgment grounded in a separate exact transcript excerpt, then chooses one useful follow-up or a role/focus-adapted main question. The server validates literal transcript anchors and question bounds. Provider errors and invalid output deterministically use the fixed question sequence and a short transcript-derived acknowledgment. |
 | `POST` | `/api/v1/thinking/report` | Generates one structured final report from up to 30 ordered question/answer pairs and role context. In the voice-only room, candidate answers are final speech transcripts. It separates technical content, English communication, and practical priorities; it does not assess vocal delivery or return numeric scores. |
 | `POST` | `/api/v1/formulations` | Reserved for answer formulation in English; returns `501` until connected. |
 | `GET` | `/api/v1/speech/health` | Reports whether the configured speech provider is ready. |
@@ -275,8 +275,11 @@ timeout. Provider routing requires structured-output support and denies data
 collection. The next-turn route receives the active question, final text
 transcript, minimal role context, next fixed question, and whether a follow-up
 has already been used for the current planned question. Transcript is treated
-as untrusted data. For `FOLLOW_UP`, the model must return an `anchor` of 2–8
-words copied literally from the transcript and naturally include that exact
+as untrusted data. Every decision includes a separate `acknowledgementAnchor`
+of 2–6 exact contiguous transcript words; the brief acknowledgement must
+contain those words, with no quotation marks required. For `FOLLOW_UP`, the
+model must return an `anchor` of 2–8 words copied literally from the transcript
+and naturally include that exact
 anchor in one short question that acknowledges and deepens a stated technology,
 decision, action, difficulty, or result without inventing details. The backend
 requires the anchor to occur in both the transcript and question, then removes
