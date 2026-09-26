@@ -15,7 +15,7 @@ import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-regi
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback } from "../hooks/use-speech-playback";
-import { composeAcknowledgedQuestion, composeContextualOpening, resolveInterviewerCaption, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
+import { composeAcknowledgedQuestion, composeContextualOpening, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; state: VoiceAssessmentState };
 type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
@@ -254,8 +254,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         return;
       }
       const nextIndex = currentIndex + 1;
+      const skippedTurn = resolveSkippedQuestion(questions[nextIndex].prompt);
+      setAcknowledgement(skippedTurn.acknowledgement);
       setCurrentIndex(nextIndex);
-      setQuestion(questions[nextIndex]);
+      setQuestion({ ...questions[nextIndex], prompt: skippedTurn.question });
       setFollowUpUsed(false);
       setQuestionSequenceNumber((sequence) => sequence + 1);
       transitionPhase("speaking");

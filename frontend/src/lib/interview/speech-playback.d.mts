@@ -26,6 +26,7 @@ export type SpeechPlaybackOptions = {
 export function composeOpeningUtterance(introduction: string, firstQuestion: string): string;
 export function composeContextualOpening(config: { role?: string; seniority?: string; focus?: string; duration: string }, firstQuestion: string): string;
 export function composeAcknowledgedQuestion(acknowledgement: string, question: string): string;
+export function resolveSkippedQuestion(question: string): { question: string; acknowledgement: string };
 export function splitInterviewerSpeech(text: string): string[];
 export function resolveInterviewerCaption(input: {
   audioEnabled: boolean;

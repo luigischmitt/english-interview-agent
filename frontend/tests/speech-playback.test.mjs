@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { composeAcknowledgedQuestion, composeContextualOpening, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+import { composeAcknowledgedQuestion, composeContextualOpening, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
 
 test("the first interviewer playback combines a short introduction and the first question", () => {
   assert.equal(
@@ -39,6 +39,12 @@ test("unknown opening labels use a safe generic fallback without leaking identif
 
 test("the next spoken and captioned utterance includes acknowledgment and the full question", () => {
   assert.equal(composeAcknowledgedQuestion("Thanks for sharing “bounded retries.”", "What limit would you set?"), "Thanks for sharing “bounded retries.” What limit would you set?");
+});
+
+test("a skipped question's next fixed prompt does not carry the previous acknowledgment", () => {
+  const transition = resolveSkippedQuestion("Tell me about your recent project.");
+  assert.deepEqual(transition, { question: "Tell me about your recent project.", acknowledgement: "" });
+  assert.equal(composeAcknowledgedQuestion(transition.acknowledgement, transition.question), "Tell me about your recent project.");
 });
 
 test("interviewer speech is split into complete natural sentence excerpts", () => {

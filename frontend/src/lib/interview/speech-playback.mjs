@@ -23,6 +23,10 @@ export function composeAcknowledgedQuestion(acknowledgement, question) {
   return [acknowledgement?.trim(), question.trim()].filter(Boolean).join(" ");
 }
 
+export function resolveSkippedQuestion(question) {
+  return { question, acknowledgement: "" };
+}
+
 export function splitInterviewerSpeech(text) {
   const content = text.trim();
   if (!content) return [];
