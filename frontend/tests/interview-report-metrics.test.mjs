@@ -43,7 +43,7 @@ test("pairs ordered interviewer prompts and candidate answers without storing du
     { sequenceNumber: 6, speaker: "interviewer", content: "Unanswered question?" },
   ];
   assert.deepEqual(pairInterviewTurns(turns), [
-    { sequenceNumber: 3, question: "Main question?", answer: "Main answer." },
-    { sequenceNumber: 5, question: "Follow-up?", answer: "A follow-up answer." },
+    { sequenceNumber: 2, question: "Main question?", answer: "Main answer." },
+    { sequenceNumber: 4, question: "Follow-up?", answer: "A follow-up answer." },
   ]);
 });

@@ -1,12 +1,14 @@
 export const defaultThinkingModel = "mistralai/mistral-small-3.2-24b-instruct";
 export const defaultThinkingTimeoutMs = 15_000;
 export const defaultOrchestrationTimeoutMs = 6_000;
+export const defaultInterviewReportTimeoutMs = 30_000;
 
 export type ThinkingConfig = {
   openRouterApiKey: string | null;
   model: string;
   timeoutMs: number;
   orchestrationTimeoutMs: number;
+  reportTimeoutMs?: number;
   diagnosticsEnabled: boolean;
 };
 
@@ -21,12 +23,19 @@ function parsePositiveNumber(value: string | undefined, fallback: number): numbe
   return parsed;
 }
 
+function parseReportTimeout(value: string | undefined): number {
+  const timeout = parsePositiveNumber(value, defaultInterviewReportTimeoutMs);
+  if (timeout > 60_000) throw new Error("Interview report timeout must not exceed 60000 milliseconds.");
+  return timeout;
+}
+
 export function loadThinkingConfig(environment = process.env): ThinkingConfig {
   return {
     openRouterApiKey: environment.OPENROUTER_API_KEY?.trim() || null,
     model: environment.INTERVIEW_REASONING_MODEL?.trim() || defaultThinkingModel,
     timeoutMs: parsePositiveNumber(environment.INTERVIEW_REASONING_TIMEOUT_MS, defaultThinkingTimeoutMs),
     orchestrationTimeoutMs: parsePositiveNumber(environment.INTERVIEW_ORCHESTRATION_TIMEOUT_MS, defaultOrchestrationTimeoutMs),
+    reportTimeoutMs: parseReportTimeout(environment.INTERVIEW_REPORT_TIMEOUT_MS),
     diagnosticsEnabled: environment.INTERVIEW_REASONING_DIAGNOSTICS?.trim().toLowerCase() === "true",
   };
 }

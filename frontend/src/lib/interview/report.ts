@@ -3,12 +3,17 @@ import type { InterviewConfig, PersistenceResult } from "./types";
 import { pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";
 
 export type InterviewReport = {
-  technicalContent: { summary: string; strengths: string[]; gaps: string[] };
+  technicalContent: {
+    summary: string;
+    strengths: Array<{ sequenceNumber: number; evidence: string; explanation: string }>;
+    gaps: Array<{ sequenceNumber: number; evidence: string; explanation: string }>;
+  };
   englishCommunication: {
     clarity: "CLEAR" | "MOSTLY_CLEAR" | "UNCLEAR";
-    patterns: Array<{ type: "GRAMMAR" | "WORD_CHOICE" | "FALSE_COGNATE" | "STRUCTURE"; evidence: string; suggestion: string }>;
+    evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT";
+    patterns: Array<{ type: "GRAMMAR" | "WORD_CHOICE" | "FALSE_COGNATE" | "STRUCTURE"; sequenceNumber: number; evidence: string; suggestion: string; rephrasedExample: string }>;
   };
-  priorities: Array<{ area: "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION"; focus: string; exercise: string }>;
+  priorities: Array<{ area: "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION"; sequenceNumber: number; evidence: string; focus: string; exercise: string }>;
 };
 
 export type InterviewReportResult = InterviewReport & { model: string; analysisVersion: string };
@@ -53,6 +58,8 @@ const toFeedback = (row: FeedbackRow): InterviewFeedback => ({
 
 export { pairInterviewTurns };
 
+export const interviewReportTimeoutMs = 65_000;
+
 export async function requestInterviewReport(config: InterviewConfig, turns: InterviewReportTurn[], endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"): Promise<InterviewReportResult> {
   const response = await fetch(`${endpoint}/api/v1/thinking/report`, {
     method: "POST",
@@ -61,7 +68,7 @@ export async function requestInterviewReport(config: InterviewConfig, turns: Int
       roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
       turns,
     }),
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(interviewReportTimeoutMs),
   });
   const data = await response.json().catch(() => null) as (InterviewReportResult | { error?: { message?: string } } | null);
   if (!response.ok || !data || !("technicalContent" in data)) {
@@ -79,7 +86,7 @@ export async function createPendingInterviewFeedback(interviewId: string, assess
       analysis: null,
       model: null,
       generated_at: null,
-      analysis_version: "v1",
+      analysis_version: "v2",
     }, { onConflict: "interview_id" }).select(columns).single();
     if (error) return { ok: false, message: failureMessage, code: error.code };
     return { ok: true, value: toFeedback(data as FeedbackRow) };
@@ -118,7 +125,7 @@ export async function markInterviewFeedbackUnavailable(interviewId: string, azur
       azure_summary: azureSummary,
       analysis: null,
       model: null,
-      analysis_version: "v1",
+      analysis_version: "v2",
       generated_at: null,
     }, { onConflict: "interview_id" }).select(columns).single();
     if (error) return { ok: false, message: failureMessage, code: error.code };

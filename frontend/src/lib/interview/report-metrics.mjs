@@ -25,7 +25,7 @@ export function pairInterviewTurns(turns) {
     if (turn.speaker === "interviewer") {
       question = turn;
     } else if (turn.content?.trim() && question?.content?.trim()) {
-      result.push({ sequenceNumber: turn.sequenceNumber, question: question.content.trim(), answer: turn.content.trim() });
+      result.push({ sequenceNumber: question.sequenceNumber, question: question.content.trim(), answer: turn.content.trim() });
       question = null;
     }
   }

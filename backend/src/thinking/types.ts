@@ -42,26 +42,31 @@ export type InterviewReportInput = {
 export type InterviewReport = {
   technicalContent: {
     summary: string;
-    strengths: string[];
-    gaps: string[];
+    strengths: Array<{ sequenceNumber: number; evidence: string; explanation: string }>;
+    gaps: Array<{ sequenceNumber: number; evidence: string; explanation: string }>;
   };
   englishCommunication: {
     clarity: CommunicationClarity;
+    evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT";
     patterns: Array<{
       type: CommunicationObservationType;
+      sequenceNumber: number;
       evidence: string;
       suggestion: string;
+      rephrasedExample: string;
     }>;
   };
   priorities: Array<{
     area: "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION";
+    sequenceNumber: number;
+    evidence: string;
     focus: string;
     exercise: string;
   }>;
 };
 
 export interface InterviewReportService {
-  generate(input: InterviewReportInput): Promise<InterviewReport & { model: string; analysisVersion: "v1" }>;
+  generate(input: InterviewReportInput): Promise<InterviewReport & { model: string; analysisVersion: "v2" }>;
 }
 
 export type InterviewOrchestrationInput = InterviewThinkingInput & {

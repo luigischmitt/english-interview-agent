@@ -2,7 +2,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app.js";
-import { loadThinkingConfig, defaultThinkingModel, defaultThinkingTimeoutMs, defaultOrchestrationTimeoutMs } from "../src/thinking/config.js";
+import { loadThinkingConfig, defaultThinkingModel, defaultThinkingTimeoutMs, defaultOrchestrationTimeoutMs, defaultInterviewReportTimeoutMs } from "../src/thinking/config.js";
 import { ThinkingServiceError } from "../src/thinking/errors.js";
 import { OpenRouterThinkingService } from "../src/thinking/openrouter-thinking-service.js";
 import type { InterviewThinkingInput } from "../src/thinking/types.js";
@@ -60,6 +60,7 @@ describe("thinking configuration", () => {
       model: defaultThinkingModel,
       timeoutMs: defaultThinkingTimeoutMs,
       orchestrationTimeoutMs: defaultOrchestrationTimeoutMs,
+      reportTimeoutMs: defaultInterviewReportTimeoutMs,
       diagnosticsEnabled: false,
     });
   });
@@ -70,12 +71,14 @@ describe("thinking configuration", () => {
       INTERVIEW_REASONING_MODEL: "  vendor/model  ",
       INTERVIEW_REASONING_TIMEOUT_MS: "4500",
       INTERVIEW_ORCHESTRATION_TIMEOUT_MS: "6000",
+      INTERVIEW_REPORT_TIMEOUT_MS: "30000",
       INTERVIEW_REASONING_DIAGNOSTICS: "true",
     } as NodeJS.ProcessEnv)).toEqual({
       openRouterApiKey: "secret",
       model: "vendor/model",
       timeoutMs: 4_500,
       orchestrationTimeoutMs: 6_000,
+      reportTimeoutMs: 30_000,
       diagnosticsEnabled: true,
     });
   });
@@ -85,6 +88,10 @@ describe("thinking configuration", () => {
       .toThrow("Interview reasoning timeout must be a positive number.");
     expect(() => loadThinkingConfig({ INTERVIEW_ORCHESTRATION_TIMEOUT_MS: "-2" } as NodeJS.ProcessEnv))
       .toThrow("Interview reasoning timeout must be a positive number.");
+    expect(() => loadThinkingConfig({ INTERVIEW_REPORT_TIMEOUT_MS: "0" } as NodeJS.ProcessEnv))
+      .toThrow("Interview reasoning timeout must be a positive number.");
+    expect(() => loadThinkingConfig({ INTERVIEW_REPORT_TIMEOUT_MS: "60001" } as NodeJS.ProcessEnv))
+      .toThrow("Interview report timeout must not exceed 60000 milliseconds.");
   });
 });
 
