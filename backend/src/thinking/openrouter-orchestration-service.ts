@@ -58,8 +58,8 @@ function repeatsTranscriptPhrase(text: string, transcript: string): boolean {
 
 const trivialSingleWordAnchors = new Set(["a", "an", "and", "are", "as", "at", "but", "by", "for", "from", "he", "her", "i", "in", "is", "it", "me", "my", "of", "on", "or", "our", "she", "so", "that", "the", "their", "them", "they", "this", "to", "us", "was", "we", "were", "what", "when", "where", "which", "who", "why", "with", "you", "your"]);
 const lowInformationWords = new Set(["a", "about", "ah", "am", "an", "and", "are", "as", "at", "but", "by", "for", "from", "hmm", "i", "is", "it", "like", "maybe", "me", "mm", "my", "of", "oh", "okay", "ok", "on", "or", "so", "the", "this", "uh", "um", "uhm", "well", "yeah", "yes", "you"]);
-const questionStopWords = new Set(["a", "about", "an", "and", "are", "as", "at", "can", "could", "describe", "did", "do", "for", "from", "give", "had", "have", "how", "i", "in", "is", "it", "me", "of", "on", "or", "please", "tell", "that", "the", "there", "to", "was", "way", "what", "when", "where", "which", "who", "with", "would", "you", "your"]);
-const followUpStopWords = new Set([...questionStopWords, "also", "any", "didn", "does", "during", "else", "ever", "exactly", "happen", "happened", "impact", "make", "made", "much", "one", "particular", "project", "specific", "system", "thing", "things", "through", "use", "used", "using", "way", "work", "worked"]);
+const questionStopWords = new Set(["a", "about", "an", "and", "are", "as", "at", "can", "could", "describe", "did", "do", "for", "from", "give", "had", "have", "how", "i", "in", "is", "it", "me", "of", "on", "or", "please", "tell", "that", "the", "there", "to", "was", "way", "what", "when", "where", "which", "who", "why", "with", "would", "you", "your"]);
+const followUpStopWords = new Set([...questionStopWords, "also", "any", "choose", "choosing", "chosen", "didn", "does", "during", "else", "ever", "exactly", "happen", "happened", "impact", "make", "made", "much", "one", "particular", "project", "select", "selected", "selecting", "specific", "system", "thing", "things", "through", "use", "used", "using", "way", "work", "worked"]);
 const acknowledgementGenericWords = new Set(["a", "about", "another", "area", "at", "clear", "clearer", "context", "different", "experience", "for", "give", "gives", "helpful", "i", "me", "move", "now", "of", "on", "okay", "ok", "part", "picture", "see", "sense", "shift", "talk", "thanks", "that", "the", "to", "understand", "understanding", "way", "with", "your", "approach"]);
 
 function canonicalContentWords(text: string): Set<string> {
@@ -68,10 +68,11 @@ function canonicalContentWords(text: string): Set<string> {
     if (["older", "oldest"].includes(word)) return "old";
     if (["limited", "limits", "limiting"].includes(word)) return "limit";
     if (["migrate", "migrates", "migrated", "migrating", "migration", "migrations"].includes(word)) return "migrat";
+    if (word === "caching") return "cache";
     if (word.endsWith("ies") && word.length > 5) return `${word.slice(0, -3)}y`;
     if (word.endsWith("ing") && word.length > 6) {
       const stem = word.slice(0, -3);
-      return stem.endsWith("v") ? `${stem}e` : stem;
+      return stem.endsWith("v") || stem.endsWith("ch") ? `${stem}e` : stem;
     }
     if (word.endsWith("ed") && word.length > 5) return word.slice(0, -2);
     if (word.endsWith("es") && word.length > 5) return word.slice(0, -2);
@@ -80,13 +81,26 @@ function canonicalContentWords(text: string): Set<string> {
   }));
 }
 
+function anchorContextWords(transcript: string, anchor: string): Set<string> {
+  const sentence = transcript.split(/(?<=[.!?])\s+/u).find((part) => hasExactWordSequence(part, anchor));
+  return sentence ? canonicalContentWords(sentence) : new Set();
+}
+
 function meaningfullyReferencesAnchor(question: string, anchor: string, transcript: string): boolean {
   const questionWords = canonicalContentWords(question);
-  const transcriptWords = canonicalContentWords(transcript);
-  const sharedTranscriptWords = [...questionWords].filter((word) => transcriptWords.has(word)).length;
+  const localContextWords = anchorContextWords(transcript, anchor);
+  const sharedLocalWords = [...questionWords].filter((word) => localContextWords.has(word)).length;
   const anchorWords = canonicalContentWords(anchor);
   const sharedAnchorWords = [...questionWords].filter((word) => anchorWords.has(word)).length;
-  return sharedTranscriptWords >= Math.min(2, transcriptWords.size) && sharedAnchorWords > 0;
+  if (sharedAnchorWords === 0) return false;
+  if (sharedLocalWords >= 2) return true;
+  if (anchorWords.size !== 1) return false;
+
+  const escapedAnchor = anchor.toLocaleLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const singleTechQuestion = new RegExp(`^(?:why (?:did you )?(?:choose|select|use)|what made you (?:choose|select|use)|how did you (?:choose|select|use))\\b.{0,70}\\b${escapedAnchor}\\b[^?]*\\?$`, "iu");
+  const questionSpecificWords = new Set([...questionWords].filter((word) => !anchorWords.has(word)));
+  const novelSpecificWords = [...questionSpecificWords].filter((word) => !localContextWords.has(word));
+  return novelSpecificWords.length === 0 && singleTechQuestion.test(question.trim());
 }
 
 function containsNoiseToken(text: string): boolean {
