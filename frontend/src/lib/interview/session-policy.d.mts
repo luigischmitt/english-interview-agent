@@ -3,6 +3,7 @@ export function canStartNextQuestion(elapsedSeconds: number, durationMinutes: nu
 export function createOnceGate(): () => boolean;
 export function nextAutoStartSignal(signal: string | null, disabled: boolean, lastSignal: string | null): string | null;
 export function finalTranscriptForSubmission(transcription: { status?: string; value?: { transcript?: string | null } } | null | undefined): string | null;
+export function canAutoSubmitVoiceTranscript(input: { transcription: { status?: string; value?: { transcript?: string | null } } | null | undefined; phase: string; expectedQuestionId: string; currentQuestionId: string; submitting: boolean; left: boolean }): boolean;
 export function canSkipVoiceQuestion(captureState: string, transcriptionStatus: string): boolean;
 export function stopMediaStreamTracks(stream: { getTracks(): Array<{ stop(): void }> } | null): void;
 export function nullableQuestionCount(value: string | number | null | undefined): number | null;

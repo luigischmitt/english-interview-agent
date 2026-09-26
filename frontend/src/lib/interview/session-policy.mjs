@@ -25,6 +25,14 @@ export function finalTranscriptForSubmission(transcription) {
   return transcript || null;
 }
 
+export function canAutoSubmitVoiceTranscript({ transcription, phase, expectedQuestionId, currentQuestionId, submitting, left }) {
+  return phase === "answering"
+    && expectedQuestionId === currentQuestionId
+    && !submitting
+    && !left
+    && finalTranscriptForSubmission(transcription) !== null;
+}
+
 export function canSkipVoiceQuestion(captureState, transcriptionStatus) {
   const activeCaptureStates = ["requesting", "listening", "detected", "finalizing"];
   const unfinishedTranscriptionStates = ["pending"];

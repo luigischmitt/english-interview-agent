@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, AudioLines, Clock3, PhoneOff, Video, VideoOff, Volume2 } from "lucide-react";
 import { MicrophoneCapture, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
@@ -12,7 +12,7 @@ import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuesti
 import type { AzureAssessmentSample, AzureMetricSummary, InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
-import { canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
+import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback } from "../hooks/use-speech-playback";
 import { composeOpeningUtterance, resolveInterviewerCaption, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
@@ -86,19 +86,27 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const reportTurnsRef = useRef(reportTurns);
   const voiceAssessmentsRef = useRef(voiceAssessments);
   const phaseRef = useRef(phase);
+  const currentQuestionIdRef = useRef(question.id);
   const elapsedSecondsRef = useRef(0);
   const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId } = useInterviewPersistence(config, question, questionSequenceNumber, phase);
   const { elapsed, seconds, remaining, timeLimitReached } = useInterviewSession(phase, durationMinutes);
   const intro = "Thanks for joining. Take your time.";
 
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useLayoutEffect(() => {
+    phaseRef.current = phase;
+    currentQuestionIdRef.current = question.id;
+  }, [phase, question.id]);
+  const transitionPhase = (nextPhase: InterviewPhase) => {
+    phaseRef.current = nextPhase;
+    setPhase(nextPhase);
+  };
   useEffect(() => { elapsedSecondsRef.current = seconds; }, [seconds]);
   useEffect(() => { reportTurnsRef.current = reportTurns; }, [reportTurns]);
   useEffect(() => { voiceAssessmentsRef.current = voiceAssessments; }, [voiceAssessments]);
 
   const onInterviewerUtteranceReady = useCallback(() => {
     if (phaseRef.current !== "introducing" && phaseRef.current !== "speaking") return;
-    setPhase("answering");
+    transitionPhase("answering");
     setVoiceCaptureState("idle");
     if (autoCaptureVoice) setAutoCaptureQuestionId(question.id);
   }, [autoCaptureVoice, question.id]);
@@ -135,15 +143,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     };
   }, [assessmentSockets]);
 
-  const submitAnswer = async (finishAfter = false) => {
+  const submitAnswer = async (transcription: VoiceTranscriptionState, finishAfter = false, expectedQuestionId = question.id) => {
     if (submitInFlightRef.current || leftRef.current || !mountedRef.current) return;
-    const savedAnswer = finalTranscriptForSubmission(voiceTranscription);
-    if (!savedAnswer) {
-      setAnswerError(voiceTranscription.status === "pending"
-        ? "A transcrição ainda não terminou. Aguarde a conclusão antes de enviar."
-        : "Grave sua resposta por voz e aguarde a transcrição final antes de enviar.");
-      return;
-    }
+    if (phaseRef.current !== "answering" || currentQuestionIdRef.current !== expectedQuestionId) return;
+    const savedAnswer = finalTranscriptForSubmission(transcription);
+    if (!savedAnswer) return;
 
     submitInFlightRef.current = true;
     const generation = ++generationRef.current;
@@ -169,11 +173,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
     if (finishAfter || timeLimitReached || hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) {
       submitInFlightRef.current = false;
-      setPhase("ending");
+      transitionPhase("ending");
       return;
     }
 
-    setPhase("advancing");
+    transitionPhase("advancing");
     const decision = await decideNextTurn({
       config,
       currentQuestion: question.prompt,
@@ -189,21 +193,21 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       decisionAbortRef.current = null;
       submitInFlightRef.current = false;
       if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) {
-        setPhase("ending");
+        transitionPhase("ending");
       } else if (decision.decision === "FOLLOW_UP") {
         setQuestion({ ...question, id: `${question.id}-follow-up`, prompt: decision.followUpQuestion, cue: "Uma pergunta curta para aprofundar sua resposta." });
         setFollowUpUsed(true);
         setQuestionSequenceNumber((sequence) => sequence + 2);
-        setPhase("speaking");
+        transitionPhase("speaking");
       } else if (!canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, currentIndex + 1, questions.length)) {
-        setPhase("ending");
+        transitionPhase("ending");
       } else {
         const nextIndex = currentIndex + 1;
         setCurrentIndex(nextIndex);
         setQuestion(questions[nextIndex]);
         setFollowUpUsed(false);
         setQuestionSequenceNumber((sequence) => sequence + 2);
-        setPhase("speaking");
+        transitionPhase("speaking");
       }
     }, 350);
   };
@@ -219,10 +223,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       return;
     }
     if (finalTranscriptForSubmission(voiceTranscription)) {
-      void submitAnswer(true);
+      void submitAnswer(voiceTranscription, true);
       return;
     }
-    setPhase("ending");
+    transitionPhase("ending");
   };
 
   const skipQuestion = () => {
@@ -235,14 +239,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     setAnswerError(null);
     setVoiceTranscription({ status: "idle" });
     setVoiceCaptureState("idle");
-    setPhase("advancing");
+    transitionPhase("advancing");
     const generation = ++generationRef.current;
     advanceTimerRef.current = window.setTimeout(() => {
       advanceTimerRef.current = null;
       if (!mountedRef.current || generation !== generationRef.current) return;
       if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)
         || !canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, currentIndex + 1, questions.length)) {
-        setPhase("ending");
+        transitionPhase("ending");
         return;
       }
       const nextIndex = currentIndex + 1;
@@ -250,7 +254,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       setQuestion(questions[nextIndex]);
       setFollowUpUsed(false);
       setQuestionSequenceNumber((sequence) => sequence + 1);
-      setPhase("speaking");
+      transitionPhase("speaking");
     }, 350);
   };
 
@@ -425,13 +429,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             <div className="w-full" aria-labelledby="answer-title">
               <h2 id="answer-title" className="text-sm font-medium">Sua resposta por voz</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                {voiceCaptureState === "requesting" ? "Preparando microfone…" : voiceCaptureState === "listening" || voiceCaptureState === "detected" ? "Pode falar. Sua resposta será processada quando você terminar." : voiceCaptureState === "finalizing" || voiceTranscription.status === "pending" ? "Processando sua resposta…" : voiceTranscription.status === "failed" ? "Não foi possível concluir. Tente gravar novamente, pule a pergunta ou encerre a prática." : voiceTranscription.status === "available" ? "Resposta pronta para enviar." : "Inicie a gravação e responda em inglês."}
+                {isAdvancing ? "Preparando a próxima etapa…" : voiceCaptureState === "requesting" ? "Preparando microfone…" : voiceCaptureState === "listening" || voiceCaptureState === "detected" ? "Pode falar. A resposta será concluída após uma pausa ou quando você finalizar a gravação." : voiceCaptureState === "finalizing" || voiceTranscription.status === "pending" ? "Processando sua resposta…" : voiceTranscription.status === "failed" ? "Não foi possível concluir. Tente gravar novamente, pule a pergunta ou encerre a prática." : voiceTranscription.status === "available" ? "Resposta concluída." : "Inicie a gravação e responda em inglês."}
               </p>
               {answerError && <p id="answer-error" className="mt-2 text-sm text-error" role="alert">{answerError}</p>}
             </div>
             <div className="flex flex-wrap justify-end gap-2">
               <button type="button" className="btn btn-ghost min-h-11 gap-2" onClick={skipQuestion} disabled={phase !== "answering" || isAdvancing || !canSkipVoiceQuestion(voiceCaptureState, voiceTranscription.status)}>Pular sem enviar</button>
-              <button type="button" className="btn btn-primary min-h-11 gap-2" onClick={() => void submitAnswer()} disabled={isInterviewerSpeaking || isAdvancing || phase === "ending" || !finalTranscriptForSubmission(voiceTranscription)}>{isAdvancing ? <span className="loading loading-spinner loading-sm" aria-hidden="true" /> : <ArrowUpRight className="size-4" aria-hidden="true" />}{isAdvancing ? "Avançando" : "Enviar resposta"}</button>
               <button type="button" className="btn btn-ghost min-h-11 gap-2" onClick={finishNow} disabled={phase !== "answering" || isAdvancing}>Encerrar prática</button>
             </div>
           </div>
@@ -445,6 +448,15 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             onTranscriptionChange={(transcription) => {
               setVoiceTranscription(transcription);
               if (transcription.status === "idle" || transcription.status === "available") setAnswerError(null);
+              const expectedQuestionId = question.id;
+              if (canAutoSubmitVoiceTranscript({
+                transcription,
+                phase: phaseRef.current,
+                expectedQuestionId,
+                currentQuestionId: currentQuestionIdRef.current,
+                submitting: submitInFlightRef.current,
+                left: leftRef.current,
+              })) void submitAnswer(transcription, false, expectedQuestionId);
             }}
             onCaptureStateChange={setVoiceCaptureState}
             autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
