@@ -298,6 +298,9 @@ provider-reported cost diagnostics can be enabled with the server-only
 `INTERVIEW_REASONING_DIAGNOSTICS=true` flag; it defaults off and should remain
 off outside local testing. Diagnostics include only model, latency, and
 provider-reported cost, never credentials or hidden rationale. Orchestration
+fallback logs contain only a fixed event and fallback category; they never log
+prompts, transcripts, or raw provider responses. Unsafe optional acknowledgments
+are dropped without discarding a valid question. Orchestration
 uses a separate 6-second timeout by default; answer assessment retains its
 15-second timeout. The browser cancels orchestration requests after 7 seconds
 so its fallback stays slightly outside the backend timeout.

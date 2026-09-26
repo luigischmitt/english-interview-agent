@@ -71,6 +71,20 @@ describe("OpenRouter next-turn orchestration", () => {
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(contextualInput)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: contextualQuestion });
   });
 
+  it("accepts a grounded follow-up when a natural but transcript-echoing acknowledgement is discarded", async () => {
+    const followUpInput = {
+      ...input,
+      currentQuestion: "How did you keep payment retries safe?",
+      transcript: "We used idempotency keys to make payment retries safe.",
+      askedQuestions: ["How did you keep payment retries safe?"],
+    };
+    const question = "You mentioned idempotency keys; how did they prevent duplicate payments?";
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: question, nextQuestion: null, anchor: "idempotency keys", acknowledgement: "I see. You mentioned idempotency keys." };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(followUpInput)).resolves.toMatchObject({
+      decision: "FOLLOW_UP", followUpQuestion: question, acknowledgement: null,
+    });
+  });
+
   it.each(["pfffff", "TFFF", "uhm yeah", "pfffff pfffff"]) ("does not send a low-information transcript to the model or echo it (%s)", async (transcript) => {
     const fetcher = vi.fn();
     const result = await service(fetcher).decide({ ...input, transcript });
@@ -100,13 +114,23 @@ describe("OpenRouter next-turn orchestration", () => {
 
   it.each([
     decision({ anchor: "TFFF", followUpQuestion: "You mentioned TFFF; what did it change?" }),
-    decision({ acknowledgement: "Thanks for sharing ‘pfffff’." }),
     decision({ followUpQuestion: "You mentioned bounded retries; what limit would you set? What else?" }),
     { decision: "NEXT", followUpQuestion: null, nextQuestion: "Tell me about a difficult technical decision.", anchor: null, acknowledgement: "I see." },
-    { decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: "Thanks for sharing ‘pfffff’." },
     { decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: acknowledgement, rationale: "private thought" },
   ])("rejects malformed, noisy, or repeated model output", async (raw) => {
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toEqual(fallback);
+  });
+
+  it("logs only a fixed fallback category when structured model output is rejected", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await service(async () => providerResponse("not-json")).decide(input);
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: "interview_orchestration_fallback", reason: "invalid_model_output" }));
+      expect(warn.mock.calls.flat().join(" ")).not.toContain(input.transcript);
+      expect(warn.mock.calls.flat().join(" ")).not.toContain("server-test-key");
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("treats a paraphrased teammate-conflict question as already asked", async () => {
@@ -117,12 +141,17 @@ describe("OpenRouter next-turn orchestration", () => {
 
   it("does not allow a transition to echo a transcript detail before an unrelated NEXT question", async () => {
     const raw = { decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: "I see. You mentioned bounded retries." };
-    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toEqual(fallback);
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: null });
   });
 
   it("keeps NEXT acknowledgements neutral instead of claiming a specific understanding", async () => {
     const raw = { decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: "I understand your API design choices." };
-    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toEqual(fallback);
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: null });
+  });
+
+  it("discards a noisy acknowledgement without losing a valid next question", async () => {
+    const raw = { decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: "Thanks for sharing ‘pfffff’." };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: null });
   });
 
   it("rejects a noise anchor even when the answer also has useful content", async () => {
