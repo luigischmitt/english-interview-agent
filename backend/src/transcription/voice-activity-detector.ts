@@ -4,6 +4,7 @@ export type VadConfig = {
   minimumSpeechMs: number;
   trailingSilenceMs: number;
   resumedSpeechConfirmationMs: number;
+  ambientActivityHoldMs: number;
   maxDurationMs: number;
   maxBytes: number;
 };
@@ -17,6 +18,9 @@ export const defaultVadConfig: VadConfig = {
   trailingSilenceMs: 3_500,
   // Brief noise must not reset the full silence timer.
   resumedSpeechConfirmationMs: 300,
+  // Ambiguous mid-band energy can be quiet speech or changing room noise.
+  // Preserve a pause briefly, then make the handoff bounded if it never clears.
+  ambientActivityHoldMs: 8_000,
   maxDurationMs: 180_000,
   maxBytes: 6 * 1024 * 1024,
 };
@@ -34,8 +38,8 @@ export class VoiceActivityDetector {
   private resumedSpeechCandidateStartedAt: number | null = null;
   private resumedActivityCandidateStartedAt: number | null = null;
   private midBandStartedAt: number | null = null;
-  private readonly midBandSamples: Array<{ level: number; at: number }> = [];
   private lastUpdatedAt = 0;
+  private finalizationReasonValue: "silence" | "ambient_activity" | null = null;
 
   constructor(private readonly config: VadConfig = defaultVadConfig) {}
 
@@ -60,7 +64,6 @@ export class VoiceActivityDetector {
       // A single speech-level frame makes the fallback ambiguous. Do not wait
       // for the normal 300 ms speech confirmation before disabling it.
       this.midBandStartedAt = null;
-      this.midBandSamples.length = 0;
       this.resumedSpeechCandidateStartedAt ??= now;
       if (now - this.resumedSpeechCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
         this.silenceStartedAt = null;
@@ -70,24 +73,18 @@ export class VoiceActivityDetector {
       }
     } else if (level >= this.config.silenceThreshold) {
       this.resumedActivityCandidateStartedAt ??= now;
-      this.midBandSamples.push({ level, at: now });
-      while (this.midBandSamples.length && now - this.midBandSamples[0].at > 1_000) this.midBandSamples.shift();
-      const levels = this.midBandSamples.map((sample) => sample.level);
-      const levelRange = levels.length ? Math.max(...levels) - Math.min(...levels) : Infinity;
-      // Only use the fallback when a full second of mid-band activity is
-      // nearly constant. Variation is treated as potentially quiet speech.
-      if (levels.length < 10 || levelRange <= 0.0015) this.midBandStartedAt ??= now;
-      else this.midBandStartedAt = null;
       if (now - this.resumedActivityCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
-        // Sustained low-level voice/activity cancels a pending silence decision.
+        // Mid-band energy is ambiguous: it may be a reflective pause with room
+        // noise, or quiet speech. Give it a finite grace period. Variable noise
+        // must not keep a response open indefinitely.
         this.silenceStartedAt = null;
+        this.midBandStartedAt ??= this.resumedActivityCandidateStartedAt;
         this.resumedActivityCandidateStartedAt = null;
       }
     } else {
       this.resumedSpeechCandidateStartedAt = null;
       this.resumedActivityCandidateStartedAt = null;
       this.midBandStartedAt = null;
-      this.midBandSamples.length = 0;
     }
 
     if (level < this.config.silenceThreshold) {
@@ -95,14 +92,19 @@ export class VoiceActivityDetector {
     }
 
     const duration = now - this.speechStartedAt;
+    const silenceFinalized = duration >= this.config.minimumSpeechMs
+      && this.silenceStartedAt !== null
+      && this.resumedSpeechCandidateStartedAt === null
+      && this.resumedActivityCandidateStartedAt === null
+      && now - this.silenceStartedAt >= this.config.trailingSilenceMs;
+    const ambientFinalized = duration >= this.config.minimumSpeechMs
+      && this.midBandStartedAt !== null
+      && now - this.midBandStartedAt >= this.config.ambientActivityHoldMs;
+    if (silenceFinalized) this.finalizationReasonValue = "silence";
+    else if (ambientFinalized) this.finalizationReasonValue = "ambient_activity";
     return {
       speechStarted: false,
-      shouldFinalize: duration >= this.config.minimumSpeechMs
-        && ((this.silenceStartedAt !== null
-          && this.resumedSpeechCandidateStartedAt === null
-          && this.resumedActivityCandidateStartedAt === null
-          && now - this.silenceStartedAt >= this.config.trailingSilenceMs)
-          || (this.midBandStartedAt !== null && now - this.midBandStartedAt >= 5_800)),
+      shouldFinalize: silenceFinalized || ambientFinalized,
     };
   }
 
@@ -112,5 +114,13 @@ export class VoiceActivityDetector {
 
   get speechDurationMs(): number {
     return this.speechStartedAt === null ? 0 : Math.max(0, this.lastUpdatedAt - this.speechStartedAt);
+  }
+
+  get finalizationReason(): "silence" | "ambient_activity" | null {
+    return this.finalizationReasonValue;
+  }
+
+  get ambientActivityHoldMs(): number {
+    return this.midBandStartedAt === null ? 0 : Math.max(0, this.lastUpdatedAt - this.midBandStartedAt);
   }
 }

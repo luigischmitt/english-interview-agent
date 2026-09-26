@@ -147,28 +147,48 @@ describe("voice activity detection", () => {
     expect(vad.update(0.005, 7_300).shouldFinalize).toBe(true);
   });
 
-  it("does not finalize on sustained mid-band activity, then uses the bounded fallback", () => {
+  it("preserves ambiguous room activity briefly, then finalizes at the configured hold limit", () => {
     const vad = new VoiceActivityDetector();
     vad.update(0.04, 0);
     vad.update(0.04, 100);
     vad.update(0.04, 200);
     vad.update(0.005, 800);
     let update = vad.update(0.02, 1_000);
-    for (let now = 1_100; now <= 6_799; now += 100) update = vad.update(0.02, now);
+    for (let now = 1_100; now < 9_000; now += 100) update = vad.update(0.02, now);
     expect(update.shouldFinalize).toBe(false);
-    expect(vad.update(0.02, 6_800).shouldFinalize).toBe(true);
+    expect(vad.update(0.02, 9_000).shouldFinalize).toBe(true);
+    expect(vad.finalizationReason).toBe("ambient_activity");
   });
 
-  it("does not use the mid-band fallback for variable quiet speech lasting over 5.8 seconds", () => {
+  it("bounds variable mid-band activity instead of letting room noise hold capture forever", () => {
     const vad = new VoiceActivityDetector();
     vad.update(0.04, 0);
     vad.update(0.04, 100);
     vad.update(0.04, 200);
     vad.update(0.005, 800);
-    for (let now = 1_000; now <= 8_000; now += 100) {
+    for (let now = 1_000; now < 9_000; now += 100) {
       const level = now % 400 < 200 ? 0.019 : 0.023;
       expect(vad.update(level, now).shouldFinalize).toBe(false);
     }
+    expect(vad.update(0.021, 9_000).shouldFinalize).toBe(true);
+    expect(vad.finalizationReason).toBe("ambient_activity");
+  });
+
+  it("keeps a long answer and a reflective pause followed by resumed speech", () => {
+    const vad = new VoiceActivityDetector();
+    let finalizationSeen = false;
+    for (let now = 0; now <= 60_000; now += 100) {
+      const inSpeech = (now % 5_000) < 3_000;
+      const level = inSpeech ? 0.04 : 0.005;
+      const update = vad.update(level, now);
+      finalizationSeen ||= update.shouldFinalize;
+    }
+    expect(finalizationSeen).toBe(false);
+    for (let now = 60_100; now <= 63_600; now += 100) {
+      finalizationSeen ||= vad.update(0.005, now).shouldFinalize;
+    }
+    expect(finalizationSeen).toBe(true);
+    expect(vad.finalizationReason).toBe("silence");
   });
 
   it("blocks the fallback immediately when a speech-level frame arrives at its deadline", () => {

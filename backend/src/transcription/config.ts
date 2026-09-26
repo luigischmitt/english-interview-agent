@@ -11,6 +11,8 @@ export type TranscriptionConfig = {
   streamMaxActiveSessions: number;
   streamMaxConcurrentTranscriptions: number;
   streamMaxQueuedTranscriptions: number;
+  vadTrailingSilenceMs: number;
+  vadAmbientActivityHoldMs: number;
 };
 
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
@@ -44,5 +46,7 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     streamMaxActiveSessions: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_ACTIVE_SESSIONS, 8, 8),
     streamMaxConcurrentTranscriptions: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_CONCURRENT_TRANSCRIPTIONS, 4, 4),
     streamMaxQueuedTranscriptions: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_QUEUED_TRANSCRIPTIONS, 4, 4),
+    vadTrailingSilenceMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_TRAILING_SILENCE_MS, 3_500, 10_000),
+    vadAmbientActivityHoldMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_AMBIENT_HOLD_MS, 8_000, 30_000),
   };
 }
