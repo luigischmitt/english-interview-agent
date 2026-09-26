@@ -46,7 +46,9 @@ describe("OpenRouter next-turn orchestration", () => {
     expect(requestBody.max_tokens).toBe(320);
     expect(requestBody.response_format.json_schema.strict).toBe(true);
     expect(requestBody.response_format.json_schema.schema.required).toEqual(["decision", "followUpQuestion", "nextQuestion", "anchor", "acknowledgement"]);
-    expect(requestBody.messages[0].content).toContain("Prefer FOLLOW_UP");
+    expect(requestBody.messages[0].content).toContain("Decision policy:");
+    expect(requestBody.messages[0].content).toContain("FOLLOW_UP is the default");
+    expect(requestBody.messages[0].content).toContain("NEXT is an exception");
     expect(requestBody.messages[0].content).toContain("never repeat a question");
     expect(requestBody.messages[0].content).toContain("Do not quote the transcript");
     expect(requestBody.messages[0].content).toContain("B1/B2 English");
@@ -82,6 +84,33 @@ describe("OpenRouter next-turn orchestration", () => {
     const raw = { decision: "FOLLOW_UP", followUpQuestion: question, nextQuestion: null, anchor: "idempotency keys", acknowledgement: "I see. You mentioned idempotency keys." };
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(followUpInput)).resolves.toMatchObject({
       decision: "FOLLOW_UP", followUpQuestion: question, acknowledgement: null,
+    });
+  });
+
+  it.each([
+    {
+      currentQuestion: "How did you migrate the API?",
+      transcript: "I migrated the API in phases, preserving old client behavior and the existing data model.",
+      anchor: "old client behavior",
+      followUpQuestion: "You mentioned old client behavior; how did you verify the migration stayed compatible?",
+    },
+    {
+      currentQuestion: "How did you prevent duplicate orders?",
+      transcript: "We used idempotency keys to prevent duplicate orders and chose a 90-day retention window for recovery.",
+      anchor: "idempotency keys",
+      followUpQuestion: "You mentioned idempotency keys; how did the retention window affect recovery decisions?",
+    },
+    {
+      currentQuestion: "How did you process uploaded images?",
+      transcript: "I moved image processing into a queue, added synchronous timeouts, and limited retries to three.",
+      anchor: "limited retries",
+      followUpQuestion: "You mentioned limited retries; how did you decide when another attempt was useful?",
+    },
+  ])("accepts a grounded follow-up for a concrete technical hook", async (example) => {
+    const answer = { ...input, ...example, askedQuestions: [example.currentQuestion], followUpUsed: false };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: example.followUpQuestion, nextQuestion: null, anchor: example.anchor, acknowledgement: "I see." };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({
+      decision: "FOLLOW_UP", followUpQuestion: example.followUpQuestion, acknowledgement: "I see.",
     });
   });
 
@@ -125,7 +154,7 @@ describe("OpenRouter next-turn orchestration", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       await service(async () => providerResponse("not-json")).decide(input);
-      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: "interview_orchestration_fallback", reason: "invalid_model_output" }));
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: "interview_orchestration_fallback", reason: "invalid_json" }));
       expect(warn.mock.calls.flat().join(" ")).not.toContain(input.transcript);
       expect(warn.mock.calls.flat().join(" ")).not.toContain("server-test-key");
     } finally {
