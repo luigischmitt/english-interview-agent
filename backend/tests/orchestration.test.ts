@@ -37,7 +37,8 @@ function decision(overrides: Record<string, unknown> = {}) {
 describe("OpenRouter next-turn orchestration", () => {
   it("prefers one grounded follow-up when the answer gives a useful thread", async () => {
     let init: RequestInit | undefined;
-    const result = await service(async (_url, options) => { init = options; return providerResponse(JSON.stringify(decision())); }).decide(input);
+    const requestInput = { ...input, recentAcknowledgements: ["I see.", "Got it."] };
+    const result = await service(async (_url, options) => { init = options; return providerResponse(JSON.stringify(decision())); }).decide(requestInput);
     expect(result).toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: followUp, acknowledgement });
     expect(result.diagnostics).toMatchObject({ model: defaultThinkingModel, costUsd: 0.00004 });
     const requestBody = JSON.parse(String(init?.body));
@@ -53,12 +54,28 @@ describe("OpenRouter next-turn orchestration", () => {
     expect(requestBody.messages[0].content).toContain("Do not quote the transcript");
     expect(requestBody.messages[0].content).toContain("B1/B2 English");
     expect(requestBody.messages[0].content).not.toContain("chain-of-thought");
-    expect(JSON.parse(requestBody.messages[1].content)).toMatchObject({ askedQuestions: input.askedQuestions, currentQuestion: input.currentQuestion, transcript: input.transcript, remainingFixedQuestions: input.remainingFixedQuestions });
+    expect(JSON.parse(requestBody.messages[1].content)).toMatchObject({ askedQuestions: input.askedQuestions, currentQuestion: input.currentQuestion, transcript: input.transcript, remainingFixedQuestions: input.remainingFixedQuestions, recentAcknowledgements: requestInput.recentAcknowledgements });
+    expect(requestBody.messages[0].content).toContain("Never repeat any recentAcknowledgements");
   });
 
   it("allows a null acknowledgement when the question can carry the transition", async () => {
     const raw = decision({ acknowledgement: null });
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({ decision: "FOLLOW_UP", acknowledgement: null });
+  });
+
+  it("omits a recently used bridge while preserving the grounded follow-up", async () => {
+    const answer = { ...input, recentAcknowledgements: ["I see.", "Got it!"] };
+    const raw = decision({ acknowledgement: " I SEE! " });
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({
+      decision: "FOLLOW_UP", followUpQuestion: followUp, acknowledgement: null,
+    });
+  });
+
+  it("sanitizes a bridge that repeats candidate transcript details", async () => {
+    const raw = decision({ acknowledgement: "Thanks for explaining bounded retries." });
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({
+      decision: "FOLLOW_UP", followUpQuestion: followUp, acknowledgement: null,
+    });
   });
 
   it("keeps a useful follow-up when it shares the current question context", async () => {
@@ -246,6 +263,13 @@ describe("OpenRouter next-turn orchestration", () => {
   it("discards a noisy acknowledgement without losing a valid next question", async () => {
     const raw = { decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: "Thanks for sharing ‘pfffff’." };
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: null });
+  });
+
+  it("rejects an oversized recent acknowledgement history at the route boundary", async () => {
+    const response = await request(createApp({ speechConfig, orchestrationService: { decide: vi.fn(async () => ({ decision: "NEXT" as const, followUpQuestion: null, nextQuestion: input.nextFixedQuestion, acknowledgement: null })) } }))
+      .post("/api/v1/thinking/next-turn")
+      .send({ ...input, recentAcknowledgements: Array.from({ length: 6 }, () => "I see.") });
+    expect(response.status).toBe(400);
   });
 
   it("rejects a noise anchor even when the answer also has useful content", async () => {

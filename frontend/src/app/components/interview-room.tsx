@@ -105,6 +105,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const reportStartedRef = useRef(createOnceGate());
   const reportPersistenceSignatureRef = useRef("");
   const reportTurnsRef = useRef(reportTurns);
+  const recentAcknowledgementsRef = useRef<string[]>([]);
   const voiceAssessmentsRef = useRef(voiceAssessments);
   const phaseRef = useRef(phase);
   const currentQuestionIdRef = useRef(question.id);
@@ -223,6 +224,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       remainingFixedQuestions: questions.slice(currentIndex + 1).map((plannedQuestion) => plannedQuestion.prompt),
       followUpUsed,
       askedQuestions,
+      recentAcknowledgements: recentAcknowledgementsRef.current,
       signal: abortController.signal,
     });
     if (!mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
@@ -234,12 +236,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) {
         transitionPhase("closing");
       } else if (decision.decision === "FOLLOW_UP") {
+        if (decision.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, decision.acknowledgement].slice(-5);
         setAcknowledgement(decision.acknowledgement);
         setQuestion({ ...question, id: `${question.id}-follow-up`, prompt: decision.followUpQuestion, cue: "Uma pergunta curta para aprofundar sua resposta." });
         setFollowUpUsed(true);
         setQuestionSequenceNumber((sequence) => sequence + 2);
         transitionPhase("speaking");
       } else {
+        if (decision.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, decision.acknowledgement].slice(-5);
         setAcknowledgement(decision.acknowledgement);
         const matchedFixedIndex = decision.nextQuestion === null ? -1 : questions.findIndex((plannedQuestion, index) => index > currentIndex && plannedQuestion.prompt === decision.nextQuestion);
         const nextIndex = matchedFixedIndex >= 0 ? matchedFixedIndex : currentIndex + 1;
