@@ -6,6 +6,7 @@ export type TranscriptionResult = {
   provider: TranscriptionProvider;
   transcript: string;
   words?: TranscriptionWord[];
+  segments?: TranscriptionWord[];
 };
 
 export type TranscriptionWord = { text: string; start: number; end: number };

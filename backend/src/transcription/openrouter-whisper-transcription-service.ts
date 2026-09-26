@@ -8,7 +8,7 @@ type OpenRouterWhisperTranscriptionServiceOptions = {
   sleepImplementation?: (milliseconds: number) => Promise<void>;
 };
 
-type OpenRouterResponse = { text?: string; words?: unknown };
+type OpenRouterResponse = { text?: string; words?: unknown; segments?: unknown };
 
 const modelForProvider: Record<Exclude<TranscriptionProvider, "azure">, string> = {
   "whisper-large-v3": "openai/whisper-large-v3",
@@ -65,7 +65,13 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
         const result = await response.json() as OpenRouterResponse;
         const transcript = result.text?.trim();
         if (!transcript) throw new TranscriptionUnavailableError("OpenRouter could not recognize a response in this recording.");
-        return { provider, transcript, words: parseWhisperWords(result.words, wavDurationSeconds(audio)) };
+        const durationSeconds = wavDurationSeconds(audio);
+        return {
+          provider,
+          transcript,
+          words: parseWhisperWords(result.words, durationSeconds),
+          segments: parseWhisperSegments(result.segments, durationSeconds),
+        };
       }
       throw new TranscriptionUnavailableError("OpenRouter returned HTTP 429 after retries.");
     } catch (error) {
@@ -90,6 +96,25 @@ export function parseWhisperWords(value: unknown, durationSeconds: number): Tran
     previousEnd = word.end;
   }
   return words.length ? words : undefined;
+}
+
+/** Segment text and timestamps are a lower-resolution fallback when word timing is absent. */
+export function parseWhisperSegments(value: unknown, durationSeconds: number): TranscriptionWord[] | undefined {
+  if (!Array.isArray(value) || !Number.isFinite(durationSeconds) || durationSeconds <= 0) return undefined;
+  const segments: TranscriptionWord[] = [];
+  let previousEnd = 0;
+  for (const item of value) {
+    if (!item || typeof item !== "object") return undefined;
+    const segment = item as { text?: unknown; start?: unknown; end?: unknown };
+    if (typeof segment.text !== "string" || !segment.text.trim()
+      || typeof segment.start !== "number" || !Number.isFinite(segment.start) || segment.start < 0
+      || typeof segment.end !== "number" || !Number.isFinite(segment.end) || segment.end <= segment.start
+      || segment.end > durationSeconds || segment.start < previousEnd
+      || segment.end - segment.start > 25) return undefined;
+    segments.push({ text: segment.text, start: segment.start, end: segment.end });
+    previousEnd = segment.end;
+  }
+  return segments.length ? segments : undefined;
 }
 
 function wavDurationSeconds(audio: Buffer): number {
