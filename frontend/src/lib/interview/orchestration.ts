@@ -16,6 +16,7 @@ export async function decideNextTurn(input: {
   remainingFixedQuestions: string[];
   followUpUsed: boolean;
   askedQuestions: string[];
+  recentAcknowledgements?: string[];
   signal: AbortSignal;
 }): Promise<TurnDecision> {
   const askedQuestions = [...new Set([...input.askedQuestions, input.currentQuestion])];
@@ -33,6 +34,7 @@ export async function decideNextTurn(input: {
         remainingFixedQuestions: input.remainingFixedQuestions,
         followUpUsed: input.followUpUsed,
         askedQuestions: input.askedQuestions,
+        recentAcknowledgements: input.recentAcknowledgements ?? [],
         roleContext: { targetRole: input.config.role, seniority: input.config.seniority, focus: input.config.focus },
       }),
       signal: AbortSignal.any([input.signal, AbortSignal.timeout(7_000)]),
@@ -42,19 +44,21 @@ export async function decideNextTurn(input: {
     if (typeof value !== "object" || value === null || Array.isArray(value)) return fallback;
     const result = value as Record<string, unknown>;
     const acknowledgement = result.acknowledgement === null ? null : typeof result.acknowledgement === "string" ? result.acknowledgement.trim() : undefined;
+    const recentAcknowledgements = new Set((input.recentAcknowledgements ?? []).map((value) => value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()));
     const validAcknowledgement = acknowledgement === null || (typeof acknowledgement === "string" && acknowledgement.length > 0 && acknowledgement.length <= 120 && acknowledgement.split(/\s+/u).length <= 14 && !/[\r\n“”"]/u.test(acknowledgement) && !containsNoiseToken(acknowledgement));
+    const safeAcknowledgement = typeof acknowledgement === "string" && recentAcknowledgements.has(acknowledgement.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()) ? null : acknowledgement ?? null;
     if (validAcknowledgement && result.decision === "NEXT" && result.followUpQuestion === null && (result.nextQuestion === null || typeof result.nextQuestion === "string")) {
-      if (result.nextQuestion === null) return normalizeNextTurnDecision(result, fallbackQuestion);
+      if (result.nextQuestion === null) return normalizeNextTurnDecision({ ...result, acknowledgement: safeAcknowledgement }, fallbackQuestion);
       const prompt = result.nextQuestion.trim();
       const words = prompt.split(/\s+/).filter(Boolean).length;
-      if (prompt.length >= 12 && prompt.length <= 220 && words >= 5 && words <= 28 && prompt.endsWith("?") && (prompt.match(/\?/g) ?? []).length === 1 && !/[\r\n]/.test(prompt) && !containsNoiseToken(prompt) && !repeatsAskedQuestion(prompt, askedQuestions)) return normalizeNextTurnDecision({ ...result, nextQuestion: prompt }, fallbackQuestion);
+      if (prompt.length >= 12 && prompt.length <= 220 && words >= 5 && words <= 28 && prompt.endsWith("?") && (prompt.match(/\?/g) ?? []).length === 1 && !/[\r\n]/.test(prompt) && !containsNoiseToken(prompt) && !repeatsAskedQuestion(prompt, askedQuestions)) return normalizeNextTurnDecision({ ...result, nextQuestion: prompt, acknowledgement: null }, fallbackQuestion);
     }
     if (validAcknowledgement && result.decision === "FOLLOW_UP" && typeof result.followUpQuestion === "string") {
       const prompt = result.followUpQuestion.trim();
       const words = prompt.split(/\s+/).filter(Boolean).length;
       const previousQuestions = askedQuestions.filter((asked) => asked !== input.currentQuestion);
       if (!input.followUpUsed && prompt.length <= 180 && words >= 5 && words <= 24 && prompt.endsWith("?") && (prompt.match(/\?/g) ?? []).length === 1 && !/[\r\n]/.test(prompt) && !containsNoiseToken(prompt) && !repeatsAskedQuestion(prompt, previousQuestions)) {
-        if (result.nextQuestion === null) return { decision: "FOLLOW_UP", followUpQuestion: prompt, nextQuestion: null, acknowledgement };
+        if (result.nextQuestion === null) return { decision: "FOLLOW_UP", followUpQuestion: prompt, nextQuestion: null, acknowledgement: safeAcknowledgement };
       }
     }
   } catch {

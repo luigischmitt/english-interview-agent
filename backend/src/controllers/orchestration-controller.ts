@@ -16,6 +16,8 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
   const { roleContext } = body;
   if (body.askedQuestions !== undefined && (!Array.isArray(body.askedQuestions) || body.askedQuestions.length > 30
     || body.askedQuestions.some((question) => !validText(question, 500)))) return null;
+  if (body.recentAcknowledgements !== undefined && (!Array.isArray(body.recentAcknowledgements) || body.recentAcknowledgements.length > 5
+    || body.recentAcknowledgements.some((acknowledgement) => !validText(acknowledgement, 120)))) return null;
   if (body.remainingFixedQuestions !== undefined && (!Array.isArray(body.remainingFixedQuestions) || body.remainingFixedQuestions.length > 30
     || body.remainingFixedQuestions.some((question) => !validText(question, 500)))) return null;
   if ((roleContext.seniority !== undefined && (typeof roleContext.seniority !== "string" || roleContext.seniority.length > 80))
@@ -25,6 +27,7 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
     currentQuestion: body.currentQuestion.trim(), transcript: body.transcript.trim(), nextFixedQuestion: body.nextFixedQuestion === null ? null : body.nextFixedQuestion.trim(), followUpUsed: body.followUpUsed,
     ...(Array.isArray(body.remainingFixedQuestions) ? { remainingFixedQuestions: body.remainingFixedQuestions.map((question) => (question as string).trim()) } : {}),
     ...(Array.isArray(body.askedQuestions) ? { askedQuestions: body.askedQuestions.map((question) => (question as string).trim()) } : {}),
+    ...(Array.isArray(body.recentAcknowledgements) ? { recentAcknowledgements: body.recentAcknowledgements.map((acknowledgement) => (acknowledgement as string).trim()) } : {}),
     roleContext: { targetRole: targetRole.trim(), ...(typeof roleContext.seniority === "string" ? { seniority: roleContext.seniority.trim() } : {}), ...(typeof roleContext.focus === "string" ? { focus: roleContext.focus.trim() } : {}) },
   };
 }

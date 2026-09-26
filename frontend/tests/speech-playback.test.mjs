@@ -217,7 +217,7 @@ for (const scenario of [
   });
 }
 
-test("interviewer excerpts are synthesized and played sequentially", async () => {
+test("one utterance is synthesized once while sentence captions remain chunked", async () => {
   const events = [];
   let blobIndex = 0;
   const playback = playInterviewerSegments(["First thought.", "Second thought."], {
@@ -244,16 +244,41 @@ test("interviewer excerpts are synthesized and played sequentially", async () =>
 
   assert.deepEqual(await playback.promise, { status: "completed" });
   assert.deepEqual(events.filter((event) => typeof event === "string"), [
+    "fetch:First thought. Second thought.",
     "caption:First thought.",
-    "fetch:First thought.",
-    "play:blob:1:14",
-    "caption:Second thought.",
-    "fetch:Second thought.",
-    "play:blob:2:15",
+    "play:blob:1:30",
   ]);
+  assert.equal(events.filter((event) => event.startsWith("fetch:")).length, 1);
 });
 
-test("cancelling a segment queue stops the active clip and does not fetch later excerpts", async () => {
+test("caption chunks advance against one continuous audio track", async () => {
+  const captions = [];
+  let audio;
+  const playback = playInterviewerSegments(["First thought.", "Second thought here."], {
+    endpoint: "http://speech.test/api/v1/speech",
+    fetcher: async () => ({ ok: true, blob: async () => new Blob(["mp3"]) }),
+    makeAudio: () => {
+      audio = new FakeAudio();
+      audio.duration = 10;
+      audio.play = () => Promise.resolve();
+      return audio;
+    },
+    createObjectUrl: () => "blob:captioned",
+    revokeObjectUrl: () => {},
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+    onSegment: (segment) => captions.push(segment),
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(captions, ["First thought."]);
+  audio.currentTime = 7;
+  audio.emit("timeupdate");
+  assert.deepEqual(captions, ["First thought.", "Second thought here."]);
+  audio.emit("ended");
+  assert.deepEqual(await playback.promise, { status: "completed" });
+});
+
+test("cancelling an utterance stops its single continuous audio track", async () => {
   const fetched = [];
   let audio;
   let revoked = false;
@@ -277,7 +302,7 @@ test("cancelling a segment queue stops the active clip and does not fetch later 
   await new Promise((resolve) => setImmediate(resolve));
   playback.cancel();
   assert.deepEqual(await playback.promise, { status: "cancelled" });
-  assert.deepEqual(fetched, ["First thought."]);
+  assert.deepEqual(fetched, ["First thought. Second thought."]);
   assert.equal(audio.paused, true);
   assert.equal(revoked, true);
 });

@@ -74,6 +74,7 @@ export type InterviewOrchestrationInput = InterviewThinkingInput & {
   remainingFixedQuestions?: string[];
   followUpUsed: boolean;
   askedQuestions?: string[];
+  recentAcknowledgements?: string[];
 };
 
 export type InterviewOrchestrationResult = {

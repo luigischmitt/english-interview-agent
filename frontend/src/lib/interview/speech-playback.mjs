@@ -137,11 +137,30 @@ export function synthesizeInterviewerQuestion(text, options) {
       const playbackEnded = new Promise((resolve, reject) => {
         const onEnded = () => resolve("ended");
         const onError = () => reject(new Error("Audio playback failed."));
+        const captionSegments = options.captionSegments?.filter(Boolean) ?? [];
+        const totalWords = captionSegments.reduce((total, segment) => total + segment.split(/\s+/u).filter(Boolean).length, 0);
+        const onTimeUpdate = () => {
+          if (!captionSegments.length || !Number.isFinite(audio?.duration) || audio.duration <= 0 || totalWords === 0) return;
+          const playedRatio = Math.min(1, audio.currentTime / audio.duration);
+          const playedWords = playedRatio * totalWords;
+          let boundary = 0;
+          let segmentIndex = captionSegments.length - 1;
+          for (let index = 0; index < captionSegments.length; index += 1) {
+            boundary += captionSegments[index].split(/\s+/u).filter(Boolean).length;
+            if (playedWords < boundary) { segmentIndex = index; break; }
+          }
+          options.onSegment?.(captionSegments[segmentIndex]);
+        };
+        if (captionSegments.length) options.onSegment?.(captionSegments[0]);
         audio.addEventListener("ended", onEnded, { once: true });
         audio.addEventListener("error", onError, { once: true });
+        audio.addEventListener("timeupdate", onTimeUpdate);
+        audio.addEventListener("durationchange", onTimeUpdate);
         removeAudioListeners = () => {
           audio?.removeEventListener("ended", onEnded);
           audio?.removeEventListener("error", onError);
+          audio?.removeEventListener("timeupdate", onTimeUpdate);
+          audio?.removeEventListener("durationchange", onTimeUpdate);
         };
       });
 
@@ -176,16 +195,14 @@ export function playInterviewerSegments(segments, options) {
   let cancelled = false;
   let activePlayback = null;
 
+  const utterance = segments.map((segment) => segment.trim()).filter(Boolean);
   const promise = (async () => {
-    for (const segment of segments) {
-      if (cancelled) return { status: "cancelled" };
-      options.onSegment?.(segment);
-      activePlayback = synthesizeInterviewerQuestion(segment, options);
-      const result = await activePlayback.promise;
-      activePlayback = null;
-      if (result.status !== "completed") return result;
-    }
-    return { status: "completed" };
+    if (cancelled) return { status: "cancelled" };
+    if (!utterance.length) return { status: "completed" };
+    activePlayback = synthesizeInterviewerQuestion(utterance.join(" "), { ...options, captionSegments: utterance });
+    const result = await activePlayback.promise;
+    activePlayback = null;
+    return result;
   })();
 
   return {
