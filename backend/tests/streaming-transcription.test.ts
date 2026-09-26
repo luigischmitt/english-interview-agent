@@ -3,22 +3,17 @@ import { createServer } from "node:http";
 import { WebSocket } from "ws";
 
 import { defaultVadConfig, getSilenceThreshold, VoiceActivityDetector } from "../src/transcription/voice-activity-detector.js";
-import type { TranscriptionService } from "../src/transcription/types.js";
+import type { TranscriptionResult, TranscriptionService } from "../src/transcription/types.js";
 import { attachTranscriptionWebSocket } from "../src/transcription/transcription-websocket.js";
 import type { PronunciationAssessmentService } from "../src/transcription/azure-pronunciation-assessment.js";
-import { defaultStreamingLimits, initialTranscriptionWindowMs, pcmToWav, StreamingTranscriptionSessions } from "../src/transcription/streaming-transcription.js";
+import { defaultStreamingLimits, FinalTranscriptionQueue, pcmToWav, StreamingTranscriptionSessions } from "../src/transcription/streaming-transcription.js";
 import { getAllowedOrigins, isOriginAllowed } from "../src/middlewares/allowed-origins.js";
 
-const frameBytes = 3_200; // 100 ms of 16 kHz mono s16le
+const frameBytes = 3_200;
 const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-function createService(transcripts: string[] = ["transcribed window"]) {
-  let calls = 0;
-  const transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo", format: "wav") => ({
-    provider,
-    transcript: transcripts[Math.min(calls++, transcripts.length - 1)],
-    format,
-  }));
+function createService(transcript = "I led the migration") {
+  const transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({ provider, transcript }));
   const service: TranscriptionService = { availableProviders: () => ["whisper-large-v3-turbo"], transcribe };
   return { service, transcribe };
 }
@@ -77,9 +72,13 @@ async function sendSpeechLevels(socket: WebSocket, durationMs = 800) {
   }
 }
 
-function sendFrames(socket: WebSocket, count: number) {
-  const frame = Buffer.alloc(frameBytes, 0x20);
+function sendFrames(socket: WebSocket, count: number, frame = Buffer.alloc(frameBytes, 0x20)) {
   for (let index = 0; index < count; index += 1) socket.send(frame);
+}
+
+async function prepareAnswer(socket: WebSocket, frames = 8) {
+  await sendSpeechLevels(socket);
+  sendFrames(socket, frames);
 }
 
 describe("voice activity detection", () => {
@@ -93,7 +92,7 @@ describe("voice activity detection", () => {
     expect(vad.update(0.005, 4_300).shouldFinalize).toBe(true);
   });
 
-  it("uses hysteresis above the calibrated noise floor and returns to noise after speech", () => {
+  it("uses hysteresis above the calibrated noise floor", () => {
     const speechThreshold = 0.1;
     const vad = new VoiceActivityDetector({ ...defaultVadConfig, speechThreshold, silenceThreshold: getSilenceThreshold(speechThreshold) });
     expect(getSilenceThreshold(speechThreshold)).toBeCloseTo(0.065);
@@ -101,99 +100,43 @@ describe("voice activity detection", () => {
     expect(vad.update(0.16, 100).speechStarted).toBe(false);
     expect(vad.update(0.16, 200).speechStarted).toBe(true);
     expect(vad.update(0.04, 900).shouldFinalize).toBe(false);
-    expect(vad.update(0.04, 4_399).shouldFinalize).toBe(false);
-    expect(vad.update(0.04, 4_400).shouldFinalize).toBe(true);
-  });
-
-  it("keeps a response open across a natural short pause", () => {
-    const vad = new VoiceActivityDetector();
-    vad.update(0.04, 0);
-    vad.update(0.04, 100);
-    vad.update(0.04, 200);
-    expect(vad.update(0.005, 3_600).shouldFinalize).toBe(false);
-    expect(vad.update(0.04, 3_700).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 4_000).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 7_499).shouldFinalize).toBe(false);
-    expect(vad.update(0.005, 7_500).shouldFinalize).toBe(true);
   });
 });
 
-describe("PCM streaming sessions", () => {
-  it("creates independent 6 second windows with a one second audio overlap", () => {
-    const { service } = createService();
-    const sessions = new StreamingTranscriptionSessions(service);
-    const session = sessions.create(0.025);
-    sessions.append(session.id, 0, Buffer.alloc(40 * frameBytes));
-    const first = sessions.takeNextWindow(session.id);
-    expect(first).toMatchObject({ index: 1, startSample: 0, endSample: 64_000, durationMs: 4_000, newlyCoveredDurationMs: 4_000 });
-    expect(first?.pcm.byteLength).toBe(128_000);
-
-    sessions.append(session.id, 1, Buffer.alloc(50 * frameBytes));
-    const second = sessions.takeNextWindow(session.id);
-    expect(second).toMatchObject({ index: 2, startSample: 48_000, endSample: 144_000, durationMs: 6_000, newlyCoveredDurationMs: 5_000 });
-  });
-
-  it("flushes the remaining tail only when the response is finalized", () => {
+describe("in-memory PCM sessions", () => {
+  it("retains a near-maximum 180-second response under 6 MiB and clears its frames", () => {
     const sessions = new StreamingTranscriptionSessions(createService().service);
     const session = sessions.create(0.025);
-    sessions.append(session.id, 0, Buffer.alloc(3 * frameBytes));
-    expect(sessions.takeNextWindow(session.id)).toBeNull();
-    expect(sessions.takeNextWindow(session.id, true)).toMatchObject({ index: 1, durationMs: 300 });
-    expect(sessions.takeNextWindow(session.id, true)).toBeNull();
-  });
-
-  it("copies only the requested window range across multiple input frames", () => {
-    const sessions = new StreamingTranscriptionSessions(createService().service);
-    const session = sessions.create(0.025);
-    sessions.append(session.id, 0, Buffer.alloc(64_000, 0x11));
-    sessions.append(session.id, 1, Buffer.alloc(64_000, 0x22));
-    const first = sessions.takeNextWindow(session.id);
-    expect(first?.durationMs).toBe(initialTranscriptionWindowMs);
-    expect(first?.pcm.length).toBe(128_000);
-    expect(first?.pcm.subarray(0, 64_000).every((byte) => byte === 0x11)).toBe(true);
-    expect(first?.pcm.subarray(64_000).every((byte) => byte === 0x22)).toBe(true);
-  });
-
-  it("accepts a response longer than the former 30 second cutoff", () => {
-    const sessions = new StreamingTranscriptionSessions(createService().service);
-    const session = sessions.create(0.025);
-    const frame = Buffer.alloc(frameBytes);
-    let sequence = 0;
-    for (const count of [60, 50, 50, 50, 50, 50, 10]) {
-      for (let index = 0; index < count; index += 1) sessions.append(session.id, sequence++, frame);
-      sessions.takeNextWindow(session.id);
+    let firstFrame: Buffer | undefined;
+    for (let sequence = 0; sequence < 1_800; sequence += 1) {
+      const frame = Buffer.alloc(frameBytes);
+      firstFrame ??= frame;
+      sessions.append(session.id, sequence, frame);
     }
-    expect(session.samplesReceived / 16_000).toBe(32);
-    expect(sessions.takeNextWindow(session.id, true)?.durationMs).toBe(4_000);
+    expect(session.bytes).toBe(5_760_000);
+    expect(session.bytes).toBeLessThan(6 * 1024 * 1024);
+    const wav = sessions.toWav(session.id);
+    expect(wav.length).toBe(5_760_044);
+    expect(wav.readUInt32LE(40)).toBe(5_760_000);
+    sessions.finish(session.id);
+    expect(firstFrame?.every((byte) => byte === 0)).toBe(true);
   });
 
-  it("rejects invalid chunk ordering, duration, byte, and provider queue limits", () => {
-    const limits = { ...defaultStreamingLimits, maxBytes: 20_000, maxQueueBytes: 6_400, maxDurationMs: 150 };
-    const sessions = new StreamingTranscriptionSessions(createService().service, Date.now, defaultVadConfig, limits);
+  it("accepts up to the full configured response and rejects bytes, duration, sequence, and session limits", () => {
+    const { service } = createService();
+    const limits = { ...defaultStreamingLimits, maxBytes: frameBytes * 2, maxDurationMs: 200, maxActiveSessions: 1 };
+    const sessions = new StreamingTranscriptionSessions(service, Date.now, defaultVadConfig, limits);
     const session = sessions.create(0.025);
-    expect(() => sessions.append(session.id, 1, Buffer.alloc(frameBytes))).toThrow("INVALID_CHUNK_SEQUENCE");
-    expect(() => sessions.append(session.id, 0, Buffer.alloc(frameBytes + 1))).toThrow("INVALID_PCM_FRAME");
     sessions.append(session.id, 0, Buffer.alloc(frameBytes));
-    expect(() => sessions.append(session.id, 1, Buffer.alloc(frameBytes * 2))).toThrow("STREAM_DURATION_LIMIT");
-
-    const queueLimits = { ...defaultStreamingLimits, maxQueueBytes: frameBytes };
-    const queued = new StreamingTranscriptionSessions(createService().service, Date.now, defaultVadConfig, queueLimits);
-    const queuedSession = queued.create(0.025);
-    queued.append(queuedSession.id, 0, Buffer.alloc(frameBytes));
-    expect(() => queued.append(queuedSession.id, 1, Buffer.alloc(frameBytes))).toThrow("STREAM_QUEUE_LIMIT");
-  });
-
-  it("caps concurrent in-memory sessions and releases buffers on cancel", () => {
-    const limits = { ...defaultStreamingLimits, maxActiveSessions: 1 };
-    const sessions = new StreamingTranscriptionSessions(createService().service, Date.now, defaultVadConfig, limits);
-    const session = sessions.create(0.025);
-    sessions.append(session.id, 0, Buffer.alloc(2));
     expect(() => sessions.create(0.025)).toThrow("STREAM_CAPACITY_REACHED");
+    expect(() => sessions.append(session.id, 2, Buffer.alloc(frameBytes))).toThrow("INVALID_CHUNK_SEQUENCE");
+    sessions.append(session.id, 1, Buffer.alloc(frameBytes));
+    expect(() => sessions.append(session.id, 2, Buffer.alloc(2))).toThrow("STREAM_SIZE_LIMIT");
     expect(sessions.cancel(session.id)).toBe(true);
     expect(sessions.get(session.id)).toBeUndefined();
   });
 
-  it("builds a valid 16 kHz mono PCM WAV in memory", () => {
+  it("builds a valid mono 16 kHz WAV directly from frames", () => {
     const wav = pcmToWav(Buffer.from([1, 2, 3, 4]));
     expect(wav.subarray(0, 4).toString()).toBe("RIFF");
     expect(wav.subarray(8, 12).toString()).toBe("WAVE");
@@ -203,189 +146,316 @@ describe("PCM streaming sessions", () => {
   });
 });
 
+describe("bounded final transcription queue", () => {
+  it("supports four active and four queued requests while rejecting a ninth", async () => {
+    const queue = new FinalTranscriptionQueue(4, 4);
+    const resolvers = new Map<string, () => void>();
+    let active = 0;
+    let maximumActive = 0;
+    const taskFor = (id: string) => async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise<void>((resolve) => { resolvers.set(id, resolve); });
+      active -= 1;
+    };
+    for (let index = 0; index < 4; index += 1) queue.enqueue(`active-${index}`, taskFor(`active-${index}`), () => undefined);
+    for (let index = 0; index < 4; index += 1) queue.enqueue(`queued-${index}`, taskFor(`queued-${index}`), () => undefined);
+    expect(queue.activeCount).toBe(4);
+    expect(queue.queuedCount).toBe(4);
+    expect(() => queue.enqueue("overflow", taskFor("overflow"), () => undefined)).toThrow("TRANSCRIPTION_CAPACITY_REACHED");
+    for (let index = 0; index < 4; index += 1) resolvers.get(`active-${index}`)?.();
+    await delay(5);
+    expect(queue.activeCount).toBe(4);
+    expect(queue.queuedCount).toBe(0);
+    for (let index = 0; index < 4; index += 1) resolvers.get(`queued-${index}`)?.();
+    await delay(5);
+    expect(queue.activeCount).toBe(0);
+    expect(maximumActive).toBe(4);
+  });
+
+  it("limits concurrent calls, bounds the queue, and drains in FIFO order", async () => {
+    const queue = new FinalTranscriptionQueue(1, 1);
+    let active = 0;
+    let maximumActive = 0;
+    const events: string[] = [];
+    const makeTask = (id: string) => async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await delay(20);
+      events.push(id);
+      active -= 1;
+    };
+    queue.enqueue("one", makeTask("one"), () => undefined);
+    let queued = 0;
+    queue.enqueue("two", makeTask("two"), () => { queued += 1; });
+    expect(queued).toBe(1);
+    expect(() => queue.enqueue("three", makeTask("three"), () => undefined)).toThrow("TRANSCRIPTION_CAPACITY_REACHED");
+    await delay(70);
+    expect(events).toEqual(["one", "two"]);
+    expect(maximumActive).toBe(1);
+    expect(queue.queuedCount).toBe(0);
+  });
+
+  it("removes a canceled queued request", async () => {
+    const queue = new FinalTranscriptionQueue(1, 1);
+    let release!: () => void;
+    queue.enqueue("active", () => new Promise<void>((resolve) => { release = resolve; }), () => undefined);
+    const pending = vi.fn(async () => undefined);
+    queue.enqueue("pending", pending, () => undefined);
+    queue.cancel("pending");
+    expect(queue.queuedCount).toBe(0);
+    release();
+    await delay(10);
+    expect(pending).not.toHaveBeenCalled();
+  });
+});
+
 describe("versioned transcription WebSocket", () => {
-  it("emits the first Whisper partial at 4 seconds, then finalizes the next window", async () => {
-    const { service, transcribe } = createService(["I led the migration", "migration with lower risk"]);
+  it("handles eight complete sockets as four active and four queued, once each, then clears audio", async () => {
+    const requests: Array<{ audio: Buffer; resolve: (result: TranscriptionResult) => void }> = [];
+    const transcribe = vi.fn((audio: Buffer, provider: "whisper-large-v3-turbo") => new Promise<TranscriptionResult>((resolve) => {
+      requests.push({ audio, resolve: (result) => resolve(result) });
+    }));
+    const service: TranscriptionService = { availableProviders: () => ["whisper-large-v3-turbo"], transcribe };
+    const fixture = await openStreamServer(service, null, {
+      ...defaultStreamingLimits,
+      maxActiveSessions: 8,
+      maxConcurrentTranscriptions: 4,
+      maxQueuedTranscriptions: 4,
+    });
+    const sockets = await Promise.all(Array.from({ length: 8 }, () => openSocket(fixture.url)));
+    try {
+      await Promise.all(sockets.map((socket) => startStream(socket)));
+      await Promise.all(sockets.map((socket) => prepareAnswer(socket, 8)));
+      expect(transcribe).not.toHaveBeenCalled();
+
+      const completeWaiters = sockets.map((socket) => waitForType(socket, "complete"));
+      const startedWaiters = sockets.slice(0, 4).map((socket) => waitForType(socket, "transcription-started"));
+      const queuedWaiters = sockets.slice(4).map((socket) => waitForType(socket, "transcription-queued"));
+      sockets.forEach((socket) => socket.send(JSON.stringify({ type: "finalize", reason: "manual" })));
+      await Promise.all(startedWaiters);
+      await Promise.all(queuedWaiters);
+      expect(transcribe).toHaveBeenCalledTimes(4);
+
+      const nextStartedWaiters = sockets.slice(4).map((socket) => waitForType(socket, "transcription-started"));
+      requests.slice(0, 4).forEach(({ resolve }, index) => resolve({ provider: "whisper-large-v3-turbo", transcript: `Answer ${index + 1}` }));
+      await Promise.all(nextStartedWaiters);
+      expect(transcribe).toHaveBeenCalledTimes(8);
+      requests.slice(4).forEach(({ resolve }, index) => resolve({ provider: "whisper-large-v3-turbo", transcript: `Answer ${index + 5}` }));
+      const completed = await Promise.all(completeWaiters);
+      expect(completed.map(({ transcript }) => transcript)).toEqual(Array.from({ length: 8 }, (_, index) => `Answer ${index + 1}`));
+      expect(transcribe).toHaveBeenCalledTimes(8);
+      await delay(10);
+      expect(requests.every(({ audio }) => audio.every((byte) => byte === 0))).toBe(true);
+    } finally {
+      sockets.forEach((socket) => socket.close());
+      await fixture.close();
+    }
+  });
+
+  it("does not call Whisper during capture and makes one full-response call after finalize", async () => {
+    const { service, transcribe } = createService("I led the migration and reduced the release risk.");
+    let capturedWav: Buffer | undefined;
+    transcribe.mockImplementation(async (audio, provider) => {
+      capturedWav = Buffer.from(audio);
+      return { provider, transcript: "I led the migration and reduced the release risk." };
+    });
     const fixture = await openStreamServer(service);
     const socket = await openSocket(fixture.url);
     try {
-      await expect(startStream(socket)).resolves.toMatchObject({ protocol: 2, sampleRate: 16_000, window: { durationMs: 6_000, initialDurationMs: 4_000, overlapMs: 1_000 } });
-      await sendSpeechLevels(socket);
-      const firstPartial = waitForType(socket, "partial");
-      sendFrames(socket, 40);
-      await expect(firstPartial).resolves.toMatchObject({ windowIndex: 1, startMs: 0, endMs: 4_000, transcript: "I led the migration" });
-      const secondPartial = waitForType(socket, "partial");
+      await expect(startStream(socket)).resolves.toMatchObject({ protocol: 2, sampleRate: 16_000, transcription: { mode: "on-finalize" } });
+      await prepareAnswer(socket, 120);
+      await delay(20);
+      expect(transcribe).not.toHaveBeenCalled();
       const complete = waitForType(socket, "complete");
-      sendFrames(socket, 50);
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
-      await expect(secondPartial).resolves.toMatchObject({ windowIndex: 2, startMs: 3_000, endMs: 9_000, transcript: "migration with lower risk" });
-      await expect(complete).resolves.toMatchObject({ status: "complete", windows: 2 });
-      expect(transcribe).toHaveBeenCalledTimes(2);
-      for (const [audio, provider, format] of transcribe.mock.calls) {
-        expect(audio.subarray(0, 4).toString()).toBe("RIFF");
-        expect(provider).toBe("whisper-large-v3-turbo");
-        expect(format).toBe("wav");
-      }
+      await expect(complete).resolves.toMatchObject({ status: "complete", transcript: "I led the migration and reduced the release risk.", durationMs: 12_000 });
+      expect(transcribe).toHaveBeenCalledTimes(1);
+      expect(transcribe).toHaveBeenCalledWith(expect.any(Buffer), "whisper-large-v3-turbo", "wav", expect.any(AbortSignal));
+      expect(capturedWav?.subarray(0, 4).toString()).toBe("RIFF");
+      expect(capturedWav?.readUInt32LE(40)).toBe(120 * frameBytes);
     } finally {
       socket.close();
       await fixture.close();
     }
   });
 
-  it("automatically requests finalization after 3.5 seconds of sustained silence", async () => {
-    const { service } = createService();
+  it("returns a recoverable no-speech error without calling Whisper", async () => {
+    const { service, transcribe } = createService();
     const fixture = await openStreamServer(service);
     const socket = await openSocket(fixture.url);
     try {
       await startStream(socket);
-      await sendSpeechLevels(socket, 800);
-      sendFrames(socket, 8);
-      const silence = waitForType(socket, "silence-detected");
-      const end = Date.now() + 3_600;
-      while (Date.now() < end) {
-        socket.send(JSON.stringify({ type: "level", value: 0.005 }));
-        await delay(100);
-      }
-      await expect(silence).resolves.toMatchObject({ type: "silence-detected" });
+      sendFrames(socket, 10);
+      const error = waitForType(socket, "error");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await expect(error).resolves.toMatchObject({ code: "NO_SPEECH_DETECTED" });
+      expect(transcribe).not.toHaveBeenCalled();
+    } finally {
+      socket.close();
+      await fixture.close();
+    }
+  });
+
+  it("accepts valid speech with a silent tail and includes the complete buffer", async () => {
+    const { service, transcribe } = createService();
+    let capturedBytes = 0;
+    transcribe.mockImplementation(async (audio, provider) => {
+      capturedBytes = audio.readUInt32LE(40);
+      return { provider, transcript: "A complete answer." };
+    });
+    const fixture = await openStreamServer(service);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const tailFrame = Buffer.alloc(frameBytes);
+      sendFrames(socket, 20, tailFrame);
       const complete = waitForType(socket, "complete");
       socket.send(JSON.stringify({ type: "finalize", reason: "silence" }));
-      await expect(complete).resolves.toMatchObject({ status: "complete", windows: 1 });
+      await expect(complete).resolves.toMatchObject({ status: "complete" });
+      expect(capturedBytes).toBe(28 * frameBytes);
+      expect(transcribe).toHaveBeenCalledTimes(1);
     } finally {
       socket.close();
       await fixture.close();
     }
   });
 
-  it("assesses each Whisper window and aggregates Azure scores with evaluated duration", async () => {
-    const references: string[] = [];
-    const assess = vi.fn(async (_audio: Buffer, format: "wav", referenceText: string) => {
-      references.push(referenceText);
-      return { provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: references.length === 1 ? 80 : 60, fluency: 70, prosody: 50 } };
-    });
-    const assessment: PronunciationAssessmentService = { assess };
-    const { service } = createService(["first segment", "second segment"]);
-    const fixture = await openStreamServer(service, assessment);
+  it("cleans up canceled and disconnected recordings without Whisper calls", async () => {
+    const { service, transcribe } = createService();
+    const fixture = await openStreamServer(service);
+    const canceled = await openSocket(fixture.url);
+    const disconnected = await openSocket(fixture.url);
+    try {
+      await startStream(canceled);
+      await startStream(disconnected);
+      await prepareAnswer(canceled);
+      await prepareAnswer(disconnected);
+      canceled.send(JSON.stringify({ type: "cancel" }));
+      disconnected.terminate();
+      await delay(30);
+      expect(transcribe).not.toHaveBeenCalled();
+    } finally {
+      canceled.close();
+      disconnected.terminate();
+      await fixture.close();
+    }
+  });
+
+  it("aborts an active Whisper request when its WebSocket disconnects", async () => {
+    let requestSignal: AbortSignal | undefined;
+    const service: TranscriptionService = {
+      availableProviders: () => ["whisper-large-v3-turbo"],
+      transcribe: vi.fn((_audio: Buffer, _provider: "whisper-large-v3-turbo", _format: "wav" | undefined, signal?: AbortSignal) => {
+        requestSignal = signal;
+        return new Promise<TranscriptionResult>((_resolve, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+      }),
+    };
+    const fixture = await openStreamServer(service);
     const socket = await openSocket(fixture.url);
     try {
       await startStream(socket);
-      await sendSpeechLevels(socket);
-      const firstPartial = waitForType(socket, "partial");
-      sendFrames(socket, 40);
-      await firstPartial;
-      const secondPartial = waitForType(socket, "partial");
-      const complete = waitForType(socket, "complete");
-      const result = waitForType(socket, "assessment");
-      sendFrames(socket, 50);
+      await prepareAnswer(socket);
+      const started = waitForType(socket, "transcription-started");
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
-      await secondPartial;
-      await complete;
-      await expect(result).resolves.toMatchObject({ status: "available", segmented: true, durationMs: 9_000, scores: { accuracy: 69, fluency: 70, prosody: 50 } });
-      expect(references).toEqual(["first segment", "second segment"]);
-      expect(assess).toHaveBeenCalledTimes(2);
+      await started;
+      socket.terminate();
+      await delay(20);
+      expect(requestSignal?.aborted).toBe(true);
+      expect(service.transcribe).toHaveBeenCalledTimes(1);
+    } finally {
+      socket.terminate();
+      await fixture.close();
+    }
+  });
+
+  it("keeps Whisper failure generic and makes only one provider call", async () => {
+    const { service, transcribe } = createService();
+    transcribe.mockRejectedValue(new Error("OpenRouter returned HTTP 429 with secret transcript content"));
+    const fixture = await openStreamServer(service);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket);
+      const error = waitForType(socket, "error");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await expect(error).resolves.toMatchObject({ code: "UPSTREAM_RATE_LIMITED", message: expect.not.stringContaining("secret") });
+      expect(transcribe).toHaveBeenCalledTimes(1);
     } finally {
       socket.close();
       await fixture.close();
     }
   });
 
-  it("sends the final transcript before a slow Azure assessment completes", async () => {
-    let resolveAssessment!: (value: { provider: "azure"; locale: "en-US"; mode: "scripted"; scores: { accuracy: number; fluency: number; prosody: number } }) => void;
-    const assess = vi.fn(async () => new Promise<{ provider: "azure"; locale: "en-US"; mode: "scripted"; scores: { accuracy: number; fluency: number; prosody: number } }>((resolve) => { resolveAssessment = resolve; }));
+  it("assesses a short complete WAV after returning the transcript", async () => {
+    const assess = vi.fn(async () => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 80, fluency: 75, prosody: 70 } }));
     const fixture = await openStreamServer(createService().service, { assess } as unknown as PronunciationAssessmentService);
     const socket = await openSocket(fixture.url);
     try {
       await startStream(socket);
-      await sendSpeechLevels(socket);
-      const partial = waitForType(socket, "partial");
-      sendFrames(socket, 40);
-      await partial;
+      await prepareAnswer(socket, 8);
       const complete = waitForType(socket, "complete");
       const assessment = waitForType(socket, "assessment");
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
-      await expect(complete).resolves.toMatchObject({ status: "complete", windows: 1 });
-      expect(socket.readyState).toBe(WebSocket.OPEN);
-      resolveAssessment({ provider: "azure", locale: "en-US", mode: "scripted", scores: { accuracy: 80, fluency: 75, prosody: 70 } });
-      await expect(assessment).resolves.toMatchObject({ status: "available", segmented: true, durationMs: 4_000 });
+      await complete;
+      await expect(assessment).resolves.toMatchObject({ status: "available", durationMs: 800 });
+      expect(assess).toHaveBeenCalledTimes(1);
     } finally {
       socket.close();
       await fixture.close();
     }
   });
 
-  it("drains finalized windows sequentially and emits each in audio order", async () => {
-    let active = 0;
-    let maximumActive = 0;
-    let calls = 0;
-    const service: TranscriptionService = {
-      availableProviders: () => ["whisper-large-v3-turbo"],
-      transcribe: vi.fn(async () => {
-        const index = calls++;
-        active += 1;
-        maximumActive = Math.max(maximumActive, active);
-        await delay(10);
-        active -= 1;
-        return { provider: "whisper-large-v3-turbo" as const, transcript: `window ${index + 1}` };
-      }),
-    };
-    const fixture = await openStreamServer(service);
+  it("skips Azure for a complete answer longer than 30 seconds", async () => {
+    const assess = vi.fn(async () => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 80, fluency: 75, prosody: 70 } }));
+    const fixture = await openStreamServer(createService().service, { assess } as unknown as PronunciationAssessmentService);
     const socket = await openSocket(fixture.url);
     try {
       await startStream(socket);
-      await sendSpeechLevels(socket);
-      const partialForWindow = (windowIndex: number) => new Promise<Record<string, any>>((resolve) => {
-        const onMessage = (raw: Buffer) => {
-          const message = JSON.parse(raw.toString()) as Record<string, any>;
-          if (message.type === "partial" && message.windowIndex === windowIndex) {
-            socket.off("message", onMessage);
-            resolve(message);
-          }
-        };
-        socket.on("message", onMessage);
-      });
-      const firstPartial = partialForWindow(1);
-      const secondPartial = partialForWindow(2);
-      const thirdPartial = partialForWindow(3);
+      await prepareAnswer(socket, 8);
+      sendFrames(socket, 293);
       const complete = waitForType(socket, "complete");
-      sendFrames(socket, 140);
+      const assessment = waitForType(socket, "assessment");
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
-      await expect(firstPartial).resolves.toMatchObject({ windowIndex: 1, transcript: "window 1" });
-      await expect(secondPartial).resolves.toMatchObject({ windowIndex: 2, transcript: "window 2" });
-      await expect(thirdPartial).resolves.toMatchObject({ windowIndex: 3, transcript: "window 3" });
-      await expect(complete).resolves.toMatchObject({ status: "complete", windows: 3 });
-      expect(service.transcribe).toHaveBeenCalledTimes(3);
-      expect(maximumActive).toBe(1);
+      await expect(complete).resolves.toMatchObject({ status: "complete", durationMs: 30_100 });
+      await expect(assessment).resolves.toMatchObject({ status: "unavailable", reason: "AUDIO_TOO_LONG" });
+      expect(assess).not.toHaveBeenCalled();
     } finally {
       socket.close();
       await fixture.close();
     }
   });
 
-  it("preserves completed text when a later Whisper window fails", async () => {
-    let calls = 0;
-    const service: TranscriptionService = {
-      availableProviders: () => ["whisper-large-v3-turbo"],
-      transcribe: vi.fn(async () => {
-        if (calls++ > 0) throw new Error("upstream unavailable");
-        return { provider: "whisper-large-v3-turbo" as const, transcript: "saved partial text" };
-      }),
-    };
-    const fixture = await openStreamServer(service);
-    const socket = await openSocket(fixture.url);
+  it("does not let slow Azure assessment occupy a Whisper concurrency slot", async () => {
+    const assessmentResolvers: Array<(value: { provider: "azure"; locale: "en-US"; mode: "scripted"; scores: { accuracy: number; fluency: number; prosody: number } }) => void> = [];
+    const assess = vi.fn(() => new Promise<{ provider: "azure"; locale: "en-US"; mode: "scripted"; scores: { accuracy: number; fluency: number; prosody: number } }>((resolve) => { assessmentResolvers.push(resolve); }));
+    const { service, transcribe } = createService("A complete answer.");
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService, { ...defaultStreamingLimits, maxConcurrentTranscriptions: 1 });
+    const first = await openSocket(fixture.url);
+    let second: WebSocket | undefined;
     try {
-      await startStream(socket);
-      await sendSpeechLevels(socket);
-      const first = waitForType(socket, "partial");
-      sendFrames(socket, 40);
-      await first;
-      const failure = waitForType(socket, "partial-error");
-      const complete = waitForType(socket, "complete");
-      sendFrames(socket, 50);
-      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
-      await expect(failure).resolves.toMatchObject({ type: "partial-error", code: "UPSTREAM_UNAVAILABLE" });
-      await expect(complete).resolves.toMatchObject({ status: "partial", windows: 1 });
-      expect(service.transcribe).toHaveBeenCalledTimes(2);
+      await startStream(first);
+      await prepareAnswer(first);
+      const firstComplete = waitForType(first, "complete");
+      first.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await firstComplete;
+
+      second = await openSocket(fixture.url);
+      await startStream(second);
+      await prepareAnswer(second);
+      const secondComplete = waitForType(second, "complete");
+      second.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await secondComplete;
+      expect(transcribe).toHaveBeenCalledTimes(2);
+
+      const firstAssessment = waitForType(first, "assessment");
+      const secondAssessment = waitForType(second, "assessment");
+      for (const resolve of assessmentResolvers) resolve({ provider: "azure", locale: "en-US", mode: "scripted", scores: { accuracy: 80, fluency: 75, prosody: 70 } });
+      await Promise.all([firstAssessment, secondAssessment]);
     } finally {
-      socket.close();
+      first.close();
+      second?.close();
       await fixture.close();
     }
   });
@@ -393,8 +463,7 @@ describe("versioned transcription WebSocket", () => {
   it("rejects unsupported protocol versions and origins outside the allowlist", async () => {
     const original = process.env.ALLOWED_ORIGIN;
     process.env.ALLOWED_ORIGIN = "https://practice.test, https://app.practice.test";
-    const { service } = createService();
-    const fixture = await openStreamServer(service);
+    const fixture = await openStreamServer(createService().service);
     const accepted = new WebSocket(fixture.url, { headers: { Origin: "https://app.practice.test" } });
     try {
       await new Promise<void>((resolve, reject) => { accepted.once("open", resolve); accepted.once("error", reject); });

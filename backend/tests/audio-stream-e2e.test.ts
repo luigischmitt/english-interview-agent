@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
-import { buildSpeechUrl, buildStreamUrl, exerciseStream, fetchSpeechAudio, framePcm, isSuccessfulAudioE2ERun, mergeTranscriptWindow, parseArgs, rmsLevel, type AudioE2EMetrics } from "../src/transcription/audio-stream-e2e.js";
+import { buildSpeechUrl, buildStreamUrl, calculateTranscriptSimilarity, exerciseStream, fetchSpeechAudio, framePcm, isSuccessfulAudioE2ERun, parseArgs, rmsLevel, type AudioE2EMetrics } from "../src/transcription/audio-stream-e2e.js";
 
 describe("real-time audio E2E harness utilities", () => {
   it("parses CLI configuration and rejects URLs that could expose credentials", () => {
@@ -25,38 +25,52 @@ describe("real-time audio E2E harness utilities", () => {
     expect(buildStreamUrl(prefixed).href).toBe("wss://example.test/interview-api/api/v1/transcriptions/stream");
   });
 
-  it("uses a default spoken answer long enough to exercise overlapping windows", () => {
+  it("uses a default spoken answer long enough to exercise final transcription", () => {
     const defaultAnswer = parseArgs([], {}).text;
     expect(defaultAnswer.split(/\s+/u).length).toBeGreaterThanOrEqual(70);
   });
 
-  it("keeps partial transcription failures unsuccessful while retaining structured diagnostics", () => {
+  it("keeps final transcription failures unsuccessful while retaining safe diagnostics", () => {
     const metrics: AudioE2EMetrics = {
       speechGenerationMs: 100,
       connectToReadyMs: 20,
       firstSpeechMs: 120,
-      firstPartialMs: 6_100,
+      transcriptionMs: null,
+      queueWaitMs: null,
       silenceDetectedMs: null,
       completeMs: 15_000,
-      partialCount: 1,
-      partialWindows: [1],
-      streamErrors: [{ type: "partial-error" }],
+      streamErrors: [{ type: "error" }],
       missingEvents: ["silence-detected"],
       transcriptCharacters: 42,
-      completionStatus: "partial",
+      transcriptSimilarity: null,
+      completionStatus: null,
     };
     expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
     metrics.streamErrors = [];
     expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
     metrics.completionStatus = "complete";
+    metrics.transcriptionMs = 15_000;
     metrics.missingEvents = [];
+    metrics.transcriptSimilarity = 0.9;
     expect(isSuccessfulAudioE2ERun(metrics)).toBe(true);
+    metrics.transcriptSimilarity = 0.74;
+    expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
+    metrics.transcriptCharacters = 0;
+    expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
   });
 
-  it("waits for complete after partial-error and returns metrics without transcript text", async () => {
+  it("calculates a normalized token similarity without retaining transcript text", () => {
+    expect(calculateTranscriptSimilarity("Café teams ship features.", "Cafe team ship feature!")).toBe(0.5);
+    expect(calculateTranscriptSimilarity("one two three four", "one two three four")).toBe(1);
+    expect(calculateTranscriptSimilarity("one two", "one two extra words here")).toBe(0);
+  });
+
+  it("returns only transcript length in harness metrics, never transcript text", async () => {
+    const reference = "Known synthetic spoken answer.";
+    let responseText = "";
     const server = createServer();
     const websocketServer = new WebSocketServer({ server });
-    let sentFailureEvents = false;
+    let sentSilence = false;
     websocketServer.on("connection", (socket) => {
       socket.on("message", (data, isBinary) => {
         if (isBinary) return;
@@ -65,12 +79,14 @@ describe("real-time audio E2E harness utilities", () => {
           socket.send(JSON.stringify({ type: "ready", protocol: 2 }));
           return;
         }
-        if (message.type === "level" && !sentFailureEvents) {
-          sentFailureEvents = true;
+        if (message.type === "level" && !sentSilence) {
+          sentSilence = true;
           socket.send(JSON.stringify({ type: "speech-started" }));
-          socket.send(JSON.stringify({ type: "partial", windowIndex: 1, transcript: "synthetic transcript" }));
-          socket.send(JSON.stringify({ type: "partial-error", code: "UPSTREAM_UNAVAILABLE", message: "generic backend error" }));
-          socket.send(JSON.stringify({ type: "complete", status: "partial", windows: 1 }));
+          socket.send(JSON.stringify({ type: "silence-detected" }));
+          return;
+        }
+        if (message.type === "finalize") {
+          socket.send(JSON.stringify({ type: "complete", status: "complete", transcript: responseText }));
         }
       });
     });
@@ -78,18 +94,18 @@ describe("real-time audio E2E harness utilities", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Test WebSocket server did not bind to a TCP port.");
     try {
-      const options = parseArgs(["--backend-url", `http://127.0.0.1:${address.port}`], {});
+      const options = parseArgs(["--backend-url", `http://127.0.0.1:${address.port}`, "--text", reference], {});
+      responseText = reference;
       const metrics = await exerciseStream(options, Buffer.alloc(3_200), 42, 0);
-      expect(metrics.completionStatus).toBe("partial");
-      expect(metrics.streamErrors).toEqual([{ type: "partial-error", code: "UPSTREAM_UNAVAILABLE" }]);
-      expect(metrics.partialCount).toBe(1);
-      expect(metrics.partialWindows).toEqual([1]);
-      expect(metrics.transcriptCharacters).toBe("synthetic transcript".length);
+      expect(metrics.completionStatus).toBe("complete");
+      expect(metrics.streamErrors).toEqual([]);
+      expect(metrics.transcriptCharacters).toBe(reference.length);
+      expect(metrics.transcriptSimilarity).toBe(1);
       expect(metrics.completeMs).not.toBeNull();
-      expect(metrics.missingEvents).toContain("silence-detected");
-      expect(isSuccessfulAudioE2ERun(metrics)).toBe(false);
+      expect(metrics.missingEvents).not.toContain("silence-detected");
+      expect(isSuccessfulAudioE2ERun(metrics)).toBe(true);
       expect(metrics).not.toHaveProperty("transcript");
-      expect(JSON.stringify(metrics)).not.toContain("synthetic transcript");
+      expect(JSON.stringify(metrics)).not.toContain(reference);
     } finally {
       await new Promise<void>((resolve) => websocketServer.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -107,23 +123,6 @@ describe("real-time audio E2E harness utilities", () => {
     const padded = framePcm(pcm, 1);
     expect(padded).toHaveLength(2);
     expect(padded[1].every((byte) => byte === 0)).toBe(true);
-  });
-
-  it("merges repeated words at the overlap between adjacent Whisper windows", () => {
-    expect(mergeTranscriptWindow("I improved the reporting service", "the reporting service and reduced latency"))
-      .toBe("I improved the reporting service and reduced latency");
-    expect(mergeTranscriptWindow("first answer", "new words here"))
-      .toBe("first answer new words here");
-  });
-
-  it("merges a newly recognized article without duplicating repeated words", () => {
-    expect(mergeTranscriptWindow("We need to improve performance", "We need to improve the performance and cache results"))
-      .toBe("We need to improve the performance and cache results");
-  });
-
-  it("keeps all new content when the apparent overlap is weak", () => {
-    expect(mergeTranscriptWindow("I reviewed the database", "I changed the service and added indexes"))
-      .toBe("I reviewed the database I changed the service and added indexes");
   });
 
   it("keeps the speech timeout active while a response body is stalled", async () => {

@@ -12,7 +12,9 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
   maxDurationMs: defaultTranscriptionConfig.streamMaxDurationMs,
   maxBytes: defaultTranscriptionConfig.streamMaxBytes,
   maxActiveSessions: defaultTranscriptionConfig.streamMaxActiveSessions,
-  maxQueueBytes: defaultTranscriptionConfig.streamMaxQueueBytes,
+  maxConcurrentTranscriptions: defaultTranscriptionConfig.streamMaxConcurrentTranscriptions,
+  maxQueuedTranscriptions: defaultTranscriptionConfig.streamMaxQueuedTranscriptions,
+  finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
 });
 
 server.listen(port, () => {

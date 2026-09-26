@@ -31,7 +31,7 @@ async function withinDeadline<T>(operation: Promise<T>, deadline: number, onDead
 }
 
 export interface PronunciationAssessmentService {
-  assess(audio: Buffer, format: AudioFormat, referenceText: string): Promise<PronunciationAssessment>;
+  assess(audio: Buffer, format: AudioFormat, referenceText: string, signal?: AbortSignal): Promise<PronunciationAssessment>;
 }
 
 export class AzurePronunciationAssessmentService implements PronunciationAssessmentService {
@@ -45,11 +45,13 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
     this.endpoint = `https://${options.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US&format=detailed`;
   }
 
-  async assess(audio: Buffer, format: AudioFormat, referenceText: string): Promise<PronunciationAssessment> {
+  async assess(audio: Buffer, format: AudioFormat, referenceText: string, signal?: AbortSignal): Promise<PronunciationAssessment> {
     if (!referenceText.trim()) throw new Error("Azure pronunciation assessment requires reference text");
+    if (signal?.aborted) throw new Error("Azure pronunciation assessment cancelled");
     const deadline = Date.now() + this.options.timeoutMs;
     const remaining = () => Math.max(0, deadline - Date.now());
     const wav = await withinDeadline(this.convert(audio, format, remaining()), deadline);
+    if (signal?.aborted) throw new Error("Azure pronunciation assessment cancelled");
     const requestBudget = remaining();
     if (requestBudget <= 0) throw new Error("Azure pronunciation assessment timed out");
 
@@ -73,7 +75,7 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
           "Pronunciation-Assessment": assessmentHeader,
         },
         body: new Uint8Array(wav),
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
       }), deadline, abortRequest);
       if (remaining() <= 0) throw new Error("Azure pronunciation assessment timed out");
       if (!response.ok) throw new Error("Azure pronunciation assessment unavailable");

@@ -29,7 +29,6 @@ test("automatic microphone start only accepts each enabled signal once", () => {
 });
 
 test("only a non-empty final voice transcript can be submitted", () => {
-  assert.equal(finalTranscriptForSubmission({ status: "partial", transcript: "I built" }), null);
   assert.equal(finalTranscriptForSubmission({ status: "failed", transcript: "I built" }), null);
   assert.equal(finalTranscriptForSubmission({ status: "pending" }), null);
   assert.equal(finalTranscriptForSubmission({ status: "available", value: { transcript: "  " } }), null);
@@ -41,7 +40,6 @@ test("an unfinished capture or transcript cannot silently skip a question", () =
     assert.equal(canSkipVoiceQuestion(captureState, "idle"), false);
   }
   assert.equal(canSkipVoiceQuestion("idle", "pending"), false);
-  assert.equal(canSkipVoiceQuestion("idle", "partial"), false);
   assert.equal(canSkipVoiceQuestion("idle", "failed"), true);
   assert.equal(canSkipVoiceQuestion("ready", "available"), true);
 });
