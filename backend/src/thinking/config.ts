@@ -1,7 +1,7 @@
 export const defaultThinkingModel = "mistralai/mistral-small-3.2-24b-instruct";
 export const defaultThinkingTimeoutMs = 15_000;
 export const defaultOrchestrationTimeoutMs = 6_000;
-export const defaultInterviewReportTimeoutMs = 30_000;
+export const defaultInterviewReportTimeoutMs = 45_000;
 
 export type ThinkingConfig = {
   openRouterApiKey: string | null;
