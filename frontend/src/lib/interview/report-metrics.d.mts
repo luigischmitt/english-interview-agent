@@ -7,5 +7,6 @@ export type AzureMetricSummary = Record<AzureReportDimension, { mean: number | n
 export function summarizeAzureAssessments(assessments: AzureAssessmentSample[]): AzureMetricSummary;
 export type InterviewReportTurnSource = { sequenceNumber: number; speaker: "interviewer" | "candidate"; content: string | null };
 export type InterviewReportTurn = { sequenceNumber: number; question: string; answer: string };
+export function appendInterviewReportPair(turns: InterviewReportTurnSource[], pair: { questionSequenceNumber: number; candidateSequenceNumber: number; question: string; answer: string }): InterviewReportTurnSource[];
 export function pairInterviewTurns(turns: InterviewReportTurnSource[]): InterviewReportTurn[];
 export function answerOrdinalForSequence(turns: InterviewReportTurn[], sequenceNumber: number): number | null;

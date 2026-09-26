@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments } from "../src/lib/interview/report-metrics.mjs";
+import { answerOrdinalForSequence, appendInterviewReportPair, pairInterviewTurns, summarizeAzureAssessments } from "../src/lib/interview/report-metrics.mjs";
 
 test("Azure means ignore unavailable, pending, null, and invalid dimension values while counting valid samples", () => {
   const summary = summarizeAzureAssessments([
@@ -46,6 +46,26 @@ test("pairs ordered interviewer prompts and candidate answers without storing du
     { sequenceNumber: 2, question: "Main question?", answer: "Main answer." },
     { sequenceNumber: 4, question: "Follow-up?", answer: "A follow-up answer." },
   ]);
+});
+
+test("the report snapshot includes the eighth answer immediately when submission closes the interview", () => {
+  let latestTurns = [];
+  for (let index = 0; index < 8; index += 1) {
+    const questionSequenceNumber = index * 2 + 1;
+    latestTurns = appendInterviewReportPair(latestTurns, {
+      questionSequenceNumber,
+      candidateSequenceNumber: questionSequenceNumber + 1,
+      question: `Question ${index + 1}?`,
+      answer: `Answer ${index + 1}.`,
+    });
+  }
+
+  assert.equal(pairInterviewTurns(latestTurns).length, 8);
+  assert.deepEqual(pairInterviewTurns(latestTurns).at(-1), {
+    sequenceNumber: 15,
+    question: "Question 8?",
+    answer: "Answer 8.",
+  });
 });
 
 test("maps internal turn sequences to the same visible answer ordinal used in the report", () => {

@@ -32,6 +32,15 @@ export function pairInterviewTurns(turns) {
   return result;
 }
 
+/** Add a submitted answer pair immediately so lifecycle callbacks can snapshot the latest turns. */
+export function appendInterviewReportPair(turns, { questionSequenceNumber, candidateSequenceNumber, question, answer }) {
+  return [
+    ...turns,
+    { sequenceNumber: questionSequenceNumber, speaker: "interviewer", content: question },
+    { sequenceNumber: candidateSequenceNumber, speaker: "candidate", content: answer },
+  ];
+}
+
 /** Return the user's visible 1-based answer number for an internal turn sequence. */
 export function answerOrdinalForSequence(turns, sequenceNumber) {
   const index = turns.findIndex((turn) => turn.sequenceNumber === sequenceNumber);

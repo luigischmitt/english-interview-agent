@@ -9,7 +9,7 @@ import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import { answerOrdinalForSequence, createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewReport, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult } from "@/lib/interview/report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
-import type { AzureAssessmentSample, AzureMetricSummary, InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
+import { appendInterviewReportPair, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
@@ -128,7 +128,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     setPhase(nextPhase);
   };
   useEffect(() => { elapsedSecondsRef.current = seconds; }, [seconds]);
-  useEffect(() => { reportTurnsRef.current = reportTurns; }, [reportTurns]);
   useEffect(() => { voiceAssessmentsRef.current = voiceAssessments; }, [voiceAssessments]);
 
   const onInterviewerUtteranceReady = useCallback(() => {
@@ -195,10 +194,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       content: savedAnswer,
     };
     enqueueTurn(candidateTurn);
-    setReportTurns((current) => [...current,
-      { sequenceNumber: questionSequenceNumber, speaker: "interviewer", content: question.prompt },
-      { sequenceNumber: candidateSequenceNumber, speaker: "candidate", content: savedAnswer },
-    ]);
+    const submittedTurns = appendInterviewReportPair(reportTurnsRef.current, {
+      questionSequenceNumber,
+      candidateSequenceNumber,
+      question: question.prompt,
+      answer: savedAnswer,
+    });
+    reportTurnsRef.current = submittedTurns;
+    setReportTurns(submittedTurns);
     setVoiceTranscription({ status: "idle" });
     setVoiceCaptureState("idle");
     setAnswerError(null);
@@ -319,6 +322,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   useEffect(() => {
     if (phase !== "ending" || !reportStartedRef.current()) return;
+    const lifecycleStartedAt = Date.now();
+    console.info("[interview-report] lifecycle_started");
     setReportState({ status: "pending" });
     void (async () => {
       await waitForPendingAssessments(() => Object.values(voiceAssessmentsRef.current).filter((entry) => entry.state.status === "pending").length);
@@ -326,6 +331,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       const samples = assessmentSamples(latestEntries);
       const turns = pairInterviewTurns(reportTurnsRef.current);
       if (turns.length === 0) {
+        console.warn("[interview-report] unavailable", { category: "no_submitted_answers", durationMs: Date.now() - lifecycleStartedAt });
         if (mountedRef.current) setReportState({ status: "unavailable", message: "Nenhuma resposta foi enviada. Não foi solicitada uma análise sem evidências." });
         return;
       }
@@ -334,9 +340,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       if (feedbackSessionId) await createPendingInterviewFeedback(feedbackSessionId, samples);
 
       try {
+        console.info("[interview-report] request_started", { turnCount: turns.length, waitDurationMs: Date.now() - lifecycleStartedAt });
         const result = await requestInterviewReport(config, turns);
+        console.info("[interview-report] ready", { turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
         if (mountedRef.current) setReportState({ status: "ready", result });
       } catch {
+        console.warn("[interview-report] unavailable", { category: "request_failed_or_timed_out", turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
         const message = "A análise detalhada falhou ou excedeu o tempo limite. As respostas registradas continuam disponíveis abaixo.";
         if (mountedRef.current) setReportState({ status: "unavailable", message });
       }

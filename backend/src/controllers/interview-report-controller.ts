@@ -51,13 +51,18 @@ export function createInterviewReportController(service: InterviewReportService 
       response.status(400).json({ error: { code: "INVALID_INTERVIEW_REPORT_REQUEST", message: "roleContext and 1–30 ordered question/answer turns are required within their length limits." } });
       return;
     }
+    const startedAt = Date.now();
+    console.info("[interview-report] request_started", { turnCount: input.turns.length });
     try {
       response.status(200).json(await service.generate(input));
+      console.info("[interview-report] request_completed", { turnCount: input.turns.length, durationMs: Date.now() - startedAt });
     } catch (error) {
       if (error instanceof ThinkingServiceError) {
+        console.warn("[interview-report] request_failed", { turnCount: input.turns.length, durationMs: Date.now() - startedAt, category: error.code });
         response.status(error.status).json({ error: { code: error.code, message: error.message } });
         return;
       }
+      console.warn("[interview-report] request_failed", { turnCount: input.turns.length, durationMs: Date.now() - startedAt, category: "THINKING_PROVIDER_UNAVAILABLE" });
       response.status(502).json({ error: { code: "THINKING_PROVIDER_UNAVAILABLE", message: "The reasoning service is unavailable." } });
     }
   };
