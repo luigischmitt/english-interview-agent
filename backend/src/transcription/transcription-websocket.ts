@@ -5,7 +5,7 @@ import { getAllowedOrigins, isOriginAllowed } from "../middlewares/allowed-origi
 import type { TranscriptionService } from "./types.js";
 import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
 import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
-import { createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
+import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
   | { type: "start"; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number }
@@ -15,6 +15,10 @@ type ClientMessage =
 
 const azureWaiters: Array<{ resolve: (release: () => void) => void; reject: (error: Error) => void; signal: AbortSignal; abort: () => void }> = [];
 let activeAzureAssessments = 0;
+const maxConcurrentTimingRecoveries = 2;
+const maxQueuedTimingRecoveries = 6;
+const timingRecoveryWaiters: Array<{ resolve: (release: () => void) => void; reject: (error: Error) => void; signal: AbortSignal; abort: () => void }> = [];
+let activeTimingRecoveries = 0;
 
 function acquireAzureSlot(signal: AbortSignal): Promise<() => void> {
   if (signal.aborted) return Promise.reject(new Error("Azure pronunciation assessment cancelled"));
@@ -42,6 +46,37 @@ function releaseAzureSlot(): void {
     if (waiter.signal.aborted) continue;
     activeAzureAssessments += 1;
     waiter.resolve(releaseAzureSlot);
+    return;
+  }
+}
+
+function acquireTimingRecoverySlot(signal: AbortSignal): Promise<(() => void) | null> {
+  if (signal.aborted) return Promise.reject(new Error("Whisper timing recovery cancelled"));
+  if (activeTimingRecoveries < maxConcurrentTimingRecoveries) {
+    activeTimingRecoveries += 1;
+    return Promise.resolve(releaseTimingRecoverySlot);
+  }
+  if (timingRecoveryWaiters.length >= maxQueuedTimingRecoveries) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject, signal, abort: () => undefined };
+    waiter.abort = () => {
+      const index = timingRecoveryWaiters.indexOf(waiter);
+      if (index >= 0) timingRecoveryWaiters.splice(index, 1);
+      reject(new Error("Whisper timing recovery cancelled"));
+    };
+    signal.addEventListener("abort", waiter.abort, { once: true });
+    timingRecoveryWaiters.push(waiter);
+  });
+}
+
+function releaseTimingRecoverySlot(): void {
+  activeTimingRecoveries -= 1;
+  while (timingRecoveryWaiters.length) {
+    const waiter = timingRecoveryWaiters.shift()!;
+    waiter.signal.removeEventListener("abort", waiter.abort);
+    if (waiter.signal.aborted) continue;
+    activeTimingRecoveries += 1;
+    waiter.resolve(releaseTimingRecoverySlot);
     return;
   }
 }
@@ -202,42 +237,108 @@ export function attachTranscriptionWebSocket(
             clearTimeout(timer);
 
             if (!assessmentService) return;
-            const wordBlocks = result.words ? createAzureAlignedBlocks(audio, result.words) : [];
-            const blocks = wordBlocks.length ? wordBlocks : (result.segments ? createAzureAlignedBlocks(audio, result.segments) : []);
-            if (blocks.length === 0) {
-              const reason = result.words ? "no_valid_word_timing" : result.segments ? "no_valid_segment_timing" : "missing_word_timing";
-              logAzureAssessment({ status: "unavailable", reason, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs: 0 });
-              send(socket, { type: "assessment", status: "unavailable", reason, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs: 0 } });
-              return;
-            }
             assessmentOwnsAudio = true;
-            const assessmentStartedAt = Date.now();
-            void assessBlocks(audio, blocks, assessmentService, abortController.signal).then((assessments) => {
-              if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
-              const assessed = assessments.filter(({ assessment }) => assessment !== null).length;
-              const queueWaitMs = assessments.reduce((sum, item) => sum + item.queueWaitMs, 0);
-              const serviceDurationMs = assessments.reduce((sum, item) => sum + item.serviceDurationMs, 0);
-              const totalDurationMs = Date.now() - assessmentStartedAt;
-              const failureCategory = mostCommonFailure(assessments);
-              const scores = { accuracy: null as number | null, fluency: null as number | null, prosody: null as number | null };
-              for (const dimension of Object.keys(scores) as (keyof typeof scores)[]) {
-                const available = assessments.flatMap(({ assessment, durationMs: assessedDuration }) => {
-                  const score = assessment?.scores[dimension];
-                  return score === null || score === undefined ? [] : [{ score, durationMs: assessedDuration }];
-                });
-                if (available.length) scores[dimension] = available.reduce((sum, item) => sum + item.score * item.durationMs, 0)
-                  / available.reduce((sum, item) => sum + item.durationMs, 0);
+            void (async () => {
+              const assessmentStartedAt = Date.now();
+              let timingSource = "missing";
+              let timingRetryOutcome = "not_needed";
+              let blocks: AzureAudioBlock[] = [];
+              try {
+                const candidates = [
+                  { source: "word", timings: result.words },
+                  { source: "segment", timings: result.segments },
+                ] as const;
+                for (const candidate of candidates) {
+                  if (!candidate.timings?.length) continue;
+                  const aligned = alignSegmentTimingToTranscript(candidate.timings, result.transcript);
+                  const candidateBlocks = aligned?.length ? createAzureAlignedBlocks(audio!, aligned) : [];
+                  if (candidateBlocks.length) {
+                    timingSource = candidate.source;
+                    blocks = candidateBlocks;
+                    break;
+                  }
+                }
+
+                if (!blocks.length && transcriptionService.retrySegmentTimestamps) {
+                  timingRetryOutcome = "requested";
+                  const retryStartedAt = Date.now();
+                  let releaseTimingSlot: (() => void) | null = null;
+                  try {
+                    releaseTimingSlot = await acquireTimingRecoverySlot(abortController.signal);
+                    if (!releaseTimingSlot) {
+                      timingRetryOutcome = "queue_full";
+                    } else {
+                      const retry = await transcriptionService.retrySegmentTimestamps(audio!, result.provider, "wav", abortController.signal);
+                      if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
+                      const retryTiming = retry.segments ? alignSegmentTimingToTranscript(retry.segments, result.transcript) : undefined;
+                      const retryBlocks = retryTiming?.length ? createAzureAlignedBlocks(audio!, retryTiming) : [];
+                      if (retryBlocks.length) {
+                        blocks = retryBlocks;
+                        timingSource = "segment_retry";
+                        timingRetryOutcome = "success";
+                      } else {
+                        timingRetryOutcome = retry.segments?.length ? "transcript_mismatch_or_invalid" : "missing";
+                      }
+                    }
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : "";
+                    timingRetryOutcome = /timeout|timed out/i.test(message) ? "timeout" : abortController.signal.aborted ? "cancelled" : "failed";
+                  } finally {
+                    releaseTimingSlot?.();
+                  }
+                  logAzureAssessment({ status: "timing_retry", outcome: timingRetryOutcome, durationMs: Date.now() - retryStartedAt });
+                }
+
+                const timingDetails = result.timingDiagnostics ?? {
+                  wordFieldPresent: Boolean(result.words?.length), wordEntryCount: result.words?.length ?? 0, wordAcceptedCount: result.words?.length ?? 0,
+                  segmentFieldPresent: Boolean(result.segments?.length), segmentEntryCount: result.segments?.length ?? 0, segmentAcceptedCount: result.segments?.length ?? 0,
+                };
+                if (!blocks.length) {
+                  const providerOmittedTiming = !timingDetails.wordFieldPresent && !timingDetails.segmentFieldPresent;
+                  const unavailableReason = timingRetryOutcome === "queue_full"
+                    ? "timing_recovery_capacity"
+                    : providerOmittedTiming ? "provider_omitted_timing" : "timing_rejected_or_unaligned";
+                  logAzureAssessment({ status: "unavailable", reason: unavailableReason, timingSource, timingRetryOutcome, ...timingDetails, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs: Date.now() - assessmentStartedAt });
+                  send(socket, { type: "assessment", status: "unavailable", reason: unavailableReason, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs: Date.now() - assessmentStartedAt } });
+                  return;
+                }
+
+                logAzureAssessment({ status: "timing_selected", timingSource, timingRetryOutcome, ...timingDetails, blockCount: blocks.length, audioDurationMs: Math.round(durationMs) });
+                const assessments = await assessBlocks(audio!, blocks, assessmentService, abortController.signal);
+                if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
+                const assessed = assessments.filter(({ assessment }) => assessment !== null).length;
+                const queueWaitMs = assessments.reduce((sum, item) => sum + item.queueWaitMs, 0);
+                const serviceDurationMs = assessments.reduce((sum, item) => sum + item.serviceDurationMs, 0);
+                const totalDurationMs = Date.now() - assessmentStartedAt;
+                const failureCategory = mostCommonFailure(assessments);
+                const scores = { accuracy: null as number | null, fluency: null as number | null, prosody: null as number | null };
+                for (const dimension of Object.keys(scores) as (keyof typeof scores)[]) {
+                  const available = assessments.flatMap(({ assessment, durationMs: assessedDuration }) => {
+                    const score = assessment?.scores[dimension];
+                    return score === null || score === undefined ? [] : [{ score, durationMs: assessedDuration }];
+                  });
+                  if (available.length) scores[dimension] = available.reduce((sum, item) => sum + item.score * item.durationMs, 0)
+                    / available.reduce((sum, item) => sum + item.durationMs, 0);
+                }
+                const assessedDurationMs = assessments.reduce((sum, item) => sum + (item.assessment ? item.durationMs : 0), 0);
+                const diagnostics = { transcriptionDurationMs, azureQueueWaitMs: queueWaitMs, azureServiceDurationMs: serviceDurationMs, totalDurationMs };
+                if (Object.values(scores).some((score) => score !== null)) {
+                  logAzureAssessment({ status: "available", timingSource, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, audioDurationMs: Math.round(durationMs), assessedDurationMs, ...diagnostics });
+                  send(socket, { type: "assessment", status: "available", provider: "azure", locale: "en-US", mode: "scripted", scores, durationMs: assessedDurationMs, segmented: true, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, diagnostics });
+                } else {
+                  logAzureAssessment({ status: "unavailable", reason: failureCategory, timingSource, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, audioDurationMs: Math.round(durationMs), ...diagnostics });
+                  send(socket, { type: "assessment", status: "unavailable", reason: failureCategory, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, durationMs: 0, diagnostics });
+                }
+              } catch {
+                if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
+                  const totalDurationMs = Date.now() - assessmentStartedAt;
+                  logAzureAssessment({ status: "unavailable", reason: "assessment_failed", timingSource, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs });
+                  send(socket, { type: "assessment", status: "unavailable", reason: "assessment_failed", blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs } });
+                }
+              } finally {
+                release();
               }
-              const assessedDurationMs = assessments.reduce((sum, item) => sum + (item.assessment ? item.durationMs : 0), 0);
-              const diagnostics = { transcriptionDurationMs, azureQueueWaitMs: queueWaitMs, azureServiceDurationMs: serviceDurationMs, totalDurationMs };
-              if (Object.values(scores).some((score) => score !== null)) {
-                logAzureAssessment({ status: "available", blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, audioDurationMs: Math.round(durationMs), assessedDurationMs, ...diagnostics });
-                send(socket, { type: "assessment", status: "available", provider: "azure", locale: "en-US", mode: "scripted", scores, durationMs: assessedDurationMs, segmented: true, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, diagnostics });
-              } else {
-                logAzureAssessment({ status: "unavailable", reason: failureCategory, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, audioDurationMs: Math.round(durationMs), ...diagnostics });
-                send(socket, { type: "assessment", status: "unavailable", reason: failureCategory, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, durationMs: 0, diagnostics });
-              }
-            }).finally(release);
+            })();
           } catch (error) {
             if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
               fail(safeTranscriptionErrorCode(error), "We couldn't transcribe that answer. Please try again or skip/end the practice.");
