@@ -3,6 +3,7 @@ export type VadConfig = {
   silenceThreshold: number;
   minimumSpeechMs: number;
   trailingSilenceMs: number;
+  finalizationGraceMs: number;
   resumedSpeechConfirmationMs: number;
   ambientActivityHoldMs: number;
   maxDurationMs: number;
@@ -16,20 +17,24 @@ export const defaultVadConfig: VadConfig = {
   // Interview answers often include a short thinking pause between clauses.
   // Preserve thinking pauses while keeping response handoff reasonably quick.
   trailingSilenceMs: 3_500,
+  finalizationGraceMs: 1_500,
   // Brief noise must not reset the full silence timer.
   resumedSpeechConfirmationMs: 300,
   // Ambiguous mid-band energy can be quiet speech or changing room noise.
   // Preserve a pause briefly, then make the handoff bounded if it never clears.
+  // Quiet speech may stay below the strong-speech threshold for several
+  // seconds. Keep it alive for a bounded interval; silence and the hard
+  // response-duration limit still guarantee automatic handoff.
   ambientActivityHoldMs: 8_000,
   maxDurationMs: 180_000,
   maxBytes: 6 * 1024 * 1024,
 };
 
 export function getSilenceThreshold(speechThreshold: number): number {
-  return Math.max(0.012, Math.min(0.12, speechThreshold * 0.65));
+  return Math.max(0.008, Math.min(0.08, speechThreshold * 0.55));
 }
 
-export type VadUpdate = { speechStarted: boolean; shouldFinalize: boolean };
+export type VadUpdate = { speechStarted: boolean; speechResumed: boolean; shouldFinalize: boolean };
 
 export class VoiceActivityDetector {
   private speechCandidateStartedAt: number | null = null;
@@ -44,20 +49,21 @@ export class VoiceActivityDetector {
   constructor(private readonly config: VadConfig = defaultVadConfig) {}
 
   update(level: number, now: number): VadUpdate {
-    if (!Number.isFinite(level) || level < 0) return { speechStarted: false, shouldFinalize: false };
+    if (!Number.isFinite(level) || level < 0) return { speechStarted: false, speechResumed: false, shouldFinalize: false };
     this.lastUpdatedAt = now;
+    let speechResumed = false;
 
     if (this.speechStartedAt === null) {
       if (level >= this.config.speechThreshold) {
         this.speechCandidateStartedAt ??= now;
         if (now - this.speechCandidateStartedAt >= 200) {
           this.speechStartedAt = this.speechCandidateStartedAt;
-          return { speechStarted: true, shouldFinalize: false };
+          return { speechStarted: true, speechResumed: false, shouldFinalize: false };
         }
       } else {
         this.speechCandidateStartedAt = null;
       }
-      return { speechStarted: false, shouldFinalize: false };
+      return { speechStarted: false, speechResumed: false, shouldFinalize: false };
     }
 
     if (level >= this.config.speechThreshold) {
@@ -66,20 +72,24 @@ export class VoiceActivityDetector {
       this.midBandStartedAt = null;
       this.resumedSpeechCandidateStartedAt ??= now;
       if (now - this.resumedSpeechCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
+        speechResumed = this.silenceStartedAt !== null || this.midBandStartedAt !== null || this.finalizationReasonValue !== null;
         this.silenceStartedAt = null;
         this.resumedSpeechCandidateStartedAt = null;
         this.resumedActivityCandidateStartedAt = null;
         this.midBandStartedAt = null;
+        this.finalizationReasonValue = null;
       }
     } else if (level >= this.config.silenceThreshold) {
       this.resumedActivityCandidateStartedAt ??= now;
       if (now - this.resumedActivityCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
+        speechResumed = this.silenceStartedAt !== null || this.finalizationReasonValue !== null;
         // Mid-band energy is ambiguous: it may be a reflective pause with room
         // noise, or quiet speech. Give it a finite grace period. Variable noise
         // must not keep a response open indefinitely.
         this.silenceStartedAt = null;
         this.midBandStartedAt ??= this.resumedActivityCandidateStartedAt;
         this.resumedActivityCandidateStartedAt = null;
+        this.finalizationReasonValue = null;
       }
     } else {
       this.resumedSpeechCandidateStartedAt = null;
@@ -104,12 +114,19 @@ export class VoiceActivityDetector {
     else if (ambientFinalized) this.finalizationReasonValue = "ambient_activity";
     return {
       speechStarted: false,
+      speechResumed,
       shouldFinalize: silenceFinalized || ambientFinalized,
     };
   }
 
   get hasSpeech(): boolean {
     return this.speechStartedAt !== null;
+  }
+
+  get speechThresholdBand(): "minimum" | "calibrated" | "maximum" {
+    if (this.config.speechThreshold <= 0.015) return "minimum";
+    if (this.config.speechThreshold >= 0.05) return "maximum";
+    return "calibrated";
   }
 
   get speechDurationMs(): number {

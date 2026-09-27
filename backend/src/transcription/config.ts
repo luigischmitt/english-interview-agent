@@ -12,6 +12,7 @@ export type TranscriptionConfig = {
   streamMaxConcurrentTranscriptions: number;
   streamMaxQueuedTranscriptions: number;
   vadTrailingSilenceMs: number;
+  vadFinalizationGraceMs: number;
   vadAmbientActivityHoldMs: number;
 };
 
@@ -47,6 +48,7 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     streamMaxConcurrentTranscriptions: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_CONCURRENT_TRANSCRIPTIONS, 4, 4),
     streamMaxQueuedTranscriptions: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_QUEUED_TRANSCRIPTIONS, 4, 4),
     vadTrailingSilenceMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_TRAILING_SILENCE_MS, 3_500, 10_000),
+    vadFinalizationGraceMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_FINALIZATION_GRACE_MS, 1_500, 5_000),
     vadAmbientActivityHoldMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_AMBIENT_HOLD_MS, 8_000, 30_000),
   };
 }

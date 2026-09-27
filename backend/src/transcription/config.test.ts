@@ -13,6 +13,7 @@ describe("optional Azure assessment configuration", () => {
     expect(config.streamMaxConcurrentTranscriptions).toBe(4);
     expect(config.streamMaxQueuedTranscriptions).toBe(4);
     expect(config.vadTrailingSilenceMs).toBe(3_500);
+    expect(config.vadFinalizationGraceMs).toBe(1_500);
     expect(config.vadAmbientActivityHoldMs).toBe(8_000);
   });
 
@@ -40,9 +41,11 @@ describe("optional Azure assessment configuration", () => {
   it("allows bounded VAD grace periods to be tuned without changing the 180 second cap", () => {
     const config = loadTranscriptionConfig({
       TRANSCRIPTION_VAD_TRAILING_SILENCE_MS: "5000",
+      TRANSCRIPTION_VAD_FINALIZATION_GRACE_MS: "2500",
       TRANSCRIPTION_VAD_AMBIENT_HOLD_MS: "10000",
     });
-    expect(config).toMatchObject({ vadTrailingSilenceMs: 5_000, vadAmbientActivityHoldMs: 10_000, streamMaxDurationMs: 180_000 });
+    expect(config).toMatchObject({ vadTrailingSilenceMs: 5_000, vadFinalizationGraceMs: 2_500, vadAmbientActivityHoldMs: 10_000, streamMaxDurationMs: 180_000 });
     expect(() => loadTranscriptionConfig({ TRANSCRIPTION_VAD_TRAILING_SILENCE_MS: "12000" })).toThrow("no greater than 10000");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_VAD_FINALIZATION_GRACE_MS: "6000" })).toThrow("no greater than 5000");
   });
 });

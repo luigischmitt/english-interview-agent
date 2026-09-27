@@ -310,8 +310,9 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             onCaptureStateChangeRef.current?.("detected");
             return;
           }
-          if (message.type === "silence-detected") { stopRecording(); return; }
+          if (message.type === "silence-detected" || message.type === "speech-resumed") return;
           if (message.type === "transcription-queued" || message.type === "finalizing") {
+            if (message.type === "finalizing") releaseCapture();
             setStatus("finalizing");
             const pending: VoiceTranscriptionState = { status: "pending" };
             setTranscription(pending);
