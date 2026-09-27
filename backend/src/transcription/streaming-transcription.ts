@@ -80,7 +80,7 @@ export class StreamingTranscriptionSessions {
     if (this.sessions.size >= this.limits.maxActiveSessions) throw new Error("STREAM_CAPACITY_REACHED");
     if (!this.transcriptionService.availableProviders().includes("whisper-large-v3-turbo")) throw new Error("TRANSCRIPTION_NOT_CONFIGURED");
 
-    const threshold = Number.isFinite(speechThreshold) ? Math.min(0.15, Math.max(0.025, speechThreshold)) : 0.025;
+    const threshold = Number.isFinite(speechThreshold) ? Math.min(0.05, Math.max(0.015, speechThreshold)) : 0.015;
     const vadConfig = { ...this.config, ...this.limits.vadConfig, maxDurationMs: this.limits.maxDurationMs, maxBytes: this.limits.maxBytes };
     const session: StreamingSession = {
       id: randomUUID(), chunks: [], bytes: 0, startedAt: this.now(), lastSequence: -1,

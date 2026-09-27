@@ -121,6 +121,7 @@ export function attachTranscriptionWebSocket(
     let finalRequested = false;
     let finishing = false;
     let silenceDetected = false;
+    let silenceGraceTimer: ReturnType<typeof setTimeout> | null = null;
     let requestAbortController: AbortController | null = null;
     let timer: ReturnType<typeof setTimeout>;
 
@@ -128,6 +129,8 @@ export function attachTranscriptionWebSocket(
       if (finishing) return;
       logStreamDiagnostic({ status: "failed", code, durationMs: retainedSession?.bytes ? Math.round(retainedSession.bytes / (pcmSampleRate * 2) * 1_000) : 0 });
       finishing = true;
+      if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
+      silenceGraceTimer = null;
       clearTimeout(timer);
       requestAbortController?.abort();
       if (sessionId) {
@@ -146,6 +149,8 @@ export function attachTranscriptionWebSocket(
       const session = sessions.get(id);
       if (!session) return fail("STREAM_NOT_FOUND", "The audio session expired. Please record your answer again or skip/end the practice.");
       finalRequested = true;
+      if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
+      silenceGraceTimer = null;
       logStreamDiagnostic({ status: "finalizing", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(session.bytes / (pcmSampleRate * 2) * 1_000), speechDurationMs: Math.round(session.vad.speechDurationMs) });
       clearTimeout(timer);
       timer = setTimeout(() => fail("UPSTREAM_UNAVAILABLE", "Transcription took too long. Please try recording again or skip/end the practice."), limits.finalizationTimeoutMs);
@@ -293,6 +298,7 @@ export function attachTranscriptionWebSocket(
           sessionId = session.id;
           retainedSession = session;
           started = true;
+          logStreamDiagnostic({ status: "started", speechThresholdBand: session.vad.speechThresholdBand });
           send(socket, {
             type: "ready",
             protocol: 2,
@@ -314,9 +320,21 @@ export function attachTranscriptionWebSocket(
         if (!session) return;
         const update = session.vad.update(message.value, Date.now());
         if (update.speechStarted) send(socket, { type: "speech-started" });
+        if (update.speechResumed) {
+          silenceDetected = false;
+          if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
+          silenceGraceTimer = null;
+          send(socket, { type: "speech-resumed" });
+          logStreamDiagnostic({ status: "silence_cancelled", reason: "activity_resumed", durationMs: Math.round(session.bytes / (pcmSampleRate * 2) * 1_000) });
+        }
         if (update.shouldFinalize && !silenceDetected) {
           silenceDetected = true;
           send(socket, { type: "silence-detected" });
+          logStreamDiagnostic({ status: "silence_pending", finalizationGraceMs: session.config.finalizationGraceMs });
+          silenceGraceTimer = setTimeout(() => {
+            silenceGraceTimer = null;
+            finalize("silence");
+          }, session.config.finalizationGraceMs + session.config.resumedSpeechConfirmationMs);
         }
         return;
       }
@@ -332,6 +350,8 @@ export function attachTranscriptionWebSocket(
       }
 
       if (message.type === "cancel") {
+        if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
+        silenceGraceTimer = null;
         clearTimeout(timer);
         requestAbortController?.abort();
         if (sessionId) {
@@ -346,6 +366,8 @@ export function attachTranscriptionWebSocket(
     });
 
     socket.on("close", () => {
+      if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
+      silenceGraceTimer = null;
       clearTimeout(timer);
       requestAbortController?.abort();
       if (sessionId) {

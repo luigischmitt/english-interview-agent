@@ -218,15 +218,57 @@ describe("voice activity detection", () => {
   it("uses hysteresis above the calibrated noise floor", () => {
     const speechThreshold = 0.1;
     const vad = new VoiceActivityDetector({ ...defaultVadConfig, speechThreshold, silenceThreshold: getSilenceThreshold(speechThreshold) });
-    expect(getSilenceThreshold(speechThreshold)).toBeCloseTo(0.065);
+    expect(getSilenceThreshold(speechThreshold)).toBeCloseTo(0.055);
     expect(vad.update(0.16, 0).speechStarted).toBe(false);
     expect(vad.update(0.16, 100).speechStarted).toBe(false);
     expect(vad.update(0.16, 200).speechStarted).toBe(true);
     expect(vad.update(0.04, 900).shouldFinalize).toBe(false);
   });
+
+  it("does not cut a quiet continuous voice or a quiet voice after loud speech", () => {
+    const speechThreshold = 0.015;
+    const vad = new VoiceActivityDetector({ ...defaultVadConfig, speechThreshold, silenceThreshold: getSilenceThreshold(speechThreshold) });
+    let update = { speechStarted: false, speechResumed: false, shouldFinalize: false };
+    for (let now = 0; now <= 30_000; now += 100) update = vad.update(0.017, now);
+    expect(vad.hasSpeech).toBe(true);
+    expect(update.shouldFinalize).toBe(false);
+
+    const afterLoud = new VoiceActivityDetector({ ...defaultVadConfig, speechThreshold, silenceThreshold: getSilenceThreshold(speechThreshold) });
+    afterLoud.update(0.04, 0);
+    afterLoud.update(0.04, 100);
+    afterLoud.update(0.04, 200);
+    for (let now = 300; now <= 15_000; now += 100) {
+      expect(afterLoud.update(0.016, now).shouldFinalize).toBe(false);
+    }
+  });
+
+  it("reports confirmed resumed speech so the server can cancel its pending finalization grace", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    vad.update(0.04, 200);
+    expect(vad.update(0.005, 800).shouldFinalize).toBe(false);
+    expect(vad.update(0.005, 4_300).shouldFinalize).toBe(true);
+    expect(vad.finalizationReason).toBe("silence");
+    vad.update(0.02, 4_400);
+    const resumed = vad.update(0.02, 4_700);
+    expect(resumed.speechResumed).toBe(true);
+    expect(resumed.shouldFinalize).toBe(false);
+    expect(vad.finalizationReason).toBeNull();
+    for (let now = 4_800; now < 6_000; now += 100) {
+      expect(vad.update(0.02, now).shouldFinalize).toBe(false);
+    }
+  });
 });
 
 describe("in-memory PCM sessions", () => {
+  it("honors low calibrated thresholds but caps contaminated calibration values", () => {
+    const sessions = new StreamingTranscriptionSessions(createService().service);
+    expect(sessions.create(0.015).vad.speechThresholdBand).toBe("minimum");
+    expect(sessions.create(0.025).vad.speechThresholdBand).toBe("calibrated");
+    expect(sessions.create(0.15).vad.speechThresholdBand).toBe("maximum");
+  });
+
   it("retains a near-maximum 180-second response under 6 MiB and clears its frames", () => {
     const sessions = new StreamingTranscriptionSessions(createService().service);
     const session = sessions.create(0.025);
@@ -384,6 +426,44 @@ describe("versioned transcription WebSocket", () => {
       socket.send(JSON.stringify({ type: "finalize", reason: "silence" }));
       await completeWaiter;
       await expect(assessmentWaiter).resolves.toMatchObject({ type: "assessment", status: "unavailable", reason: "rate_limited", blockCount: 1, assessedBlockCount: 0, failedBlockCount: 1 });
+    } finally {
+      socket.close();
+      await fixture.close();
+    }
+  });
+
+  it("keeps capture reversible during the server silence grace and finalizes after resumed speech ends", async () => {
+    const { service, transcribe } = createService("A complete resumed answer");
+    const fixture = await openStreamServer(service, null, {
+      ...defaultStreamingLimits,
+      vadConfig: { trailingSilenceMs: 300, finalizationGraceMs: 800, resumedSpeechConfirmationMs: 200 },
+    });
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const silence = waitForType(socket, "silence-detected");
+      for (let index = 0; index < 5; index += 1) {
+        socket.send(JSON.stringify({ type: "level", value: 0.005 }));
+        await delay(100);
+      }
+      await silence;
+
+      const resumed = waitForType(socket, "speech-resumed");
+      for (let index = 0; index < 4; index += 1) {
+        socket.send(JSON.stringify({ type: "level", value: 0.05 }));
+        await delay(100);
+      }
+      await resumed;
+      expect(transcribe).not.toHaveBeenCalled();
+
+      const complete = waitForType(socket, "complete");
+      for (let index = 0; index < 8; index += 1) {
+        socket.send(JSON.stringify({ type: "level", value: 0.005 }));
+        await delay(100);
+      }
+      await expect(complete).resolves.toMatchObject({ status: "complete", transcript: "A complete resumed answer" });
+      expect(transcribe).toHaveBeenCalledTimes(1);
     } finally {
       socket.close();
       await fixture.close();
