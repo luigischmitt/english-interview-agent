@@ -7,13 +7,25 @@ export type TranscriptionResult = {
   transcript: string;
   words?: TranscriptionWord[];
   segments?: TranscriptionWord[];
+  timingDiagnostics?: {
+    wordFieldPresent: boolean;
+    wordEntryCount: number;
+    wordAcceptedCount: number;
+    segmentFieldPresent: boolean;
+    segmentEntryCount: number;
+    segmentAcceptedCount: number;
+  };
 };
 
-export type TranscriptionWord = { text: string; start: number; end: number };
+export type TranscriptionWord = { text: string; start: number; end: number; breakBefore?: boolean };
+
+export type SegmentTimestampResult = { segments?: TranscriptionWord[] };
 
 export type AudioFormat = "wav" | "webm" | "mp4";
 
 export interface TranscriptionService {
   availableProviders(): TranscriptionProvider[];
   transcribe(audio: Buffer, provider: TranscriptionProvider, format?: AudioFormat, signal?: AbortSignal): Promise<TranscriptionResult>;
+  /** Optional, bounded recovery request used only when the primary transcript has no usable timing. */
+  retrySegmentTimestamps?(audio: Buffer, provider: TranscriptionProvider, format?: AudioFormat, signal?: AbortSignal): Promise<SegmentTimestampResult>;
 }

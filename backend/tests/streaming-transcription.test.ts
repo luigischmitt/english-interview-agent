@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { WebSocket } from "ws";
 
 import { defaultVadConfig, getSilenceThreshold, VoiceActivityDetector } from "../src/transcription/voice-activity-detector.js";
-import type { TranscriptionResult, TranscriptionService } from "../src/transcription/types.js";
+import type { SegmentTimestampResult, TranscriptionResult, TranscriptionService, TranscriptionWord } from "../src/transcription/types.js";
 import { attachTranscriptionWebSocket } from "../src/transcription/transcription-websocket.js";
 import { AzureAssessmentError, type PronunciationAssessmentService } from "../src/transcription/azure-pronunciation-assessment.js";
 import { defaultStreamingLimits, FinalTranscriptionQueue, pcmToWav, StreamingTranscriptionSessions } from "../src/transcription/streaming-transcription.js";
@@ -745,6 +745,160 @@ describe("versioned transcription WebSocket", () => {
     }
   });
 
+  it("recovers missing timing once and assesses only text from the canonical Whisper transcript", async () => {
+    const service = createService().service;
+    service.transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({ provider, transcript: "Canonical answer", words: undefined, segments: undefined }));
+    service.retrySegmentTimestamps = vi.fn(async () => ({
+      segments: [{ text: "Canonical", start: 0.1, end: 0.3 }, { text: "answer", start: 0.4, end: 0.7 }],
+    }));
+    const assess = vi.fn(async (_audio: Buffer, _format: "wav", referenceText: string) => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 86, fluency: null, prosody: null } }));
+    const diagnostic = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const complete = waitForType(socket, "complete");
+      const assessment = waitForType(socket, "assessment");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await expect(complete).resolves.toMatchObject({ status: "complete", transcript: "Canonical answer" });
+      await expect(assessment).resolves.toMatchObject({ status: "available", blockCount: 1, scores: { accuracy: 86 } });
+      expect(service.transcribe).toHaveBeenCalledOnce();
+      expect(service.retrySegmentTimestamps).toHaveBeenCalledOnce();
+      expect(assess.mock.calls.map((call) => call[2])).toEqual(["Canonical answer"]);
+      const azureLogs = diagnostic.mock.calls.flat().filter((entry) => typeof entry === "string" && entry.includes('"event":"azure_assessment"'));
+      expect(azureLogs.join(" ")).toContain('"timingSource":"segment_retry"');
+      expect(azureLogs.join(" ")).toContain('"timingRetryOutcome":"success"');
+      expect(azureLogs.join(" ")).not.toContain("Canonical answer");
+    } finally {
+      diagnostic.mockRestore();
+      socket.close();
+      await fixture.close();
+    }
+  });
+
+  it.each([
+    ["missing", async () => ({ segments: undefined })],
+    ["timeout", async () => { throw new Error("request timed out"); }],
+  ])("keeps the transcript and reports Azure timing unavailable when recovery is %s", async (_outcome, retry) => {
+    const service = createService().service;
+    service.transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({ provider, transcript: "Canonical answer" }));
+    service.retrySegmentTimestamps = vi.fn(retry);
+    const assess = vi.fn();
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const complete = waitForType(socket, "complete");
+      const assessment = waitForType(socket, "assessment");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await expect(complete).resolves.toMatchObject({ transcript: "Canonical answer" });
+      await expect(assessment).resolves.toMatchObject({ status: "unavailable" });
+      expect(service.transcribe).toHaveBeenCalledOnce();
+      expect(service.retrySegmentTimestamps).toHaveBeenCalledOnce();
+      expect(assess).not.toHaveBeenCalled();
+    } finally {
+      socket.close();
+      await fixture.close();
+    }
+  });
+
+  it("keeps late timing retries and Azure assessments attached to the originating socket", async () => {
+    const transcriptByAudio = new WeakMap<Buffer, string>();
+    const pendingRetries = new Map<string, (value: SegmentTimestampResult) => void>();
+    let answerNumber = 0;
+    const service: TranscriptionService = {
+      availableProviders: () => ["whisper-large-v3-turbo"],
+      transcribe: vi.fn(async (audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => {
+        answerNumber += 1;
+        const transcript = `Answer ${answerNumber}`;
+        transcriptByAudio.set(audio, transcript);
+        return { provider, transcript };
+      }),
+      retrySegmentTimestamps: vi.fn((audio: Buffer) => {
+        const transcript = transcriptByAudio.get(audio)!;
+        return new Promise<SegmentTimestampResult>((resolve) => pendingRetries.set(transcript, resolve));
+      }),
+    };
+    const assess = vi.fn(async (_audio: Buffer, _format: "wav", referenceText: string) => ({
+      provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const,
+      scores: { accuracy: referenceText === "Answer 1" ? 81 : 92, fluency: null, prosody: null },
+    }));
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService);
+    const sockets = await Promise.all([openSocket(fixture.url), openSocket(fixture.url)]);
+    try {
+      for (const socket of sockets) {
+        await startStream(socket);
+        await prepareAnswer(socket, 8);
+      }
+      const completions = sockets.map((socket) => waitForType(socket, "complete"));
+      const assessments = sockets.map((socket) => waitForType(socket, "assessment"));
+      for (const socket of sockets) socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      const completeResults = await Promise.all(completions);
+      const retryDeadline = Date.now() + 1_000;
+      while (pendingRetries.size < 2 && Date.now() < retryDeadline) await delay(5);
+      expect([...pendingRetries.keys()]).toEqual(["Answer 1", "Answer 2"]);
+
+      pendingRetries.get("Answer 2")!({ segments: [{ text: "Answer 2", start: 0.1, end: 0.7 }] });
+      await delay(10);
+      pendingRetries.get("Answer 1")!({ segments: [{ text: "Answer 1", start: 0.1, end: 0.7 }] });
+      const results = await Promise.all(assessments);
+      for (let index = 0; index < results.length; index += 1) {
+        const expectedAccuracy = completeResults[index]?.transcript === "Answer 1" ? 81 : 92;
+        expect(results[index]).toMatchObject({ status: "available", scores: { accuracy: expectedAccuracy } });
+      }
+    } finally {
+      sockets.forEach((socket) => socket.close());
+      await fixture.close();
+    }
+  });
+
+  it("recovers Azure timing for all eight completed responses without mixing their transcripts", async () => {
+    const transcriptByAudio = new WeakMap<Buffer, string>();
+    let answerNumber = 0;
+    const service: TranscriptionService = {
+      availableProviders: () => ["whisper-large-v3-turbo"],
+      transcribe: vi.fn(async (audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => {
+        answerNumber += 1;
+        const transcript = `Candidate answer ${answerNumber}`;
+        transcriptByAudio.set(audio, transcript);
+        return { provider, transcript };
+      }),
+      retrySegmentTimestamps: vi.fn(async (audio: Buffer): Promise<SegmentTimestampResult> => {
+        const transcript = transcriptByAudio.get(audio)!;
+        return { segments: [{ text: transcript, start: 0.1, end: 0.7 }] };
+      }),
+    };
+    const assess = vi.fn(async (_audio: Buffer, _format: "wav", _referenceText: string) => ({
+      provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 84, fluency: 79, prosody: null },
+    }));
+    const assessmentService: PronunciationAssessmentService = { assess };
+    const fixture = await openStreamServer(service, assessmentService, { ...defaultStreamingLimits, maxConcurrentTranscriptions: 2 });
+    const sockets = await Promise.all(Array.from({ length: 8 }, () => openSocket(fixture.url)));
+    try {
+      for (const socket of sockets) {
+        await startStream(socket);
+        await prepareAnswer(socket, 8);
+      }
+      const completes = sockets.map((socket) => waitForType(socket, "complete"));
+      const assessments = sockets.map((socket) => waitForType(socket, "assessment"));
+      for (const socket of sockets) socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      const completeResults = await Promise.all(completes);
+      const assessmentResults = await Promise.all(assessments);
+      expect(completeResults.map((result) => result.transcript).sort()).toEqual(Array.from({ length: 8 }, (_, index) => `Candidate answer ${index + 1}`).sort());
+      expect(assessmentResults).toHaveLength(8);
+      expect(assessmentResults.every((result) => result.status === "available" && result.assessedBlockCount === 1)).toBe(true);
+      expect(service.transcribe).toHaveBeenCalledTimes(8);
+      expect(service.retrySegmentTimestamps).toHaveBeenCalledTimes(8);
+      expect(assess).toHaveBeenCalledTimes(8);
+      expect(assess.mock.calls.map((call) => call[2]).sort()).toEqual(completeResults.map((result) => result.transcript).sort());
+    } finally {
+      sockets.forEach((socket) => socket.close());
+      await fixture.close();
+    }
+  }, 15_000);
+
   it("keeps the Azure concurrency limit at two across separate response sockets", async () => {
     let active = 0;
     let maximumActive = 0;
@@ -900,6 +1054,151 @@ describe("versioned transcription WebSocket", () => {
     } finally {
       first.close();
       second?.close();
+      await fixture.close();
+    }
+  });
+
+  it("does not let a pending timing retry occupy a Whisper concurrency slot", async () => {
+    const retryResolvers: Array<(value: SegmentTimestampResult) => void> = [];
+    let nextAnswer = 0;
+    const service: TranscriptionService = {
+      availableProviders: () => ["whisper-large-v3-turbo"],
+      transcribe: vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => {
+        nextAnswer += 1;
+        const transcript = `Answer ${nextAnswer}`;
+        return { provider, transcript };
+      }),
+      retrySegmentTimestamps: vi.fn((_audio: Buffer) => new Promise<SegmentTimestampResult>((resolve) => { retryResolvers.push((value) => resolve(value)); })),
+    };
+    const assess = vi.fn(async () => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 80, fluency: null, prosody: null } }));
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService, { ...defaultStreamingLimits, maxConcurrentTranscriptions: 1 });
+    const first = await openSocket(fixture.url);
+    let second: WebSocket | undefined;
+    try {
+      await startStream(first);
+      await prepareAnswer(first);
+      const firstComplete = waitForType(first, "complete");
+      first.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      const firstResult = await firstComplete;
+      expect(firstResult.transcript).toBe("Answer 1");
+      const retryDeadline = Date.now() + 1_000;
+      while (retryResolvers.length < 1 && Date.now() < retryDeadline) await delay(5);
+      expect(retryResolvers).toHaveLength(1);
+
+      second = await openSocket(fixture.url);
+      await startStream(second);
+      await prepareAnswer(second);
+      const secondComplete = waitForType(second, "complete");
+      second.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await expect(secondComplete).resolves.toMatchObject({ transcript: "Answer 2" });
+      const secondRetryDeadline = Date.now() + 1_000;
+      while (retryResolvers.length < 2 && Date.now() < secondRetryDeadline) await delay(5);
+      expect(retryResolvers).toHaveLength(2);
+
+      const firstAssessment = waitForType(first, "assessment");
+      const secondAssessment = waitForType(second, "assessment");
+      retryResolvers[0]!({ segments: [{ text: "Answer 1", start: 0.1, end: 0.7 }] });
+      retryResolvers[1]!({ segments: [{ text: "Answer 2", start: 0.1, end: 0.7 }] });
+      await Promise.all([firstAssessment, secondAssessment]);
+      expect(service.transcribe).toHaveBeenCalledTimes(2);
+    } finally {
+      first.close();
+      second?.close();
+      await fixture.close();
+    }
+  });
+
+  it("limits timing recovery to two active calls and removes disconnected waiters", async () => {
+    const transcriptByAudio = new WeakMap<Buffer, string>();
+    const pendingRetries = new Map<string, () => void>();
+    let answerNumber = 0;
+    let activeRetries = 0;
+    let maximumActiveRetries = 0;
+    const service: TranscriptionService = {
+      availableProviders: () => ["whisper-large-v3-turbo"],
+      transcribe: vi.fn(async (audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => {
+        answerNumber += 1;
+        const transcript = `Answer ${answerNumber}`;
+        transcriptByAudio.set(audio, transcript);
+        return { provider, transcript };
+      }),
+      retrySegmentTimestamps: vi.fn((audio: Buffer) => {
+        const transcript = transcriptByAudio.get(audio)!;
+        activeRetries += 1;
+        maximumActiveRetries = Math.max(maximumActiveRetries, activeRetries);
+        return new Promise<SegmentTimestampResult>((resolve) => pendingRetries.set(transcript, () => {
+          activeRetries -= 1;
+          resolve({ segments: [{ text: transcript, start: 0.1, end: 0.7 }] });
+        }));
+      }),
+    };
+    const assess = vi.fn(async (_audio: Buffer, _format: "wav", _referenceText: string) => ({
+      provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 85, fluency: null, prosody: null },
+    }));
+    const fixture = await openStreamServer(service, { assess } as unknown as PronunciationAssessmentService);
+    const sockets = await Promise.all(Array.from({ length: 3 }, () => openSocket(fixture.url)));
+    try {
+      await Promise.all(sockets.map((socket) => startStream(socket)));
+      await Promise.all(sockets.map((socket) => prepareAnswer(socket, 8)));
+      const completions = sockets.map((socket) => waitForType(socket, "complete"));
+      const assessmentWaiters = sockets.map((socket) => waitForType(socket, "assessment"));
+      for (const socket of sockets) socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      const completionResults = await Promise.all(completions);
+      const retryDeadline = Date.now() + 1_000;
+      while (pendingRetries.size < 2 && Date.now() < retryDeadline) await delay(5);
+      expect(pendingRetries.size).toBe(2);
+      expect(activeRetries).toBe(2);
+      expect(maximumActiveRetries).toBe(2);
+      expect(service.retrySegmentTimestamps).toHaveBeenCalledTimes(2);
+      await delay(20);
+      expect(service.retrySegmentTimestamps).toHaveBeenCalledTimes(2);
+
+      const waitingIndex = completionResults.findIndex((result) => !pendingRetries.has(result.transcript));
+      expect(waitingIndex).toBeGreaterThanOrEqual(0);
+      const waitingSocketClosed = new Promise<void>((resolve) => sockets[waitingIndex]!.once("close", () => resolve()));
+      sockets[waitingIndex]!.terminate();
+      await waitingSocketClosed;
+      for (const release of pendingRetries.values()) release();
+      const results = await Promise.all(assessmentWaiters.filter((_waiter, index) => index !== waitingIndex));
+      expect(results.every((result) => result.status === "available")).toBe(true);
+      expect(service.retrySegmentTimestamps).toHaveBeenCalledTimes(2);
+      expect(maximumActiveRetries).toBe(2);
+    } finally {
+      sockets.forEach((socket) => socket.close());
+      await fixture.close();
+    }
+  }, 10_000);
+
+  it("aborts timing recovery on disconnect and clears its temporary full-audio buffer", async () => {
+    let retryAudio: Buffer | undefined;
+    let retrySignal: AbortSignal | undefined;
+    const service = createService("Canonical answer").service;
+    service.transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({ provider, transcript: "Canonical answer" }));
+    service.retrySegmentTimestamps = vi.fn((audio: Buffer, _provider, _format, signal) => {
+      retryAudio = audio;
+      retrySignal = signal;
+      return new Promise<SegmentTimestampResult>((_resolve, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+    });
+    const fixture = await openStreamServer(service, { assess: vi.fn() } as unknown as PronunciationAssessmentService);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const complete = waitForType(socket, "complete");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await complete;
+      const retryDeadline = Date.now() + 1_000;
+      while (!retryAudio && Date.now() < retryDeadline) await delay(5);
+      expect(retryAudio).toBeDefined();
+      const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+      socket.terminate();
+      await closed;
+      const cleanupDeadline = Date.now() + 1_000;
+      while (retryAudio?.some((byte) => byte !== 0) && Date.now() < cleanupDeadline) await delay(5);
+      expect(retrySignal?.aborted).toBe(true);
+      expect(retryAudio?.every((byte) => byte === 0)).toBe(true);
+    } finally {
+      socket.terminate();
       await fixture.close();
     }
   });

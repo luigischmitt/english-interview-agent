@@ -1,5 +1,5 @@
 import { TranscriptionUnavailableError } from "./errors.js";
-import type { AudioFormat, TranscriptionProvider, TranscriptionResult, TranscriptionService, TranscriptionWord } from "./types.js";
+import type { AudioFormat, SegmentTimestampResult, TranscriptionProvider, TranscriptionResult, TranscriptionService, TranscriptionWord } from "./types.js";
 
 type OpenRouterWhisperTranscriptionServiceOptions = {
   key: string;
@@ -9,6 +9,9 @@ type OpenRouterWhisperTranscriptionServiceOptions = {
 };
 
 type OpenRouterResponse = { text?: string; words?: unknown; segments?: unknown };
+
+/** Extra timing recovery stays short so optional vocal feedback cannot delay an interview turn. */
+export const segmentTimestampRetryTimeoutMs = 12_000;
 
 const modelForProvider: Record<Exclude<TranscriptionProvider, "azure">, string> = {
   "whisper-large-v3": "openai/whisper-large-v3",
@@ -41,6 +44,7 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
       form.set("temperature", "0");
       form.set("response_format", "verbose_json");
       form.append("timestamp_granularities[]", "word");
+      form.append("timestamp_granularities[]", "segment");
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const response = await this.fetchImplementation("https://openrouter.ai/api/v1/audio/transcriptions", {
           method: "POST",
@@ -66,17 +70,62 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
         const transcript = result.text?.trim();
         if (!transcript) throw new TranscriptionUnavailableError("OpenRouter could not recognize a response in this recording.");
         const durationSeconds = wavDurationSeconds(audio);
-        return {
+        const words = parseWhisperWords(result.words, durationSeconds);
+        const segments = parseWhisperSegments(result.segments, durationSeconds);
+        const normalized: TranscriptionResult = {
           provider,
           transcript,
-          words: parseWhisperWords(result.words, durationSeconds),
-          segments: parseWhisperSegments(result.segments, durationSeconds),
+          words,
+          segments,
         };
+        Object.defineProperty(normalized, "timingDiagnostics", {
+          enumerable: false,
+          value: {
+            wordFieldPresent: result.words !== undefined && result.words !== null,
+            wordEntryCount: Array.isArray(result.words) ? result.words.length : 0,
+            wordAcceptedCount: words?.length ?? 0,
+            segmentFieldPresent: result.segments !== undefined && result.segments !== null,
+            segmentEntryCount: Array.isArray(result.segments) ? result.segments.length : 0,
+            segmentAcceptedCount: segments?.length ?? 0,
+          },
+        });
+        return normalized;
       }
       throw new TranscriptionUnavailableError("OpenRouter returned HTTP 429 after retries.");
     } catch (error) {
       if (error instanceof TranscriptionUnavailableError) throw error;
       throw new TranscriptionUnavailableError("OpenRouter transcription is unavailable right now.", { cause: error });
+    }
+  }
+
+  async retrySegmentTimestamps(audio: Buffer, provider: TranscriptionProvider, format: AudioFormat = "wav", signal?: AbortSignal): Promise<SegmentTimestampResult> {
+    if (provider === "azure") throw new TranscriptionUnavailableError("This transcription provider is not configured.");
+
+    const timeoutSignal = AbortSignal.timeout(Math.min(this.options.timeoutMs, segmentTimestampRetryTimeoutMs));
+    try {
+      const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+      const form = new FormData();
+      form.set("model", modelForProvider[provider]);
+      form.set("file", new Blob([new Uint8Array(audio)], { type: format === "wav" ? "audio/wav" : `audio/${format}` }), `response.${format}`);
+      form.set("language", "en");
+      form.set("temperature", "0");
+      form.set("response_format", "verbose_json");
+      // Ask only for coarse timing; the primary transcript remains canonical and is never replaced.
+      form.append("timestamp_granularities[]", "segment");
+      const response = await this.fetchImplementation("https://openrouter.ai/api/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.options.key}` },
+        body: form,
+        signal: requestSignal,
+      });
+      if (!response.ok) throw new TranscriptionUnavailableError(`OpenRouter returned HTTP ${response.status}.`);
+      const result = await response.json() as OpenRouterResponse;
+      return { segments: parseWhisperSegments(result.segments, wavDurationSeconds(audio)) };
+    } catch (error) {
+      if (error instanceof TranscriptionUnavailableError) throw error;
+      if (timeoutSignal.aborted) throw new TranscriptionUnavailableError("OpenRouter timing recovery timed out.", { cause: error });
+      if (signal?.aborted) throw new TranscriptionUnavailableError("OpenRouter timing recovery was cancelled.", { cause: error });
+      throw new TranscriptionUnavailableError("OpenRouter timing recovery is unavailable right now.", { cause: error });
     }
   }
 }
@@ -104,13 +153,13 @@ export function parseWhisperSegments(value: unknown, durationSeconds: number): T
   const segments: TranscriptionWord[] = [];
   let previousEnd = 0;
   for (const item of value) {
-    if (!item || typeof item !== "object") return undefined;
+    if (!item || typeof item !== "object") continue;
     const segment = item as { text?: unknown; start?: unknown; end?: unknown };
     if (typeof segment.text !== "string" || !segment.text.trim()
       || typeof segment.start !== "number" || !Number.isFinite(segment.start) || segment.start < 0
       || typeof segment.end !== "number" || !Number.isFinite(segment.end) || segment.end <= segment.start
       || segment.end > durationSeconds || segment.start < previousEnd
-      || segment.end - segment.start > 25) return undefined;
+      || segment.end - segment.start > 25) continue;
     segments.push({ text: segment.text, start: segment.start, end: segment.end });
     previousEnd = segment.end;
   }

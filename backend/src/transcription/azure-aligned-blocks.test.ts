@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAzureAlignedBlocks, materializeAzureBlock } from "./azure-aligned-blocks.js";
+import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock } from "./azure-aligned-blocks.js";
 import { pcmToWav } from "./streaming-transcription.js";
 import { parseWhisperSegments, parseWhisperWords } from "./openrouter-whisper-transcription-service.js";
 
@@ -18,15 +18,30 @@ describe("Whisper word timestamps", () => {
 });
 
 describe("Whisper segment timestamps", () => {
-  it("accepts ordered in-range segment text and rejects malformed, overlapping, or oversized segments", () => {
+  it("keeps only individually safe chronological segments", () => {
     expect(parseWhisperSegments([{ text: " hello", start: 0, end: 1 }, { text: " world", start: 1, end: 2 }], 3)).toHaveLength(2);
-    expect(parseWhisperSegments([{ text: "ok", start: 0, end: 1 }, { text: "bad", start: 0.9, end: 1.5 }], 3)).toBeUndefined();
+    expect(parseWhisperSegments([{ text: "ok", start: 0, end: 1 }, { text: "bad", start: 0.9, end: 1.5 }, { text: "good", start: 1.2, end: 1.8 }], 3)).toMatchObject([{ text: "ok" }, { text: "good" }]);
     expect(parseWhisperSegments([{ text: "bad", start: 0, end: 26 }], 30)).toBeUndefined();
     expect(parseWhisperSegments([{ text: " ", start: 0, end: 1 }], 3)).toBeUndefined();
   });
 });
 
 describe("Azure aligned blocks", () => {
+  it("uses canonical transcript text for partial timing and never bridges an untimed phrase", () => {
+    const aligned = alignSegmentTimingToTranscript([
+      word("Hello", 0, 0.5),
+      word("there", 0.7, 1),
+      word("world", 2, 2.5),
+    ], "Hello there, please meet the world!");
+    expect(aligned).toEqual([
+      { text: "Hello", start: 0, end: 0.5, breakBefore: false },
+      { text: "there", start: 0.7, end: 1, breakBefore: false },
+      { text: "world", start: 2, end: 2.5, breakBefore: true },
+    ]);
+    const blocks = createAzureAlignedBlocks(wavOfSeconds(4), aligned!);
+    expect(blocks.map(({ referenceText }) => referenceText)).toEqual(["Hello there", "world"]);
+  });
+
   it.each([20, 75, 180])("plans %i second answers into strict 25 second blocks", (seconds) => {
     const words = Array.from({ length: seconds }, (_, index) => word(`w${index}`, index, index + 0.8));
     const blocks = createAzureAlignedBlocks(wavOfSeconds(seconds), words);

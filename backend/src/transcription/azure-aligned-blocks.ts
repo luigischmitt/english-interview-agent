@@ -7,6 +7,54 @@ const bytesPerSample = 2;
 
 export type AzureAudioBlock = { startByte: number; endByte: number; referenceText: string; durationMs: number };
 
+/**
+ * Reuses only timestamped phrases that can be matched in order to the canonical Whisper
+ * transcript. Untimed/mismatched gaps split snippets, and reference text always comes
+ * from the canonical transcript rather than the timing retry.
+ */
+export function alignSegmentTimingToTranscript(segments: TranscriptionWord[], transcript: string): TranscriptionWord[] | undefined {
+  const tokenPattern = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
+  const transcriptTokens = [...transcript.matchAll(tokenPattern)];
+  if (!transcriptTokens.length) return undefined;
+
+  let tokenIndex = 0;
+  let pendingBreak = false;
+  const aligned: TranscriptionWord[] = [];
+  for (const segment of segments) {
+    const segmentTokens = [...segment.text.matchAll(tokenPattern)];
+    if (!segmentTokens.length) {
+      pendingBreak = true;
+      continue;
+    }
+    let matchStart = -1;
+    for (let candidate = tokenIndex; candidate + segmentTokens.length <= transcriptTokens.length; candidate += 1) {
+      const matches = segmentTokens.every((token, offset) => normalizeToken(token[0]!) === normalizeToken(transcriptTokens[candidate + offset]![0]!));
+      if (matches) {
+        matchStart = candidate;
+        break;
+      }
+    }
+    if (matchStart < 0) {
+      pendingBreak = true;
+      continue;
+    }
+    const first = transcriptTokens[matchStart]!;
+    const last = transcriptTokens[matchStart + segmentTokens.length - 1]!;
+    aligned.push({
+      ...segment,
+      text: transcript.slice(first.index, last.index + last[0].length),
+      breakBefore: pendingBreak || matchStart > tokenIndex,
+    });
+    pendingBreak = false;
+    tokenIndex = matchStart + segmentTokens.length;
+  }
+  return aligned.length ? aligned : undefined;
+}
+
+function normalizeToken(token: string): string {
+  return token.replace(/[’]/g, "'").toLocaleLowerCase("en-US");
+}
+
 /** Groups adjacent, timestamped words deterministically and slices the canonical mono 16 kHz WAV. */
 export function createAzureAlignedBlocks(wav: Buffer, words: TranscriptionWord[]): AzureAudioBlock[] {
   const pcmLength = wav.length - 44;
@@ -18,10 +66,14 @@ export function createAzureAlignedBlocks(wav: Buffer, words: TranscriptionWord[]
   for (const word of words) {
     if (!word.text.trim() || !Number.isFinite(word.start) || !Number.isFinite(word.end)
       || word.start < 0 || word.end <= word.start || word.end > durationSeconds || word.start < previousEnd) return [];
-    const first = group[0];
+    if (word.breakBefore && group.length) {
+      groups.push(group);
+      group = [];
+    }
+    const currentFirst = group[0];
     const wordStartSample = Math.round(word.start * sampleRate);
     const wordEndSample = Math.round(word.end * sampleRate);
-    if (first && (wordEndSample - Math.round(first.start * sampleRate)) / sampleRate * 1_000 > azureTargetBlockDurationMs) {
+    if (currentFirst && (wordEndSample - Math.round(currentFirst.start * sampleRate)) / sampleRate * 1_000 > azureTargetBlockDurationMs) {
       groups.push(group);
       group = [];
     }
