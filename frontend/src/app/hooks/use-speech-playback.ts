@@ -22,7 +22,8 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
 
     const playback = playInterviewerSegments(segments, {
       endpoint: `${backendBaseUrl}/api/v1/speech`,
-      timeoutMs: 6_000,
+      // Kokoro's backend budget is 15s; leave 5s for network and body transfer.
+      timeoutMs: 20_000,
       onSegment: (segment) => {
         setSpeechMessage(null);
         setActiveSegment(segment);

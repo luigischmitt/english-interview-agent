@@ -52,12 +52,68 @@ export function resolveInterviewerCaption({ audioEnabled, isSpeaking, playbackFa
   return questionPrompt;
 }
 
+const speechFlights = new Map();
+
+function acquireSpeechBlob(options, text) {
+  const request = {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(options.requestBody ?? { text }),
+  };
+  const key = JSON.stringify([options.endpoint, request.method, request.headers, request.body]);
+  let flight = speechFlights.get(key);
+  if (!flight) {
+    const controller = new AbortController();
+    const fetcher = options.fetcher ?? fetch;
+    flight = {
+      controller,
+      consumers: new Set(),
+      settled: false,
+      promise: Promise.resolve().then(async () => {
+        const response = await fetcher(options.endpoint, { ...request, signal: controller.signal });
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          const error = new Error(data?.error?.message ?? "O áudio não está disponível agora. Você pode continuar sem ele.");
+          error.isSpeechResponseError = true;
+          throw error;
+        }
+        return response.blob();
+      }),
+    };
+    speechFlights.set(key, flight);
+    flight.promise.finally(() => {
+      flight.settled = true;
+      if (speechFlights.get(key) === flight) speechFlights.delete(key);
+    }).catch(() => {});
+  }
+
+  const consumer = {};
+  flight.consumers.add(consumer);
+  let released = false;
+  return {
+    promise: flight.promise,
+    release(deferAbort = true) {
+      if (released) return;
+      released = true;
+      flight.consumers.delete(consumer);
+      // React Strict Mode immediately remounts effects; let the replacement
+      // consumer attach before aborting a flight whose prior consumer cleaned up.
+      const abortIfUnused = () => {
+        if (!flight.settled && flight.consumers.size === 0) {
+          flight.controller.abort();
+          if (speechFlights.get(key) === flight) speechFlights.delete(key);
+        }
+      };
+      if (deferAbort) queueMicrotask(abortIfUnused);
+      else abortIfUnused();
+    },
+  };
+}
+
 export function synthesizeInterviewerQuestion(text, options) {
-  const controller = new AbortController();
-  const timeoutMs = options.timeoutMs ?? 15_000;
+  const timeoutMs = options.timeoutMs ?? 20_000;
   const playbackTimeoutMs = options.playbackTimeoutMs
     ?? Math.min(45_000, Math.max(12_000, text.trim().split(/\s+/).length * 800));
-  const fetcher = options.fetcher ?? fetch;
   const makeAudio = options.makeAudio ?? ((url) => new Audio(url));
   const createObjectUrl = options.createObjectUrl ?? ((blob) => URL.createObjectURL(blob));
   const revokeObjectUrl = options.revokeObjectUrl ?? ((url) => URL.revokeObjectURL(url));
@@ -65,6 +121,7 @@ export function synthesizeInterviewerQuestion(text, options) {
   const unschedule = options.clearTimeout ?? ((id) => window.clearTimeout(id));
   let audio = null;
   let objectUrl = null;
+  let flightLease = null;
   let cancelled = false;
   let timedOut = false;
   let timeoutId = null;
@@ -79,7 +136,7 @@ export function synthesizeInterviewerQuestion(text, options) {
     if (timeoutId !== null) unschedule(timeoutId);
     timeoutId = schedule(() => {
       timedOut = true;
-      controller.abort();
+      flightLease?.release(false);
       resolveTimeout({ status: "unavailable", message });
     }, delay);
   };
@@ -95,6 +152,8 @@ export function synthesizeInterviewerQuestion(text, options) {
     audio = null;
     if (objectUrl) revokeObjectUrl(objectUrl);
     objectUrl = null;
+    flightLease?.release();
+    flightLease = null;
     if (timeoutId !== null) unschedule(timeoutId);
     timeoutId = null;
   };
@@ -102,7 +161,6 @@ export function synthesizeInterviewerQuestion(text, options) {
   const cancel = () => {
     if (cancelled) return;
     cancelled = true;
-    controller.abort();
     resolveCancellation({ status: "cancelled" });
     cleanup();
   };
@@ -110,23 +168,10 @@ export function synthesizeInterviewerQuestion(text, options) {
   const playbackWork = async () => {
     try {
       scheduleTimeout(timeoutMs, "O áudio demorou demais para responder. Você pode continuar sem ele.");
-      const response = await fetcher(options.endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text }),
-        signal: controller.signal,
-      });
+      flightLease = acquireSpeechBlob(options, text);
+      const blob = await flightLease.promise;
       if (cancelled) return { status: "cancelled" };
       if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        return {
-          status: "unavailable",
-          message: data?.error?.message ?? "O áudio não está disponível agora. Você pode continuar sem ele.",
-        };
-      }
-
-      const blob = await response.blob();
       if (cancelled) return { status: "cancelled" };
       if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
       if (timeoutId !== null) unschedule(timeoutId);
@@ -149,9 +194,9 @@ export function synthesizeInterviewerQuestion(text, options) {
             boundary += captionSegments[index].split(/\s+/u).filter(Boolean).length;
             if (playedWords < boundary) { segmentIndex = index; break; }
           }
-          options.onSegment?.(captionSegments[segmentIndex]);
+          if (!cancelled) options.onSegment?.(captionSegments[segmentIndex]);
         };
-        if (captionSegments.length) options.onSegment?.(captionSegments[0]);
+        if (captionSegments.length && !cancelled) options.onSegment?.(captionSegments[0]);
         audio.addEventListener("ended", onEnded, { once: true });
         audio.addEventListener("error", onError, { once: true });
         audio.addEventListener("timeupdate", onTimeUpdate);
@@ -174,12 +219,14 @@ export function synthesizeInterviewerQuestion(text, options) {
       if (cancelled || outcome.status === "cancelled") return { status: "cancelled" };
       if (outcome.status === "unavailable") return outcome;
       return { status: "completed" };
-    } catch {
+    } catch (error) {
       if (cancelled) return { status: "cancelled" };
       if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
       return {
         status: "unavailable",
-        message: "O áudio não está disponível agora. Você pode continuar sem ele.",
+        message: error?.isSpeechResponseError && error.message
+          ? error.message
+          : "O áudio não está disponível agora. Você pode continuar sem ele.",
       };
     } finally {
       cleanup();
