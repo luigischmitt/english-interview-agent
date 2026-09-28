@@ -100,14 +100,35 @@ function likelyTranscriptionArtifact(evidence: string): boolean {
   return words.length === 0 || hasNoiseToken || hasRepeatedSyllables || hasUnintelligibleMarker || hasUnfamiliarAcronymInShortExcerpt;
 }
 
-function parseReport(value: unknown, input: InterviewReportInput): InterviewReport {
-  if (typeof value !== "string") throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.");
+export type InterviewReportParseDiagnostics = {
+  providerOutput: "valid" | "invalid";
+  optionalItems: {
+    candidates: number;
+    accepted: number;
+    rejected: number;
+  };
+};
+
+export type InterviewReportParseResult = {
+  report: InterviewReport | null;
+  diagnostics: InterviewReportParseDiagnostics;
+};
+
+type ParsedInterviewReport = {
+  report: InterviewReport;
+  diagnostics: InterviewReportParseDiagnostics;
+};
+
+function invalidReportResponse(cause?: unknown): never {
+  throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.", cause === undefined ? undefined : { cause });
+}
+
+function parseReport(value: unknown, input: InterviewReportInput): ParsedInterviewReport {
+  if (typeof value !== "string") invalidReportResponse();
   let parsed: unknown;
-  try { parsed = JSON.parse(value); } catch (error) {
-    throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.", { cause: error });
-  }
+  try { parsed = JSON.parse(value); } catch (error) { invalidReportResponse(error); }
   if (!isRecord(parsed) || Object.keys(parsed).some((key) => !["technicalContent", "englishCommunication", "priorities"].includes(key))) {
-    throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.");
+    invalidReportResponse();
   }
   const technical = parsed.technicalContent;
   const english = parsed.englishCommunication;
@@ -118,7 +139,7 @@ function parseReport(value: unknown, input: InterviewReportInput): InterviewRepo
     || Object.keys(english).some((key) => !["clarity", "patterns"].includes(key))
     || !communicationClarities.includes(english.clarity as CommunicationClarity)
     || !Array.isArray(english.patterns) || english.patterns.length > 8 || !Array.isArray(priorities) || priorities.length > 3) {
-    throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.");
+    invalidReportResponse();
   }
 
   const answerFor = (sequenceNumber: unknown) => Number.isSafeInteger(sequenceNumber) ? input.turns.find((turn) => turn.sequenceNumber === sequenceNumber)?.answer : undefined;
@@ -157,11 +178,37 @@ function parseReport(value: unknown, input: InterviewReportInput): InterviewRepo
       || !boundedString(item.focus, 160) || !completeSentence(item.exercise, 240)) return [];
     return [{ area: item.area as "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION", sequenceNumber: item.sequenceNumber as number, evidence: item.evidence.trim(), focus: item.focus.trim(), exercise: item.exercise.trim() }];
   });
+  const candidateCount = technical.strengths.length + technical.gaps.length + english.patterns.length + priorities.length;
+  const acceptedCount = strengths.length + gaps.length + patterns.length + parsedPriorities.length;
   return {
-    technicalContent: { summary: completeSentence(technical.summary, 320) ? technical.summary.trim() : "As respostas foram analisadas quanto ao conteúdo técnico apresentado.", strengths, gaps },
-    englishCommunication: { clarity: english.clarity as CommunicationClarity, evidenceStatus: patterns.length === 0 ? "INSUFFICIENT" : patterns.length >= 2 ? "SUFFICIENT" : "LIMITED", patterns },
-    priorities: parsedPriorities,
+    report: {
+      technicalContent: { summary: completeSentence(technical.summary, 320) ? technical.summary.trim() : "As respostas foram analisadas quanto ao conteúdo técnico apresentado.", strengths, gaps },
+      englishCommunication: { clarity: english.clarity as CommunicationClarity, evidenceStatus: patterns.length === 0 ? "INSUFFICIENT" : patterns.length >= 2 ? "SUFFICIENT" : "LIMITED", patterns },
+      priorities: parsedPriorities,
+    },
+    diagnostics: {
+      providerOutput: "valid",
+      optionalItems: { candidates: candidateCount, accepted: acceptedCount, rejected: candidateCount - acceptedCount },
+    },
   };
+}
+
+/**
+ * Offline evaluation seam. It returns only bounded counts and the parsed report;
+ * raw provider text and candidate answers are never copied into diagnostics.
+ */
+export function evaluateInterviewReportProviderOutput(value: unknown, input: InterviewReportInput): InterviewReportParseResult {
+  try {
+    return parseReport(value, input);
+  } catch (error) {
+    if (error instanceof ThinkingServiceError && error.code === "THINKING_INVALID_PROVIDER_RESPONSE") {
+      return {
+        report: null,
+        diagnostics: { providerOutput: "invalid", optionalItems: { candidates: 0, accepted: 0, rejected: 0 } },
+      };
+    }
+    throw error;
+  }
 }
 
 function isAbortError(error: unknown): boolean {
@@ -215,7 +262,8 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
       if (signal.aborted || isAbortError(error)) throw new ThinkingServiceError("THINKING_TIMEOUT", 504, "The reasoning service timed out.", { cause: error });
       throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.", { cause: error });
     }
-    return { ...parseReport(body.choices?.[0]?.message?.content, input), model: this.options.model, analysisVersion: "v2" };
+    const { report } = parseReport(body.choices?.[0]?.message?.content, input);
+    return { ...report, model: this.options.model, analysisVersion: "v2" };
   }
 }
 
