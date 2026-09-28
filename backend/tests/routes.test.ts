@@ -1,5 +1,6 @@
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
 
 import { app, createApp } from "../src/app.js";
 import type { SpeechConfig } from "../src/speech/config.js";
@@ -29,10 +30,12 @@ const speechConfig: SpeechConfig = {
 class RecordingSpeechProvider implements SpeechProvider {
   readonly name = "recording";
   requests: SpeechSynthesisRequest[] = [];
+  lastAudio: Buffer | null = null;
 
   async synthesize(request: SpeechSynthesisRequest): Promise<SynthesizedSpeech> {
     this.requests.push(request);
-    return { audio: Buffer.from("fake mp3"), contentType: "audio/mpeg" };
+    this.lastAudio = Buffer.from("fake mp3");
+    return { audio: this.lastAudio, contentType: "audio/mpeg" };
   }
 
   async health(): Promise<SpeechProviderHealth> {
@@ -138,6 +141,87 @@ describe("speech routes", () => {
     });
   });
 
+  it("aborts a Kokoro request at its provider timeout", async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    const provider = new KokoroSpeechProvider({
+      baseUrl: "http://kokoro.test",
+      timeoutMs: 1_000,
+      fetchImplementation: async (_input, init) => new Promise<Response>((_resolve, reject) => {
+        requestSignal = init?.signal as AbortSignal;
+        requestSignal.addEventListener("abort", () => reject(requestSignal?.reason), { once: true });
+      }),
+    });
+
+    const pending = provider.synthesize({ text: "Hello", voice: "voice", speed: 1, format: "mp3" });
+    const rejection = expect(pending).rejects.toBeInstanceOf(SpeechProviderUnavailableError);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await rejection;
+    expect(requestSignal?.aborted).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it("cancels the response body when the provider timeout expires during audio download", async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    let bodyCancelled = false;
+    const streamedChunk = new Uint8Array([1, 2, 3]);
+    const provider = new KokoroSpeechProvider({
+      baseUrl: "http://kokoro.test",
+      timeoutMs: 1_000,
+      fetchImplementation: async (_input, init) => {
+        requestSignal = init?.signal as AbortSignal;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) { controller.enqueue(streamedChunk); },
+          cancel() { bodyCancelled = true; },
+        });
+        return new Response(body, { status: 200, headers: { "content-type": "audio/mpeg" } });
+      },
+    });
+
+    const pending = provider.synthesize({ text: "Hello", voice: "voice", speed: 1, format: "mp3" });
+    const rejection = expect(pending).rejects.toBeInstanceOf(SpeechProviderUnavailableError);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await rejection;
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(bodyCancelled).toBe(true);
+    expect(streamedChunk.every((byte) => byte === 0)).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it("forwards request cancellation to the Kokoro fetch and removes it on completion", async () => {
+    let requestSignal: AbortSignal | undefined;
+    const fetchImplementation: typeof fetch = async (_input, init) => new Promise<Response>((_resolve, reject) => {
+      requestSignal = init?.signal as AbortSignal;
+      const abort = () => reject(requestSignal?.reason);
+      if (requestSignal.aborted) abort();
+      else requestSignal.addEventListener("abort", abort, { once: true });
+    });
+    const provider = new KokoroSpeechProvider({ baseUrl: "http://kokoro.test", timeoutMs: 1_000, fetchImplementation });
+    const requestAbort = new AbortController();
+    const removeListener = vi.spyOn(requestAbort.signal, "removeEventListener");
+    const pending = provider.synthesize({ text: "Hello", voice: "voice", speed: 1, format: "mp3" }, requestAbort.signal);
+    const rejection = expect(pending).rejects.toThrow();
+
+    requestAbort.abort(new DOMException("Client disconnected", "AbortError"));
+
+    await rejection;
+    expect(requestSignal?.aborted).toBe(true);
+    expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
+  it("converts Kokoro transport errors to the existing provider fallback error", async () => {
+    const provider = new KokoroSpeechProvider({
+      baseUrl: "http://kokoro.test",
+      timeoutMs: 1_000,
+      fetchImplementation: async () => { throw new Error("connection refused"); },
+    });
+
+    await expect(provider.synthesize({ text: "Hello", voice: "voice", speed: 1, format: "mp3" }))
+      .rejects.toBeInstanceOf(SpeechProviderUnavailableError);
+  });
+
   it("synthesizes interviewer audio with the fixed Kokoro voice mix", async () => {
     const provider = new RecordingSpeechProvider();
     const testApp = createApp({ speechConfig, speechProvider: provider });
@@ -149,6 +233,7 @@ describe("speech routes", () => {
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("audio/mpeg");
     expect(response.body.toString()).toBe("fake mp3");
+    expect(provider.lastAudio?.every((byte) => byte === 0)).toBe(true);
     expect(provider.requests).toEqual([
       {
         text: "Tell me about a project you are proud of.",
@@ -210,6 +295,54 @@ describe("speech routes", () => {
 
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe("SPEECH_PROVIDER_UNAVAILABLE");
+  });
+
+  it("propagates a disconnected HTTP client abort and clears late audio without responding", async () => {
+    let providerSignal: AbortSignal | undefined;
+    let releaseSpeech: ((speech: SynthesizedSpeech) => void) | undefined;
+    let signalCaptured!: () => void;
+    const captured = new Promise<void>((resolve) => { signalCaptured = resolve; });
+    const provider: SpeechProvider = {
+      name: "kokoro",
+      synthesize(_request, signal) {
+        providerSignal = signal;
+        signalCaptured();
+        return new Promise((resolve) => { releaseSpeech = resolve; });
+      },
+      async health() { return { status: "ready" }; },
+    };
+    const server = createServer(createApp({ speechConfig, speechProvider: provider }));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Expected an ephemeral TCP address");
+    const clientAbort = new AbortController();
+    const clientRequest = fetch(`http://127.0.0.1:${address.port}/api/v1/speech`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Hello" }),
+      signal: clientAbort.signal,
+    });
+    const rejectedRequest = expect(clientRequest).rejects.toThrow();
+
+    try {
+      await captured;
+      let resolveAborted!: () => void;
+      const aborted = new Promise<void>((resolve) => { resolveAborted = resolve; });
+      providerSignal?.addEventListener("abort", resolveAborted, { once: true });
+      clientAbort.abort();
+      await aborted;
+      expect(providerSignal?.aborted).toBe(true);
+
+      const lateAudio = Buffer.from("late Kokoro bytes");
+      releaseSpeech?.({ audio: lateAudio, contentType: "audio/mpeg" });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(lateAudio.every((byte) => byte === 0)).toBe(true);
+      await rejectedRequest;
+    } finally {
+      clientAbort.abort();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 
