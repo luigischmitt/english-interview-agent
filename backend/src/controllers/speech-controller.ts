@@ -41,16 +41,55 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
       return;
     }
 
+    const abortController = new AbortController();
+    let audio: Buffer | null = null;
+    let responseOwnsAudio = false;
+    const clearAudio = () => {
+      audio?.fill(0);
+      audio = null;
+    };
+    const removeLifecycleListeners = () => {
+      request.off("aborted", abortOnDisconnect);
+      response.off("close", abortOnDisconnect);
+      response.off("finish", clearOnFinish);
+    };
+    const abortOnDisconnect = () => {
+      if (!response.writableEnded) abortController.abort();
+      clearAudio();
+      removeLifecycleListeners();
+    };
+    const clearOnFinish = () => {
+      clearAudio();
+      removeLifecycleListeners();
+    };
+
+    request.once("aborted", abortOnDisconnect);
+    response.once("close", abortOnDisconnect);
+
     try {
       const speech = await provider.synthesize({
         text,
         voice: config.interviewerVoice,
         speed,
         format: config.format,
-      });
+      }, abortController.signal);
+      audio = speech.audio;
 
-      response.status(200).contentType(speech.contentType).send(speech.audio);
+      if (abortController.signal.aborted || response.destroyed || response.writableEnded) {
+        clearAudio();
+        return;
+      }
+
+      response.once("finish", clearOnFinish);
+      responseOwnsAudio = true;
+      try {
+        response.status(200).contentType(speech.contentType).send(audio);
+      } catch (error) {
+        clearOnFinish();
+        throw error;
+      }
     } catch (error) {
+      if (abortController.signal.aborted || response.destroyed || response.writableEnded) return;
       if (error instanceof SpeechProviderUnavailableError) {
         response.status(503).json({
           error: {
@@ -62,6 +101,11 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
       }
 
       throw error;
+    } finally {
+      if (!responseOwnsAudio) {
+        clearAudio();
+        removeLifecycleListeners();
+      }
     }
   };
 

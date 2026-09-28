@@ -18,6 +18,6 @@ export type SpeechProviderHealth = {
 
 export interface SpeechProvider {
   readonly name: string;
-  synthesize(request: SpeechSynthesisRequest): Promise<SynthesizedSpeech>;
+  synthesize(request: SpeechSynthesisRequest, signal?: AbortSignal): Promise<SynthesizedSpeech>;
   health(): Promise<SpeechProviderHealth>;
 }
