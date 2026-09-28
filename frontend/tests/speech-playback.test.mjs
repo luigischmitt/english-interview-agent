@@ -144,6 +144,161 @@ test("repeated cancellation stops active playback and resolves without reporting
   assert.equal(audio.revoked, true);
 });
 
+test("matching consumers share synthesis while keeping their audio playback independent", async () => {
+  let fetchCount = 0;
+  const makeConsumer = () => {
+    const audio = new FakeAudio();
+    let plays = 0;
+    audio.play = () => { plays += 1; audio.emit("ended"); return Promise.resolve(); };
+    return {
+      audio,
+      get plays() { return plays; },
+      playback: synthesizeInterviewerQuestion("Shared question.", successfulOptions(audio, {
+        fetcher: async () => { fetchCount += 1; await new Promise((resolve) => setImmediate(resolve)); return { ok: true, blob: async () => new Blob(["shared"]) }; },
+      })),
+    };
+  };
+  const first = makeConsumer();
+  const second = makeConsumer();
+  assert.deepEqual(await Promise.all([first.playback.promise, second.playback.promise]), [
+    { status: "completed" }, { status: "completed" },
+  ]);
+  assert.equal(fetchCount, 1);
+  assert.equal(first.plays, 1);
+  assert.equal(second.plays, 1);
+  assert.notEqual(first.audio, second.audio);
+});
+
+test("cancelling one shared consumer leaves the other playing, and cancelled consumers never play or caption", async () => {
+  let finishFetch;
+  let fetchCount = 0;
+  let firstAudioCount = 0;
+  let secondAudio;
+  const events = [];
+  const options = (id, makeAudio) => ({
+    endpoint: "http://speech.test/api/v1/speech",
+    fetcher: () => { fetchCount += 1; return new Promise((resolve) => { finishFetch = () => resolve({ ok: true, blob: async () => new Blob(["mp3"]) }); }); },
+    makeAudio,
+    createObjectUrl: () => `blob:${id}`,
+    revokeObjectUrl: () => {},
+    captionSegments: ["Same question."],
+    onSegment: (segment) => events.push(`${id}:${segment}`),
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  });
+  const first = synthesizeInterviewerQuestion("Same question.", options("first", () => { firstAudioCount += 1; return new FakeAudio(); }));
+  const second = synthesizeInterviewerQuestion("Same question.", options("second", () => { secondAudio = new FakeAudio(); secondAudio.play = () => { secondAudio.emit("ended"); return Promise.resolve(); }; return secondAudio; }));
+  await new Promise((resolve) => setImmediate(resolve));
+  first.cancel();
+  assert.deepEqual(await first.promise, { status: "cancelled" });
+  finishFetch();
+  assert.deepEqual(await second.promise, { status: "completed" });
+  assert.equal(fetchCount, 1);
+  assert.equal(firstAudioCount, 0);
+  assert.equal(secondAudio.paused, true);
+  assert.deepEqual(events, ["second:Same question."]);
+});
+
+test("different speech request keys do not share synthesis", async () => {
+  let fetchCount = 0;
+  const create = (voice) => synthesizeInterviewerQuestion("Question one.", {
+    endpoint: "http://speech.test/api/v1/speech",
+    requestBody: { text: "Question one.", voice },
+    fetcher: async () => { fetchCount += 1; return { ok: true, blob: async () => new Blob([voice]) }; },
+    makeAudio: () => { const audio = new FakeAudio(); audio.play = () => { audio.emit("ended"); return Promise.resolve(); }; return audio; },
+    createObjectUrl: () => `blob:${voice}`,
+    revokeObjectUrl: () => {},
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  });
+  assert.deepEqual(await Promise.all([create("voice-a").promise, create("voice-b").promise]), [
+    { status: "completed" }, { status: "completed" },
+  ]);
+  assert.equal(fetchCount, 2);
+});
+
+test("a failed flight is removed so the next attempt can retry", async () => {
+  let fetchCount = 0;
+  const options = {
+    endpoint: "http://speech.test/api/v1/speech",
+    fetcher: async () => {
+      fetchCount += 1;
+      if (fetchCount === 1) throw new Error("temporary failure");
+      return { ok: true, blob: async () => new Blob(["mp3"]) };
+    },
+    makeAudio: () => { const audio = new FakeAudio(); audio.play = () => { audio.emit("ended"); return Promise.resolve(); }; return audio; },
+    createObjectUrl: () => "blob:retry",
+    revokeObjectUrl: () => {},
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+  };
+  assert.equal((await synthesizeInterviewerQuestion("Retry me.", options).promise).status, "unavailable");
+  assert.deepEqual(await synthesizeInterviewerQuestion("Retry me.", options).promise, { status: "completed" });
+  assert.equal(fetchCount, 2);
+});
+
+test("a timed out flight is aborted and removed so a fresh request can retry", async () => {
+  let fetchCount = 0;
+  let networkTimeout;
+  const options = {
+    endpoint: "http://speech.test/api/v1/speech",
+    timeoutMs: 10_000,
+    fetcher: async (_endpoint, init) => {
+      fetchCount += 1;
+      if (fetchCount === 1) return new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      });
+      return { ok: true, blob: async () => new Blob(["mp3"]) };
+    },
+    makeAudio: () => { const audio = new FakeAudio(); audio.play = () => { audio.emit("ended"); return Promise.resolve(); }; return audio; },
+    createObjectUrl: () => "blob:timeout-retry",
+    revokeObjectUrl: () => {},
+    setTimeout: (callback, delay) => { if (delay === 10_000) networkTimeout = callback; return 1; },
+    clearTimeout: () => {},
+  };
+  const timedOut = synthesizeInterviewerQuestion("Timeout then retry.", options);
+  await new Promise((resolve) => setImmediate(resolve));
+  networkTimeout();
+  assert.equal((await timedOut.promise).status, "unavailable");
+  assert.deepEqual(await synthesizeInterviewerQuestion("Timeout then retry.", options).promise, { status: "completed" });
+  assert.equal(fetchCount, 2);
+});
+
+test("the interview network deadline exceeds six seconds and completes a slower response", async () => {
+  let now = 0;
+  let nextTimerId = 0;
+  const timers = new Map();
+  let networkTimeoutFired = false;
+  let finishFetch;
+  const advanceTime = (milliseconds) => {
+    now += milliseconds;
+    for (const [id, timer] of timers) {
+      if (timer.deadline > now) continue;
+      timers.delete(id);
+      timer.callback();
+    }
+  };
+  const playback = synthesizeInterviewerQuestion("Slow question.", {
+    endpoint: "http://speech.test/api/v1/speech",
+    fetcher: () => new Promise((resolve) => { finishFetch = resolve; }),
+    makeAudio: () => { const audio = new FakeAudio(); audio.play = () => { audio.emit("ended"); return Promise.resolve(); }; return audio; },
+    createObjectUrl: () => "blob:slow",
+    revokeObjectUrl: () => {},
+    setTimeout: (callback, delay) => {
+      const id = ++nextTimerId;
+      timers.set(id, { deadline: now + delay, callback: () => { if (delay === 20_000) networkTimeoutFired = true; callback(); } });
+      return id;
+    },
+    clearTimeout: (id) => timers.delete(id),
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  advanceTime(6_001);
+  assert.equal(networkTimeoutFired, false, "the request remains pending after the former 6s cutoff");
+  finishFetch({ ok: true, blob: async () => new Blob(["mp3"]) });
+  assert.deepEqual(await playback.promise, { status: "completed" });
+  assert.equal(networkTimeoutFired, false);
+});
+
 test("a rejected browser playback returns a recoverable unavailable result", async () => {
   const audio = new FakeAudio();
   audio.play = () => Promise.reject(new Error("autoplay blocked"));

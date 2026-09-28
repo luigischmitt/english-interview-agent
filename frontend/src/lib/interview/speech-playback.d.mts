@@ -10,6 +10,8 @@ export type SpeechPlayback = {
 
 export type SpeechPlaybackOptions = {
   endpoint: string;
+  /** JSON request fields that affect synthesis; text is used when omitted. */
+  requestBody?: Record<string, unknown>;
   /** Deadline for the speech request and complete audio response body. */
   timeoutMs?: number;
   /** Maximum time to wait for play() and the media ended event. Defaults to a text-length estimate. */
