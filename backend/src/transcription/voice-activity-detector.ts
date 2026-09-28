@@ -67,9 +67,6 @@ export class VoiceActivityDetector {
     }
 
     if (level >= this.config.speechThreshold) {
-      // A single speech-level frame makes the fallback ambiguous. Do not wait
-      // for the normal 300 ms speech confirmation before disabling it.
-      this.midBandStartedAt = null;
       this.resumedSpeechCandidateStartedAt ??= now;
       if (now - this.resumedSpeechCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
         speechResumed = this.silenceStartedAt !== null || this.midBandStartedAt !== null || this.finalizationReasonValue !== null;
@@ -80,16 +77,24 @@ export class VoiceActivityDetector {
         this.finalizationReasonValue = null;
       }
     } else if (level >= this.config.silenceThreshold) {
-      this.resumedActivityCandidateStartedAt ??= now;
-      if (now - this.resumedActivityCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
-        speechResumed = this.silenceStartedAt !== null || this.finalizationReasonValue !== null;
-        // Mid-band energy is ambiguous: it may be a reflective pause with room
-        // noise, or quiet speech. Give it a finite grace period. Variable noise
-        // must not keep a response open indefinitely.
-        this.silenceStartedAt = null;
-        this.midBandStartedAt ??= this.resumedActivityCandidateStartedAt;
+      // A peak separated by mid-band frames is not sustained speech.
+      this.resumedSpeechCandidateStartedAt = null;
+      // Once ambient activity has started the reversible handoff, mid-band
+      // energy cannot cancel it. Only confirmed strong speech may do that.
+      if (this.finalizationReasonValue === "ambient_activity") {
         this.resumedActivityCandidateStartedAt = null;
-        this.finalizationReasonValue = null;
+      } else {
+        this.resumedActivityCandidateStartedAt ??= now;
+        if (now - this.resumedActivityCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
+          speechResumed = this.silenceStartedAt !== null || this.finalizationReasonValue !== null;
+          // Mid-band energy is ambiguous: it may be a reflective pause with room
+          // noise, or quiet speech. Give it a finite grace period. Variable noise
+          // must not keep a response open indefinitely.
+          this.silenceStartedAt = null;
+          this.midBandStartedAt ??= this.resumedActivityCandidateStartedAt;
+          this.resumedActivityCandidateStartedAt = null;
+          this.finalizationReasonValue = null;
+        }
       }
     } else {
       this.resumedSpeechCandidateStartedAt = null;
