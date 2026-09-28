@@ -202,12 +202,34 @@ character count and never prints transcript text. Provider failures report
 only bounded error categories.
 
 Because the harness generates speech from its supplied `--text` (or the
-default synthetic answer), it can also compare the final transcript with that
-known reference. The JSON reports only `transcriptSimilarity`: a normalized,
-token-level `1 - WER` score in the range 0–1 (case- and accent-insensitive,
-clamped at zero). A run is `ok` only at similarity `>= 0.75`, in addition to
-the transport/completion checks. This score is emitted only as a number; the
-reference and recognized transcript are never included in harness output.
+default synthetic answer), it can compare the final transcript with that
+known reference. A versioned synthetic corpus is available with
+`--case <name>` (also `AUDIO_E2E_CASE`): `technical`, `acronyms`, `numbers`,
+`pauses`, `self-correction`, `quiet`, `noise`, `short`, and `long`. These cases
+cover technical terms, acronyms, spoken numbers, natural pauses, corrections,
+lower volume, deterministic low-level noise, and response length. The pause
+case relies on sentence punctuation in its TTS reference, so silence falls at
+a known sentence boundary; it does not splice the waveform. Quiet and noise
+profiles transform the generated PCM deterministically before streaming; no
+audio fixture is checked into the repository. Use one
+case per run when debugging a scenario. `--suite` runs every case in sequence
+and returns one aggregate; `AUDIO_E2E_SUITE=true` is equivalent. Case names
+are never included in output.
+
+The JSON reports only aggregate `transcriptSimilarity` (normalized token-level
+`1 - WER`, case- and accent-insensitive, clamped to 0–1), `expectedWords`,
+`omittedWords`, `substitutedWords`, and `insertedWords`; reference and
+recognized text are never included. Timing includes `queueWaitMs`,
+`transcriptionMs` (from transcription-started to complete), and
+`finalizationToCompleteMs`. Similarity must be `>= 0.75` for a run to be `ok`,
+in addition to transport/completion checks. Corpus references and evaluation
+code are versioned together; these synthetic results are regression signals,
+not estimates of real-candidate accuracy.
+
+Suite output contains only case count, successful case count, mean similarity,
+summed word counts, and mean queue, Whisper, and finalize-to-complete latency.
+It makes one speech-generation and one final-transcription request per case
+(with normal bounded retry behavior), so use it deliberately.
 
 Requirements: start Kokoro and the backend with `SPEECH_PROVIDER=kokoro`, set
 `OPENROUTER_API_KEY` in the backend's ignored local `backend/.env`, and install
@@ -220,11 +242,13 @@ npm run test:audio-e2e
 ```
 
 The default synthetic answer is about 35–45 seconds, so it exercises the full
-recording path, queue, and final Whisper request. Options can be passed on the command line or
-through `AUDIO_E2E_*` environment variables:
+recording path, queue, and final Whisper request. Options can be passed on the
+command line or through `AUDIO_E2E_*` environment variables:
 
 ```bash
 npm run test:audio-e2e -- --backend-url http://localhost:3001 --speed 1 --timeout-ms 120000
+npm run test:audio-e2e -- --case acronyms --timeout-ms 120000
+npm run test:audio-e2e -- --suite --timeout-ms 120000
 ```
 
 To wait for the post-completion Azure assessment and require an available
@@ -238,10 +262,11 @@ prints score values or assessment text. If the socket closes first, or the
 assessment deadline expires, `assessmentStatus` is `closed` or `timeout` and
 the run fails without extending the wait indefinitely.
 
-Supported options are `--backend-url`, `--text`, `--speed`,
-`--speech-threshold`, `--timeout-ms`, `--max-duration-seconds`, and `--ffmpeg`.
-Their environment equivalents are `AUDIO_E2E_BACKEND_URL`, `AUDIO_E2E_TEXT`,
-`AUDIO_E2E_SPEED`, `AUDIO_E2E_SPEECH_THRESHOLD`, `AUDIO_E2E_TIMEOUT_MS`,
+Supported options are `--backend-url`, `--text`, `--case`, `--suite`,
+`--speed`, `--speech-threshold`, `--timeout-ms`, `--max-duration-seconds`,
+and `--ffmpeg`. Their environment equivalents are `AUDIO_E2E_BACKEND_URL`,
+`AUDIO_E2E_TEXT`, `AUDIO_E2E_CASE`, `AUDIO_E2E_SUITE`, `AUDIO_E2E_SPEED`,
+`AUDIO_E2E_SPEECH_THRESHOLD`, `AUDIO_E2E_TIMEOUT_MS`,
 `AUDIO_E2E_MAX_DURATION_SECONDS`, `AUDIO_E2E_FFMPEG`, and
 `AUDIO_E2E_REQUIRE_ASSESSMENT` (`true` enables the optional assessment wait).
 The URL must be a

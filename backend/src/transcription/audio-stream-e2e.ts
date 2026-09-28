@@ -5,6 +5,7 @@ import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { performance } from "node:perf_hooks";
 import WebSocket from "ws";
+import { getTranscriptionEvaluationCase, transcriptionEvaluationCorpus } from "./transcription-evaluation-corpus.js";
 
 const execFile = promisify(execFileCallback);
 const sampleRate = 16_000;
@@ -26,6 +27,8 @@ export type AudioE2EOptions = {
   ffmpeg: string;
   maxDurationMs: number;
   requireAssessment: boolean;
+  evaluationProfile: string | null;
+  suite: boolean;
 };
 
 type Options = AudioE2EOptions;
@@ -49,6 +52,7 @@ export type AudioE2EMetrics = {
   connectToReadyMs: number | null;
   firstSpeechMs: number | null;
   transcriptionMs: number | null;
+  finalizationToCompleteMs: number | null;
   queueWaitMs: number | null;
   silenceDetectedMs: number | null;
   completeMs: number | null;
@@ -56,11 +60,28 @@ export type AudioE2EMetrics = {
   missingEvents: string[];
   transcriptCharacters: number;
   transcriptSimilarity: number | null;
+  expectedWords: number;
+  omittedWords: number;
+  substitutedWords: number;
+  insertedWords: number;
   completionStatus: string | null;
   assessmentStatus: string | null;
   segmented: boolean | null;
   assessedDurationMs: number | null;
   assessmentScoresAvailable: { accuracy: boolean; fluency: boolean; prosody: boolean } | null;
+};
+
+export type AudioE2ESuiteMetrics = {
+  cases: number;
+  successfulCases: number;
+  meanSimilarity: number | null;
+  expectedWords: number;
+  omittedWords: number;
+  substitutedWords: number;
+  insertedWords: number;
+  meanQueueWaitMs: number | null;
+  meanWhisperMs: number | null;
+  meanFinalizationToCompleteMs: number | null;
 };
 
 export function isSuccessfulAudioE2ERun(metrics: AudioE2EMetrics): boolean {
@@ -77,6 +98,10 @@ export function isSuccessfulAudioE2ERun(metrics: AudioE2EMetrics): boolean {
 }
 
 export function calculateTranscriptSimilarity(reference: string, transcript: string): number {
+  return calculateTranscriptErrors(reference, transcript).similarity;
+}
+
+export function calculateTranscriptErrors(reference: string, transcript: string): { expectedWords: number; omittedWords: number; substitutedWords: number; insertedWords: number; similarity: number } {
   const tokenize = (value: string) => value
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")
@@ -84,23 +109,28 @@ export function calculateTranscriptSimilarity(reference: string, transcript: str
     .match(/[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu) ?? [];
   const expected = tokenize(reference);
   const actual = tokenize(transcript);
-  if (expected.length === 0) return actual.length === 0 ? 1 : 0;
-
-  let previous = Array.from({ length: actual.length + 1 }, (_, index) => index);
-  for (let expectedIndex = 1; expectedIndex <= expected.length; expectedIndex += 1) {
-    const current = [expectedIndex];
-    for (let actualIndex = 1; actualIndex <= actual.length; actualIndex += 1) {
-      const substitutionCost = expected[expectedIndex - 1] === actual[actualIndex - 1] ? 0 : 1;
-      current[actualIndex] = Math.min(
-        previous[actualIndex] + 1,
-        current[actualIndex - 1] + 1,
-        previous[actualIndex - 1] + substitutionCost,
-      );
+  const matrix: Array<Array<{ distance: number; omitted: number; substituted: number; inserted: number }>> = Array.from({ length: expected.length + 1 }, () => []);
+  for (let i = 0; i <= expected.length; i += 1) matrix[i][0] = { distance: i, omitted: i, substituted: 0, inserted: 0 };
+  for (let j = 0; j <= actual.length; j += 1) matrix[0][j] = { distance: j, omitted: 0, substituted: 0, inserted: j };
+  for (let i = 1; i <= expected.length; i += 1) {
+    for (let j = 1; j <= actual.length; j += 1) {
+      const equal = expected[i - 1] === actual[j - 1];
+      const candidates = [
+        { ...matrix[i - 1][j], distance: matrix[i - 1][j].distance + 1, omitted: matrix[i - 1][j].omitted + 1 },
+        { ...matrix[i][j - 1], distance: matrix[i][j - 1].distance + 1, inserted: matrix[i][j - 1].inserted + 1 },
+        { ...matrix[i - 1][j - 1], distance: matrix[i - 1][j - 1].distance + (equal ? 0 : 1), substituted: matrix[i - 1][j - 1].substituted + (equal ? 0 : 1) },
+      ];
+      matrix[i][j] = candidates.reduce((best, candidate) => candidate.distance < best.distance ? candidate : best);
     }
-    previous = current;
   }
-  const wordErrorRate = previous[actual.length] / expected.length;
-  return Math.round(Math.max(0, 1 - wordErrorRate) * 1_000) / 1_000;
+  const errors = matrix[expected.length][actual.length];
+  return {
+    expectedWords: expected.length,
+    omittedWords: errors.omitted,
+    substitutedWords: errors.substituted,
+    insertedWords: errors.inserted,
+    similarity: Math.round(Math.max(0, 1 - errors.distance / Math.max(1, expected.length)) * 1_000) / 1_000,
+  };
 }
 
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): Options {
@@ -112,9 +142,11 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     "timeout-ms": env.AUDIO_E2E_TIMEOUT_MS ?? "120000",
     ffmpeg: env.AUDIO_E2E_FFMPEG ?? "ffmpeg",
     "max-duration-seconds": env.AUDIO_E2E_MAX_DURATION_SECONDS ?? "180",
+    case: env.AUDIO_E2E_CASE ?? "",
   };
   const allowed = new Set(Object.keys(values));
   let requireAssessment = env.AUDIO_E2E_REQUIRE_ASSESSMENT === "true";
+  let suite = env.AUDIO_E2E_SUITE === "true";
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (!argument.startsWith("--")) throw new Error("Arguments must use --option value syntax.");
@@ -125,6 +157,12 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
       if (inlineValue === undefined) requireAssessment = true;
       else if (inlineValue === "true" || inlineValue === "false") requireAssessment = inlineValue === "true";
       else throw new Error("--require-assessment must be a boolean flag.");
+      continue;
+    }
+    if (name === "suite") {
+      if (inlineValue === undefined) suite = true;
+      else if (inlineValue === "true" || inlineValue === "false") suite = inlineValue === "true";
+      else throw new Error("--suite must be a boolean flag.");
       continue;
     }
     if (!allowed.has(name)) throw new Error(`Unknown option --${name}.`);
@@ -148,11 +186,13 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   const speechThreshold = parseBoundedNumber(values["speech-threshold"], "--speech-threshold", 0.025, 0.15);
   const timeoutMs = parseBoundedInteger(values["timeout-ms"], "--timeout-ms", 1_000, 600_000);
   const maxDurationMs = parseBoundedInteger(values["max-duration-seconds"], "--max-duration-seconds", 1, 180) * 1_000;
-  const text = values.text.trim();
+  const evaluationCase = values.case ? getTranscriptionEvaluationCase(values.case) : undefined;
+  if (values.case && !evaluationCase) throw new Error("--case must name a case in the versioned evaluation corpus.");
+  const text = (evaluationCase?.reference ?? values.text).trim();
   if (!text || text.length > 4_000) throw new Error("--text must contain between 1 and 4000 characters.");
   if (!values.ffmpeg.trim()) throw new Error("--ffmpeg cannot be empty.");
 
-  return { backendUrl, text, speed, speechThreshold, timeoutMs, ffmpeg: values.ffmpeg, maxDurationMs, requireAssessment };
+  return { backendUrl, text, speed, speechThreshold, timeoutMs, ffmpeg: values.ffmpeg, maxDurationMs, requireAssessment, evaluationProfile: evaluationCase?.profile ?? null, suite };
 }
 
 function parseBoundedNumber(value: string, name: string, minimum: number, maximum: number): number {
@@ -193,6 +233,25 @@ export function rmsLevel(frame: Buffer): number {
     squareSum += sample * sample;
   }
   return Math.sqrt(squareSum / (frame.length / bytesPerSample));
+}
+
+export function applyEvaluationAudioProfile(pcm: Buffer, profile: string | null): Buffer {
+  const output = Buffer.from(pcm);
+  if (profile === "quiet") {
+    for (let offset = 0; offset < output.length; offset += bytesPerSample) output.writeInt16LE(Math.round(output.readInt16LE(offset) * 0.55), offset);
+  } else if (profile === "noise") {
+    let state = 0x13579bdf;
+    for (let offset = 0; offset < output.length; offset += bytesPerSample) {
+      state = (state * 1_664_525 + 1_013_904_223) >>> 0;
+      const sample = output.readInt16LE(offset);
+      const noise = ((state >>> 16) - 32_768) * 0.012;
+      output.writeInt16LE(Math.max(-32_768, Math.min(32_767, Math.round(sample + noise))), offset);
+    }
+  }
+  // The pauses case uses sentence punctuation in its reference so TTS places a
+  // natural pause at a known sentence boundary. Never cut synthesized PCM at
+  // an arbitrary sample offset, which could split a word or phoneme.
+  return output;
 }
 
 export async function fetchSpeechAudio(
@@ -260,7 +319,7 @@ async function generateAndConvert(options: Options, directory: string): Promise<
   } catch {
     throw new Error("Audio conversion failed. Check that ffmpeg is installed and the speech endpoint returned a supported audio format.");
   }
-  const pcm = await readFile(pcmPath);
+  const pcm = applyEvaluationAudioProfile(await readFile(pcmPath), options.evaluationProfile);
   if (pcm.length === 0 || pcm.length % bytesPerSample !== 0) throw new Error("ffmpeg produced invalid 16-bit PCM audio.");
   const durationMs = pcm.length / (sampleRate * bytesPerSample) * 1_000;
   if (durationMs + trailingSilenceMs > options.maxDurationMs) {
@@ -293,6 +352,7 @@ export async function exerciseStream(
     connectToReadyMs: null,
     firstSpeechMs: null,
     transcriptionMs: null,
+    finalizationToCompleteMs: null,
     queueWaitMs: null,
     silenceDetectedMs: null,
     completeMs: null,
@@ -300,6 +360,10 @@ export async function exerciseStream(
     missingEvents: [],
     transcriptCharacters: 0,
     transcriptSimilarity: null,
+    expectedWords: 0,
+    omittedWords: 0,
+    substitutedWords: 0,
+    insertedWords: 0,
     completionStatus: null,
     assessmentStatus: null,
     segmented: null,
@@ -315,6 +379,7 @@ export async function exerciseStream(
   let mergedTranscript = "";
   let queuedAt: number | null = null;
   let transcriptionStartedAt: number | null = null;
+  let finalizedAt: number | null = null;
   let resolveComplete: (() => void) | null = null;
   let rejectComplete: ((error: Error) => void) | null = null;
   let completeReceived = false;
@@ -322,6 +387,12 @@ export async function exerciseStream(
   const completed = new Promise<void>((resolve, reject) => { resolveComplete = resolve; rejectComplete = reject; });
   void completed.catch(() => undefined);
   let timeout = setTimeout(() => rejectComplete?.(new Error("Audio stream timed out.")), options.timeoutMs);
+
+  const finalize = (reason: "silence" | "manual"): Promise<void> => {
+    if (socket.readyState !== WebSocket.OPEN) return Promise.resolve();
+    finalizedAt ??= performance.now();
+    return send(socket, JSON.stringify({ type: "finalize", reason }));
+  };
 
   socket.on("open", () => {
     openedAt = performance.now();
@@ -358,20 +429,24 @@ export async function exerciseStream(
     if (message.type === "silence-detected") {
       metrics.silenceDetectedMs ??= Math.round(now - streamStartedAt);
       shouldStopSending = true;
-      if (socket.readyState === WebSocket.OPEN) {
-        void send(socket, JSON.stringify({ type: "finalize", reason: "silence" })).catch((error: Error) => rejectComplete?.(error));
-      }
+      void finalize("silence").catch((error: Error) => rejectComplete?.(error));
       return;
     }
     if (message.type === "complete") {
       if (completeReceived) return;
       completeReceived = true;
+      if (finalizedAt !== null) metrics.finalizationToCompleteMs = Math.round(now - finalizedAt);
       metrics.completionStatus = message.status ?? "unknown";
       metrics.completeMs = Math.round(now - streamStartedAt);
       metrics.transcriptionMs = transcriptionStartedAt === null ? null : Math.round(now - transcriptionStartedAt);
       if (typeof message.transcript === "string") mergedTranscript = message.transcript;
       metrics.transcriptCharacters = mergedTranscript.length;
-      metrics.transcriptSimilarity = calculateTranscriptSimilarity(options.text, mergedTranscript);
+      const transcriptErrors = calculateTranscriptErrors(options.text, mergedTranscript);
+      metrics.transcriptSimilarity = transcriptErrors.similarity;
+      metrics.expectedWords = transcriptErrors.expectedWords;
+      metrics.omittedWords = transcriptErrors.omittedWords;
+      metrics.substitutedWords = transcriptErrors.substitutedWords;
+      metrics.insertedWords = transcriptErrors.insertedWords;
       if (options.requireAssessment) {
         clearTimeout(timeout);
         assessmentWaitTimer = setTimeout(() => {
@@ -434,7 +509,7 @@ export async function exerciseStream(
       }
     }
     if (!shouldStopSending && socket.readyState === WebSocket.OPEN) {
-      await send(socket, JSON.stringify({ type: "finalize", reason: "manual" }));
+      await finalize("manual");
     }
     await completed;
   } catch (error) {
@@ -463,8 +538,42 @@ export async function runAudioStreamE2E(options: Options): Promise<AudioE2EMetri
   }
 }
 
+export async function runAudioEvaluationSuite(options: Options): Promise<AudioE2ESuiteMetrics> {
+  const results: AudioE2EMetrics[] = [];
+  for (const evaluationCase of transcriptionEvaluationCorpus) {
+    results.push(await runAudioStreamE2E({ ...options, text: evaluationCase.reference, evaluationProfile: evaluationCase.profile, suite: false }));
+  }
+  return aggregateAudioE2EMetrics(results);
+}
+
+export function aggregateAudioE2EMetrics(results: readonly AudioE2EMetrics[]): AudioE2ESuiteMetrics {
+  const mean = (values: Array<number | null>) => {
+    const present = values.filter((value): value is number => value !== null && Number.isFinite(value));
+    return present.length ? Math.round(present.reduce((sum, value) => sum + value, 0) / present.length) : null;
+  };
+  return {
+    cases: results.length,
+    successfulCases: results.filter(isSuccessfulAudioE2ERun).length,
+    meanSimilarity: results.length ? Math.round(results.reduce((sum, result) => sum + (result.transcriptSimilarity ?? 0), 0) / results.length * 1_000) / 1_000 : null,
+    expectedWords: results.reduce((sum, result) => sum + result.expectedWords, 0),
+    omittedWords: results.reduce((sum, result) => sum + result.omittedWords, 0),
+    substitutedWords: results.reduce((sum, result) => sum + result.substitutedWords, 0),
+    insertedWords: results.reduce((sum, result) => sum + result.insertedWords, 0),
+    meanQueueWaitMs: mean(results.map((result) => result.queueWaitMs)),
+    meanWhisperMs: mean(results.map((result) => result.transcriptionMs)),
+    meanFinalizationToCompleteMs: mean(results.map((result) => result.finalizationToCompleteMs)),
+  };
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  if (options.suite) {
+    const metrics = await runAudioEvaluationSuite(options);
+    const ok = metrics.successfulCases === metrics.cases;
+    process.stdout.write(`${JSON.stringify({ ok, ...(ok ? {} : { error: "One or more evaluation cases did not complete successfully." }), protocol: 2, sampleRate, channels: 1, encoding: "s16le", frameDurationMs, metrics }, null, 2)}\n`);
+    if (!ok) process.exitCode = 1;
+    return;
+  }
   const metrics = await runAudioStreamE2E(options);
   const ok = isSuccessfulAudioE2ERun(metrics);
   process.stdout.write(`${JSON.stringify({ ok, ...(ok ? {} : { error: "Audio stream did not complete successfully." }), protocol: 2, sampleRate, channels: 1, encoding: "s16le", frameDurationMs, metrics }, null, 2)}\n`);

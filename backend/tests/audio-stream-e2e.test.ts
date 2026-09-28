@@ -3,7 +3,8 @@ import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 
-import { buildSpeechUrl, buildStreamUrl, calculateTranscriptSimilarity, exerciseStream, fetchSpeechAudio, framePcm, isSuccessfulAudioE2ERun, parseArgs, rmsLevel, type AudioE2EMetrics } from "../src/transcription/audio-stream-e2e.js";
+import { aggregateAudioE2EMetrics, applyEvaluationAudioProfile, buildSpeechUrl, buildStreamUrl, calculateTranscriptErrors, calculateTranscriptSimilarity, exerciseStream, fetchSpeechAudio, framePcm, isSuccessfulAudioE2ERun, parseArgs, rmsLevel, type AudioE2EMetrics } from "../src/transcription/audio-stream-e2e.js";
+import { transcriptionEvaluationCorpus } from "../src/transcription/transcription-evaluation-corpus.js";
 
 describe("real-time audio E2E harness utilities", () => {
   it("parses CLI configuration and rejects URLs that could expose credentials", () => {
@@ -36,6 +37,7 @@ describe("real-time audio E2E harness utilities", () => {
       connectToReadyMs: 20,
       firstSpeechMs: 120,
       transcriptionMs: null,
+      finalizationToCompleteMs: null,
       queueWaitMs: null,
       silenceDetectedMs: null,
       completeMs: 15_000,
@@ -43,6 +45,10 @@ describe("real-time audio E2E harness utilities", () => {
       missingEvents: ["silence-detected"],
       transcriptCharacters: 42,
       transcriptSimilarity: null,
+      expectedWords: 0,
+      omittedWords: 0,
+      substitutedWords: 0,
+      insertedWords: 0,
       completionStatus: null,
       requireAssessment: false,
       assessmentStatus: null,
@@ -73,12 +79,21 @@ describe("real-time audio E2E harness utilities", () => {
     expect(() => parseArgs(["--require-assessment=yes"], {})).toThrow(/boolean flag/);
   });
 
+  it("parses the aggregate corpus suite switch without exposing case names", () => {
+    expect(parseArgs(["--suite"], {}).suite).toBe(true);
+    expect(parseArgs([], { AUDIO_E2E_SUITE: "true" }).suite).toBe(true);
+    expect(parseArgs([], {}).suite).toBe(false);
+    expect(() => parseArgs(["--suite=maybe"], {})).toThrow(/boolean flag/);
+  });
+
   it("requires a segmented available assessment only when enabled", () => {
     const metrics: AudioE2EMetrics = {
       speechGenerationMs: 100, connectToReadyMs: 1, firstSpeechMs: 2,
       transcriptionMs: 3, queueWaitMs: null, silenceDetectedMs: 4,
+      finalizationToCompleteMs: 3,
       completeMs: 5, streamErrors: [], missingEvents: [], transcriptCharacters: 30,
       transcriptSimilarity: 1, completionStatus: "complete", requireAssessment: true,
+      expectedWords: 4, omittedWords: 0, substitutedWords: 0, insertedWords: 0,
       assessmentStatus: "available", segmented: true, assessedDurationMs: 5,
       assessmentScoresAvailable: { accuracy: true, fluency: false, prosody: false },
     };
@@ -97,6 +112,71 @@ describe("real-time audio E2E harness utilities", () => {
     expect(calculateTranscriptSimilarity("Café teams ship features.", "Cafe team ship feature!")).toBe(0.5);
     expect(calculateTranscriptSimilarity("one two three four", "one two three four")).toBe(1);
     expect(calculateTranscriptSimilarity("one two", "one two extra words here")).toBe(0);
+  });
+
+  it("handles empty strings and chooses a stable path for ambiguous edit alignments", () => {
+    expect(calculateTranscriptErrors("", "")).toEqual({
+      expectedWords: 0, omittedWords: 0, substitutedWords: 0, insertedWords: 0, similarity: 1,
+    });
+    expect(calculateTranscriptErrors("", "unexpected words")).toEqual({
+      expectedWords: 0, omittedWords: 0, substitutedWords: 0, insertedWords: 2, similarity: 0,
+    });
+    expect(calculateTranscriptErrors("expected words", "")).toEqual({
+      expectedWords: 2, omittedWords: 2, substitutedWords: 0, insertedWords: 0, similarity: 0,
+    });
+    // Two equal-cost alignments exist: two substitutions, or one omission plus one insertion.
+    // The implementation's stable tie-break preserves the earliest omission/insertion path.
+    expect(calculateTranscriptErrors("a b", "b c")).toEqual({
+      expectedWords: 2, omittedWords: 1, substitutedWords: 0, insertedWords: 1, similarity: 0,
+    });
+  });
+
+  it("counts omissions, substitutions, and insertions using a versioned synthetic corpus", () => {
+    expect(calculateTranscriptErrors("one two three", "one four")).toEqual({
+      expectedWords: 3, omittedWords: 1, substitutedWords: 1, insertedWords: 0, similarity: 0.333,
+    });
+    expect(calculateTranscriptErrors("one two", "one two extra")).toEqual({
+      expectedWords: 2, omittedWords: 0, substitutedWords: 0, insertedWords: 1, similarity: 0.5,
+    });
+    expect(transcriptionEvaluationCorpus.map(({ profile }) => profile)).toEqual([
+      "technical", "acronyms", "numbers", "pauses", "self-correction", "quiet", "noise", "short", "long",
+    ]);
+    const source = Buffer.alloc(3_200);
+    source.writeInt16LE(10_000, 0);
+    expect(applyEvaluationAudioProfile(source, "quiet").readInt16LE(0)).toBe(5_500);
+    expect(applyEvaluationAudioProfile(source, "pauses")).toEqual(source);
+    expect(applyEvaluationAudioProfile(source, "self-correction")).toEqual(source);
+    expect(applyEvaluationAudioProfile(source, "noise")).not.toEqual(source);
+    const quietOptions = parseArgs(["--case", "quiet"], {});
+    expect(quietOptions.evaluationProfile).toBe("quiet");
+    expect(quietOptions.text).not.toBe("quiet");
+    expect(() => parseArgs(["--case", "unlisted"], {})).toThrow(/versioned evaluation corpus/);
+  });
+
+  it("aggregates suite metrics without network calls or case identifiers", () => {
+    const base: AudioE2EMetrics = {
+      requireAssessment: false, speechGenerationMs: 100, connectToReadyMs: 10, firstSpeechMs: 20,
+      transcriptionMs: 300, finalizationToCompleteMs: 350, queueWaitMs: 50, silenceDetectedMs: 400,
+      completeMs: 800, streamErrors: [], missingEvents: [], transcriptCharacters: 20,
+      transcriptSimilarity: 0.9, expectedWords: 10, omittedWords: 1, substitutedWords: 0, insertedWords: 0,
+      completionStatus: "complete", assessmentStatus: null, segmented: null, assessedDurationMs: null,
+      assessmentScoresAvailable: null,
+    };
+    const second: AudioE2EMetrics = {
+      ...base, transcriptSimilarity: 0.7, expectedWords: 20, omittedWords: 2,
+      substitutedWords: 1, insertedWords: 3, queueWaitMs: null, transcriptionMs: 500,
+      finalizationToCompleteMs: null,
+    };
+    expect(aggregateAudioE2EMetrics([base, second])).toEqual({
+      cases: 2, successfulCases: 1, meanSimilarity: 0.8, expectedWords: 30,
+      omittedWords: 3, substitutedWords: 1, insertedWords: 3, meanQueueWaitMs: 50,
+      meanWhisperMs: 400, meanFinalizationToCompleteMs: 350,
+    });
+    expect(aggregateAudioE2EMetrics([])).toEqual({
+      cases: 0, successfulCases: 0, meanSimilarity: null, expectedWords: 0,
+      omittedWords: 0, substitutedWords: 0, insertedWords: 0, meanQueueWaitMs: null,
+      meanWhisperMs: null, meanFinalizationToCompleteMs: null,
+    });
   });
 
   it("returns only transcript length in harness metrics, never transcript text", async () => {
@@ -140,6 +220,33 @@ describe("real-time audio E2E harness utilities", () => {
       expect(isSuccessfulAudioE2ERun(metrics)).toBe(true);
       expect(metrics).not.toHaveProperty("transcript");
       expect(JSON.stringify(metrics)).not.toContain(reference);
+    } finally {
+      await new Promise<void>((resolve) => websocketServer.close(() => resolve()));
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("measures finalization-to-complete time for manual finalization", async () => {
+    const server = createServer();
+    const websocketServer = new WebSocketServer({ server });
+    websocketServer.on("connection", (socket) => {
+      socket.on("message", (data, isBinary) => {
+        if (isBinary) return;
+        const message = JSON.parse(data.toString()) as { type?: string };
+        if (message.type === "start") socket.send(JSON.stringify({ type: "ready", protocol: 2 }));
+        if (message.type === "finalize") socket.send(JSON.stringify({ type: "complete", status: "complete", transcript: "A short answer." }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Test WebSocket server did not bind to a TCP port.");
+    try {
+      const options = parseArgs(["--backend-url", `http://127.0.0.1:${address.port}`, "--text", "A short answer."], {});
+      const metrics = await exerciseStream(options, Buffer.alloc(3_200), 0, 0);
+      expect(metrics.completionStatus).toBe("complete");
+      expect(metrics.silenceDetectedMs).toBeNull();
+      expect(metrics.finalizationToCompleteMs).not.toBeNull();
+      expect(metrics.finalizationToCompleteMs).toBeGreaterThanOrEqual(0);
     } finally {
       await new Promise<void>((resolve) => websocketServer.close(() => resolve()));
       await new Promise<void>((resolve) => server.close(() => resolve()));
