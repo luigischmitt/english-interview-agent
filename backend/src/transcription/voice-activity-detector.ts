@@ -39,6 +39,7 @@ export type VadUpdate = { speechStarted: boolean; speechResumed: boolean; should
 export class VoiceActivityDetector {
   private speechCandidateStartedAt: number | null = null;
   private speechStartedAt: number | null = null;
+  private lastSpeechActivityAt: number | null = null;
   private silenceStartedAt: number | null = null;
   private resumedSpeechCandidateStartedAt: number | null = null;
   private resumedActivityCandidateStartedAt: number | null = null;
@@ -58,6 +59,7 @@ export class VoiceActivityDetector {
         this.speechCandidateStartedAt ??= now;
         if (now - this.speechCandidateStartedAt >= 200) {
           this.speechStartedAt = this.speechCandidateStartedAt;
+          this.lastSpeechActivityAt = now;
           return { speechStarted: true, speechResumed: false, shouldFinalize: false };
         }
       } else {
@@ -67,6 +69,7 @@ export class VoiceActivityDetector {
     }
 
     if (level >= this.config.speechThreshold) {
+      this.lastSpeechActivityAt = now;
       this.resumedSpeechCandidateStartedAt ??= now;
       if (now - this.resumedSpeechCandidateStartedAt >= this.config.resumedSpeechConfirmationMs) {
         speechResumed = this.silenceStartedAt !== null || this.midBandStartedAt !== null || this.finalizationReasonValue !== null;
@@ -144,5 +147,12 @@ export class VoiceActivityDetector {
 
   get ambientActivityHoldMs(): number {
     return this.midBandStartedAt === null ? 0 : Math.max(0, this.lastUpdatedAt - this.midBandStartedAt);
+  }
+
+  /** Time since the last above-threshold frame at the actual finalize instant. */
+  speechEndToFinalizationAt(now: number): number {
+    return this.lastSpeechActivityAt === null || !Number.isFinite(now)
+      ? 0
+      : Math.max(0, now - this.lastSpeechActivityAt);
   }
 }

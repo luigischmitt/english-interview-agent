@@ -168,8 +168,10 @@ export function synthesizeInterviewerQuestion(text, options) {
   const playbackWork = async () => {
     try {
       scheduleTimeout(timeoutMs, "O áudio demorou demais para responder. Você pode continuar sem ele.");
+      options.onSynthesisStarted?.();
       flightLease = acquireSpeechBlob(options, text);
       const blob = await flightLease.promise;
+      options.onSynthesisCompleted?.();
       if (cancelled) return { status: "cancelled" };
       if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
       if (cancelled) return { status: "cancelled" };
@@ -182,6 +184,7 @@ export function synthesizeInterviewerQuestion(text, options) {
       const playbackEnded = new Promise((resolve, reject) => {
         const onEnded = () => resolve("ended");
         const onError = () => reject(new Error("Audio playback failed."));
+        const onPlaying = () => options.onPlaybackStarted?.();
         const captionSegments = options.captionSegments?.filter(Boolean) ?? [];
         const totalWords = captionSegments.reduce((total, segment) => total + segment.split(/\s+/u).filter(Boolean).length, 0);
         const onTimeUpdate = () => {
@@ -199,11 +202,13 @@ export function synthesizeInterviewerQuestion(text, options) {
         if (captionSegments.length && !cancelled) options.onSegment?.(captionSegments[0]);
         audio.addEventListener("ended", onEnded, { once: true });
         audio.addEventListener("error", onError, { once: true });
+        audio.addEventListener("playing", onPlaying, { once: true });
         audio.addEventListener("timeupdate", onTimeUpdate);
         audio.addEventListener("durationchange", onTimeUpdate);
         removeAudioListeners = () => {
           audio?.removeEventListener("ended", onEnded);
           audio?.removeEventListener("error", onError);
+          audio?.removeEventListener("playing", onPlaying);
           audio?.removeEventListener("timeupdate", onTimeUpdate);
           audio?.removeEventListener("durationchange", onTimeUpdate);
         };

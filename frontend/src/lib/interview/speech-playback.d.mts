@@ -23,6 +23,9 @@ export type SpeechPlaybackOptions = {
   setTimeout?: (callback: () => void, delay: number) => number;
   clearTimeout?: (id: number) => void;
   onSegment?: (segment: string) => void;
+  onSynthesisStarted?: () => void;
+  onSynthesisCompleted?: () => void;
+  onPlaybackStarted?: () => void;
   /** Caption excerpts from one utterance, advanced against the single audio track duration. */
   captionSegments?: string[];
 };

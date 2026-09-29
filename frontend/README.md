@@ -155,6 +155,18 @@ backend (ou aponte `NEXT_PUBLIC_BACKEND_URL` para uma API compatível). Sem ele,
 o texto da pergunta continua disponível e a falha de reprodução não bloqueia a
 prática por voz.
 
+### Medir o handoff até a próxima fala (diagnóstico local)
+
+Para habilitar uma medição opt-in no navegador, abra o console do DevTools e
+execute `sessionStorage.setItem("english-interview:handoff-timing", "1")` antes
+de iniciar uma nova entrevista. Após a primeira fala do entrevistador que segue
+uma resposta, o console registra um objeto JSON `interview_handoff_timing` com
+durações totais e por etapa: finalização/VAD, fila, Whisper, decisão, síntese e
+início da reprodução. Para desabilitar, execute
+`sessionStorage.removeItem("english-interview:handoff-timing")` e recarregue a
+página. A medição não registra nem inclui áudio, transcrição, IDs de sessão ou
+segredos; fica desabilitada por padrão e dura apenas a sessão da aba.
+
 ## Persistência e falhas
 
 Ao iniciar uma entrevista, o app tenta criar uma sessão privada no Supabase e

@@ -94,6 +94,19 @@ describe("voice activity detection", () => {
     expect(vad.update(0.005, 4_300).shouldFinalize).toBe(true);
   });
 
+  it("measures elapsed time from the last above-threshold speech frame to VAD finalization", () => {
+    const vad = new VoiceActivityDetector();
+    vad.update(0.04, 0);
+    vad.update(0.04, 100);
+    expect(vad.update(0.04, 200).speechStarted).toBe(true);
+    vad.update(0.04, 500);
+    vad.update(0.005, 600);
+    expect(vad.update(0.005, 4_100).shouldFinalize).toBe(true);
+    expect(vad.speechEndToFinalizationAt(4_100)).toBe(3_600);
+    // The server may stop receiving level frames while the reversible silence grace runs.
+    expect(vad.speechEndToFinalizationAt(5_600)).toBe(5_100);
+  });
+
   it("keeps a three-second thinking pause and finalizes after confident silence", () => {
     const vad = new VoiceActivityDetector();
     vad.update(0.04, 0);
@@ -376,6 +389,26 @@ describe("bounded final transcription queue", () => {
 });
 
 describe("versioned transcription WebSocket", () => {
+  it("sends only bounded VAD-to-finalization timing metadata", async () => {
+    const { service } = createService("Safe synthetic response");
+    const fixture = await openStreamServer(service);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const finalizing = waitForType(socket, "finalizing");
+      const complete = waitForType(socket, "complete");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      const finalizingMessage = await finalizing;
+      expect(finalizingMessage.timing).toEqual({ speechEndToFinalizationMs: expect.any(Number) });
+      expect(finalizingMessage).not.toHaveProperty("transcript");
+      await complete;
+    } finally {
+      socket.close();
+      await fixture.close();
+    }
+  });
+
   it("delivers six late assessments across independent answer sockets with safe timing metadata", async () => {
     const { service } = createService("I led the migration");
     const assessmentService: PronunciationAssessmentService = {

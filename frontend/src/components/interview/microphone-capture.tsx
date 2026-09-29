@@ -27,7 +27,10 @@ type StreamMessage = {
   assessedBlockCount?: number;
   failedBlockCount?: number;
   diagnostics?: { transcriptionDurationMs?: number; azureQueueWaitMs?: number; azureServiceDurationMs?: number; totalDurationMs?: number };
+  timing?: { speechEndToFinalizationMs?: number };
 };
+
+type HandoffTimingEvent = "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed";
 
 class StreamSetupError extends Error {
   constructor(readonly code?: string) {
@@ -52,6 +55,7 @@ type MicrophoneCaptureProps = {
   onTranscriptionChange: (state: VoiceTranscriptionState) => void;
   onAssessmentChange?: (attemptId: string, state: VoiceAssessmentState, context: AssessmentContext) => void;
   onCaptureStateChange?: (state: VoiceCaptureState) => void;
+  onHandoffTimingEvent?: (event: HandoffTimingEvent, details?: { speechEndToFinalizationMs?: number }) => void;
   autoStartSignal?: string | null;
   assessmentSockets: AssessmentSocketRegistry;
   assessmentContext: AssessmentContext;
@@ -92,7 +96,7 @@ function rootMeanSquare(samples: Float32Array): number {
   return Math.sqrt(sum / Math.max(1, samples.length));
 }
 
-export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, autoStartSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onHandoffTimingEvent, autoStartSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -312,14 +316,22 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
           }
           if (message.type === "silence-detected" || message.type === "speech-resumed") return;
           if (message.type === "transcription-queued" || message.type === "finalizing") {
-            if (message.type === "finalizing") releaseCapture();
+            if (message.type === "finalizing") {
+              onHandoffTimingEvent?.("finalizing", message.timing);
+              releaseCapture();
+            } else onHandoffTimingEvent?.("transcription-queued");
             setStatus("finalizing");
             const pending: VoiceTranscriptionState = { status: "pending" };
             setTranscription(pending);
             onTranscriptionChangeRef.current(pending);
             return;
           }
+          if (message.type === "transcription-started") {
+            onHandoffTimingEvent?.("transcription-started");
+            return;
+          }
           if (message.type === "complete") {
+            onHandoffTimingEvent?.("transcription-completed");
             releaseCapture();
             const result = finalVoiceTranscription(message);
             if (result.status === "available") {
@@ -414,7 +426,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             ? "A conexão com o transcritor falhou. Tente novamente ou pule esta pergunta."
             : microphoneError(captureError));
     }
-  }, [assessmentSockets, disabled, fail, releaseCapture, status, stopRecording]);
+  }, [assessmentSockets, disabled, fail, onHandoffTimingEvent, releaseCapture, status, stopRecording]);
 
   useEffect(() => {
     const nextSignal = nextAutoStartSignal(autoStartSignal, disabled, lastAutoStartSignalRef.current);

@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { playInterviewerSegments, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
 
+export type SpeechTimingEvent = "synthesis-started" | "synthesis-completed" | "playback-started";
+
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 
-export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true) {
+export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void) {
   const [activeSegment, setActiveSegment] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
   const playbackRef = useRef<SpeechPlayback | null>(null);
@@ -28,6 +30,9 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
         setSpeechMessage(null);
         setActiveSegment(segment);
       },
+      onSynthesisStarted: () => onTimingEvent?.("synthesis-started"),
+      onSynthesisCompleted: () => onTimingEvent?.("synthesis-completed"),
+      onPlaybackStarted: () => onTimingEvent?.("playback-started"),
     });
     playbackRef.current = playback;
 
@@ -44,7 +49,7 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
       playback.cancel();
       if (playbackRef.current === playback) playbackRef.current = null;
     };
-  }, [enabled, onReady, segments]);
+  }, [enabled, onReady, onTimingEvent, segments]);
 
   return { activeSegment, speechMessage, setSpeechMessage, cancelPlayback };
 }
