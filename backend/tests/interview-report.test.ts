@@ -62,7 +62,7 @@ describe("final interview report service", () => {
 
     await expect(service.generate(input)).resolves.toEqual({ ...validReport, model: defaultThinkingModel, analysisVersion: "v2" });
     const body = requestBody as { provider: unknown; response_format: { json_schema: { strict: boolean; schema: { properties: Record<string, unknown> } } }; messages: Array<{ content: string }> };
-    expect(body.provider).toEqual({ require_parameters: true, data_collection: "deny" });
+    expect(body.provider).toEqual({ sort: "latency", require_parameters: true, data_collection: "deny" });
     expect(body.response_format.json_schema.strict).toBe(true);
     expect(body.response_format.json_schema.schema.properties).not.toHaveProperty("score");
     expect(body.response_format.json_schema.schema.properties).not.toHaveProperty("internal_rationale");
@@ -93,6 +93,29 @@ describe("final interview report service", () => {
     expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.strengths.maxItems).toBe(8);
     expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.gaps.maxItems).toBe(8);
     expect(JSON.parse(body.messages[1].content)).toEqual({ roleContext: input.roleContext, turns: input.turns });
+  });
+
+  it("logs only aggregate phase timings for provider and validation work", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      await makeService(async () => providerResponse(JSON.stringify(providerReport))).generate(input);
+
+      const timingEvents = info.mock.calls.flatMap(([entry]) => {
+        if (typeof entry !== "string") return [];
+        const event = JSON.parse(entry) as Record<string, unknown>;
+        return event.event === "interview_report_phase_timing" ? [event] : [];
+      });
+      expect(timingEvents).toHaveLength(2);
+      expect(timingEvents.map(({ phase }) => phase)).toEqual(["provider", "validation"]);
+      for (const event of timingEvents) {
+        expect(Object.keys(event).sort()).toEqual(["durationMs", "event", "phase", "turnCount"]);
+        expect(event.durationMs).toEqual(expect.any(Number));
+        expect(event.turnCount).toBe(input.turns.length);
+        expect(JSON.stringify(event)).not.toContain("bounded retries");
+      }
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("sends all eight completed answers in one report request with enough output budget", async () => {

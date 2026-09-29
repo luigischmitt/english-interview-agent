@@ -317,6 +317,15 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
 }
 
+function logReportPhase(phase: "provider" | "validation", startedAt: number, turnCount: number): void {
+  console.info(JSON.stringify({
+    event: "interview_report_phase_timing",
+    phase,
+    durationMs: Math.max(0, Date.now() - startedAt),
+    turnCount,
+  }));
+}
+
 export class OpenRouterInterviewReportService implements InterviewReportService {
   private readonly fetchImplementation: typeof fetch;
 
@@ -326,6 +335,7 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
 
   async generate(input: InterviewReportInput): Promise<InterviewReport & { model: string; analysisVersion: "v2" }> {
     const signal = AbortSignal.timeout(this.options.timeoutMs);
+    const providerStartedAt = Date.now();
     let response: Response;
     try {
       response = await this.fetchImplementation("https://openrouter.ai/api/v1/chat/completions", {
@@ -342,29 +352,40 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
           // leave enough room for a complete structured response instead of
           // turning provider truncation into an all-or-nothing report failure.
           max_tokens: 4_096,
-          provider: { require_parameters: true, data_collection: "deny" },
+          provider: { sort: "latency", require_parameters: true, data_collection: "deny" },
           response_format: { type: "json_schema", json_schema: { name: "final_interview_report", strict: true, schema } },
         }),
         signal,
       });
     } catch (error) {
+      logReportPhase("provider", providerStartedAt, input.turns.length);
       if (signal.aborted || isAbortError(error)) throw new ThinkingServiceError("THINKING_TIMEOUT", 504, "The reasoning service timed out.", { cause: error });
       throw new ThinkingServiceError("THINKING_PROVIDER_UNAVAILABLE", 502, "The reasoning service is unavailable.", { cause: error });
     }
     if (response.status === 429) {
       await response.body?.cancel();
+      logReportPhase("provider", providerStartedAt, input.turns.length);
       throw new ThinkingServiceError("THINKING_RATE_LIMITED", 503, "The reasoning service is temporarily rate limited.");
     }
     if (!response.ok) {
       await response.body?.cancel();
+      logReportPhase("provider", providerStartedAt, input.turns.length);
       throw new ThinkingServiceError("THINKING_PROVIDER_UNAVAILABLE", 502, "The reasoning service is unavailable.");
     }
     let body: OpenRouterResponse;
     try { body = await response.json() as OpenRouterResponse; } catch (error) {
+      logReportPhase("provider", providerStartedAt, input.turns.length);
       if (signal.aborted || isAbortError(error)) throw new ThinkingServiceError("THINKING_TIMEOUT", 504, "The reasoning service timed out.", { cause: error });
       throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.", { cause: error });
     }
-    const { report } = parseReport(body.choices?.[0]?.message?.content, input);
+    logReportPhase("provider", providerStartedAt, input.turns.length);
+    const validationStartedAt = Date.now();
+    let report: InterviewReport;
+    try {
+      ({ report } = parseReport(body.choices?.[0]?.message?.content, input));
+    } finally {
+      logReportPhase("validation", validationStartedAt, input.turns.length);
+    }
     return { ...report, model: this.options.model, analysisVersion: "v2" };
   }
 }
