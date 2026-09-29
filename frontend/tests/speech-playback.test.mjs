@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+import { createOpeningSpeechTiming, isOpeningTimingEnabled, openingTimingStorageKey } from "../src/lib/interview/opening-timing.mjs";
 
 test("the first interviewer playback combines the introduction and the first question", () => {
   assert.equal(composeOpeningUtterance("Welcome.", "Tell me about yourself."), "Welcome. Tell me about yourself.");
   assert.equal(composeOpeningUtterance(" Welcome. ", " Tell me about yourself. "), "Welcome. Tell me about yourself.");
 });
 
-test("the opening speaks natural labels for every configured seniority and focus", () => {
+test("the opening has one concise contextual sentence for every seniority and focus", () => {
   const seniorityLabels = { junior: "junior", "mid-level": "mid-level", senior: "senior", staff: "staff-level" };
   const focusLabels = {
     "technical-depth": "technical depth",
@@ -15,25 +16,81 @@ test("the opening speaks natural labels for every configured seniority and focus
     behavioral: "behavioral questions",
     mixed: "balanced practice",
   };
-  for (const [value, label] of Object.entries(seniorityLabels)) {
-    const opening = composeContextualOpening({ role: "Backend Engineer", seniority: value, focus: "mixed", duration: "10" }, "Tell me about a project.");
-    assert.ok(opening.includes(`for the ${label} Backend Engineer role`));
-  }
-  for (const [value, label] of Object.entries(focusLabels)) {
-    const opening = composeContextualOpening({ role: "Backend Engineer", seniority: "mid-level", focus: value, duration: "10" }, "Tell me about a project.");
-    assert.ok(opening.includes(`We’ll focus on ${label} for the mid-level Backend Engineer role.`));
+  const question = "Tell me about a project.";
+  for (const [seniorityValue, seniorityLabel] of Object.entries(seniorityLabels)) {
+    for (const [focusValue, focusLabel] of Object.entries(focusLabels)) {
+      const config = { role: "Backend Engineer", seniority: seniorityValue, focus: focusValue, duration: "10" };
+      const opening = composeContextualOpening(config, question);
+      const prefix = opening.slice(0, -question.length).trim();
+
+      assert.ok(prefix.startsWith("We have about 10 minutes for your "));
+      assert.ok(prefix.includes(`${seniorityLabel} Backend Engineer role`));
+      assert.ok(prefix.includes(`focusing on ${focusLabel}.`));
+      assert.equal(splitInterviewerSpeech(prefix).length, 1);
+      const previousPrefix = `Thanks for joining me. We have about 10 minutes today. We’ll focus on ${focusLabel} for the ${seniorityLabel} Backend Engineer role.`;
+      const prefixWords = prefix.split(/\s+/u).length;
+      const previousPrefixWords = previousPrefix.split(/\s+/u).length;
+      assert.ok(prefixWords <= Math.floor(previousPrefixWords * 0.8), `${seniorityValue}/${focusValue} prefix only reduced from ${previousPrefixWords} to ${prefixWords} words`);
+      assert.ok(prefixWords <= 17, `${seniorityValue}/${focusValue} prefix was ${prefixWords} words`);
+      assert.equal(opening.endsWith(question), true);
+    }
   }
 });
 
 test("unknown opening labels use a safe generic fallback without leaking identifiers", () => {
   const opening = composeContextualOpening({ role: "Backend Engineer", seniority: "principal-engineer", focus: "technical-depth-plus", duration: "10" }, "Tell me about a project.");
-  assert.ok(opening.includes("for the Backend Engineer role"));
-  assert.ok(opening.includes("I’ll ask about your experience and decisions for the Backend Engineer role."));
+  const question = "Tell me about a project.";
+  const prefix = opening.slice(0, -question.length).trim();
+  assert.ok(prefix.includes("for your Backend Engineer role"));
+  assert.ok(prefix.includes("focusing on your experience and decisions."));
   assert.ok(!opening.includes("principal-engineer"));
   assert.ok(!opening.includes("technical-depth-plus"));
   assert.ok(!opening.includes("your staff Backend Engineer interview"));
   assert.ok(!opening.includes("Take your time"));
-  assert.ok(opening.startsWith("Thanks for joining me. We have about 10 minutes today."));
+  assert.equal(splitInterviewerSpeech(prefix).length, 1);
+  const prefixWords = prefix.split(/\s+/u).length;
+  const previousPrefix = "Thanks for joining me. We have about 10 minutes today. I’ll ask about your experience and decisions for the Backend Engineer role.";
+  assert.ok(prefixWords <= Math.floor(previousPrefix.split(/\s+/u).length * 0.8));
+  assert.ok(prefixWords <= 18);
+  assert.ok(opening.endsWith(question));
+});
+
+test("opening timing emits numeric synthesis-to-playback durations only once", () => {
+  const marks = { "synthesis-started": 100, "synthesis-completed": 1_100, "playback-started": 1_240 };
+  const metrics = [];
+  const timing = createOpeningSpeechTiming({ now: () => marks.current, onComplete: (value) => metrics.push(value) });
+  for (const [stage, time] of Object.entries(marks)) {
+    marks.current = time;
+    timing.mark(stage);
+  }
+  timing.mark("playback-started");
+
+  assert.deepEqual(metrics, [{ synthesisMs: 1_000, playbackStartMs: 140 }]);
+  assert.ok(Object.values(metrics[0]).every(Number.isFinite));
+});
+
+test("opening timing stays silent when synthesis or playback fails before playback starts", () => {
+  const metrics = [];
+  const timing = createOpeningSpeechTiming({ now: () => 100, onComplete: (value) => metrics.push(value) });
+  timing.mark("synthesis-started");
+  timing.mark("synthesis-completed");
+
+  assert.deepEqual(metrics, []);
+});
+
+test("opening timing is opt-in through session storage", () => {
+  const originalWindow = globalThis.window;
+  try {
+    delete globalThis.window;
+    assert.equal(isOpeningTimingEnabled(), false);
+    globalThis.window = { sessionStorage: { getItem: (key) => key === openingTimingStorageKey ? "1" : null } };
+    assert.equal(isOpeningTimingEnabled(), true);
+    globalThis.window.sessionStorage.getItem = () => "true";
+    assert.equal(isOpeningTimingEnabled(), false);
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
 });
 
 test("the next spoken and captioned utterance uses an optional natural transition", () => {

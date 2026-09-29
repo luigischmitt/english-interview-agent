@@ -167,6 +167,13 @@ início da reprodução. Para desabilitar, execute
 página. A medição não registra nem inclui áudio, transcrição, IDs de sessão ou
 segredos; fica desabilitada por padrão e dura apenas a sessão da aba.
 
+Para medir a abertura da entrevista, execute
+`sessionStorage.setItem("english-interview:opening-timing", "1")` antes de
+iniciar uma nova entrevista. O console registra uma única linha
+`interview_opening_timing` com os tempos numéricos de síntese e do fim da síntese
+até o início da reprodução. A medição fica desabilitada por padrão; remova a
+chave da sessão para desabilitá-la.
+
 ## Persistência e falhas
 
 Ao iniciar uma entrevista, o app tenta criar uma sessão privada no Supabase e
