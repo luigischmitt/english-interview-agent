@@ -16,8 +16,10 @@ import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-regi
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
-import { useSpeechPlayback } from "../hooks/use-speech-playback";
+import { useSpeechPlayback, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
+import { createInterviewHandoffTiming, isHandoffTimingEnabled } from "@/lib/interview/handoff-timing.mjs";
+import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; state: VoiceAssessmentState };
 type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
@@ -111,6 +113,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const phaseRef = useRef(phase);
   const currentQuestionIdRef = useRef(question.id);
   const elapsedSecondsRef = useRef(0);
+  const handoffTimingRef = useRef<{ mark: (stage: string) => void } | null>(null);
   const openingUtterance = composeContextualOpening(config, question.prompt);
   const closingUtterance = composeInterviewClosing();
   const currentUtterance = phase === "introducing"
@@ -126,11 +129,41 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     currentQuestionIdRef.current = question.id;
   }, [phase, question.id]);
   const transitionPhase = (nextPhase: InterviewPhase) => {
+    if (nextPhase === "closing") handoffTimingRef.current = null;
     phaseRef.current = nextPhase;
     setPhase(nextPhase);
   };
   useEffect(() => { elapsedSecondsRef.current = seconds; }, [seconds]);
   useEffect(() => { voiceAssessmentsRef.current = voiceAssessments; }, [voiceAssessments]);
+
+  const onHandoffTimingEvent = useCallback((event: "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed", details?: { speechEndToFinalizationMs?: number }) => {
+    if (event === "finalizing") {
+      handoffTimingRef.current = null;
+      if (!isHandoffTimingEnabled()) return;
+      const timing = createInterviewHandoffTiming({
+        speechEndToFinalizationMs: details?.speechEndToFinalizationMs,
+        onComplete: (metrics: InterviewHandoffMetrics) => console.info(JSON.stringify({ event: "interview_handoff_timing", ...metrics })),
+      });
+      handoffTimingRef.current = timing;
+      timing.mark("finalizingReceived");
+      return;
+    }
+    const stageByEvent = {
+      "transcription-queued": "transcriptionQueued",
+      "transcription-started": "transcriptionStarted",
+      "transcription-completed": "transcriptionCompleted",
+    } as const;
+    handoffTimingRef.current?.mark(stageByEvent[event]);
+  }, []);
+
+  const onSpeechTimingEvent = useCallback((event: SpeechTimingEvent) => {
+    const stageByEvent = {
+      "synthesis-started": "synthesisStarted",
+      "synthesis-completed": "synthesisCompleted",
+      "playback-started": "playbackStarted",
+    } as const;
+    handoffTimingRef.current?.mark(stageByEvent[event]);
+  }, []);
 
   const onInterviewerUtteranceReady = useCallback(() => {
     if (phaseRef.current === "closing") {
@@ -150,7 +183,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     () => splitInterviewerSpeech(currentUtterance),
     [currentUtterance],
   );
-  const { activeSegment, speechMessage, setSpeechMessage, cancelPlayback } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio);
+  const { activeSegment, speechMessage, setSpeechMessage, cancelPlayback } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
   const currentAssessmentSamples = assessmentSamples(voiceAssessments);
   const currentAzureSummary = summarizeAzureAssessments(currentAssessmentSamples);
@@ -220,6 +253,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       ...reportTurnsRef.current.filter((turn): turn is InterviewReportTurnSource & { speaker: "interviewer"; content: string } => turn.speaker === "interviewer" && typeof turn.content === "string").map((turn) => turn.content),
       question.prompt,
     ])];
+    handoffTimingRef.current?.mark("decisionStarted");
     const decision = await decideNextTurn({
       config,
       currentQuestion: question.prompt,
@@ -231,6 +265,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       recentAcknowledgements: recentAcknowledgementsRef.current,
       signal: abortController.signal,
     });
+    handoffTimingRef.current?.mark("decisionCompleted");
     if (!mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
     advanceTimerRef.current = window.setTimeout(() => {
       advanceTimerRef.current = null;
@@ -520,6 +555,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
               })) void submitAnswer(transcription, false, expectedQuestionId);
             }}
             onCaptureStateChange={setVoiceCaptureState}
+            onHandoffTimingEvent={onHandoffTimingEvent}
             autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
             onAssessmentChange={(attemptId, assessment, context) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { ...context, state: assessment } }))}
           />

@@ -131,6 +131,20 @@ test("speech playback registers completion before play and releases the media UR
   assert.equal(audio.revoked, true);
 });
 
+test("speech playback reports synthesis completion and the first actual playing event", async () => {
+  const audio = new FakeAudio();
+  const timingEvents = [];
+  audio.play = () => { audio.emit("playing"); audio.emit("ended"); return Promise.resolve(); };
+  const playback = synthesizeInterviewerQuestion("Hello.", successfulOptions(audio, {
+    onSynthesisStarted: () => timingEvents.push("synthesis-started"),
+    onSynthesisCompleted: () => timingEvents.push("synthesis-completed"),
+    onPlaybackStarted: () => timingEvents.push("playback-started"),
+  }));
+
+  assert.deepEqual(await playback.promise, { status: "completed" });
+  assert.deepEqual(timingEvents, ["synthesis-started", "synthesis-completed", "playback-started"]);
+});
+
 test("repeated cancellation stops active playback and resolves without reporting success", async () => {
   const audio = new FakeAudio();
   audio.play = () => Promise.resolve();
