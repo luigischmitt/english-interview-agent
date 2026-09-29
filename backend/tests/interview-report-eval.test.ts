@@ -97,9 +97,34 @@ describe("offline synthetic final-report evaluation fixtures", () => {
 
     const noFindingResult = evaluateFixture(noFinding);
     const noisyResult = evaluateFixture(noisy);
-    expect(noFindingResult.report?.englishCommunication.evidenceStatus).toBe("INSUFFICIENT");
+    expect(noFindingResult.report?.englishCommunication.evidenceStatus).toBe("NO_PATTERN_FOUND");
     expect(noFindingResult.diagnostics.optionalItems).toEqual({ candidates: 0, accepted: 0, rejected: 0 });
     expect(noisyResult.report?.englishCommunication.evidenceStatus).toBe("LIMITED");
     expect(noisyResult.diagnostics.optionalItems).toEqual({ candidates: 3, accepted: 1, rejected: 2 });
+    expect(noisyResult.report?.evidenceReview?.englishPatterns).toEqual({ candidates: 3, accepted: 1, rejected: 2 });
+    expect(noisyResult.report?.evidenceReview?.technicalStrengths).toEqual({ candidates: 0, accepted: 0, rejected: 0 });
+  });
+
+  it("exposes only aggregate candidate, accepted, and rejected counts per category", () => {
+    const fixture = interviewReportEvalFixtures.find((item) => item.name.startsWith("detailed answer"));
+    expect(fixture).toBeDefined();
+    if (!fixture) return;
+    const result = evaluateFixture(fixture);
+    expect(result.report?.evidenceReview).toEqual({
+      technicalStrengths: { candidates: 1, accepted: 1, rejected: 0 },
+      technicalGaps: { candidates: 1, accepted: 1, rejected: 0 },
+      englishPatterns: { candidates: 0, accepted: 0, rejected: 0 },
+      priorities: { candidates: 1, accepted: 1, rejected: 0 },
+    });
+  });
+
+  it("distinguishes all rejected suggestions from an empty model list", () => {
+    const allRejected = interviewReportEvalFixtures.find((fixture) => fixture.name.startsWith("all unsupported"));
+    expect(allRejected).toBeDefined();
+    if (!allRejected) return;
+    const result = evaluateFixture(allRejected);
+    expect(result.report?.englishCommunication.patterns).toEqual([]);
+    expect(result.report?.englishCommunication.evidenceStatus).toBe("CANDIDATES_REJECTED");
+    expect(result.report?.evidenceReview?.englishPatterns).toEqual({ candidates: 1, accepted: 0, rejected: 1 });
   });
 });

@@ -178,12 +178,23 @@ function parseReport(value: unknown, input: InterviewReportInput): ParsedIntervi
       || !boundedString(item.focus, 160) || !completeSentence(item.exercise, 240)) return [];
     return [{ area: item.area as "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION", sequenceNumber: item.sequenceNumber as number, evidence: item.evidence.trim(), focus: item.focus.trim(), exercise: item.exercise.trim() }];
   });
+  const englishAccepted = patterns.length;
+  const englishStatus: InterviewReport["englishCommunication"]["evidenceStatus"] = englishAccepted > 0
+    ? englishAccepted >= 2 ? "SUFFICIENT" : "LIMITED"
+    : english.patterns.length > 0 ? "CANDIDATES_REJECTED" : "NO_PATTERN_FOUND";
+  const counts = (candidates: number, accepted: number) => ({ candidates, accepted, rejected: candidates - accepted });
   const candidateCount = technical.strengths.length + technical.gaps.length + english.patterns.length + priorities.length;
   const acceptedCount = strengths.length + gaps.length + patterns.length + parsedPriorities.length;
   return {
     report: {
+      evidenceReview: {
+        technicalStrengths: counts(technical.strengths.length, strengths.length),
+        technicalGaps: counts(technical.gaps.length, gaps.length),
+        englishPatterns: counts(english.patterns.length, englishAccepted),
+        priorities: counts(priorities.length, parsedPriorities.length),
+      },
       technicalContent: { summary: completeSentence(technical.summary, 320) ? technical.summary.trim() : "As respostas foram analisadas quanto ao conteúdo técnico apresentado.", strengths, gaps },
-      englishCommunication: { clarity: english.clarity as CommunicationClarity, evidenceStatus: patterns.length === 0 ? "INSUFFICIENT" : patterns.length >= 2 ? "SUFFICIENT" : "LIMITED", patterns },
+      englishCommunication: { clarity: english.clarity as CommunicationClarity, evidenceStatus: englishStatus, patterns },
       priorities: parsedPriorities,
     },
     diagnostics: {

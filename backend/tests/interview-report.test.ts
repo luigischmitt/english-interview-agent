@@ -20,6 +20,12 @@ const input: InterviewReportInput = {
 };
 
 const validReport: InterviewReport = {
+  evidenceReview: {
+    technicalStrengths: { candidates: 1, accepted: 1, rejected: 0 },
+    technicalGaps: { candidates: 1, accepted: 1, rejected: 0 },
+    englishPatterns: { candidates: 1, accepted: 1, rejected: 0 },
+    priorities: { candidates: 1, accepted: 1, rejected: 0 },
+  },
   technicalContent: {
     summary: "Covers bounded retries and basic monitoring.",
     strengths: [{ sequenceNumber: 2, evidence: "bounded retries", explanation: "Nomeia uma proteção para tentativas repetidas." }],
@@ -32,8 +38,9 @@ const validReport: InterviewReport = {
   priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "errors and latency", focus: "Limites de alerta", exercise: "Explique em um minuto quais limites acionariam um alerta." }],
 };
 const providerReport = {
-  ...validReport,
+  technicalContent: validReport.technicalContent,
   englishCommunication: { clarity: validReport.englishCommunication.clarity, patterns: validReport.englishCommunication.patterns },
+  priorities: validReport.priorities,
 };
 
 function providerResponse(content: string, status = 200): Response {
@@ -129,7 +136,7 @@ describe("final interview report service", () => {
     expect(report.technicalContent.strengths).toEqual([{ sequenceNumber: 2, evidence: "timeouts", explanation: "A resposta identifica timeouts como proteção." }]);
     expect(report.englishCommunication.patterns).toEqual([]);
     expect(report.priorities).toEqual([]);
-    expect(report.englishCommunication.evidenceStatus).toBe("INSUFFICIENT");
+    expect(report.englishCommunication.evidenceStatus).toBe("CANDIDATES_REJECTED");
   });
 
   it("preserves complete user-facing sentences", async () => {
