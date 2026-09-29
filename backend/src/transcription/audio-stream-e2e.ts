@@ -29,6 +29,7 @@ export type AudioE2EOptions = {
   requireAssessment: boolean;
   evaluationProfile: string | null;
   suite: boolean;
+  evaluationThresholdExplicit: boolean;
 };
 
 type Options = AudioE2EOptions;
@@ -101,12 +102,15 @@ export function calculateTranscriptSimilarity(reference: string, transcript: str
   return calculateTranscriptErrors(reference, transcript).similarity;
 }
 
-export function calculateTranscriptErrors(reference: string, transcript: string): { expectedWords: number; omittedWords: number; substitutedWords: number; insertedWords: number; similarity: number } {
-  const tokenize = (value: string) => value
+export function calculateTranscriptErrors(reference: string, transcript: string, normalizeEnglishNumbers = false): { expectedWords: number; omittedWords: number; substitutedWords: number; insertedWords: number; similarity: number } {
+  const tokenize = (value: string) => {
+    const tokens = value
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")
     .toLocaleLowerCase("en-US")
-    .match(/[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu) ?? [];
+    .match(/[\p{L}]+(?:'[\p{L}]+)*|\p{N}+/gu) ?? [];
+    return normalizeEnglishNumbers ? normalizeNumberTokens(tokens) : tokens;
+  };
   const expected = tokenize(reference);
   const actual = tokenize(transcript);
   const matrix: Array<Array<{ distance: number; omitted: number; substituted: number; inserted: number }>> = Array.from({ length: expected.length + 1 }, () => []);
@@ -133,6 +137,62 @@ export function calculateTranscriptErrors(reference: string, transcript: string)
   };
 }
 
+const smallNumberWords: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19,
+};
+const tensNumberWords: Record<string, number> = {
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+
+/** Normalize only unambiguous English cardinal forms used by the numbers reference case. */
+function normalizeNumberTokens(tokens: string[]): string[] {
+  const normalized: string[] = [];
+  for (let index = 0; index < tokens.length;) {
+    const token = tokens[index];
+    if (/^\d+$/u.test(token)) {
+      normalized.push(`#${token.replace(/^0+(?=\d)/u, "")}`);
+      index += 1;
+      continue;
+    }
+    const small = smallNumberWords[token];
+    const tens = tensNumberWords[token];
+    if (small === undefined && tens === undefined) {
+      normalized.push(token);
+      index += 1;
+      continue;
+    }
+
+    let value = small ?? tens ?? 0;
+    let consumed = 1;
+    if (tens !== undefined && smallNumberWords[tokens[index + 1]] >= 1 && smallNumberWords[tokens[index + 1]] <= 9) {
+      value += smallNumberWords[tokens[index + 1]];
+      consumed += 1;
+    } else if (tokens[index + 1] === "hundred") {
+      value *= 100;
+      consumed += 1;
+      if (tokens[index + consumed] === "and") consumed += 1;
+      const remainderTens = tensNumberWords[tokens[index + consumed]];
+      const remainderSmall = smallNumberWords[tokens[index + consumed]];
+      if (remainderTens !== undefined) {
+        value += remainderTens;
+        consumed += 1;
+        if (smallNumberWords[tokens[index + consumed]] >= 1 && smallNumberWords[tokens[index + consumed]] <= 9) {
+          value += smallNumberWords[tokens[index + consumed]];
+          consumed += 1;
+        }
+      } else if (remainderSmall !== undefined) {
+        value += remainderSmall;
+        consumed += 1;
+      }
+    }
+    normalized.push(`#${value}`);
+    index += consumed;
+  }
+  return normalized;
+}
+
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): Options {
   const values: Record<string, string> = {
     "backend-url": env.AUDIO_E2E_BACKEND_URL ?? "http://localhost:3001",
@@ -145,6 +205,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     case: env.AUDIO_E2E_CASE ?? "",
   };
   const allowed = new Set(Object.keys(values));
+  let thresholdExplicit = env.AUDIO_E2E_SPEECH_THRESHOLD !== undefined;
   let requireAssessment = env.AUDIO_E2E_REQUIRE_ASSESSMENT === "true";
   let suite = env.AUDIO_E2E_SUITE === "true";
   for (let index = 0; index < argv.length; index += 1) {
@@ -169,6 +230,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     const value = inlineValue ?? argv[++index];
     if (!value || value.startsWith("--")) throw new Error(`Missing value for --${name}.`);
     values[name] = value;
+    if (name === "speech-threshold") thresholdExplicit = true;
   }
 
   let backendUrl: URL;
@@ -183,7 +245,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   backendUrl.pathname = backendUrl.pathname.replace(/\/$/, "");
 
   const speed = parseBoundedNumber(values.speed, "--speed", 0.25, 4);
-  const speechThreshold = parseBoundedNumber(values["speech-threshold"], "--speech-threshold", 0.025, 0.15);
+  const configuredSpeechThreshold = parseBoundedNumber(values["speech-threshold"], "--speech-threshold", 0.015, 0.05);
   const timeoutMs = parseBoundedInteger(values["timeout-ms"], "--timeout-ms", 1_000, 600_000);
   const maxDurationMs = parseBoundedInteger(values["max-duration-seconds"], "--max-duration-seconds", 1, 180) * 1_000;
   const evaluationCase = values.case ? getTranscriptionEvaluationCase(values.case) : undefined;
@@ -192,7 +254,10 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   if (!text || text.length > 4_000) throw new Error("--text must contain between 1 and 4000 characters.");
   if (!values.ffmpeg.trim()) throw new Error("--ffmpeg cannot be empty.");
 
-  return { backendUrl, text, speed, speechThreshold, timeoutMs, ffmpeg: values.ffmpeg, maxDurationMs, requireAssessment, evaluationProfile: evaluationCase?.profile ?? null, suite };
+  const speechThreshold = thresholdExplicit || evaluationCase?.speechThreshold === undefined
+    ? configuredSpeechThreshold
+    : evaluationCase.speechThreshold;
+  return { backendUrl, text, speed, speechThreshold, timeoutMs, ffmpeg: values.ffmpeg, maxDurationMs, requireAssessment, evaluationProfile: evaluationCase?.profile ?? null, suite, evaluationThresholdExplicit: thresholdExplicit };
 }
 
 function parseBoundedNumber(value: string, name: string, minimum: number, maximum: number): number {
@@ -441,7 +506,7 @@ export async function exerciseStream(
       metrics.transcriptionMs = transcriptionStartedAt === null ? null : Math.round(now - transcriptionStartedAt);
       if (typeof message.transcript === "string") mergedTranscript = message.transcript;
       metrics.transcriptCharacters = mergedTranscript.length;
-      const transcriptErrors = calculateTranscriptErrors(options.text, mergedTranscript);
+      const transcriptErrors = calculateTranscriptErrors(options.text, mergedTranscript, options.evaluationProfile === "numbers");
       metrics.transcriptSimilarity = transcriptErrors.similarity;
       metrics.expectedWords = transcriptErrors.expectedWords;
       metrics.omittedWords = transcriptErrors.omittedWords;
@@ -541,7 +606,13 @@ export async function runAudioStreamE2E(options: Options): Promise<AudioE2EMetri
 export async function runAudioEvaluationSuite(options: Options): Promise<AudioE2ESuiteMetrics> {
   const results: AudioE2EMetrics[] = [];
   for (const evaluationCase of transcriptionEvaluationCorpus) {
-    results.push(await runAudioStreamE2E({ ...options, text: evaluationCase.reference, evaluationProfile: evaluationCase.profile, suite: false }));
+    results.push(await runAudioStreamE2E({
+      ...options,
+      text: evaluationCase.reference,
+      evaluationProfile: evaluationCase.profile,
+      speechThreshold: options.evaluationThresholdExplicit ? options.speechThreshold : evaluationCase.speechThreshold ?? options.speechThreshold,
+      suite: false,
+    }));
   }
   return aggregateAudioE2EMetrics(results);
 }
