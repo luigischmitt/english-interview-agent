@@ -138,6 +138,10 @@ describe("real-time audio E2E harness utilities", () => {
     expect(calculateTranscriptErrors("one two", "one two extra")).toEqual({
       expectedWords: 2, omittedWords: 0, substitutedWords: 0, insertedWords: 1, similarity: 0.5,
     });
+    const spokenNumberReference = "We reduced p ninety nine latency from four hundred milliseconds to one hundred and twenty milliseconds across three regions.";
+    const digitTranscript = "We reduced P99 latency from 400 milliseconds to 120 milliseconds across 3 regions.";
+    expect(calculateTranscriptErrors(spokenNumberReference, digitTranscript, true).similarity).toBe(1);
+    expect(calculateTranscriptErrors(spokenNumberReference, digitTranscript).similarity).toBeLessThan(1);
     expect(transcriptionEvaluationCorpus.map(({ profile }) => profile)).toEqual([
       "technical", "acronyms", "numbers", "pauses", "self-correction", "quiet", "noise", "short", "long",
     ]);
@@ -149,6 +153,11 @@ describe("real-time audio E2E harness utilities", () => {
     expect(applyEvaluationAudioProfile(source, "noise")).not.toEqual(source);
     const quietOptions = parseArgs(["--case", "quiet"], {});
     expect(quietOptions.evaluationProfile).toBe("quiet");
+    expect(quietOptions.speechThreshold).toBe(0.015);
+    expect(parseArgs(["--case", "quiet", "--speech-threshold", "0.025"], {}).speechThreshold).toBe(0.025);
+    expect(parseArgs([], { AUDIO_E2E_SPEECH_THRESHOLD: "0.015" }).speechThreshold).toBe(0.015);
+    expect(() => parseArgs(["--speech-threshold", "0.014"], {})).toThrow(/between 0.015 and 0.05/);
+    expect(() => parseArgs(["--speech-threshold", "0.051"], {})).toThrow(/between 0.015 and 0.05/);
     expect(quietOptions.text).not.toBe("quiet");
     expect(() => parseArgs(["--case", "unlisted"], {})).toThrow(/versioned evaluation corpus/);
   });

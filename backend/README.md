@@ -216,6 +216,15 @@ case per run when debugging a scenario. `--suite` runs every case in sequence
 and returns one aggregate; `AUDIO_E2E_SUITE=true` is equivalent. Case names
 are never included in output.
 
+The `quiet` case uses speech threshold `0.015`, the low end of the threshold
+range produced by browser calibration in a quiet room. Other cases use the
+default `0.025`; an explicit `--speech-threshold` or
+`AUDIO_E2E_SPEECH_THRESHOLD` overrides case defaults. In the `numbers` case,
+the comparison normalizes English cardinal words and digits (for example,
+“ninety nine” and “99”) for that case's metrics only; it never rewrites the
+canonical Whisper transcript. Configured thresholds are limited to `0.015`
+through `0.05`, matching the range accepted by the streaming VAD.
+
 The JSON reports only aggregate `transcriptSimilarity` (normalized token-level
 `1 - WER`, case- and accent-insensitive, clamped to 0–1), `expectedWords`,
 `omittedWords`, `substitutedWords`, and `insertedWords`; reference and
