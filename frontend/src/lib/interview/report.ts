@@ -3,6 +3,13 @@ import type { InterviewConfig, PersistenceResult } from "./types";
 import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";
 
 export type InterviewReport = {
+  /** Optional so previously persisted analysis JSON remains readable. */
+  evidenceReview?: {
+    technicalStrengths: { candidates: number; accepted: number; rejected: number };
+    technicalGaps: { candidates: number; accepted: number; rejected: number };
+    englishPatterns: { candidates: number; accepted: number; rejected: number };
+    priorities: { candidates: number; accepted: number; rejected: number };
+  };
   technicalContent: {
     summary: string;
     strengths: Array<{ sequenceNumber: number; evidence: string; explanation: string }>;
@@ -10,7 +17,7 @@ export type InterviewReport = {
   };
   englishCommunication: {
     clarity: "CLEAR" | "MOSTLY_CLEAR" | "UNCLEAR";
-    evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT";
+    evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT" | "NO_PATTERN_FOUND" | "CANDIDATES_REJECTED";
     patterns: Array<{ type: "GRAMMAR" | "WORD_CHOICE" | "FALSE_COGNATE" | "STRUCTURE"; sequenceNumber: number; evidence: string; suggestion: string; rephrasedExample: string }>;
   };
   priorities: Array<{ area: "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION"; sequenceNumber: number; evidence: string; focus: string; exercise: string }>;
@@ -102,6 +109,7 @@ export async function saveInterviewFeedback(interviewId: string, azureSummary: A
       status: "ready",
       azure_summary: azureSummary,
       analysis: {
+        evidenceReview: result.evidenceReview,
         technicalContent: result.technicalContent,
         englishCommunication: result.englishCommunication,
         priorities: result.priorities,

@@ -40,6 +40,13 @@ export type InterviewReportInput = {
 };
 
 export type InterviewReport = {
+  /** Safe aggregate counts only; optional for reports persisted before this field existed. */
+  evidenceReview?: {
+    technicalStrengths: { candidates: number; accepted: number; rejected: number };
+    technicalGaps: { candidates: number; accepted: number; rejected: number };
+    englishPatterns: { candidates: number; accepted: number; rejected: number };
+    priorities: { candidates: number; accepted: number; rejected: number };
+  };
   technicalContent: {
     summary: string;
     strengths: Array<{ sequenceNumber: number; evidence: string; explanation: string }>;
@@ -47,7 +54,7 @@ export type InterviewReport = {
   };
   englishCommunication: {
     clarity: CommunicationClarity;
-    evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT";
+    evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT" | "NO_PATTERN_FOUND" | "CANDIDATES_REJECTED";
     patterns: Array<{
       type: CommunicationObservationType;
       sequenceNumber: number;

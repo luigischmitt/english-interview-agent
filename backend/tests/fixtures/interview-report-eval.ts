@@ -13,7 +13,7 @@ export type InterviewReportEvalExpected = {
   strengths: TechnicalItem[];
   gaps: TechnicalItem[];
   patterns: EnglishPattern[];
-  evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT";
+  evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT" | "NO_PATTERN_FOUND" | "CANDIDATES_REJECTED";
   priorities: Priority[];
   optionalItems: { candidates: number; accepted: number; rejected: number };
 } | { result: "invalid" };
@@ -26,7 +26,7 @@ function validExpected(overrides: Partial<Extract<InterviewReportEvalExpected, {
     strengths: [],
     gaps: [],
     patterns: [],
-    evidenceStatus: "INSUFFICIENT",
+    evidenceStatus: "NO_PATTERN_FOUND",
     priorities: [],
     optionalItems: { candidates: 0, accepted: 0, rejected: 0 },
     ...overrides,
@@ -106,7 +106,7 @@ export const interviewReportEvalFixtures = [
     providerOutput: { ...emptyReport },
     expected: validExpected({
       summary: "A resposta descreve uma decisão técnica.",
-      evidenceStatus: "INSUFFICIENT",
+      evidenceStatus: "NO_PATTERN_FOUND",
       optionalItems: { candidates: 0, accepted: 0, rejected: 0 },
     }),
   },
@@ -158,6 +158,21 @@ export const interviewReportEvalFixtures = [
       evidenceStatus: "LIMITED",
       optionalItems: { candidates: 3, accepted: 1, rejected: 2 },
     }),
+  },
+  {
+    name: "all unsupported English suggestions are rejected and reported distinctly",
+    input: {
+      roleContext,
+      turns: [{ sequenceNumber: 1, question: "What did you implement?", answer: "I built the service with retries." }],
+    } satisfies InterviewReportInput,
+    providerOutput: {
+      ...emptyReport,
+      englishCommunication: {
+        clarity: "MOSTLY_CLEAR",
+        patterns: [{ type: "GRAMMAR", sequenceNumber: 1, evidence: "I built the application", suggestion: "Revise essa construção.", rephrasedExample: "I built the service." }],
+      },
+    },
+    expected: validExpected({ evidenceStatus: "CANDIDATES_REJECTED", optionalItems: { candidates: 1, accepted: 0, rejected: 1 } }),
   },
   {
     name: "duplicate findings are removed and counted as parser rejections",
