@@ -330,13 +330,16 @@ answers skip the provider call and use a neutral transition. At most one
 follow-up is accepted per planned question; timeout, rate limiting, provider
 errors, missing credentials, or malformed output use a neutral transition and
 the first remaining fixed question that is not repetitive, or close the room
-when no safe planned question remains. Model, latency, and
-provider-reported cost diagnostics can be enabled with the server-only
-`INTERVIEW_REASONING_DIAGNOSTICS=true` flag; it defaults off and should remain
-off outside local testing. Diagnostics include only model, latency, and
-provider-reported cost, never credentials or hidden rationale. Orchestration
-fallback logs contain only a fixed event and fallback category; they never log
-prompts, transcripts, or raw provider responses. Unsafe optional acknowledgments
+when no safe planned question remains. Model, latency, provider-reported cost,
+and decision diagnostics can be enabled with the server-only
+`INTERVIEW_REASONING_DIAGNOSTICS=true` flag; it defaults off. With the flag on,
+decision events contain only the accepted decision or deterministic fallback,
+any valid model decision that was rejected, a fixed reason category,
+`followUpUsed`, and latency. They never contain a question, transcript, anchor,
+model name, session identifier, credential, or raw provider response.
+Provider-reported cost and model details are returned only when this flag is
+enabled. No orchestration decision or fallback diagnostics are logged while the
+flag is off. Unsafe optional acknowledgments
 are dropped without discarding a valid question. Orchestration
 uses a separate 6-second timeout by default; answer assessment retains its
 15-second timeout. The browser cancels orchestration requests after 7 seconds
