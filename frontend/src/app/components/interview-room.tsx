@@ -19,6 +19,7 @@ import { useInterviewSession } from "../hooks/use-interview-session";
 import { useSpeechPlayback, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { createInterviewHandoffTiming, isHandoffTimingEnabled } from "@/lib/interview/handoff-timing.mjs";
+import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/interview/opening-timing.mjs";
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; state: VoiceAssessmentState };
@@ -114,6 +115,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const currentQuestionIdRef = useRef(question.id);
   const elapsedSecondsRef = useRef(0);
   const handoffTimingRef = useRef<{ mark: (stage: string) => void } | null>(null);
+  const openingTimingRef = useRef<{ mark: (stage: string) => void } | null>(null);
   const openingUtterance = composeContextualOpening(config, question.prompt);
   const closingUtterance = composeInterviewClosing();
   const currentUtterance = phase === "introducing"
@@ -157,6 +159,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   }, []);
 
   const onSpeechTimingEvent = useCallback((event: SpeechTimingEvent) => {
+    if (phaseRef.current === "introducing" && isOpeningTimingEnabled()) {
+      openingTimingRef.current ??= createOpeningSpeechTiming({
+        onComplete: (metrics) => console.info(JSON.stringify({ event: "interview_opening_timing", ...metrics })),
+      });
+      openingTimingRef.current.mark(event);
+    }
     const stageByEvent = {
       "synthesis-started": "synthesisStarted",
       "synthesis-completed": "synthesisCompleted",
