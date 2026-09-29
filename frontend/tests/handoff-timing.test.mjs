@@ -10,9 +10,9 @@ test("handoff timing decomposes VAD, queue, Whisper, decision, synthesis, and pl
     transcriptionCompleted: 3_350,
     decisionStarted: 3_400,
     decisionCompleted: 3_600,
-    synthesisStarted: 3_950,
-    synthesisCompleted: 4_450,
-    playbackStarted: 4_650,
+    synthesisStarted: 3_600,
+    synthesisCompleted: 4_100,
+    playbackStarted: 4_300,
   };
   let metrics;
   const timing = createInterviewHandoffTiming({
@@ -27,14 +27,14 @@ test("handoff timing decomposes VAD, queue, Whisper, decision, synthesis, and pl
   }
 
   assert.deepEqual(metrics, {
-    totalMs: 7_950,
+    totalMs: 7_600,
     vadFinalizationMs: 3_450,
     queueWaitMs: 200,
     whisperMs: 3_000,
     decisionMs: 200,
     synthesisMs: 500,
     playbackStartMs: 200,
-    unaccountedMs: 400,
+    unaccountedMs: 50,
   });
   assert.deepEqual(Object.keys(metrics), ["totalMs", "vadFinalizationMs", "queueWaitMs", "whisperMs", "decisionMs", "synthesisMs", "playbackStartMs", "unaccountedMs"]);
 });

@@ -44,6 +44,7 @@ describe("OpenRouter next-turn orchestration", () => {
     const requestBody = JSON.parse(String(init?.body));
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer server-test-key");
     expect(requestBody.model).toBe(defaultThinkingModel);
+    expect(requestBody.provider).toEqual({ sort: "latency", require_parameters: true, data_collection: "deny" });
     expect(requestBody.max_tokens).toBe(320);
     expect(requestBody.response_format.json_schema.strict).toBe(true);
     expect(requestBody.response_format.json_schema.schema.required).toEqual(["decision", "followUpQuestion", "nextQuestion", "anchor", "acknowledgement"]);

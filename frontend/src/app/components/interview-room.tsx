@@ -267,36 +267,32 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     });
     handoffTimingRef.current?.mark("decisionCompleted");
     if (!mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
-    advanceTimerRef.current = window.setTimeout(() => {
-      advanceTimerRef.current = null;
-      if (!mountedRef.current || generation !== generationRef.current) return;
-      decisionAbortRef.current = null;
-      submitInFlightRef.current = false;
-      if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) {
+    decisionAbortRef.current = null;
+    submitInFlightRef.current = false;
+    if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) {
+      transitionPhase("closing");
+    } else if (decision.decision === "FOLLOW_UP") {
+      if (decision.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, decision.acknowledgement].slice(-5);
+      setAcknowledgement(decision.acknowledgement);
+      setQuestion({ ...question, id: `${question.id}-follow-up`, prompt: decision.followUpQuestion, cue: "Uma pergunta curta para aprofundar sua resposta." });
+      setFollowUpUsed(true);
+      setQuestionSequenceNumber((sequence) => sequence + 2);
+      transitionPhase("speaking");
+    } else {
+      if (decision.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, decision.acknowledgement].slice(-5);
+      setAcknowledgement(decision.acknowledgement);
+      const matchedFixedIndex = decision.nextQuestion === null ? -1 : questions.findIndex((plannedQuestion, index) => index > currentIndex && plannedQuestion.prompt === decision.nextQuestion);
+      const nextIndex = matchedFixedIndex >= 0 ? matchedFixedIndex : currentIndex + 1;
+      if (!decision.nextQuestion || !canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, nextIndex, questions.length)) {
         transitionPhase("closing");
-      } else if (decision.decision === "FOLLOW_UP") {
-        if (decision.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, decision.acknowledgement].slice(-5);
-        setAcknowledgement(decision.acknowledgement);
-        setQuestion({ ...question, id: `${question.id}-follow-up`, prompt: decision.followUpQuestion, cue: "Uma pergunta curta para aprofundar sua resposta." });
-        setFollowUpUsed(true);
-        setQuestionSequenceNumber((sequence) => sequence + 2);
-        transitionPhase("speaking");
-      } else {
-        if (decision.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, decision.acknowledgement].slice(-5);
-        setAcknowledgement(decision.acknowledgement);
-        const matchedFixedIndex = decision.nextQuestion === null ? -1 : questions.findIndex((plannedQuestion, index) => index > currentIndex && plannedQuestion.prompt === decision.nextQuestion);
-        const nextIndex = matchedFixedIndex >= 0 ? matchedFixedIndex : currentIndex + 1;
-        if (!decision.nextQuestion || !canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, nextIndex, questions.length)) {
-          transitionPhase("closing");
-          return;
-        }
-        setCurrentIndex(nextIndex);
-        setQuestion({ ...questions[nextIndex], prompt: decision.nextQuestion });
-        setFollowUpUsed(false);
-        setQuestionSequenceNumber((sequence) => sequence + 2);
-        transitionPhase("speaking");
+        return;
       }
-    }, 350);
+      setCurrentIndex(nextIndex);
+      setQuestion({ ...questions[nextIndex], prompt: decision.nextQuestion });
+      setFollowUpUsed(false);
+      setQuestionSequenceNumber((sequence) => sequence + 2);
+      transitionPhase("speaking");
+    }
   };
 
   const finishNow = () => {

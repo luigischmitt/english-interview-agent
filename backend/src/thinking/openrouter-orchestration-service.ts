@@ -260,7 +260,7 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
           ],
           temperature: 0,
           max_tokens: 320,
-          provider: { require_parameters: true, data_collection: "deny" },
+          provider: { sort: "latency", require_parameters: true, data_collection: "deny" },
           response_format: { type: "json_schema", json_schema: { name: "interview_turn_decision", strict: true, schema } },
         }),
         signal,
