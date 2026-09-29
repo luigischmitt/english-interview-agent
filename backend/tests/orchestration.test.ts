@@ -51,6 +51,7 @@ describe("OpenRouter next-turn orchestration", () => {
     expect(requestBody.messages[0].content).toContain("Decision policy:");
     expect(requestBody.messages[0].content).toContain("FOLLOW_UP is the default");
     expect(requestBody.messages[0].content).toContain("NEXT is an exception");
+    expect(requestBody.messages[0].content).toContain("currentQuestion is the question the candidate has just answered");
     expect(requestBody.messages[0].content).toContain("never repeat a question");
     expect(requestBody.messages[0].content).toContain("Do not quote the transcript");
     expect(requestBody.messages[0].content).toContain("B1/B2 English");
@@ -100,6 +101,20 @@ describe("OpenRouter next-turn orchestration", () => {
     };
     const raw = { decision: "FOLLOW_UP", followUpQuestion: "How did keeping the old client flow stable affect the data model?", nextQuestion: null, anchor: "older clients", acknowledgement: null };
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
+  });
+
+  it("accepts a natural validation paraphrase tied to a multiword anchor", async () => {
+    const answer = {
+      ...input,
+      currentQuestion: "How did you deploy the migration?",
+      transcript: "We did a staged migration in two steps and checked errors between them.",
+      askedQuestions: ["How did you deploy the migration?"],
+    };
+    const question = "How did you test the migration?";
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: question, nextQuestion: null, anchor: "staged migration", acknowledgement: null };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({
+      decision: "FOLLOW_UP", followUpQuestion: question,
+    });
   });
 
   it("accepts a direct single-technology choice question with local transcript overlap", async () => {
@@ -206,9 +221,70 @@ describe("OpenRouter next-turn orchestration", () => {
   });
 
   it("uses the neutral fallback when follow-up is unsafe or already used", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
     const fetcher = vi.fn(async () => providerResponse(JSON.stringify(decision())));
-    await expect(service(fetcher).decide({ ...input, followUpUsed: true })).resolves.toEqual(fallback);
-    expect(fetcher).toHaveBeenCalledOnce();
+    try {
+      await expect(service(fetcher).decide({ ...input, followUpUsed: true })).resolves.toEqual(fallback);
+      expect(fetcher).toHaveBeenCalledOnce();
+      const diagnostic = JSON.parse(String(info.mock.calls[0]?.[0]));
+      expect(diagnostic).toMatchObject({
+        event: "interview_orchestration_decision", decision: "NEXT", requestedDecision: "FOLLOW_UP", outcome: "fallback", reason: "follow_up_not_allowed", followUpUsed: true,
+      });
+      expect(JSON.stringify(diagnostic)).not.toContain(input.transcript);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("records accepted and fallback categories without interview content when diagnostics are enabled", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await service(async () => providerResponse(JSON.stringify(decision()))).decide(input);
+      const acceptedLog = JSON.parse(String(info.mock.calls[0]?.[0]));
+      expect(acceptedLog).toMatchObject({
+        event: "interview_orchestration_decision", decision: "FOLLOW_UP", requestedDecision: "FOLLOW_UP", outcome: "accepted", reason: "model_decision", followUpUsed: false,
+      });
+      expect(Object.keys(acceptedLog).sort()).toEqual(["decision", "event", "followUpUsed", "latencyMs", "outcome", "reason", "requestedDecision"]);
+      expect(JSON.stringify(acceptedLog)).not.toContain(input.transcript);
+      expect(JSON.stringify(acceptedLog)).not.toContain(followUp);
+      expect(JSON.stringify(acceptedLog)).not.toContain(anchor);
+      expect(JSON.stringify(acceptedLog)).not.toContain("server-test-key");
+
+      info.mockClear();
+      const malformed = { ...decision(), anchor: "missing phrase" };
+      await service(async () => providerResponse(JSON.stringify(malformed))).decide(input);
+      const fallbackLog = JSON.parse(String(info.mock.calls[0]?.[0]));
+      expect(fallbackLog).toMatchObject({
+        event: "interview_orchestration_decision", decision: "NEXT", requestedDecision: "FOLLOW_UP", outcome: "fallback", reason: "anchor_not_in_transcript", followUpUsed: false,
+      });
+      expect(JSON.stringify(fallbackLog)).not.toContain(input.transcript);
+      expect(JSON.stringify(fallbackLog)).not.toContain("missing phrase");
+      expect(JSON.stringify(fallbackLog)).not.toContain("server-test-key");
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: "interview_orchestration_fallback", reason: "anchor_not_in_transcript" }));
+
+      info.mockClear();
+      await service(async () => providerResponse("not-json")).decide(input);
+      const invalidJsonLog = JSON.parse(String(info.mock.calls[0]?.[0]));
+      expect(invalidJsonLog).toMatchObject({ requestedDecision: null, outcome: "fallback", reason: "invalid_json" });
+      expect(Object.keys(invalidJsonLog)).not.toContain("sessionId");
+      expect(JSON.stringify(invalidJsonLog)).not.toContain(input.currentQuestion);
+    } finally {
+      info.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it("diagnoses low-information fallback without logging the transcript", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      await service(async () => { throw new Error("must not call provider"); }).decide({ ...input, transcript: "um yeah" });
+      const diagnostic = JSON.parse(String(info.mock.calls[0]?.[0]));
+      expect(diagnostic).toMatchObject({ event: "interview_orchestration_decision", decision: "NEXT", requestedDecision: null, outcome: "fallback", reason: "low_information" });
+      expect(JSON.stringify(diagnostic)).not.toContain("um yeah");
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("skips a repeated immediate fixed question and falls back to the next distinct planned question", async () => {
@@ -285,11 +361,24 @@ describe("OpenRouter next-turn orchestration", () => {
   });
 
   it("keeps diagnostics absent unless the explicit server-side flag is enabled", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const noDiagnosticsService = new OpenRouterOrchestrationService({
       openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs,
       orchestrationTimeoutMs: defaultOrchestrationTimeoutMs, diagnosticsEnabled: false,
     }, async () => providerResponse(JSON.stringify({ decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: "Thanks. Let’s move on to another part of your experience." })));
-    await expect(noDiagnosticsService.decide(input)).resolves.toEqual({ decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: null });
+    try {
+      await expect(noDiagnosticsService.decide(input)).resolves.toEqual({ decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: null });
+      await new OpenRouterOrchestrationService({
+        openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs,
+        orchestrationTimeoutMs: defaultOrchestrationTimeoutMs, diagnosticsEnabled: false,
+      }, async () => providerResponse("not-json")).decide(input);
+      expect(info).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      info.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   it("falls back deterministically for 429, timeout, network, malformed body, and upstream errors", async () => {
