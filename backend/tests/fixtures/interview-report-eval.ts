@@ -10,6 +10,7 @@ export type InterviewReportEvalExpected = {
   result: "valid";
   summary: string;
   forbiddenSummaryClaims: string[];
+  forbiddenGapExplanations?: string[];
   strengths: TechnicalItem[];
   gaps: TechnicalItem[];
   patterns: EnglishPattern[];
@@ -194,6 +195,50 @@ export const interviewReportEvalFixtures = [
       patterns: [{ type: "WORD_CHOICE", sequenceNumber: 1, evidence: "depends of", suggestion: "Use a preposição adequada para indicar dependência.", rephrasedExample: "This request depends on the cache." }],
       evidenceStatus: "LIMITED",
       optionalItems: { candidates: 2, accepted: 1, rejected: 1 },
+    }),
+  },
+  {
+    name: "report covers distinct isolated Brazilian Portuguese speaker English patterns without inventing tangential gaps",
+    input: {
+      roleContext,
+      turns: [
+        { sequenceNumber: 1, question: "How did you improve API performance, and what result did you measure?", answer: "I added index to the reports table. I have presented it last month. P99 latency fell to 800 milliseconds." },
+        { sequenceNumber: 2, question: "Can you tell me about a migration you worked on?", answer: "We realized a staged migration in two steps. We checked errors between them. We discussed about the rollback, and I was responsible of the change." },
+      ],
+    } satisfies InterviewReportInput,
+    providerOutput: {
+      ...emptyReport,
+      technicalContent: {
+        summary: "A pessoa relata ter adicionado um índice, queda da latência P99 para 800 milissegundos e migração em etapas com verificação de erros.",
+        strengths: [{ sequenceNumber: 1, evidence: "P99 latency fell to 800 milliseconds", explanation: "A resposta apresenta um resultado mensurável para a mudança." }],
+        gaps: [],
+      },
+      englishCommunication: {
+        clarity: "MOSTLY_CLEAR",
+        patterns: [
+          { type: "GRAMMAR", sequenceNumber: 1, evidence: "added index", suggestion: "Inclua o artigo indefinido antes de um substantivo contável singular.", rephrasedExample: "I added an index to the reports table." },
+          { type: "GRAMMAR", sequenceNumber: 1, evidence: "have presented it last month", suggestion: "Com um período encerrado como last month, use simple past em vez de present perfect.", rephrasedExample: "I presented it last month." },
+          { type: "FALSE_COGNATE", sequenceNumber: 2, evidence: "realized a staged migration", suggestion: "Use o verbo que significa executar uma migração; realized significa perceber ou compreender.", rephrasedExample: "We carried out a staged migration in two steps." },
+          { type: "WORD_CHOICE", sequenceNumber: 2, evidence: "discussed about the rollback", suggestion: "Retire a preposição após o verbo discuss, que recebe o assunto diretamente.", rephrasedExample: "We discussed the rollback." },
+          { type: "WORD_CHOICE", sequenceNumber: 2, evidence: "responsible of the change", suggestion: "Use a colocação responsible for para indicar responsabilidade por algo.", rephrasedExample: "I was responsible for the change." },
+        ],
+      },
+    },
+    expected: validExpected({
+      summary: "A pessoa relata ter adicionado um índice, queda da latência P99 para 800 milissegundos e migração em etapas com verificação de erros.",
+      forbiddenSummaryClaims: ["não respondeu à pergunta", "não abordou a migração"],
+      forbiddenGapExplanations: ["Não explica como apresentou o resultado", "Não detalha critérios nem passos opcionais"],
+      strengths: [{ sequenceNumber: 1, evidence: "P99 latency fell to 800 milliseconds", explanation: "A resposta apresenta um resultado mensurável para a mudança." }],
+      gaps: [],
+      patterns: [
+        { type: "GRAMMAR", sequenceNumber: 1, evidence: "added index", suggestion: "Inclua o artigo indefinido antes de um substantivo contável singular.", rephrasedExample: "I added an index to the reports table." },
+        { type: "GRAMMAR", sequenceNumber: 1, evidence: "have presented it last month", suggestion: "Com um período encerrado como last month, use simple past em vez de present perfect.", rephrasedExample: "I presented it last month." },
+        { type: "FALSE_COGNATE", sequenceNumber: 2, evidence: "realized a staged migration", suggestion: "Use o verbo que significa executar uma migração; realized significa perceber ou compreender.", rephrasedExample: "We carried out a staged migration in two steps." },
+        { type: "WORD_CHOICE", sequenceNumber: 2, evidence: "discussed about the rollback", suggestion: "Retire a preposição após o verbo discuss, que recebe o assunto diretamente.", rephrasedExample: "We discussed the rollback." },
+        { type: "WORD_CHOICE", sequenceNumber: 2, evidence: "responsible of the change", suggestion: "Use a colocação responsible for para indicar responsabilidade por algo.", rephrasedExample: "I was responsible for the change." },
+      ],
+      evidenceStatus: "SUFFICIENT",
+      optionalItems: { candidates: 6, accepted: 6, rejected: 0 },
     }),
   },
   {

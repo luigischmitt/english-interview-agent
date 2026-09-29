@@ -70,9 +70,25 @@ describe("final interview report service", () => {
     expect(body.messages[0].content).toContain("Review each question and its answer as a separate pair");
     expect(body.messages[0].content).toContain("Do not infer mastery, correctness, ownership, impact, or expertise from merely naming a tool");
     expect(body.messages[0].content).toContain("Do not criticize isolated acronyms, names, technical terms, fillers, repeated syllables, phonetic fragments");
-    expect(body.messages[0].content).toContain("include a concrete, corrected English rephrasing grounded in that answer");
+    expect(body.messages[0].content).toContain("Include a concrete, corrected English rephrasing grounded in that answer");
+    expect(body.messages[0].content).toContain("audit every answer independently");
+    expect(body.messages[0].content).toContain("articles; prepositions and verb/adjective collocations");
+    expect(body.messages[0].content).toContain("tense choice against explicit time markers");
+    expect(body.messages[0].content).toContain("subject-verb agreement; countability and plural; word order; literal translations; and false cognates");
+    expect(body.messages[0].content).toContain("Include every distinct, clear, materially useful issue found, up to eight total, even if it occurs only once");
+    expect(body.messages[0].content).toContain("Group occurrences only when they are genuinely the same underlying error pattern");
+    expect(body.messages[0].content).toContain("Never turn an English grammar, vocabulary, or phrasing error into a technical gap");
+    expect(body.messages[0].content).toContain("For an open-ended question, if the answer gives one or more concrete actions or decisions that reasonably respond to it");
+    expect(body.messages[0].content).toContain("Add a technical gap only when the answer omits a subpart explicitly named or directly asked in the question");
+    expect(body.messages[0].content).toContain("Never call optional elaboration a gap: do not demand more detail, criteria, process steps, checks, metrics, rollback steps, or trade-offs unless the question explicitly asks for them");
+    expect(body.messages[0].content).toContain("If a concrete action or decision addresses the topic, do not claim in the summary that the topic was unanswered");
+    expect(body.messages[0].content).toContain("MUST be written in Brazilian Portuguese");
+    expect(body.messages[0].content).toContain("The suggestion MUST be written in Brazilian Portuguese; put any corrected English only in rephrasedExample");
     const schema = body.response_format.json_schema.schema.properties;
-    expect((schema.englishCommunication as { properties: { patterns: { maxItems: number } } }).properties.patterns.maxItems).toBe(8);
+    const englishPatternSchema = schema.englishCommunication as { properties: { patterns: { maxItems: number; items: { properties: { suggestion: { description: string }; rephrasedExample: { description: string } } } } } };
+    expect(englishPatternSchema.properties.patterns.maxItems).toBe(8);
+    expect(englishPatternSchema.properties.patterns.items.properties.suggestion.description).toContain("MUST be written in Brazilian Portuguese");
+    expect(englishPatternSchema.properties.patterns.items.properties.rephrasedExample.description).toContain("complete English sentence");
     expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.strengths.maxItems).toBe(8);
     expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.gaps.maxItems).toBe(8);
     expect(JSON.parse(body.messages[1].content)).toEqual({ roleContext: input.roleContext, turns: input.turns });
@@ -126,7 +142,7 @@ describe("final interview report service", () => {
       },
       englishCommunication: {
         ...providerReport.englishCommunication,
-        patterns: [{ ...providerReport.englishCommunication.patterns[0], suggestion: "Use o presente simples de forma corre" }],
+        patterns: [{ ...providerReport.englishCommunication.patterns[0], suggestion: "Use o presente simples de forma porque" }],
       },
       priorities: [{ ...providerReport.priorities[0], exercise: "Explique em um minuto quais limites acionariam a documenta" }],
     };
@@ -185,7 +201,7 @@ describe("final interview report service", () => {
     expect(report.englishCommunication.patterns.map((pattern) => pattern.evidence)).toEqual(["depends of", "I use AWS"]);
   });
 
-  it("removes duplicate findings and likely noise or acronym artifacts", async () => {
+  it("keeps different findings with the same suggestion, while removing duplicates and likely artifacts", async () => {
     const answer = "I build reliable services. I design clear APIs. pfffff. I said TFFF. I heard hahaha. I said...";
     const turns = [{ sequenceNumber: 1, question: "Tell me about your work.", answer }];
     const first = { type: "GRAMMAR", sequenceNumber: 1, evidence: "I build reliable services", suggestion: "Use o presente simples para descrever o trabalho.", rephrasedExample: "I build reliable services every day." };
@@ -203,7 +219,69 @@ describe("final interview report service", () => {
       englishCommunication: { clarity: "MOSTLY_CLEAR", patterns },
     }))).generate({ ...input, turns });
 
-    expect(report.englishCommunication.patterns).toEqual([first]);
+    expect(report.englishCommunication.patterns).toEqual([first, { ...first, evidence: "I design clear APIs" }]);
+  });
+
+  it("does not merge distinct English errors just because their suggestions match", async () => {
+    const answer = "I added index to the table. I have presented it last month.";
+    const turns = [{ sequenceNumber: 3, question: "What did you change?", answer }];
+    const patterns = [
+      { type: "GRAMMAR", sequenceNumber: 3, evidence: "added index", suggestion: "Revise pontos gramaticais que afetam a clareza.", rephrasedExample: "I added an index to the table." },
+      { type: "GRAMMAR", sequenceNumber: 3, evidence: "have presented it last month", suggestion: "Revise pontos gramaticais que afetam a clareza.", rephrasedExample: "I presented it last month." },
+    ];
+    const report = await makeService(async () => providerResponse(JSON.stringify({
+      ...providerReport,
+      englishCommunication: { clarity: "MOSTLY_CLEAR", patterns },
+    }))).generate({ ...input, turns });
+
+    expect(report.englishCommunication.patterns).toEqual(patterns);
+    expect(report.evidenceReview?.englishPatterns).toEqual({ candidates: 2, accepted: 2, rejected: 0 });
+  });
+
+  it("adds missing punctuation to complete feedback sentences but rejects fragments and truncations", async () => {
+    const answer = "I added index to table. I presented it last month. We changed the migration.";
+    const turns = [{ sequenceNumber: 1, question: "What did you change?", answer }];
+    const patterns = [
+      { type: "GRAMMAR", sequenceNumber: 1, evidence: "added index", suggestion: "Use an article before a singular countable noun", rephrasedExample: "I added an index to the table" },
+      { type: "GRAMMAR", sequenceNumber: 1, evidence: "presented it last month", suggestion: "Use past tense consistently", rephrasedExample: "Because we presented it last month" },
+      { type: "GRAMMAR", sequenceNumber: 1, evidence: "changed the migration", suggestion: "Use a complete explanation for this correction because", rephrasedExample: "We staged a migration in two steps" },
+      { type: "GRAMMAR", sequenceNumber: 1, evidence: "added index", suggestion: "Use the article a", rephrasedExample: "I added an index to the table..." },
+    ];
+    const report = await makeService(async () => providerResponse(JSON.stringify({
+      ...providerReport,
+      englishCommunication: { clarity: "MOSTLY_CLEAR", patterns },
+    }))).generate({ ...input, turns });
+
+    expect(report.englishCommunication.patterns).toEqual([{
+      ...patterns[0],
+      suggestion: "Use an article before a singular countable noun.",
+      rephrasedExample: "I added an index to the table.",
+    }]);
+    expect(report.evidenceReview?.englishPatterns).toEqual({ candidates: 4, accepted: 1, rejected: 3 });
+  });
+
+  it("preserves already punctuated sentences within the schema limit before applying fragment heuristics", async () => {
+    const answer = "The service was slow. We added an index.";
+    const turns = [{ sequenceNumber: 1, question: "What changed?", answer }];
+    const longCompleteSuggestion = "Revise esta construção para manter clareza, precisão e relevância profissional, usando exemplos específicos diretamente relacionados à pergunta do entrevistador e ao contexto da resposta.";
+    expect(longCompleteSuggestion.length).toBeGreaterThan(184);
+    expect(longCompleteSuggestion.length).toBeLessThanOrEqual(200);
+    const pattern = {
+      type: "GRAMMAR", sequenceNumber: 1, evidence: "The service was slow",
+      suggestion: longCompleteSuggestion,
+      rephrasedExample: "Because the service was slow, we added an index to the reports table.",
+    };
+    const invalidFragments = [
+      { ...pattern, suggestion: "Because." },
+      { ...pattern, evidence: "The service was slow", rephrasedExample: "Because we presented it last month." },
+    ];
+    const report = await makeService(async () => providerResponse(JSON.stringify({
+      ...providerReport,
+      englishCommunication: { clarity: "MOSTLY_CLEAR", patterns: [pattern, ...invalidFragments] },
+    }))).generate({ ...input, turns });
+
+    expect(report.englishCommunication.patterns).toEqual([pattern]);
+    expect(report.evidenceReview?.englishPatterns).toEqual({ candidates: 3, accepted: 1, rejected: 2 });
   });
 
   it("does not allow technical observations to cite evidence from a different answer", async () => {

@@ -11,8 +11,12 @@ function matchesExpectedSemantics(
   diagnostics: InterviewReportParseResult["diagnostics"],
   expected: ValidExpected,
 ): boolean {
+  const noForbiddenGapExplanation = expected.forbiddenGapExplanations?.every((claim) =>
+    !report.technicalContent.gaps.some((gap) => gap.explanation.toLocaleLowerCase("pt-BR").includes(claim.toLocaleLowerCase("pt-BR")))
+  ) ?? true;
   return report.technicalContent.summary === expected.summary
     && expected.forbiddenSummaryClaims.every((claim) => !report.technicalContent.summary.toLocaleLowerCase("pt-BR").includes(claim.toLocaleLowerCase("pt-BR")))
+    && noForbiddenGapExplanation
     && JSON.stringify(report.technicalContent.strengths) === JSON.stringify(expected.strengths)
     && JSON.stringify(report.technicalContent.gaps) === JSON.stringify(expected.gaps)
     && JSON.stringify(report.englishCommunication.patterns) === JSON.stringify(expected.patterns)
@@ -86,6 +90,34 @@ describe("offline synthetic final-report evaluation fixtures", () => {
       expect(wrongTurnResult.diagnostics.optionalItems).toEqual({ candidates: 1, accepted: 0, rejected: 1 });
       expect(matchesExpectedSemantics(wrongTurnResult.report, wrongTurnResult.diagnostics, crossTurn.expected)).toBe(false);
     }
+  });
+
+  it("marks a demand for optional checks in an open-ended migration question as a semantic failure", () => {
+    const fixture = interviewReportEvalFixtures.find((item) => item.name.startsWith("report covers distinct isolated"));
+    expect(fixture).toBeDefined();
+    if (!fixture || typeof fixture.providerOutput === "string" || fixture.expected.result !== "valid") return;
+
+    const tangentialGapOutput = {
+      ...fixture.providerOutput,
+      technicalContent: {
+        ...fixture.providerOutput.technicalContent,
+        gaps: [{ sequenceNumber: 2, evidence: "checked errors between them", explanation: "Não detalha critérios nem passos opcionais para a verificação." }],
+      },
+    };
+    const result = evaluateInterviewReportProviderOutput(JSON.stringify(tangentialGapOutput), fixture.input);
+    expect(result.report).not.toBeNull();
+    if (result.report) expect(matchesExpectedSemantics(result.report, result.diagnostics, fixture.expected)).toBe(false);
+
+    const unansweredSummaryOutput = {
+      ...fixture.providerOutput,
+      technicalContent: {
+        ...fixture.providerOutput.technicalContent,
+        summary: "A pessoa não abordou a migração, embora cite verificações e uma decisão concreta.",
+      },
+    };
+    const summaryResult = evaluateInterviewReportProviderOutput(JSON.stringify(unansweredSummaryOutput), fixture.input);
+    expect(summaryResult.report).not.toBeNull();
+    if (summaryResult.report) expect(matchesExpectedSemantics(summaryResult.report, summaryResult.diagnostics, fixture.expected)).toBe(false);
   });
 
   it("distinguishes no model findings from model findings rejected as noise", () => {

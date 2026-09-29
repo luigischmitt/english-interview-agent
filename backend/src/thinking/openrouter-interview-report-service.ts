@@ -14,11 +14,12 @@ type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }>
 
 const systemPrompt = [
   "You write a practical final report for a technical job interview practice session conducted in English.",
-  "Review each question and its answer as a separate pair. In technicalContent.strengths, state the relevant part the candidate actually answered; in technicalContent.gaps, state the specific part the question called for that the answer left unexplained. Cite the matching sequenceNumber and a short exact excerpt from that answer for every item. A gap is about missing explanation, not proof that the candidate lacks knowledge.",
+  "Review each question and its answer as a separate pair. In technicalContent.strengths, state the relevant part the candidate actually answered. For an open-ended question, if the answer gives one or more concrete actions or decisions that reasonably respond to it, describe those as strengths and leave gaps empty. Add a technical gap only when the answer omits a subpart explicitly named or directly asked in the question. Never call optional elaboration a gap: do not demand more detail, criteria, process steps, checks, metrics, rollback steps, or trade-offs unless the question explicitly asks for them. If a concrete action or decision addresses the topic, do not claim in the summary that the topic was unanswered. Cite the matching sequenceNumber and a short exact excerpt from that answer for every item. A gap is about missing explanation, not proof that the candidate lacks knowledge. Never turn an English grammar, vocabulary, or phrasing error into a technical gap.",
   "Report only facts and actions stated in the answer. Do not classify a named technology, library, method, or acronym unless the answer provides enough context to support that classification. Do not infer mastery, correctness, ownership, impact, or expertise from merely naming a tool. When the answer does not establish a claim, describe only what was mentioned and omit the claim.",
-  "Make the technical summary concrete: name the projects, technologies, decisions, actions, and outcomes the candidate actually described, and note what the answers did not explain when relevant. Avoid generic summaries and avoid turning tool names into claims of proficiency.",
+  "Make the technical summary concrete: name the projects, technologies, decisions, actions, and outcomes the candidate actually described. Do not say a topic went unanswered when the candidate gave a concrete action or decision that responds to it. Avoid generic summaries and avoid turning tool names into claims of proficiency.",
   "Write the report in Brazilian Portuguese with respectful, accessible language suitable for a B1/B2 learner. This includes the technical summary, strengths, gaps, focus descriptions, exercises, explanations, and suggestions. Do not treat minor imperfections as serious.",
-  "For English patterns, cite the sequenceNumber and keep evidence as a short exact contiguous excerpt from that English answer. Write the suggestion in Brazilian Portuguese and include a concrete, corrected English rephrasing grounded in that answer. Return up to eight distinct findings, ordered by impact on understanding and professional clarity. Prefer a strong example of a recurring pattern, and include it only once. Do not repeat the same grammar or word-choice point with slightly different wording.",
+  "Before drafting, silently audit every answer independently for clear, useful Brazilian Portuguese speaker patterns: articles; prepositions and verb/adjective collocations; tense choice against explicit time markers (for example, present perfect with last month); subject-verb agreement; countability and plural; word order; literal translations; and false cognates (for example, realize used to mean realizar). This checklist guides coverage; do not assume an error exists in every category.",
+  "For English patterns, cite the sequenceNumber and keep evidence as a short exact contiguous excerpt from that English answer. The suggestion MUST be written in Brazilian Portuguese; put any corrected English only in rephrasedExample, never in suggestion. Include a concrete, corrected English rephrasing grounded in that answer. Include every distinct, clear, materially useful issue found, up to eight total, even if it occurs only once. Order findings by impact on meaning, intelligibility, and professional clarity. Group occurrences only when they are genuinely the same underlying error pattern, and cite the clearest exact example. Do not merge different errors merely because they can share a broad suggestion, and do not repeat the same underlying error with slightly different wording. Describe minor patterns neutrally; do not overstate their seriousness, and do not report unusual but valid phrasing as an error.",
   "Whisper transcripts can contain recognition errors. Do not criticize isolated acronyms, names, technical terms, fillers, repeated syllables, phonetic fragments, or phrases that look incomplete or nonsensical. An English finding must be supported by a complete, understandable phrase with a clear language issue; when unsure whether the phrase was recognized correctly, omit it.",
   "Do not infer vocal delivery, pronunciation, accent, fluency of speech, confidence, or pauses from text. Do not invent numeric scores, English levels, evidence, or facts.",
   "Keep every user-facing text field concise and complete: summary 1–2 sentences (about 20–35 words total), each explanation and suggestion one sentence (about 8–20 words), each focus a short complete phrase (2–8 words), each exercise one actionable sentence (about 10–25 words), and each corrected example one complete English sentence. Stay comfortably below every field's character limit; never continue a sentence until it is cut off. End sentences with punctuation. Evidence fields are exact excerpts and do not need sentence punctuation.",
@@ -50,8 +51,8 @@ const schema = {
               type: { type: "string", enum: communicationObservationTypes },
               sequenceNumber: { type: "integer" },
               evidence: { type: "string", minLength: 1, maxLength: 160 },
-              suggestion: { type: "string", minLength: 1, maxLength: 200 },
-              rephrasedExample: { type: "string", minLength: 1, maxLength: 200 },
+              suggestion: { type: "string", minLength: 1, maxLength: 200, description: "MUST be written in Brazilian Portuguese, as one complete, concise sentence. The corrected English belongs only in rephrasedExample. End with sentence punctuation; the server may add a period when only punctuation is missing." },
+              rephrasedExample: { type: "string", minLength: 1, maxLength: 200, description: "One complete English sentence grounded in the answer. End with sentence punctuation; the server may add a period when only punctuation is missing." },
             }, required: ["type", "sequenceNumber", "evidence", "suggestion", "rephrasedExample"],
           },
         },
@@ -83,6 +84,22 @@ function boundedString(value: unknown, max: number): value is string {
 
 function completeSentence(value: unknown, max: number): value is string {
   return boundedString(value, max) && /[.!?…]["'”’)]*$/u.test(value.trim());
+}
+
+function normalizeFeedbackSentence(value: unknown, max: number, minimumWords: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const sentence = value.trim();
+  const isAlreadyPunctuated = Boolean(completeSentence(sentence, max));
+  if (sentence.length === 0 || sentence.length > max || (!isAlreadyPunctuated && sentence.length > max - 16)
+    || /(?:\.{2,}|…|[—–,:;-])\s*["'”’)]*$/u.test(sentence)) return undefined;
+  const hasEndingPunctuation = /[.!?…]["'”’)]*$/u.test(sentence);
+  const body = hasEndingPunctuation ? sentence.replace(/[.!?…]["'”’)]*$/u, "") : sentence;
+  const words = body.match(/[A-Za-zÀ-ÿ0-9]+(?:['’-][A-Za-zÀ-ÿ0-9]+)*/gu) ?? [];
+  const danglingEnd = /(?:^|\s)(?:a|an|the|and|or|but|so|to|of|for|with|in|on|at|from|by|about|because|that|which|who|whose|if|when|while|although|unless|as|is|are|was|were|have|has|had|be|been|being|do|does|did|can|could|should|would|will|than|such as|e|ou|mas|para|de|do|da|dos|das|no|na|nos|nas|por|com|que|quem|quando|se|embora|porque|enquanto|caso|como|é|são|está|estão|foi|foram|tem|têm|pode|podem|deve|devem)$/iu;
+  const startsWithSubordinateClause = /^(?:because|although|unless|whereas|even though|if|when|while|since)\b/iu.test(body);
+  const hasMainClauseSeparator = /,/.test(body);
+  if (words.length < minimumWords || danglingEnd.test(body) || (startsWithSubordinateClause && !hasMainClauseSeparator)) return undefined;
+  return hasEndingPunctuation ? sentence : `${sentence}.`;
 }
 
 function normalizedFindingText(value: string): string {
@@ -156,18 +173,17 @@ function parseReport(value: unknown, input: InterviewReportInput): ParsedIntervi
     const answer = answerFor(item.sequenceNumber);
     if (!answer || !communicationObservationTypes.includes(item.type as CommunicationObservationType)
       || !boundedString(item.evidence, 160) || !answer.includes(item.evidence)
-      || likelyTranscriptionArtifact(item.evidence)
-      || !completeSentence(item.suggestion, 200) || !completeSentence(item.rephrasedExample, 200)) return [];
-    return [{ type: item.type as CommunicationObservationType, sequenceNumber: item.sequenceNumber as number, evidence: item.evidence.trim(), suggestion: item.suggestion.trim(), rephrasedExample: item.rephrasedExample.trim() }];
+      || likelyTranscriptionArtifact(item.evidence)) return [];
+    const suggestion = normalizeFeedbackSentence(item.suggestion, 200, 4);
+    const rephrasedExample = normalizeFeedbackSentence(item.rephrasedExample, 200, 3);
+    if (!suggestion || !rephrasedExample) return [];
+    return [{ type: item.type as CommunicationObservationType, sequenceNumber: item.sequenceNumber as number, evidence: item.evidence.trim(), suggestion, rephrasedExample }];
   });
-  const seenEvidence = new Set<string>();
-  const seenSuggestions = new Set<string>();
+  const seenFindings = new Set<string>();
   const patterns = candidatePatterns.filter((pattern) => {
-    const evidenceSignature = `${pattern.type}:${normalizedFindingText(pattern.evidence)}`;
-    const suggestionSignature = `${pattern.type}:${normalizedFindingText(pattern.suggestion)}`;
-    if (seenEvidence.has(evidenceSignature) || seenSuggestions.has(suggestionSignature)) return false;
-    seenEvidence.add(evidenceSignature);
-    seenSuggestions.add(suggestionSignature);
+    const signature = `${pattern.type}:${pattern.sequenceNumber}:${normalizedFindingText(pattern.evidence)}`;
+    if (seenFindings.has(signature)) return false;
+    seenFindings.add(signature);
     return true;
   }).slice(0, 8);
   const parsedPriorities = priorities.flatMap((item) => {
