@@ -18,13 +18,14 @@ const input: InterviewReportInput = {
     { sequenceNumber: 4, question: "How do you monitor it?", answer: "We monitor errors and latency." },
   ],
 };
+const cleanEvidenceCounts = { mismatch: 0, invalidFormat: 0, artifact: 0, duplicate: 0, limit: 0 };
 
 const validReport: InterviewReport = {
   evidenceReview: {
-    technicalStrengths: { candidates: 1, accepted: 1, rejected: 0 },
-    technicalGaps: { candidates: 1, accepted: 1, rejected: 0 },
-    englishPatterns: { candidates: 1, accepted: 1, rejected: 0 },
-    priorities: { candidates: 1, accepted: 1, rejected: 0 },
+    technicalStrengths: { candidates: 1, accepted: 1, rejected: 0, rejectionReasons: cleanEvidenceCounts },
+    technicalGaps: { candidates: 1, accepted: 1, rejected: 0, rejectionReasons: cleanEvidenceCounts },
+    englishPatterns: { candidates: 1, accepted: 1, rejected: 0, rejectionReasons: cleanEvidenceCounts },
+    priorities: { candidates: 1, accepted: 1, rejected: 0, rejectionReasons: cleanEvidenceCounts },
   },
   technicalContent: {
     summary: "Covers bounded retries and basic monitoring.",
@@ -186,6 +187,49 @@ describe("final interview report service", () => {
     expect(report.englishCommunication.patterns.map((pattern) => pattern.evidence)).toEqual(evidence);
   });
 
+  it("counts valid items beyond category limits without breaking evidence totals", async () => {
+    const evidence = [
+      "I build APIs", "I write tests", "I deploy services", "I review code", "I track errors",
+      "I use metrics", "I manage queues", "I tune queries", "I add caching", "I document decisions",
+    ];
+    const turns = [{ sequenceNumber: 1, question: "What do you do?", answer: `${evidence.map((item) => `${item}.`).join(" ")} We monitor the service.` }];
+    const technical = (items: string[]) => items.map((item) => ({ sequenceNumber: 1, evidence: item, explanation: "A resposta apresenta uma ação técnica concreta." }));
+    const patterns = evidence.map((item) => ({
+      type: "GRAMMAR", sequenceNumber: 1, evidence: item,
+      suggestion: "Mantenha esta frase no presente simples para descrever o trabalho.",
+      rephrasedExample: `${item}.`,
+    }));
+    const priorities = evidence.slice(0, 4).map((item, index) => ({
+      area: "TECHNICAL_CONTENT", sequenceNumber: 1, evidence: item, focus: `Ação ${index + 1}`,
+      exercise: "Descreva esta ação e explique seu objetivo em uma frase.",
+    }));
+    const providerOutput = {
+      ...providerReport,
+      technicalContent: {
+        summary: "A resposta relata várias atividades técnicas.",
+        strengths: technical(evidence.slice(0, 9)),
+        gaps: technical(evidence.slice(1, 10)),
+      },
+      englishCommunication: { clarity: "MOSTLY_CLEAR", patterns },
+      priorities,
+    };
+    const report = await makeService(async () => providerResponse(JSON.stringify(providerOutput))).generate({ ...input, turns });
+    const counts = report.evidenceReview;
+
+    expect(report.technicalContent.strengths).toHaveLength(8);
+    expect(report.technicalContent.gaps).toHaveLength(8);
+    expect(report.englishCommunication.patterns).toHaveLength(8);
+    expect(report.priorities).toHaveLength(3);
+    expect(counts?.technicalStrengths).toMatchObject({ candidates: 9, accepted: 8, rejected: 1, rejectionReasons: { limit: 1 } });
+    expect(counts?.technicalGaps).toMatchObject({ candidates: 9, accepted: 8, rejected: 1, rejectionReasons: { limit: 1 } });
+    expect(counts?.englishPatterns).toMatchObject({ candidates: 10, accepted: 8, rejected: 2, rejectionReasons: { limit: 2 } });
+    expect(counts?.priorities).toMatchObject({ candidates: 4, accepted: 3, rejected: 1, rejectionReasons: { limit: 1 } });
+    for (const category of Object.values(counts ?? {})) {
+      if (typeof category !== "object" || !category || !("rejected" in category)) continue;
+      expect(Object.values(category.rejectionReasons ?? {}).reduce((sum, count) => sum + count, 0)).toBe(category.rejected);
+    }
+  });
+
   it("preserves valid short English evidence", async () => {
     const answer = "This request depends of the cache. I use AWS.";
     const turns = [{ sequenceNumber: 1, question: "How does the service work?", answer }];
@@ -220,6 +264,7 @@ describe("final interview report service", () => {
     }))).generate({ ...input, turns });
 
     expect(report.englishCommunication.patterns).toEqual([first, { ...first, evidence: "I design clear APIs" }]);
+    expect(report.evidenceReview?.englishPatterns.rejectionReasons).toEqual({ mismatch: 0, invalidFormat: 0, artifact: 4, duplicate: 1, limit: 0 });
   });
 
   it("does not merge distinct English errors just because their suggestions match", async () => {
@@ -235,7 +280,7 @@ describe("final interview report service", () => {
     }))).generate({ ...input, turns });
 
     expect(report.englishCommunication.patterns).toEqual(patterns);
-    expect(report.evidenceReview?.englishPatterns).toEqual({ candidates: 2, accepted: 2, rejected: 0 });
+    expect(report.evidenceReview?.englishPatterns).toMatchObject({ candidates: 2, accepted: 2, rejected: 0 });
   });
 
   it("adds missing punctuation to complete feedback sentences but rejects fragments and truncations", async () => {
@@ -257,7 +302,7 @@ describe("final interview report service", () => {
       suggestion: "Use an article before a singular countable noun.",
       rephrasedExample: "I added an index to the table.",
     }]);
-    expect(report.evidenceReview?.englishPatterns).toEqual({ candidates: 4, accepted: 1, rejected: 3 });
+    expect(report.evidenceReview?.englishPatterns).toMatchObject({ candidates: 4, accepted: 1, rejected: 3, rejectionReasons: { invalidFormat: 3 } });
   });
 
   it("preserves already punctuated sentences within the schema limit before applying fragment heuristics", async () => {
@@ -281,7 +326,7 @@ describe("final interview report service", () => {
     }))).generate({ ...input, turns });
 
     expect(report.englishCommunication.patterns).toEqual([pattern]);
-    expect(report.evidenceReview?.englishPatterns).toEqual({ candidates: 3, accepted: 1, rejected: 2 });
+    expect(report.evidenceReview?.englishPatterns).toMatchObject({ candidates: 3, accepted: 1, rejected: 2 });
   });
 
   it("does not allow technical observations to cite evidence from a different answer", async () => {

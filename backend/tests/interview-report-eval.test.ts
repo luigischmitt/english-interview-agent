@@ -22,7 +22,9 @@ function matchesExpectedSemantics(
     && JSON.stringify(report.englishCommunication.patterns) === JSON.stringify(expected.patterns)
     && report.englishCommunication.evidenceStatus === expected.evidenceStatus
     && JSON.stringify(report.priorities) === JSON.stringify(expected.priorities)
-    && JSON.stringify(diagnostics.optionalItems) === JSON.stringify(expected.optionalItems);
+    && diagnostics.optionalItems.candidates === expected.optionalItems.candidates
+    && diagnostics.optionalItems.accepted === expected.optionalItems.accepted
+    && diagnostics.optionalItems.rejected === expected.optionalItems.rejected;
 }
 
 function evaluateFixture(fixture: (typeof interviewReportEvalFixtures)[number]): InterviewReportParseResult {
@@ -37,18 +39,19 @@ describe("offline synthetic final-report evaluation fixtures", () => {
     it(fixture.name, () => {
       const result = evaluateFixture(fixture);
       expect(Object.keys(result.diagnostics)).toEqual(["providerOutput", "optionalItems"]);
-      expect(Object.keys(result.diagnostics.optionalItems)).toEqual(["candidates", "accepted", "rejected"]);
+      expect(Object.keys(result.diagnostics.optionalItems)).toEqual(["candidates", "accepted", "rejected", "rejectionReasons"]);
 
       if (fixture.expected.result === "invalid") {
         expect(result.report).toBeNull();
         expect(result.diagnostics.providerOutput).toBe("invalid");
-        expect(result.diagnostics.optionalItems).toEqual({ candidates: 0, accepted: 0, rejected: 0 });
+        expect(result.diagnostics.optionalItems).toEqual({ candidates: 0, accepted: 0, rejected: 0, rejectionReasons: { mismatch: 0, invalidFormat: 0, artifact: 0, duplicate: 0, limit: 0 } });
         return;
       }
 
       expect(result.report).not.toBeNull();
       if (!result.report) throw new Error("Expected a parsed report for this fixture.");
       expect(result.diagnostics.providerOutput).toBe("valid");
+      expect(Object.values(result.diagnostics.optionalItems.rejectionReasons).reduce((sum, count) => sum + count, 0)).toBe(result.diagnostics.optionalItems.rejected);
       expect(matchesExpectedSemantics(result.report, result.diagnostics, fixture.expected)).toBe(true);
     });
   }
@@ -87,7 +90,7 @@ describe("offline synthetic final-report evaluation fixtures", () => {
     expect(wrongTurnResult.report).not.toBeNull();
     if (wrongTurnResult.report) {
       expect(wrongTurnResult.report.technicalContent.strengths).toEqual([]);
-      expect(wrongTurnResult.diagnostics.optionalItems).toEqual({ candidates: 1, accepted: 0, rejected: 1 });
+      expect(wrongTurnResult.diagnostics.optionalItems).toMatchObject({ candidates: 1, accepted: 0, rejected: 1, rejectionReasons: { mismatch: 1 } });
       expect(matchesExpectedSemantics(wrongTurnResult.report, wrongTurnResult.diagnostics, crossTurn.expected)).toBe(false);
     }
   });
@@ -130,11 +133,13 @@ describe("offline synthetic final-report evaluation fixtures", () => {
     const noFindingResult = evaluateFixture(noFinding);
     const noisyResult = evaluateFixture(noisy);
     expect(noFindingResult.report?.englishCommunication.evidenceStatus).toBe("NO_PATTERN_FOUND");
-    expect(noFindingResult.diagnostics.optionalItems).toEqual({ candidates: 0, accepted: 0, rejected: 0 });
+    expect(noFindingResult.diagnostics.optionalItems.candidates).toBe(0);
     expect(noisyResult.report?.englishCommunication.evidenceStatus).toBe("LIMITED");
-    expect(noisyResult.diagnostics.optionalItems).toEqual({ candidates: 3, accepted: 1, rejected: 2 });
-    expect(noisyResult.report?.evidenceReview?.englishPatterns).toEqual({ candidates: 3, accepted: 1, rejected: 2 });
-    expect(noisyResult.report?.evidenceReview?.technicalStrengths).toEqual({ candidates: 0, accepted: 0, rejected: 0 });
+    expect(noisyResult.diagnostics.optionalItems).toMatchObject({ candidates: 3, accepted: 1, rejected: 2, rejectionReasons: { artifact: 2 } });
+    expect(noisyResult.report?.evidenceReview?.englishPatterns).toMatchObject({ candidates: 3, accepted: 1, rejected: 2, rejectionReasons: { artifact: 2 } });
+    expect(noisyResult.report?.evidenceReview?.technicalStrengths).toMatchObject({ candidates: 0, accepted: 0, rejected: 0 });
+    const reasons = noisyResult.report?.evidenceReview?.englishPatterns.rejectionReasons;
+    expect(reasons && Object.values(reasons).reduce((sum, count) => sum + count, 0)).toBe(noisyResult.report?.evidenceReview?.englishPatterns.rejected);
   });
 
   it("exposes only aggregate candidate, accepted, and rejected counts per category", () => {
@@ -142,7 +147,7 @@ describe("offline synthetic final-report evaluation fixtures", () => {
     expect(fixture).toBeDefined();
     if (!fixture) return;
     const result = evaluateFixture(fixture);
-    expect(result.report?.evidenceReview).toEqual({
+    expect(result.report?.evidenceReview).toMatchObject({
       technicalStrengths: { candidates: 1, accepted: 1, rejected: 0 },
       technicalGaps: { candidates: 1, accepted: 1, rejected: 0 },
       englishPatterns: { candidates: 0, accepted: 0, rejected: 0 },
@@ -157,6 +162,17 @@ describe("offline synthetic final-report evaluation fixtures", () => {
     const result = evaluateFixture(allRejected);
     expect(result.report?.englishCommunication.patterns).toEqual([]);
     expect(result.report?.englishCommunication.evidenceStatus).toBe("CANDIDATES_REJECTED");
-    expect(result.report?.evidenceReview?.englishPatterns).toEqual({ candidates: 1, accepted: 0, rejected: 1 });
+    expect(result.report?.evidenceReview?.englishPatterns).toMatchObject({ candidates: 1, accepted: 0, rejected: 1, rejectionReasons: { mismatch: 1 } });
+  });
+
+  it("counts a duplicate separately and keeps the first accepted finding", () => {
+    const duplicate = interviewReportEvalFixtures.find((fixture) => fixture.name.startsWith("duplicate findings"));
+    expect(duplicate).toBeDefined();
+    if (!duplicate) return;
+    const result = evaluateFixture(duplicate);
+    const counts = result.report?.evidenceReview?.englishPatterns;
+    expect(result.report?.englishCommunication.patterns).toHaveLength(1);
+    expect(counts).toMatchObject({ candidates: 2, accepted: 1, rejected: 1, rejectionReasons: { mismatch: 0, invalidFormat: 0, artifact: 0, duplicate: 1 } });
+    expect(counts?.rejectionReasons && Object.values(counts.rejectionReasons).reduce((sum, count) => sum + count, 0)).toBe(counts?.rejected);
   });
 });
