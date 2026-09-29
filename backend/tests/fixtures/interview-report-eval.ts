@@ -34,6 +34,9 @@ function validExpected(overrides: Partial<Extract<InterviewReportEvalExpected, {
   };
 }
 
+// Reason counts are asserted directly by focused tests; the corpus also checks
+// the stable aggregate totals so existing fixtures remain concise.
+
 const emptyReport = {
   technicalContent: { summary: "A resposta descreve uma decisão técnica.", strengths: [], gaps: [] },
   englishCommunication: { clarity: "CLEAR", patterns: [] },
@@ -62,6 +65,28 @@ export const interviewReportEvalFixtures = [
       gaps: [{ sequenceNumber: 1, evidence: "send failures to a queue", explanation: "A resposta não explica como a fila é processada." }],
       priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 1, evidence: "send failures to a queue", focus: "Processamento da fila", exercise: "Explique como a fila processa falhas e evita duplicatas." }],
       optionalItems: { candidates: 3, accepted: 3, rejected: 0 },
+    }),
+  },
+  {
+    name: "punctuation-normalized evidence maps back to literal same-turn spans",
+    input: {
+      roleContext,
+      turns: [{ sequenceNumber: 4, question: "What change improved the service?", answer: "We added an index, then checked the query plan." }],
+    } satisfies InterviewReportInput,
+    providerOutput: {
+      ...emptyReport,
+      technicalContent: {
+        summary: "A resposta relata a inclusão de um índice e a verificação do plano de consulta.",
+        strengths: [{ sequenceNumber: 4, evidence: "ADDED AN INDEX THEN", explanation: "A resposta registra a mudança feita" }],
+        gaps: [],
+      },
+      priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "THE QUERY PLAN", focus: "Verificação do plano", exercise: "Descreva em voz alta como você verificou o plano" }],
+    },
+    expected: validExpected({
+      summary: "A resposta relata a inclusão de um índice e a verificação do plano de consulta.",
+      strengths: [{ sequenceNumber: 4, evidence: "added an index, then", explanation: "A resposta registra a mudança feita." }],
+      priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "the query plan", focus: "Verificação do plano", exercise: "Descreva em voz alta como você verificou o plano." }],
+      optionalItems: { candidates: 2, accepted: 2, rejected: 0 },
     }),
   },
   {

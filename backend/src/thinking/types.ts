@@ -42,10 +42,10 @@ export type InterviewReportInput = {
 export type InterviewReport = {
   /** Safe aggregate counts only; optional for reports persisted before this field existed. */
   evidenceReview?: {
-    technicalStrengths: { candidates: number; accepted: number; rejected: number };
-    technicalGaps: { candidates: number; accepted: number; rejected: number };
-    englishPatterns: { candidates: number; accepted: number; rejected: number };
-    priorities: { candidates: number; accepted: number; rejected: number };
+    technicalStrengths: InterviewReportEvidenceCounts;
+    technicalGaps: InterviewReportEvidenceCounts;
+    englishPatterns: InterviewReportEvidenceCounts;
+    priorities: InterviewReportEvidenceCounts;
   };
   technicalContent: {
     summary: string;
@@ -70,6 +70,14 @@ export type InterviewReport = {
     focus: string;
     exercise: string;
   }>;
+};
+
+export type InterviewReportEvidenceCounts = {
+  candidates: number;
+  accepted: number;
+  rejected: number;
+  /** Counts only, with no candidate text or other identifying data. */
+  rejectionReasons?: { mismatch: number; invalidFormat: number; artifact: number; duplicate: number; limit: number };
 };
 
 export interface InterviewReportService {

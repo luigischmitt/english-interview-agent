@@ -7,6 +7,7 @@ import {
   type CommunicationObservationType,
   type InterviewReport,
   type InterviewReportInput,
+  type InterviewReportEvidenceCounts,
   type InterviewReportService,
 } from "./types.js";
 
@@ -98,12 +99,48 @@ function normalizeFeedbackSentence(value: unknown, max: number, minimumWords: nu
   const danglingEnd = /(?:^|\s)(?:a|an|the|and|or|but|so|to|of|for|with|in|on|at|from|by|about|because|that|which|who|whose|if|when|while|although|unless|as|is|are|was|were|have|has|had|be|been|being|do|does|did|can|could|should|would|will|than|such as|e|ou|mas|para|de|do|da|dos|das|no|na|nos|nas|por|com|que|quem|quando|se|embora|porque|enquanto|caso|como|é|são|está|estão|foi|foram|tem|têm|pode|podem|deve|devem)$/iu;
   const startsWithSubordinateClause = /^(?:because|although|unless|whereas|even though|if|when|while|since)\b/iu.test(body);
   const hasMainClauseSeparator = /,/.test(body);
-  if (words.length < minimumWords || danglingEnd.test(body) || (startsWithSubordinateClause && !hasMainClauseSeparator)) return undefined;
+  const endsWithLikelyTruncatedWord = /(?:solu|implemen|documen|documenta|configura|performa)$/iu.test(body);
+  if (words.length < minimumWords || danglingEnd.test(body) || endsWithLikelyTruncatedWord || (startsWithSubordinateClause && !hasMainClauseSeparator)) return undefined;
   return hasEndingPunctuation ? sentence : `${sentence}.`;
 }
 
 function normalizedFindingText(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/gu, "").toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/gu, " ").trim();
+}
+
+/** Return only a literal, contiguous answer span; normalization ignores punctuation and case. */
+function resolveCanonicalEvidence(answer: string, evidence: unknown, maxLength: number): string | undefined {
+  if (typeof evidence !== "string" || evidence.trim().length === 0) return undefined;
+  if (evidence.length > maxLength) return undefined;
+  const candidate = evidence.trim();
+  const exactIndex = answer.indexOf(candidate);
+  if (exactIndex >= 0) return answer.slice(exactIndex, exactIndex + candidate.length);
+
+  const tokenPattern = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
+  const answerTokens = [...answer.matchAll(tokenPattern)];
+  const evidenceTokens = [...evidence.matchAll(tokenPattern)].map(([token]) => token.toLocaleLowerCase("en-US").replaceAll("’", "'"));
+  const normalizedAnswer = answerTokens.map(([token]) => token.toLocaleLowerCase("en-US").replaceAll("’", "'"));
+  if (!evidenceTokens.length) return undefined;
+  for (let start = 0; start <= normalizedAnswer.length - evidenceTokens.length; start += 1) {
+    if (!evidenceTokens.every((token, offset) => normalizedAnswer[start + offset] === token)) continue;
+    const first = answerTokens[start];
+    const last = answerTokens[start + evidenceTokens.length - 1];
+    if (!first || !last || first.index === undefined || last.index === undefined) return undefined;
+    return answer.slice(first.index, last.index + last[0].length);
+  }
+  return undefined;
+}
+
+type MutableEvidenceCounts = InterviewReportEvidenceCounts & {
+  rejectionReasons: { mismatch: number; invalidFormat: number; artifact: number; duplicate: number; limit: number };
+};
+
+function newEvidenceCounts(): MutableEvidenceCounts {
+  return { candidates: 0, accepted: 0, rejected: 0, rejectionReasons: { mismatch: 0, invalidFormat: 0, artifact: 0, duplicate: 0, limit: 0 } };
+}
+
+function finalizeEvidenceCounts(counts: MutableEvidenceCounts): MutableEvidenceCounts {
+  return { ...counts, rejected: counts.candidates - counts.accepted };
 }
 
 function likelyTranscriptionArtifact(evidence: string): boolean {
@@ -119,11 +156,7 @@ function likelyTranscriptionArtifact(evidence: string): boolean {
 
 export type InterviewReportParseDiagnostics = {
   providerOutput: "valid" | "invalid";
-  optionalItems: {
-    candidates: number;
-    accepted: number;
-    rejected: number;
-  };
+  optionalItems: MutableEvidenceCounts;
 };
 
 export type InterviewReportParseResult = {
@@ -150,64 +183,106 @@ function parseReport(value: unknown, input: InterviewReportInput): ParsedIntervi
   const technical = parsed.technicalContent;
   const english = parsed.englishCommunication;
   const priorities = parsed.priorities;
+  const maximumParsedOptionalItems = 64;
   if (!isRecord(technical) || Object.keys(technical).some((key) => !["summary", "strengths", "gaps"].includes(key))
-    || (technical.summary !== undefined && !boundedString(technical.summary, 320)) || !Array.isArray(technical.strengths) || technical.strengths.length > 8
-    || !Array.isArray(technical.gaps) || technical.gaps.length > 8 || !isRecord(english)
+    || (technical.summary !== undefined && !boundedString(technical.summary, 320)) || !Array.isArray(technical.strengths) || technical.strengths.length > maximumParsedOptionalItems
+    || !Array.isArray(technical.gaps) || technical.gaps.length > maximumParsedOptionalItems || !isRecord(english)
     || Object.keys(english).some((key) => !["clarity", "patterns"].includes(key))
     || !communicationClarities.includes(english.clarity as CommunicationClarity)
-    || !Array.isArray(english.patterns) || english.patterns.length > 8 || !Array.isArray(priorities) || priorities.length > 3) {
+    || !Array.isArray(english.patterns) || english.patterns.length > maximumParsedOptionalItems || !Array.isArray(priorities) || priorities.length > maximumParsedOptionalItems) {
     invalidReportResponse();
   }
 
   const answerFor = (sequenceNumber: unknown) => Number.isSafeInteger(sequenceNumber) ? input.turns.find((turn) => turn.sequenceNumber === sequenceNumber)?.answer : undefined;
-  const parseTechnicalEvidence = (items: unknown[]) => items.flatMap((item) => {
-    if (!isRecord(item) || Object.keys(item).some((key) => !["sequenceNumber", "evidence", "explanation"].includes(key))) return [];
+  const strengthCounts = newEvidenceCounts();
+  const gapCounts = newEvidenceCounts();
+  const patternCounts = newEvidenceCounts();
+  const priorityCounts = newEvidenceCounts();
+  const parseTechnicalEvidence = (items: unknown[], counts: MutableEvidenceCounts, maxAccepted: number) => items.flatMap((item) => {
+    counts.candidates += 1;
+    if (!isRecord(item) || Object.keys(item).some((key) => !["sequenceNumber", "evidence", "explanation"].includes(key))) {
+      counts.rejectionReasons.invalidFormat += 1; return [];
+    }
     const answer = answerFor(item.sequenceNumber);
-    if (!answer || !boundedString(item.evidence, 120) || !answer.includes(item.evidence) || !completeSentence(item.explanation, 180)) return [];
-    return [{ sequenceNumber: item.sequenceNumber as number, evidence: item.evidence.trim(), explanation: item.explanation.trim() }];
+    if (!boundedString(item.evidence, 120)) { counts.rejectionReasons.invalidFormat += 1; return []; }
+    const evidence = answer ? resolveCanonicalEvidence(answer, item.evidence, 120) : undefined;
+    const explanation = normalizeFeedbackSentence(item.explanation, 180, 1);
+    if (!answer || !evidence) { counts.rejectionReasons.mismatch += 1; return []; }
+    if (!explanation) { counts.rejectionReasons.invalidFormat += 1; return []; }
+    if (counts.accepted >= maxAccepted) { counts.rejectionReasons.limit += 1; return []; }
+    counts.accepted += 1;
+    return [{ sequenceNumber: item.sequenceNumber as number, evidence, explanation }];
   });
-  const strengths = parseTechnicalEvidence(technical.strengths);
-  const gaps = parseTechnicalEvidence(technical.gaps);
+  const strengths = parseTechnicalEvidence(technical.strengths, strengthCounts, 8);
+  const gaps = parseTechnicalEvidence(technical.gaps, gapCounts, 8);
   const candidatePatterns = english.patterns.flatMap((item) => {
-    if (!isRecord(item) || Object.keys(item).some((key) => !["type", "sequenceNumber", "evidence", "suggestion", "rephrasedExample"].includes(key))) return [];
+    patternCounts.candidates += 1;
+    if (!isRecord(item) || Object.keys(item).some((key) => !["type", "sequenceNumber", "evidence", "suggestion", "rephrasedExample"].includes(key))) {
+      patternCounts.rejectionReasons.invalidFormat += 1; return [];
+    }
     const answer = answerFor(item.sequenceNumber);
-    if (!answer || !communicationObservationTypes.includes(item.type as CommunicationObservationType)
-      || !boundedString(item.evidence, 160) || !answer.includes(item.evidence)
-      || likelyTranscriptionArtifact(item.evidence)) return [];
+    if (!communicationObservationTypes.includes(item.type as CommunicationObservationType) || !boundedString(item.evidence, 160)) {
+      patternCounts.rejectionReasons.invalidFormat += 1; return [];
+    }
+    const evidence = answer ? resolveCanonicalEvidence(answer, item.evidence, 160) : undefined;
+    if (!answer || !evidence) { patternCounts.rejectionReasons.mismatch += 1; return []; }
+    if (likelyTranscriptionArtifact(evidence)) { patternCounts.rejectionReasons.artifact += 1; return []; }
     const suggestion = normalizeFeedbackSentence(item.suggestion, 200, 4);
     const rephrasedExample = normalizeFeedbackSentence(item.rephrasedExample, 200, 3);
-    if (!suggestion || !rephrasedExample) return [];
-    return [{ type: item.type as CommunicationObservationType, sequenceNumber: item.sequenceNumber as number, evidence: item.evidence.trim(), suggestion, rephrasedExample }];
+    if (!suggestion || !rephrasedExample) { patternCounts.rejectionReasons.invalidFormat += 1; return []; }
+    return [{ type: item.type as CommunicationObservationType, sequenceNumber: item.sequenceNumber as number, evidence, suggestion, rephrasedExample }];
   });
   const seenFindings = new Set<string>();
   const patterns = candidatePatterns.filter((pattern) => {
     const signature = `${pattern.type}:${pattern.sequenceNumber}:${normalizedFindingText(pattern.evidence)}`;
-    if (seenFindings.has(signature)) return false;
+    if (seenFindings.has(signature)) { patternCounts.rejectionReasons.duplicate += 1; return false; }
+    if (patternCounts.accepted >= 8) { patternCounts.rejectionReasons.limit += 1; return false; }
     seenFindings.add(signature);
+    patternCounts.accepted += 1;
     return true;
-  }).slice(0, 8);
+  });
   const parsedPriorities = priorities.flatMap((item) => {
-    if (!isRecord(item) || Object.keys(item).some((key) => !["area", "sequenceNumber", "evidence", "focus", "exercise"].includes(key))) return [];
+    priorityCounts.candidates += 1;
+    if (!isRecord(item) || Object.keys(item).some((key) => !["area", "sequenceNumber", "evidence", "focus", "exercise"].includes(key))) {
+      priorityCounts.rejectionReasons.invalidFormat += 1; return [];
+    }
     const answer = answerFor(item.sequenceNumber);
-    if (!answer || !["TECHNICAL_CONTENT", "ENGLISH_COMMUNICATION"].includes(item.area as string)
-      || !boundedString(item.evidence, 120) || !answer.includes(item.evidence)
-      || !boundedString(item.focus, 160) || !completeSentence(item.exercise, 240)) return [];
-    return [{ area: item.area as "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION", sequenceNumber: item.sequenceNumber as number, evidence: item.evidence.trim(), focus: item.focus.trim(), exercise: item.exercise.trim() }];
+    if (!boundedString(item.evidence, 120)) { priorityCounts.rejectionReasons.invalidFormat += 1; return []; }
+    const evidence = answer ? resolveCanonicalEvidence(answer, item.evidence, 120) : undefined;
+    if (!answer || !evidence) { priorityCounts.rejectionReasons.mismatch += 1; return []; }
+    const exercise = normalizeFeedbackSentence(item.exercise, 240, 1);
+    if (!["TECHNICAL_CONTENT", "ENGLISH_COMMUNICATION"].includes(item.area as string) || !boundedString(item.focus, 160) || !exercise) {
+      priorityCounts.rejectionReasons.invalidFormat += 1; return [];
+    }
+    if (priorityCounts.accepted >= 3) { priorityCounts.rejectionReasons.limit += 1; return []; }
+    priorityCounts.accepted += 1;
+    return [{ area: item.area as "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION", sequenceNumber: item.sequenceNumber as number, evidence, focus: item.focus.trim(), exercise }];
   });
   const englishAccepted = patterns.length;
   const englishStatus: InterviewReport["englishCommunication"]["evidenceStatus"] = englishAccepted > 0
     ? englishAccepted >= 2 ? "SUFFICIENT" : "LIMITED"
     : english.patterns.length > 0 ? "CANDIDATES_REJECTED" : "NO_PATTERN_FOUND";
-  const counts = (candidates: number, accepted: number) => ({ candidates, accepted, rejected: candidates - accepted });
-  const candidateCount = technical.strengths.length + technical.gaps.length + english.patterns.length + priorities.length;
-  const acceptedCount = strengths.length + gaps.length + patterns.length + parsedPriorities.length;
+  const evidenceCounts = {
+    technicalStrengths: finalizeEvidenceCounts(strengthCounts),
+    technicalGaps: finalizeEvidenceCounts(gapCounts),
+    englishPatterns: finalizeEvidenceCounts(patternCounts),
+    priorities: finalizeEvidenceCounts(priorityCounts),
+  };
+  const allCounts = Object.values(evidenceCounts);
+  const candidateCount = allCounts.reduce((sum, counts) => sum + counts.candidates, 0);
+  const acceptedCount = allCounts.reduce((sum, counts) => sum + counts.accepted, 0);
+  const rejectedCount = allCounts.reduce((sum, counts) => sum + counts.rejected, 0);
+  const rejectionReasons = {
+    mismatch: allCounts.reduce((sum, counts) => sum + counts.rejectionReasons.mismatch, 0),
+    invalidFormat: allCounts.reduce((sum, counts) => sum + counts.rejectionReasons.invalidFormat, 0),
+    artifact: allCounts.reduce((sum, counts) => sum + counts.rejectionReasons.artifact, 0),
+    duplicate: allCounts.reduce((sum, counts) => sum + counts.rejectionReasons.duplicate, 0),
+    limit: allCounts.reduce((sum, counts) => sum + counts.rejectionReasons.limit, 0),
+  };
   return {
     report: {
       evidenceReview: {
-        technicalStrengths: counts(technical.strengths.length, strengths.length),
-        technicalGaps: counts(technical.gaps.length, gaps.length),
-        englishPatterns: counts(english.patterns.length, englishAccepted),
-        priorities: counts(priorities.length, parsedPriorities.length),
+        ...evidenceCounts,
       },
       technicalContent: { summary: completeSentence(technical.summary, 320) ? technical.summary.trim() : "As respostas foram analisadas quanto ao conteúdo técnico apresentado.", strengths, gaps },
       englishCommunication: { clarity: english.clarity as CommunicationClarity, evidenceStatus: englishStatus, patterns },
@@ -215,7 +290,7 @@ function parseReport(value: unknown, input: InterviewReportInput): ParsedIntervi
     },
     diagnostics: {
       providerOutput: "valid",
-      optionalItems: { candidates: candidateCount, accepted: acceptedCount, rejected: candidateCount - acceptedCount },
+      optionalItems: { candidates: candidateCount, accepted: acceptedCount, rejected: rejectedCount, rejectionReasons },
     },
   };
 }
@@ -231,7 +306,7 @@ export function evaluateInterviewReportProviderOutput(value: unknown, input: Int
     if (error instanceof ThinkingServiceError && error.code === "THINKING_INVALID_PROVIDER_RESPONSE") {
       return {
         report: null,
-        diagnostics: { providerOutput: "invalid", optionalItems: { candidates: 0, accepted: 0, rejected: 0 } },
+        diagnostics: { providerOutput: "invalid", optionalItems: newEvidenceCounts() },
       };
     }
     throw error;

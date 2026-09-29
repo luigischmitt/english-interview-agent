@@ -5,10 +5,10 @@ import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments
 export type InterviewReport = {
   /** Optional so previously persisted analysis JSON remains readable. */
   evidenceReview?: {
-    technicalStrengths: { candidates: number; accepted: number; rejected: number };
-    technicalGaps: { candidates: number; accepted: number; rejected: number };
-    englishPatterns: { candidates: number; accepted: number; rejected: number };
-    priorities: { candidates: number; accepted: number; rejected: number };
+    technicalStrengths: InterviewReportEvidenceCounts;
+    technicalGaps: InterviewReportEvidenceCounts;
+    englishPatterns: InterviewReportEvidenceCounts;
+    priorities: InterviewReportEvidenceCounts;
   };
   technicalContent: {
     summary: string;
@@ -21,6 +21,13 @@ export type InterviewReport = {
     patterns: Array<{ type: "GRAMMAR" | "WORD_CHOICE" | "FALSE_COGNATE" | "STRUCTURE"; sequenceNumber: number; evidence: string; suggestion: string; rephrasedExample: string }>;
   };
   priorities: Array<{ area: "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION"; sequenceNumber: number; evidence: string; focus: string; exercise: string }>;
+};
+
+export type InterviewReportEvidenceCounts = {
+  candidates: number;
+  accepted: number;
+  rejected: number;
+  rejectionReasons?: { mismatch: number; invalidFormat: number; artifact: number; duplicate: number; limit: number };
 };
 
 export type InterviewReportResult = InterviewReport & { model: string; analysisVersion: string };
