@@ -2,8 +2,8 @@ import type { Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 
 import { getAllowedOrigins, isOriginAllowed } from "../middlewares/allowed-origins.js";
-import type { TranscriptionService } from "./types.js";
-import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
+import type { TranscriptionResult, TranscriptionService } from "./types.js";
+import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type SlotReservation, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
 import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
 import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
@@ -128,6 +128,17 @@ function logStreamDiagnostic(details: Record<string, string | number | boolean>)
   console.info(JSON.stringify({ event: "transcription_stream", ...details }));
 }
 
+type SpeculationOutcome = "reused" | "discarded" | "skipped_no_slot" | "failed" | "none";
+
+/** A Whisper call started at silence detection on an in-memory snapshot, holding a final-transcription slot. */
+type Speculation = {
+  controller: AbortController;
+  reservation: SlotReservation;
+  snapshot: Buffer;
+  promise: Promise<TranscriptionResult>;
+  startedAt: number;
+};
+
 export function attachTranscriptionWebSocket(
   server: Server,
   transcriptionService: TranscriptionService,
@@ -158,7 +169,43 @@ export function attachTranscriptionWebSocket(
     let silenceDetected = false;
     let silenceGraceTimer: ReturnType<typeof setTimeout> | null = null;
     let requestAbortController: AbortController | null = null;
+    let speculation: Speculation | null = null;
+    let speculationOutcome: SpeculationOutcome = "none";
     let timer: ReturnType<typeof setTimeout>;
+
+    // Aborts a live speculation, zeroes its snapshot and frees its slot once the provider call settles.
+    const discardSpeculation = (target: Speculation | null = speculation) => {
+      if (!target) return;
+      const { controller, reservation, snapshot, promise } = target;
+      if (target === speculation) speculation = null;
+      speculationOutcome = "discarded";
+      controller.abort();
+      snapshot.fill(0);
+      void promise.then(() => undefined, () => undefined).then(() => reservation.release());
+    };
+
+    // Silence path only: ambient_activity is ambiguous mid-band noise that only strong speech can cancel, so it is not speculated.
+    const startSpeculation = (id: string, session: StreamingSession) => {
+      if (speculation || finalRequested || finishing) return;
+      if (session.vad.finalizationReason !== "silence" || session.bytes === 0 || !session.vad.hasSpeech
+        || session.vad.speechDurationMs < session.config.minimumSpeechMs) return;
+      const reservation = finalQueue.reserve();
+      if (!reservation) {
+        speculationOutcome = "skipped_no_slot";
+        return;
+      }
+      let snapshot: Buffer;
+      try {
+        snapshot = sessions.toWav(id);
+      } catch {
+        reservation.release();
+        return;
+      }
+      const controller = new AbortController();
+      const promise = (async () => transcriptionService.transcribe(snapshot, "whisper-large-v3-turbo", "wav", controller.signal))();
+      promise.then(() => undefined, () => undefined).then(() => snapshot.fill(0));
+      speculation = { controller, reservation, snapshot, promise, startedAt: Date.now() };
+    };
 
     const fail = (code: string, message: string, closeCode = 1011) => {
       if (finishing) return;
@@ -168,6 +215,7 @@ export function attachTranscriptionWebSocket(
       silenceGraceTimer = null;
       clearTimeout(timer);
       requestAbortController?.abort();
+      discardSpeculation();
       if (sessionId) {
         finalQueue.cancel(sessionId);
         sessions.cancel(sessionId);
@@ -186,6 +234,7 @@ export function attachTranscriptionWebSocket(
       finalRequested = true;
       if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
       silenceGraceTimer = null;
+      if (reason === "manual") discardSpeculation();
       const speechEndToFinalizationMs = Math.round(session.vad.speechEndToFinalizationAt(Date.now()));
       logStreamDiagnostic({ status: "finalizing", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(session.bytes / (pcmSampleRate * 2) * 1_000), speechDurationMs: Math.round(session.vad.speechDurationMs), speechEndToFinalizationMs });
       clearTimeout(timer);
@@ -199,9 +248,13 @@ export function attachTranscriptionWebSocket(
         return fail("SPEECH_TOO_SHORT", "That answer was too short to transcribe. Please try again or skip/end the practice.");
       }
 
+      const reusable = speculation as Speculation | null;
+      speculation = null;
       try {
         const abortController = new AbortController();
         requestAbortController = abortController;
+        // Cancel, failure, timeout and close abort the request controller; the speculative call follows it.
+        if (reusable) abortController.signal.addEventListener("abort", () => reusable.controller.abort(), { once: true });
         finalQueue.enqueue(id, async () => {
           let audio: Buffer | null = null;
           let assessmentOwnsAudio = false;
@@ -219,15 +272,30 @@ export function attachTranscriptionWebSocket(
             audio = sessions.toWav(id);
             const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
             send(socket, { type: "transcription-started" });
-            const transcriptionStartedAt = Date.now();
-            const result = await transcriptionService.transcribe(audio, "whisper-large-v3-turbo", "wav", abortController.signal);
+            let transcriptionStartedAt = Date.now();
+            let result: TranscriptionResult;
+            if (reusable) {
+              // The snapshot only lacks trailing silence: its transcript and timings remain valid for the full audio.
+              transcriptionStartedAt = reusable.startedAt;
+              try {
+                result = await reusable.promise;
+                speculationOutcome = "reused";
+              } catch (error) {
+                if (session.cancelled || abortController.signal.aborted || socket.readyState !== WebSocket.OPEN) throw error;
+                speculationOutcome = "failed";
+                transcriptionStartedAt = Date.now();
+                result = await transcriptionService.transcribe(audio, "whisper-large-v3-turbo", "wav", abortController.signal);
+              }
+            } else {
+              result = await transcriptionService.transcribe(audio, "whisper-large-v3-turbo", "wav", abortController.signal);
+            }
             const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
             if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
             if (!result.transcript.trim()) {
               fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
               return;
             }
-            logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs });
+            logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, speculation: speculationOutcome });
             send(socket, {
               type: "complete",
               status: "complete",
@@ -350,8 +418,9 @@ export function attachTranscriptionWebSocket(
         }, () => {
           const position = finalQueue.queuedCount;
           send(socket, { type: "transcription-queued", position, message: "Your answer is waiting to be transcribed." });
-        }, () => abortController.abort());
+        }, () => abortController.abort(), reusable?.reservation);
       } catch (error) {
+        discardSpeculation(reusable);
         const code = error instanceof Error ? error.message : "TRANSCRIPTION_CAPACITY_REACHED";
         fail(code, code === "TRANSCRIPTION_CAPACITY_REACHED"
           ? "Transcription is busy right now. Please try recording again in a moment or skip/end the practice."
@@ -424,6 +493,7 @@ export function attachTranscriptionWebSocket(
         if (update.speechStarted) send(socket, { type: "speech-started" });
         if (update.speechResumed) {
           silenceDetected = false;
+          discardSpeculation();
           if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
           silenceGraceTimer = null;
           send(socket, { type: "speech-resumed" });
@@ -433,6 +503,7 @@ export function attachTranscriptionWebSocket(
           silenceDetected = true;
           send(socket, { type: "silence-detected" });
           logStreamDiagnostic({ status: "silence_pending", finalizationGraceMs: session.config.finalizationGraceMs });
+          startSpeculation(sessionId, session);
           silenceGraceTimer = setTimeout(() => {
             silenceGraceTimer = null;
             finalize("silence");
@@ -456,6 +527,7 @@ export function attachTranscriptionWebSocket(
         silenceGraceTimer = null;
         clearTimeout(timer);
         requestAbortController?.abort();
+        discardSpeculation();
         if (sessionId) {
           finalQueue.cancel(sessionId);
           sessions.cancel(sessionId);
@@ -472,6 +544,7 @@ export function attachTranscriptionWebSocket(
       silenceGraceTimer = null;
       clearTimeout(timer);
       requestAbortController?.abort();
+      discardSpeculation();
       if (sessionId) {
         finalQueue.cancel(sessionId);
         sessions.cancel(sessionId);

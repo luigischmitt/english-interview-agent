@@ -153,6 +153,9 @@ type QueueJob = {
   onCancel: () => void;
 };
 
+/** A concurrency slot held outside the queue; `release` is idempotent and a no-op once the slot has moved into a job. */
+export type SlotReservation = { active: boolean; release: () => void };
+
 /** A process-wide bounded FIFO for finalized Whisper calls. */
 export class FinalTranscriptionQueue {
   private readonly pending: QueueJob[] = [];
@@ -164,9 +167,32 @@ export class FinalTranscriptionQueue {
   get activeCount(): number { return this.active; }
   get queuedCount(): number { return this.pending.length; }
 
-  enqueue(id: string, task: () => Promise<void>, onQueued: () => void, onCancel: () => void = () => undefined): void {
+  /** Claims a free slot right now for speculative work; never queues and never exceeds the concurrency limit. */
+  reserve(): SlotReservation | null {
+    if (this.active >= this.maxConcurrent || this.pending.length > 0) return null;
+    this.active += 1;
+    const reservation: SlotReservation = {
+      active: true,
+      release: () => {
+        if (!reservation.active) return;
+        reservation.active = false;
+        this.active -= 1;
+        this.drain();
+      },
+    };
+    return reservation;
+  }
+
+  /** With a live `reservation`, the job starts immediately and takes over the already-counted slot. */
+  enqueue(id: string, task: () => Promise<void>, onQueued: () => void, onCancel: () => void = () => undefined, reservation?: SlotReservation): void {
     if (this.knownJobs.has(id)) throw new Error("TRANSCRIPTION_ALREADY_QUEUED");
     const job = { id, task, onQueued, onCancel };
+    if (reservation?.active) {
+      reservation.active = false;
+      this.knownJobs.set(id, job);
+      this.start(job, true);
+      return;
+    }
     if (this.active < this.maxConcurrent) {
       this.knownJobs.set(id, job);
       this.start(job);
@@ -191,8 +217,8 @@ export class FinalTranscriptionQueue {
     job.onCancel();
   }
 
-  private start(job: QueueJob): void {
-    this.active += 1;
+  private start(job: QueueJob, slotAlreadyCounted = false): void {
+    if (!slotAlreadyCounted) this.active += 1;
     void job.task().catch(() => undefined).finally(() => {
       this.active -= 1;
       this.knownJobs.delete(job.id);
