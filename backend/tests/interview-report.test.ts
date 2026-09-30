@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app.js";
 import { OpenRouterInterviewReportService } from "../src/thinking/openrouter-interview-report-service.js";
-import { defaultThinkingModel } from "../src/thinking/config.js";
+import { defaultThinkingModel, loadThinkingConfig } from "../src/thinking/config.js";
+import { createInterviewReportService } from "../src/thinking/openrouter-interview-report-service.js";
+import { OpenRouterOrchestrationService } from "../src/thinking/openrouter-orchestration-service.js";
 import type { InterviewReport, InterviewReportInput } from "../src/thinking/types.js";
 import type { SpeechConfig } from "../src/speech/config.js";
 
@@ -419,5 +421,25 @@ describe("POST /api/v1/thinking/report", () => {
     const response = await request(app).post("/api/v1/thinking/report").send(input);
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe("THINKING_NOT_CONFIGURED");
+  });
+
+  it("sends the report model for reports and the reasoning model for orchestration, and persists the report model", async () => {
+    const config = loadThinkingConfig({ OPENROUTER_API_KEY: "k", INTERVIEW_REASONING_MODEL: "vendor/reason", INTERVIEW_REPORT_MODEL: "vendor/report" } as NodeJS.ProcessEnv);
+    const models: string[] = [];
+    const capture = (content: string): typeof fetch => async (_url, init) => {
+      models.push(JSON.parse(String(init?.body)).model);
+      return providerResponse(content);
+    };
+
+    const reportService = createInterviewReportService(config, capture(JSON.stringify(providerReport)));
+    const report = await reportService?.generate(input);
+    expect(report?.model).toBe("vendor/report");
+
+    const orchestration = new OpenRouterOrchestrationService(config, capture(JSON.stringify({ decision: "NEXT", followUpQuestion: null, nextQuestion: "Next?", anchor: null, acknowledgement: null })));
+    await orchestration.decide({
+      currentQuestion: "How would you make a REST API reliable?", transcript: "I add bounded retries with jitter and a circuit breaker for the downstream calls.", nextFixedQuestion: "Next?", remainingFixedQuestions: ["Next?"],
+      askedQuestions: ["Q?"], followUpUsed: false, roleContext: input.roleContext,
+    }).catch(() => undefined);
+    expect(models).toEqual(["vendor/report", "vendor/reason"]);
   });
 });

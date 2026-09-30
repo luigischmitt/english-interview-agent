@@ -392,5 +392,5 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
 
 export function createInterviewReportService(config: ThinkingConfig, fetchImplementation?: typeof fetch): InterviewReportService | null {
   if (!config.openRouterApiKey) return null;
-  return new OpenRouterInterviewReportService({ key: config.openRouterApiKey, model: config.model, timeoutMs: config.reportTimeoutMs ?? defaultInterviewReportTimeoutMs, fetchImplementation });
+  return new OpenRouterInterviewReportService({ key: config.openRouterApiKey, model: config.reportModel ?? config.model, timeoutMs: config.reportTimeoutMs ?? defaultInterviewReportTimeoutMs, fetchImplementation });
 }
