@@ -195,6 +195,9 @@ the candidate lacks knowledge. The report avoids classifying tools or claiming
 mastery, correctness, ownership, or impact when the answer does not provide
 evidence. English feedback can include up to eight distinct prioritized patterns
 and omits duplicate findings and excerpts likely to be transcription artifacts.
+English patterns are limited to errors that affect meaning or credibility (no valid
+jargon, synonyms, punctuation or fillers), use type definitions, and may be fewer or
+none; the same rules apply to the per-answer analysis.
 The backend does not fetch or persist sessions and does not authorize an
 interview ID; the authenticated frontend persists results through Supabase RLS.
 Provider/configuration errors use the standardized thinking error object.
