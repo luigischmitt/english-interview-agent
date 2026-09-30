@@ -6,13 +6,14 @@ import { MicrophoneCapture, type VoiceAssessmentState, type VoiceCaptureState, t
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { buildPreviousAnswers, decideNextTurn } from "@/lib/interview/orchestration";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
-import { answerOrdinalForSequence, createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewReport, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult } from "@/lib/interview/report";
+import { answerOrdinalForSequence, createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import { emptyEnglishEvidenceMessage, emptyReportEvidenceMessage, partialEvidenceReviewNote } from "@/lib/interview/report-evidence-copy.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import { appendInterviewReportPair, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
+import { collectTurnAnalyses, turnAnalysisWaitMs } from "@/lib/interview/report-incremental.mjs";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
@@ -109,6 +110,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const reportStartedRef = useRef(createOnceGate());
   const reportPersistenceSignatureRef = useRef("");
   const reportTurnsRef = useRef(reportTurns);
+  const turnAnalysesRef = useRef(new Map<number, Promise<InterviewTurnAnalysis | null>>());
+  const turnAnalysisAbortsRef = useRef(new Set<AbortController>());
   const recentAcknowledgementsRef = useRef<string[]>([]);
   const voiceAssessmentsRef = useRef(voiceAssessments);
   const phaseRef = useRef(phase);
@@ -205,6 +208,28 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (advanceTimerRef.current !== null) window.clearTimeout(advanceTimerRef.current);
   }, [currentIndex]);
 
+  const abortTurnAnalyses = useCallback(() => {
+    for (const controller of turnAnalysisAbortsRef.current) controller.abort();
+    turnAnalysisAbortsRef.current.clear();
+  }, []);
+
+  /** Analyze a submitted answer in the background; failures are ignored and trigger the full-report fallback later. */
+  const startTurnAnalysis = (turn: { sequenceNumber: number; question: string; answer: string }) => {
+    const controller = new AbortController();
+    turnAnalysisAbortsRef.current.add(controller);
+    const startedAt = Date.now();
+    turnAnalysesRef.current.set(turn.sequenceNumber, requestInterviewTurnAnalysis(config, turn, controller.signal)
+      .then((analysis) => {
+        console.info("[interview-report] turn_analysis_ready", { durationMs: Date.now() - startedAt });
+        return analysis;
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) console.warn("[interview-report] turn_analysis_failed", { durationMs: Date.now() - startedAt });
+        return null;
+      })
+      .finally(() => { turnAnalysisAbortsRef.current.delete(controller); }));
+  };
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -212,11 +237,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       generationRef.current += 1;
       decisionAbortRef.current?.abort();
       decisionAbortRef.current = null;
+      abortTurnAnalyses();
       submitInFlightRef.current = false;
       if (advanceTimerRef.current !== null) window.clearTimeout(advanceTimerRef.current);
       assessmentSockets.closeAll();
     };
-  }, [assessmentSockets]);
+  }, [abortTurnAnalyses, assessmentSockets]);
 
   const submitAnswer = async (transcription: VoiceTranscriptionState, finishAfter = false, expectedQuestionId = question.id) => {
     if (submitInFlightRef.current || leftRef.current || !mountedRef.current) return;
@@ -245,6 +271,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     });
     reportTurnsRef.current = submittedTurns;
     setReportTurns(submittedTurns);
+    startTurnAnalysis({ sequenceNumber: questionSequenceNumber, question: question.prompt.trim(), answer: savedAnswer.trim() });
     setVoiceTranscription({ status: "idle" });
     setVoiceCaptureState("idle");
     setAnswerError(null);
@@ -358,6 +385,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     generationRef.current += 1;
     decisionAbortRef.current?.abort();
     decisionAbortRef.current = null;
+    abortTurnAnalyses();
     submitInFlightRef.current = false;
     if (advanceTimerRef.current !== null) window.clearTimeout(advanceTimerRef.current);
     advanceTimerRef.current = null;
@@ -370,6 +398,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     const lifecycleStartedAt = Date.now();
     console.info("[interview-report] lifecycle_started");
     setReportState({ status: "pending" });
+    // Background turn analyses settle while pending voice assessments finish; both waits share the same clock.
+    const analysesWait = collectTurnAnalyses(pairInterviewTurns(reportTurnsRef.current), turnAnalysesRef.current, { timeoutMs: turnAnalysisWaitMs });
     void (async () => {
       await waitForPendingAssessments(() => Object.values(voiceAssessmentsRef.current).filter((entry) => entry.state.status === "pending").length);
       const latestEntries = voiceAssessmentsRef.current;
@@ -384,13 +414,29 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       const feedbackSessionId = sessionId ?? await waitForSessionId(2_000);
       if (feedbackSessionId) await createPendingInterviewFeedback(feedbackSessionId, samples);
 
+      let path: "incremental" | "fallback" = "fallback";
       try {
-        console.info("[interview-report] request_started", { turnCount: turns.length, waitDurationMs: Date.now() - lifecycleStartedAt });
-        const result = await requestInterviewReport(config, turns);
-        console.info("[interview-report] ready", { turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
+        const collected = await analysesWait;
+        let result: InterviewReportResult | null = null;
+        if (collected.complete && collected.analyses.length === turns.length) {
+          try {
+            console.info("[interview-report] request_started", { path: "incremental", turnCount: turns.length, waitDurationMs: Date.now() - lifecycleStartedAt });
+            result = await requestInterviewConsolidation(config, turns, collected.analyses);
+            path = "incremental";
+          } catch {
+            console.warn("[interview-report] incremental_failed", { category: "consolidation_failed_or_timed_out", turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
+          }
+        } else {
+          console.info("[interview-report] incremental_skipped", { turnCount: turns.length, missingAnalyses: collected.missing });
+        }
+        if (!result) {
+          console.info("[interview-report] request_started", { path: "fallback", turnCount: turns.length, waitDurationMs: Date.now() - lifecycleStartedAt });
+          result = await requestInterviewReport(config, turns);
+        }
+        console.info("[interview-report] ready", { path, turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
         if (mountedRef.current) setReportState({ status: "ready", result });
       } catch {
-        console.warn("[interview-report] unavailable", { category: "request_failed_or_timed_out", turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
+        console.warn("[interview-report] unavailable", { category: "request_failed_or_timed_out", path, turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
         const message = "A análise detalhada falhou ou excedeu o tempo limite. As respostas registradas continuam disponíveis abaixo.";
         if (mountedRef.current) setReportState({ status: "unavailable", message });
       }

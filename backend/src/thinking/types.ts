@@ -80,8 +80,27 @@ export type InterviewReportEvidenceCounts = {
   rejectionReasons?: { mismatch: number; invalidFormat: number; artifact: number; duplicate: number; limit: number };
 };
 
+/** Findings for one answer, produced in the background during the interview. */
+export type InterviewTurnAnalysis = {
+  sequenceNumber: number;
+  technicalStrengths: InterviewReport["technicalContent"]["strengths"];
+  technicalGaps: InterviewReport["technicalContent"]["gaps"];
+  englishPatterns: InterviewReport["englishCommunication"]["patterns"];
+};
+
+export type InterviewTurnAnalysisInput = {
+  roleContext: InterviewThinkingInput["roleContext"];
+  turn: InterviewReportInput["turns"][number];
+};
+
+export type InterviewReportConsolidationInput = InterviewReportInput & { turnAnalyses: InterviewTurnAnalysis[] };
+
 export interface InterviewReportService {
   generate(input: InterviewReportInput): Promise<InterviewReport & { model: string; analysisVersion: "v2" }>;
+  /** Analyze one answer; returns only server-validated items. */
+  analyzeTurn(input: InterviewTurnAnalysisInput): Promise<InterviewTurnAnalysis & { model: string }>;
+  /** Re-validate per-answer findings and produce the final report with one small call. */
+  consolidate(input: InterviewReportConsolidationInput): Promise<InterviewReport & { model: string; analysisVersion: "v2" }>;
 }
 
 export type InterviewOrchestrationInput = InterviewThinkingInput & {
