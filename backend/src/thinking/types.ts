@@ -90,6 +90,7 @@ export type InterviewOrchestrationInput = InterviewThinkingInput & {
   followUpUsed: boolean;
   askedQuestions?: string[];
   recentAcknowledgements?: string[];
+  previousAnswers?: Array<{ question: string; answer: string }>;
 };
 
 export type InterviewOrchestrationResult = {

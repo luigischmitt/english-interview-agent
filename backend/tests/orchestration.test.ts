@@ -171,6 +171,32 @@ describe("OpenRouter next-turn orchestration", () => {
     }
   });
 
+  it("accepts a question that shares a content word with the words around the anchor without copying it", async () => {
+    const answer = { ...input, transcript: "I put retry with exponential backoff in the client, and I use a circuit breaker when the payment provider is down.", askedQuestions: [input.currentQuestion] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "How did you decide when the breaker should open?", nextQuestion: null, anchor: "circuit breaker", acknowledgement: null };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
+  });
+
+  it("rejects a single-word anchor whose question only reuses words from elsewhere in the transcript", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const answer = { ...input, transcript: "I used Redis to cache profiles. Later the marketing team ran user interviews about onboarding.", askedQuestions: [input.currentQuestion] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "Redis was mentioned; how did the user interviews change onboarding?", nextQuestion: null, anchor: "Redis", acknowledgement: null };
+    try {
+      await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "NEXT" });
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: "interview_orchestration_fallback", reason: "anchor_not_referenced" }));
+    } finally { warn.mockRestore(); }
+  });
+
+  it("sends at most the supplied previous answers as prior context and keeps the prompt anchored to the current transcript", async () => {
+    let init: RequestInit | undefined;
+    const previousAnswers = [{ question: "Tell me about yourself.", answer: "I work with Node.js and Postgres." }];
+    await service(async (_url, options) => { init = options; return providerResponse(JSON.stringify(decision())); }).decide({ ...input, previousAnswers });
+    const requestBody = JSON.parse(String(init?.body));
+    expect(JSON.parse(requestBody.messages[1].content).previousAnswers).toEqual(previousAnswers);
+    expect(requestBody.messages[0].content).toContain("previousAnswers");
+    expect(requestBody.messages[0].content).toContain("CURRENT transcript");
+  });
+
   it("accepts a grounded follow-up when a natural but transcript-echoing acknowledgement is discarded", async () => {
     const followUpInput = {
       ...input,
@@ -434,5 +460,18 @@ describe("POST /api/v1/thinking/next-turn", () => {
     expect(response.body).toEqual({ decision: "FOLLOW_UP", followUpQuestion: followUp, nextQuestion: null, acknowledgement });
     expect(response.body).not.toHaveProperty("anchor");
     expect(JSON.stringify(response.body)).not.toContain("server-test-key");
+  });
+
+  it("validates the optional previous answers shape and size and forwards valid ones", async () => {
+    fakeService.decide.mockClear();
+    const pair = { question: "Q?", answer: "A" };
+    for (const previousAnswers of [[pair, pair, pair], [{ question: "Q?", answer: "x".repeat(501) }], [{ question: "Q?" }], "nope"]) {
+      const response = await request(app).post("/api/v1/thinking/next-turn").send({ ...input, previousAnswers });
+      expect(response.status).toBe(400);
+    }
+    expect(fakeService.decide).not.toHaveBeenCalled();
+    const accepted = await request(app).post("/api/v1/thinking/next-turn").send({ ...input, previousAnswers: [pair, pair] });
+    expect(accepted.status).toBe(200);
+    expect(fakeService.decide).toHaveBeenCalledWith(expect.objectContaining({ previousAnswers: [pair, pair] }));
   });
 });
