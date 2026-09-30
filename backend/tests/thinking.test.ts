@@ -61,6 +61,7 @@ describe("thinking configuration", () => {
       reportModel: defaultThinkingModel,
       timeoutMs: defaultThinkingTimeoutMs,
       orchestrationTimeoutMs: defaultOrchestrationTimeoutMs,
+      orchestrationHedgeAfterMs: 2_500,
       reportTimeoutMs: defaultInterviewReportTimeoutMs,
       diagnosticsEnabled: false,
     });
@@ -80,6 +81,7 @@ describe("thinking configuration", () => {
       reportModel: "vendor/model",
       timeoutMs: 4_500,
       orchestrationTimeoutMs: 6_000,
+      orchestrationHedgeAfterMs: 2_500,
       reportTimeoutMs: 45_000,
       diagnosticsEnabled: true,
     });
