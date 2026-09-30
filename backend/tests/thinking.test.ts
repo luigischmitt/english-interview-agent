@@ -58,6 +58,7 @@ describe("thinking configuration", () => {
     expect(loadThinkingConfig({} as NodeJS.ProcessEnv)).toEqual({
       openRouterApiKey: null,
       model: defaultThinkingModel,
+      reportModel: defaultThinkingModel,
       timeoutMs: defaultThinkingTimeoutMs,
       orchestrationTimeoutMs: defaultOrchestrationTimeoutMs,
       reportTimeoutMs: defaultInterviewReportTimeoutMs,
@@ -76,11 +77,19 @@ describe("thinking configuration", () => {
     } as NodeJS.ProcessEnv)).toEqual({
       openRouterApiKey: "secret",
       model: "vendor/model",
+      reportModel: "vendor/model",
       timeoutMs: 4_500,
       orchestrationTimeoutMs: 6_000,
       reportTimeoutMs: 45_000,
       diagnosticsEnabled: true,
     });
+  });
+
+  it("uses a trimmed report model override and otherwise falls back to the reasoning model", () => {
+    const withOverride = loadThinkingConfig({ INTERVIEW_REASONING_MODEL: "vendor/reason", INTERVIEW_REPORT_MODEL: "  vendor/report  " } as NodeJS.ProcessEnv);
+    expect(withOverride).toMatchObject({ model: "vendor/reason", reportModel: "vendor/report" });
+    expect(loadThinkingConfig({ INTERVIEW_REASONING_MODEL: "vendor/reason", INTERVIEW_REPORT_MODEL: "   " } as NodeJS.ProcessEnv).reportModel).toBe("vendor/reason");
+    expect(loadThinkingConfig({ INTERVIEW_REPORT_MODEL: "vendor/report" } as NodeJS.ProcessEnv)).toMatchObject({ model: defaultThinkingModel, reportModel: "vendor/report" });
   });
 
   it("rejects a non-positive reasoning timeout", () => {

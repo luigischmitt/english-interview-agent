@@ -59,6 +59,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `INTERVIEW_REASONING_MODEL` | `mistralai/mistral-small-3.2-24b-instruct` | OpenRouter model for interview reasoning and next-turn orchestration. Keep this configuration server-side. |
 | `INTERVIEW_REASONING_TIMEOUT_MS` | `15000` | Positive timeout in milliseconds for interview reasoning requests. |
 | `INTERVIEW_ORCHESTRATION_TIMEOUT_MS` | `6000` | Positive timeout in milliseconds for next-turn orchestration. |
+| `INTERVIEW_REPORT_MODEL` | value of `INTERVIEW_REASONING_MODEL` | OpenRouter model used only for the final interview report (trimmed; blank falls back to `INTERVIEW_REASONING_MODEL`, then the default). Next-turn orchestration keeps using `INTERVIEW_REASONING_MODEL`. The returned `model` field reflects the report model. |
 | `INTERVIEW_REPORT_TIMEOUT_MS` | `45000` | Report-only provider deadline in milliseconds; accepts positive values up to `60000`. The browser deadline is 65 seconds by default. |
 | `INTERVIEW_REASONING_DIAGNOSTICS` | `false` | Set to `true` to include model, latency, and provider-reported cost in next-turn responses. Keep disabled outside local testing. |
 
@@ -182,7 +183,8 @@ validates each excerpt against its specific answer and discards an invalid
 optional item while preserving other valid sections. When language evidence is
 missing, the response marks it insufficient. The report has a separate 45-second
 provider deadline; the browser waits 65 seconds, and the server deadline can be
-raised to at most 60 seconds. The response includes model and analysis version
+raised to at most 60 seconds. The report model is configured separately with `INTERVIEW_REPORT_MODEL`
+(falling back to `INTERVIEW_REASONING_MODEL`). The response includes the model used and analysis version
 `v2` for persistence; it has no invented scores, full transcript copy, or hidden
 reasoning. Vocal delivery remains exclusively Azure-derived in the frontend.
 Technical strengths and gaps are evaluated for each question/answer pair; a gap
@@ -194,6 +196,17 @@ and omits duplicate findings and excerpts likely to be transcription artifacts.
 The backend does not fetch or persist sessions and does not authorize an
 interview ID; the authenticated frontend persists results through Supabase RLS.
 Provider/configuration errors use the standardized thinking error object.
+
+### Compare report models (opt-in benchmark)
+
+`npm run benchmark:report-models` is not part of `npm test`. It needs
+`OPENROUTER_API_KEY` and `REPORT_BENCHMARK_MODELS` (comma-separated OpenRouter
+model ids). It runs each synthetic report fixture once per model through the real
+report service and validator, then prints only aggregate JSON per model: success
+and failure counts by fixed category, median/p90 latency, total and mean
+provider-reported cost, and summed evidence accepted/rejected counts by reason.
+It never prints fixture text, model output, or credentials. The run aborts when
+cumulative cost exceeds `REPORT_BENCHMARK_MAX_USD` (default `0.50`).
 
 ### Run the real-time audio E2E harness
 

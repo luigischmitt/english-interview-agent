@@ -6,6 +6,8 @@ export const defaultInterviewReportTimeoutMs = 45_000;
 export type ThinkingConfig = {
   openRouterApiKey: string | null;
   model: string;
+  /** Model for the final report; falls back to `model` when absent. */
+  reportModel?: string;
   timeoutMs: number;
   orchestrationTimeoutMs: number;
   reportTimeoutMs?: number;
@@ -30,9 +32,11 @@ function parseReportTimeout(value: string | undefined): number {
 }
 
 export function loadThinkingConfig(environment = process.env): ThinkingConfig {
+  const model = environment.INTERVIEW_REASONING_MODEL?.trim() || defaultThinkingModel;
   return {
     openRouterApiKey: environment.OPENROUTER_API_KEY?.trim() || null,
-    model: environment.INTERVIEW_REASONING_MODEL?.trim() || defaultThinkingModel,
+    model,
+    reportModel: environment.INTERVIEW_REPORT_MODEL?.trim() || model,
     timeoutMs: parsePositiveNumber(environment.INTERVIEW_REASONING_TIMEOUT_MS, defaultThinkingTimeoutMs),
     orchestrationTimeoutMs: parsePositiveNumber(environment.INTERVIEW_ORCHESTRATION_TIMEOUT_MS, defaultOrchestrationTimeoutMs),
     reportTimeoutMs: parseReportTimeout(environment.INTERVIEW_REPORT_TIMEOUT_MS),
