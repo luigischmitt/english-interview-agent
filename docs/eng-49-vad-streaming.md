@@ -54,6 +54,10 @@ PCM mono s16le a 16 kHz ocupa 32.000 bytes por segundo; 180 segundos representam
 
 O áudio permanece apenas em memória: não é gravado em arquivo, banco, log ou armazenamento de sessão. Buffers são zerados em sucesso, erro, cancelamento, timeout e desconexão. O cancelamento aborta a chamada upstream ativa quando suportado. A transcrição final pode compor o turno privado da entrevista; o áudio não é persistido. A rota HTTP WAV de compatibilidade permanece separada e aceita no máximo 30 segundos.
 
+## Transcrição especulativa (ENG-83)
+
+Ao detectar silêncio confiante (`silence`, não `ambient_activity`), se houver um slot Whisper livre naquele instante, o servidor inicia a chamada Whisper sobre um snapshot WAV em memória do áudio até ali. O slot é reservado na `FinalTranscriptionQueue` (`reserve()`), sem fila e sem exceder o limite de concorrência; sem slot livre, vale o fluxo normal. Se a fala retomar durante a graça, a chamada é abortada, o snapshot é zerado e o slot liberado; um novo silêncio pode especular de novo. Sem retomada, `finalize` reaproveita a mesma chamada (o slot passa ao job de finalização) e `complete` só é enviado após a graça. Se a chamada especulativa falhar, ocorre uma transcrição normal. O Azure usa as marcações do snapshot sobre o áudio final completo (o excedente é silêncio final). Finalização manual, cancelamento, erro, limites e fechamento do socket abortam a especulação e zeram os buffers. O log `complete` inclui `speculation` (`reused`, `discarded`, `skipped_no_slot`, `failed`, `none`), sem conteúdo.
+
 ## Falhas recuperáveis
 
 Ausência de fala, fala curta, limite de gravação, fila cheia, timeout e falha do Whisper retornam eventos `error` com códigos e mensagens sem texto da transcrição nem detalhes do provedor. A interface pode oferecer gravar novamente, pular a pergunta ou encerrar a prática. Respostas escritas não são aceitas.

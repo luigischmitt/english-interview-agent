@@ -488,7 +488,8 @@ describe("versioned transcription WebSocket", () => {
         await delay(100);
       }
       await resumed;
-      expect(transcribe).not.toHaveBeenCalled();
+      // Only the speculative call made at silence detection exists; it is aborted and discarded on resume.
+      expect(transcribe).toHaveBeenCalledTimes(1);
 
       const complete = waitForType(socket, "complete");
       for (let index = 0; index < 8; index += 1) {
@@ -496,11 +497,244 @@ describe("versioned transcription WebSocket", () => {
         await delay(100);
       }
       await expect(complete).resolves.toMatchObject({ status: "complete", transcript: "A complete resumed answer" });
-      expect(transcribe).toHaveBeenCalledTimes(1);
+      expect(transcribe).toHaveBeenCalledTimes(2);
     } finally {
       socket.close();
       await fixture.close();
     }
+  });
+
+  describe("speculative transcription at silence detection", () => {
+    const vadConfig = { trailingSilenceMs: 300, finalizationGraceMs: 800, resumedSpeechConfirmationMs: 200 };
+    const sendLevels = async (socket: WebSocket, value: number, count: number) => {
+      for (let index = 0; index < count; index += 1) {
+        socket.send(JSON.stringify({ type: "level", value }));
+        await delay(100);
+      }
+    };
+    const createControlledService = () => {
+      const calls: Array<{ audio: Buffer; signal?: AbortSignal; resolve: (result?: Partial<TranscriptionResult>) => void; reject: (error: Error) => void }> = [];
+      const transcribe = vi.fn((audio: Buffer, _provider: "whisper-large-v3-turbo", _format?: "wav", signal?: AbortSignal) => new Promise<TranscriptionResult>((resolve, reject) => {
+        const call = {
+          audio, signal,
+          resolve: (result: Partial<TranscriptionResult> = {}) => resolve({ provider: "whisper-large-v3-turbo", transcript: `call ${calls.indexOf(call) + 1}`, words: [{ text: `call ${calls.indexOf(call) + 1}`, start: 0, end: 0.1 }], ...result }),
+          reject,
+        };
+        calls.push(call);
+        signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      }));
+      const service: TranscriptionService = { availableProviders: () => ["whisper-large-v3-turbo"], transcribe };
+      return { service, transcribe, calls };
+    };
+    const reachSilence = async (socket: WebSocket) => {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const silence = waitForType(socket, "silence-detected");
+      await sendLevels(socket, 0.005, 5);
+      await silence;
+    };
+
+    it("starts Whisper at silence detection and reuses that single call on finalize", async () => {
+      const { service, transcribe, calls } = createControlledService();
+      const fixture = await openStreamServer(service, null, { ...defaultStreamingLimits, vadConfig });
+      const socket = await openSocket(fixture.url);
+      try {
+        await reachSilence(socket);
+        expect(transcribe).toHaveBeenCalledTimes(1);
+        const snapshotLength = calls[0]!.audio.length;
+        calls[0]!.resolve({ transcript: "Speculative answer" });
+        const complete = waitForType(socket, "complete");
+        await expect(complete).resolves.toMatchObject({ transcript: "Speculative answer" });
+        expect(transcribe).toHaveBeenCalledTimes(1);
+        expect(snapshotLength).toBeGreaterThan(44);
+        expect(calls[0]!.audio.every((byte) => byte === 0)).toBe(true);
+      } finally {
+        socket.terminate();
+        await fixture.close();
+      }
+    });
+
+    it("does not send complete before the grace ends even when the speculative result is ready", async () => {
+      const { service, calls } = createControlledService();
+      const fixture = await openStreamServer(service, null, { ...defaultStreamingLimits, vadConfig });
+      const socket = await openSocket(fixture.url);
+      const types: string[] = [];
+      socket.on("message", (raw: Buffer) => types.push(JSON.parse(raw.toString()).type));
+      try {
+        await reachSilence(socket);
+        calls[0]!.resolve();
+        await delay(150);
+        expect(types).not.toContain("complete");
+        await waitForType(socket, "complete");
+        expect(types.indexOf("finalizing")).toBeLessThan(types.indexOf("complete"));
+      } finally {
+        socket.terminate();
+        await fixture.close();
+      }
+    });
+
+    it("aborts and discards when speech resumes, then speculates again for the full audio", async () => {
+      const { service, transcribe, calls } = createControlledService();
+      const fixture = await openStreamServer(service, null, { ...defaultStreamingLimits, vadConfig });
+      const socket = await openSocket(fixture.url);
+      try {
+        await reachSilence(socket);
+        const firstAudio = calls[0]!.audio;
+        const resumed = waitForType(socket, "speech-resumed");
+        await sendLevels(socket, 0.05, 4);
+        await resumed;
+        sendFrames(socket, 4);
+        expect(calls[0]!.signal?.aborted).toBe(true);
+        expect(firstAudio.every((byte) => byte === 0)).toBe(true);
+
+        const secondSilence = waitForType(socket, "silence-detected");
+        await sendLevels(socket, 0.005, 5);
+        await secondSilence;
+        expect(transcribe).toHaveBeenCalledTimes(2);
+        expect(calls[1]!.audio.length).toBeGreaterThan(firstAudio.length);
+        const complete = waitForType(socket, "complete");
+        calls[1]!.resolve({ transcript: "Full answer" });
+        await expect(complete).resolves.toMatchObject({ transcript: "Full answer" });
+        expect(transcribe).toHaveBeenCalledTimes(2);
+      } finally {
+        socket.terminate();
+        await fixture.close();
+      }
+    });
+
+    it("skips speculation without a free slot and uses the normal queued path", async () => {
+      const { service, transcribe, calls } = createControlledService();
+      const fixture = await openStreamServer(service, null, { ...defaultStreamingLimits, maxConcurrentTranscriptions: 1, maxQueuedTranscriptions: 1, vadConfig });
+      const blocker = await openSocket(fixture.url);
+      const socket = await openSocket(fixture.url);
+      try {
+        await startStream(blocker);
+        await prepareAnswer(blocker);
+        blocker.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+        await waitForType(blocker, "transcription-started");
+        expect(transcribe).toHaveBeenCalledTimes(1);
+
+        const queued = waitForType(socket, "transcription-queued");
+        await reachSilence(socket);
+        expect(transcribe).toHaveBeenCalledTimes(1);
+        await queued;
+        const complete = waitForType(socket, "complete");
+        calls[0]!.resolve({ transcript: "Blocker" });
+        await delay(50);
+        expect(transcribe).toHaveBeenCalledTimes(2);
+        calls[1]!.resolve({ transcript: "Normal path" });
+        await expect(complete).resolves.toMatchObject({ transcript: "Normal path" });
+      } finally {
+        blocker.terminate();
+        socket.terminate();
+        await fixture.close();
+      }
+    });
+
+    it("never exceeds the concurrency limit and keeps the slot reserved for the finalize job", async () => {
+      const { service, transcribe, calls } = createControlledService();
+      const fixture = await openStreamServer(service, null, { ...defaultStreamingLimits, maxConcurrentTranscriptions: 1, maxQueuedTranscriptions: 1, vadConfig });
+      const first = await openSocket(fixture.url);
+      const second = await openSocket(fixture.url);
+      try {
+        await reachSilence(first);
+        expect(transcribe).toHaveBeenCalledTimes(1);
+        // The only slot stays with the first response (speculation, then its finalize job), so the second cannot speculate.
+        await reachSilence(second);
+        expect(transcribe).toHaveBeenCalledTimes(1);
+        const firstComplete = waitForType(first, "complete");
+        const secondComplete = waitForType(second, "complete");
+        const secondStarted = waitForType(second, "transcription-started");
+        calls[0]!.resolve({ transcript: "First" });
+        await expect(firstComplete).resolves.toMatchObject({ transcript: "First" });
+        await secondStarted;
+        expect(transcribe).toHaveBeenCalledTimes(2);
+        calls[1]!.resolve({ transcript: "Second" });
+        await expect(secondComplete).resolves.toMatchObject({ transcript: "Second" });
+      } finally {
+        first.terminate();
+        second.terminate();
+        await fixture.close();
+      }
+    });
+
+    it("falls back to one normal transcription when the speculative call fails", async () => {
+      const { service, transcribe, calls } = createControlledService();
+      const fixture = await openStreamServer(service, null, { ...defaultStreamingLimits, vadConfig });
+      const socket = await openSocket(fixture.url);
+      try {
+        await reachSilence(socket);
+        calls[0]!.reject(new Error("provider 503"));
+        const complete = waitForType(socket, "complete");
+        await waitForType(socket, "transcription-started");
+        await delay(20);
+        expect(transcribe).toHaveBeenCalledTimes(2);
+        calls[1]!.resolve({ transcript: "Recovered" });
+        await expect(complete).resolves.toMatchObject({ transcript: "Recovered" });
+        expect(transcribe).toHaveBeenCalledTimes(2);
+      } finally {
+        socket.terminate();
+        await fixture.close();
+      }
+    });
+
+    it("aborts the speculation and zeroes its snapshot on cancel and disconnect", async () => {
+      for (const action of ["cancel", "terminate"] as const) {
+        const { service, calls } = createControlledService();
+        const fixture = await openStreamServer(service, null, { ...defaultStreamingLimits, vadConfig });
+        const socket = await openSocket(fixture.url);
+        try {
+          await reachSilence(socket);
+          expect(calls).toHaveLength(1);
+          if (action === "cancel") socket.send(JSON.stringify({ type: "cancel" }));
+          else socket.terminate();
+          await delay(50);
+          expect(calls[0]!.signal?.aborted).toBe(true);
+          expect(calls[0]!.audio.every((byte) => byte === 0)).toBe(true);
+        } finally {
+          socket.terminate();
+          await fixture.close();
+        }
+      }
+    });
+
+    it("aborts the speculation when the answer is finalized manually", async () => {
+      const { service, calls } = createControlledService();
+      const fixture = await openStreamServer(service, null, { ...defaultStreamingLimits, vadConfig });
+      const socket = await openSocket(fixture.url);
+      try {
+        await reachSilence(socket);
+        const started = waitForType(socket, "transcription-started");
+        socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+        await started;
+        expect(calls[0]!.signal?.aborted).toBe(true);
+        await delay(20);
+        expect(calls).toHaveLength(2);
+      } finally {
+        socket.terminate();
+        await fixture.close();
+      }
+    });
+  });
+
+  it("reserves slots without queueing and hands a reservation to its job", async () => {
+    const queue = new FinalTranscriptionQueue(1, 1);
+    const reservation = queue.reserve();
+    expect(reservation).not.toBeNull();
+    expect(queue.reserve()).toBeNull();
+    expect(queue.activeCount).toBe(1);
+    let finish!: () => void;
+    queue.enqueue("a", () => new Promise<void>((resolve) => { finish = resolve; }), () => undefined, () => undefined, reservation!);
+    expect(queue.activeCount).toBe(1);
+    reservation!.release();
+    expect(queue.activeCount).toBe(1);
+    finish();
+    await delay(0);
+    expect(queue.activeCount).toBe(0);
+    const released = queue.reserve()!;
+    released.release();
+    released.release();
+    expect(queue.activeCount).toBe(0);
   });
 
   it("handles eight complete sockets as four active and four queued, once each, then clears audio", async () => {
