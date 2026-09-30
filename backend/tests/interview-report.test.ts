@@ -1,3 +1,4 @@
+import { expectPrecisionRules } from "./report-prompt-assertions.js";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
@@ -78,7 +79,7 @@ describe("final interview report service", () => {
     expect(body.messages[0].content).toContain("articles; prepositions and verb/adjective collocations");
     expect(body.messages[0].content).toContain("tense choice against explicit time markers");
     expect(body.messages[0].content).toContain("subject-verb agreement; countability and plural; word order; literal translations; and false cognates");
-    expect(body.messages[0].content).toContain("Include every distinct, clear, materially useful issue found, up to eight total, even if it occurs only once");
+    expectPrecisionRules(body.messages[0].content);
     expect(body.messages[0].content).toContain("Group occurrences only when they are genuinely the same underlying error pattern");
     expect(body.messages[0].content).toContain("Never turn an English grammar, vocabulary, or phrasing error into a technical gap");
     expect(body.messages[0].content).toContain("For an open-ended question, if the answer gives one or more concrete actions or decisions that reasonably respond to it");

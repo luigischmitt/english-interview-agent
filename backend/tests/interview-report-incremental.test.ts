@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { defaultThinkingModel } from "../src/thinking/config.js";
 import { OpenRouterInterviewReportService } from "../src/thinking/openrouter-interview-report-service.js";
+import { expectPrecisionRules } from "./report-prompt-assertions.js";
 import type { InterviewReportConsolidationInput, InterviewTurnAnalysis } from "../src/thinking/types.js";
 import type { SpeechConfig } from "../src/speech/config.js";
 
@@ -59,6 +60,7 @@ describe("per-turn analysis service", () => {
       response_format: { type: "json_schema", json_schema: { name: "interview_turn_analysis", strict: true } },
     });
     expect(bodies[0].max_tokens).toBeLessThanOrEqual(2_048);
+    expectPrecisionRules(bodies[0].messages[0].content);
     expect(JSON.parse(bodies[0].messages[1].content)).toEqual({ roleContext, turns: [turns[0]] });
     expect(result).toEqual({
       sequenceNumber: 2,
