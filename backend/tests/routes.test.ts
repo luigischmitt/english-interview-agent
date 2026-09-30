@@ -279,6 +279,29 @@ describe("speech routes", () => {
     expect(response.body).toEqual({ status: "ready", provider: "fake" });
   });
 
+  it("logs content-free speech synthesis timing", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const text = "SENTINEL_SPEECH_TEXT tell me about a project.";
+      const okResponse = await request(createApp({ speechConfig, speechProvider: new RecordingSpeechProvider() })).post("/api/v1/speech").send({ text });
+      expect(okResponse.status).toBe(200);
+      const unavailable: SpeechProvider = { name: "kokoro", async synthesize() { throw new SpeechProviderUnavailableError("SENTINEL_UPSTREAM failure"); }, async health() { return { status: "unavailable" }; } };
+      expect((await request(createApp({ speechConfig, speechProvider: unavailable })).post("/api/v1/speech").send({ text })).status).toBe(503);
+      const logs = info.mock.calls.map((call) => JSON.parse(String(call[0]))).filter((entry) => entry.event === "speech_synthesis_timing");
+      expect(logs).toHaveLength(2);
+      expect(logs.map((entry) => entry.status)).toEqual(["ok", "error"]);
+      for (const entry of logs) {
+        expect(Object.keys(entry).sort()).toEqual(["durationMs", "event", "provider", "status", "textLength"]);
+        expect(entry.textLength).toBe(text.length);
+        expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+      }
+      expect(logs[1].provider).toBe("kokoro");
+      expect(JSON.stringify(info.mock.calls)).not.toContain("SENTINEL");
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   it("returns 503 when the speech provider cannot synthesize", async () => {
     const unavailableProvider: SpeechProvider = {
       name: "kokoro",

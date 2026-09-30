@@ -264,7 +264,7 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
     const start = Date.now();
     const fallback = (reason: OrchestrationFallbackReason, logWarning = false, requestedDecision: "FOLLOW_UP" | "NEXT" | null = null): InterviewOrchestrationResult => {
       if (logWarning && this.config.diagnosticsEnabled) logOrchestrationFallback(reason);
-      if (this.config.diagnosticsEnabled) logOrchestrationDecision("NEXT", requestedDecision, "fallback", reason, input.followUpUsed, Date.now() - start);
+      logOrchestrationDecision("NEXT", requestedDecision, "fallback", reason, input.followUpUsed, Date.now() - start);
       return { decision: "NEXT", followUpQuestion: null, nextQuestion: fallbackQuestion(input), acknowledgement: null };
     };
     if (!transcriptHasUsefulContent(input.transcript)) return fallback("low_information");
@@ -302,7 +302,7 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
         return fallback(rejectionReason, true, rejectedDecision);
       }
       const costUsd = typeof body.usage?.cost === "number" && Number.isFinite(body.usage.cost) ? body.usage.cost : null;
-      if (this.config.diagnosticsEnabled) logOrchestrationDecision(parsed.decision, parsed.decision, "accepted", "model_decision", input.followUpUsed, Date.now() - start);
+      logOrchestrationDecision(parsed.decision, parsed.decision, "accepted", "model_decision", input.followUpUsed, Date.now() - start);
       return {
         ...parsed,
         ...(this.config.diagnosticsEnabled ? { diagnostics: { model: typeof body.model === "string" ? body.model : this.config.model, latencyMs: Date.now() - start, costUsd } } : {}),
