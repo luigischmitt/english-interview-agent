@@ -93,6 +93,11 @@ audio and never requires Docker or Kokoro. The frontend can continue showing
 the question and accepting an answer when speech is unavailable; speech is
 not a gate for interview practice.
 
+Each `POST /api/v1/speech` synthesis logs one content-free
+`speech_synthesis_timing` line with `status` (`ok`, `error`, or `aborted`),
+`provider`, `durationMs`, and `textLength`. It never contains the text, voice
+settings, or upstream error messages.
+
 ## Current routes
 
 | Method | Route | Current behavior |
@@ -330,16 +335,16 @@ answers skip the provider call and use a neutral transition. At most one
 follow-up is accepted per planned question; timeout, rate limiting, provider
 errors, missing credentials, or malformed output use a neutral transition and
 the first remaining fixed question that is not repetitive, or close the room
-when no safe planned question remains. Model, latency, provider-reported cost,
-and decision diagnostics can be enabled with the server-only
-`INTERVIEW_REASONING_DIAGNOSTICS=true` flag; it defaults off. With the flag on,
-decision events contain only the accepted decision or deterministic fallback,
-any valid model decision that was rejected, a fixed reason category,
-`followUpUsed`, and latency. They never contain a question, transcript, anchor,
-model name, session identifier, credential, or raw provider response.
+when no safe planned question remains. Every orchestration decision emits one
+content-free `interview_orchestration_decision` log line with the accepted
+decision or deterministic fallback, any valid model decision that was rejected,
+a fixed reason category, `followUpUsed`, and latency. It never contains a
+question, transcript, anchor, acknowledgement, model name, session identifier,
+credential, or raw provider response. Model, latency, provider-reported cost,
+and the separate `interview_orchestration_fallback` warning can be enabled with
+the server-only `INTERVIEW_REASONING_DIAGNOSTICS=true` flag; it defaults off.
 Provider-reported cost and model details are returned only when this flag is
-enabled. No orchestration decision or fallback diagnostics are logged while the
-flag is off. Unsafe optional acknowledgments
+enabled. Unsafe optional acknowledgments
 are dropped without discarding a valid question. Orchestration
 uses a separate 6-second timeout by default; answer assessment retains its
 15-second timeout. The browser cancels orchestration requests after 7 seconds

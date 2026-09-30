@@ -360,24 +360,32 @@ describe("OpenRouter next-turn orchestration", () => {
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(input)).resolves.toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: null });
   });
 
-  it("keeps diagnostics absent unless the explicit server-side flag is enabled", async () => {
+  it("always logs a content-free decision but keeps diagnostics and the fallback warning behind the flag", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const noDiagnosticsService = new OpenRouterOrchestrationService({
-      openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs,
-      orchestrationTimeoutMs: defaultOrchestrationTimeoutMs, diagnosticsEnabled: false,
-    }, async () => providerResponse(JSON.stringify({ decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: "Thanks. Let’s move on to another part of your experience." })));
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const config = { openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs: defaultOrchestrationTimeoutMs, diagnosticsEnabled: false };
+    const sentinelInput = { ...input, transcript: "SENTINEL_TRANSCRIPT I add SENTINEL_ANCHOR to every call. Also nothing else matters here.", currentQuestion: "SENTINEL_QUESTION how do you build services?" };
+    const accepted = { decision: "FOLLOW_UP", followUpQuestion: "SENTINEL_FOLLOWUP what about SENTINEL_ANCHOR limits?", nextQuestion: null, anchor: "SENTINEL_ANCHOR", acknowledgement: "SENTINEL_ACK makes sense." };
     try {
-      await expect(noDiagnosticsService.decide(input)).resolves.toEqual({ decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: null });
-      await new OpenRouterOrchestrationService({
-        openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs,
-        orchestrationTimeoutMs: defaultOrchestrationTimeoutMs, diagnosticsEnabled: false,
-      }, async () => providerResponse("not-json")).decide(input);
-      expect(info).not.toHaveBeenCalled();
+      const acceptedResult = await new OpenRouterOrchestrationService(config, async () => providerResponse(JSON.stringify(accepted))).decide(sentinelInput);
+      expect(acceptedResult.diagnostics).toBeUndefined();
+      await new OpenRouterOrchestrationService(config, async () => providerResponse("not-json")).decide(sentinelInput);
+      await new OpenRouterOrchestrationService(config, async () => { throw new Error("must not call provider"); }).decide({ ...sentinelInput, transcript: "um yeah" });
+      await new OpenRouterOrchestrationService({ ...config, openRouterApiKey: null }, async () => { throw new Error("must not call provider"); }).decide(sentinelInput);
+      const logs = info.mock.calls.map((call) => JSON.parse(String(call[0])));
+      expect(logs.map((entry) => entry.reason)).toEqual(["model_decision", "invalid_json", "low_information", "credentials_missing"]);
+      for (const entry of logs) {
+        expect(Object.keys(entry).sort()).toEqual(["decision", "event", "followUpUsed", "latencyMs", "outcome", "reason", "requestedDecision"]);
+        expect(entry.event).toBe("interview_orchestration_decision");
+      }
       expect(warn).not.toHaveBeenCalled();
+      const output = JSON.stringify([info.mock.calls, warn.mock.calls, log.mock.calls]);
+      expect(output).not.toMatch(/SENTINEL|um yeah|server-test-key/);
     } finally {
       info.mockRestore();
       warn.mockRestore();
+      log.mockRestore();
     }
   });
 

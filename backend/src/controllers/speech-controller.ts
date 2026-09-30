@@ -20,6 +20,10 @@ function invalidSpeechRequest(responseMessage: string, response: Parameters<Requ
   });
 }
 
+function logSpeechTiming(status: "ok" | "error" | "aborted", provider: string, start: number, textLength: number): void {
+  console.info(JSON.stringify({ event: "speech_synthesis_timing", status, provider, durationMs: Math.max(0, Math.round(Date.now() - start)), textLength }));
+}
+
 export function createSpeechController(provider: SpeechProvider, config: SpeechConfig) {
   const synthesize: RequestHandler = async (request, response) => {
     const body = request.body as SpeechBody;
@@ -66,6 +70,14 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
     request.once("aborted", abortOnDisconnect);
     response.once("close", abortOnDisconnect);
 
+    const start = Date.now();
+    let timingLogged = false;
+    const logTiming = (status: "ok" | "error" | "aborted") => {
+      if (timingLogged) return;
+      timingLogged = true;
+      logSpeechTiming(status, provider.name, start, text.length);
+    };
+
     try {
       const speech = await provider.synthesize({
         text,
@@ -77,6 +89,7 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
 
       if (abortController.signal.aborted || response.destroyed || response.writableEnded) {
         clearAudio();
+        logTiming("aborted");
         return;
       }
 
@@ -84,12 +97,17 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
       responseOwnsAudio = true;
       try {
         response.status(200).contentType(speech.contentType).send(audio);
+        logTiming("ok");
       } catch (error) {
         clearOnFinish();
         throw error;
       }
     } catch (error) {
-      if (abortController.signal.aborted || response.destroyed || response.writableEnded) return;
+      if (abortController.signal.aborted || response.destroyed || response.writableEnded) {
+        logTiming("aborted");
+        return;
+      }
+      logTiming("error");
       if (error instanceof SpeechProviderUnavailableError) {
         response.status(503).json({
           error: {
