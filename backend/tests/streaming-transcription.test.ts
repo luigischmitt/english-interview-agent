@@ -718,6 +718,134 @@ describe("versioned transcription WebSocket", () => {
     });
   });
 
+  describe("hedged Whisper calls", () => {
+    const vadConfig = { trailingSilenceMs: 300, finalizationGraceMs: 800, resumedSpeechConfirmationMs: 200 };
+    const hedgeLimits = { ...defaultStreamingLimits, vadConfig, hedgeAfterMs: 150 };
+    const createControlledService = () => {
+      const calls: Array<{ audio: Buffer; signal?: AbortSignal; resolve: (transcript: string) => void }> = [];
+      const transcribe = vi.fn((audio: Buffer, _provider: "whisper-large-v3-turbo", _format?: "wav", signal?: AbortSignal) => new Promise<TranscriptionResult>((resolve, reject) => {
+        calls.push({ audio, signal, resolve: (transcript) => resolve({ provider: "whisper-large-v3-turbo", transcript, words: [{ text: transcript, start: 0, end: 0.1 }] }) });
+        signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      }));
+      const service: TranscriptionService = { availableProviders: () => ["whisper-large-v3-turbo"], transcribe };
+      return { service, transcribe, calls };
+    };
+    const reachSilence = async (socket: WebSocket) => {
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const silence = waitForType(socket, "silence-detected");
+      for (let index = 0; index < 5; index += 1) {
+        socket.send(JSON.stringify({ type: "level", value: 0.005 }));
+        await delay(100);
+      }
+      await silence;
+    };
+
+    it("reuses the speculation with a hedge: the faster call wins and the slower one is aborted", async () => {
+      const { service, transcribe, calls } = createControlledService();
+      const fixture = await openStreamServer(service, null, hedgeLimits);
+      const socket = await openSocket(fixture.url);
+      const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+      try {
+        await reachSilence(socket);
+        await delay(250);
+        expect(transcribe).toHaveBeenCalledTimes(2);
+        expect(calls[1]!.audio).toBe(calls[0]!.audio);
+        const complete = waitForType(socket, "complete");
+        calls[1]!.resolve("Hedged answer");
+        await expect(complete).resolves.toMatchObject({ transcript: "Hedged answer" });
+        expect(calls[0]!.signal?.aborted).toBe(true);
+        expect(transcribe).toHaveBeenCalledTimes(2);
+        const logged = info.mock.calls.map(([line]) => String(line)).find((line) => line.includes('"status":"complete"'))!;
+        expect(JSON.parse(logged)).toMatchObject({ speculation: "reused", hedge: "secondary_won" });
+        expect(logged).not.toContain("Hedged answer");
+      } finally {
+        info.mockRestore();
+        socket.terminate();
+        await fixture.close();
+      }
+    });
+
+    it("hedges the normal final call too", async () => {
+      const { service, transcribe, calls } = createControlledService();
+      const fixture = await openStreamServer(service, null, hedgeLimits);
+      const socket = await openSocket(fixture.url);
+      try {
+        await startStream(socket);
+        await prepareAnswer(socket, 8);
+        const started = waitForType(socket, "transcription-started");
+        socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+        await started;
+        await delay(250);
+        expect(transcribe).toHaveBeenCalledTimes(2);
+        const complete = waitForType(socket, "complete");
+        calls[0]!.resolve("Primary answer");
+        await expect(complete).resolves.toMatchObject({ transcript: "Primary answer" });
+        expect(calls[1]!.signal?.aborted).toBe(true);
+      } finally {
+        socket.terminate();
+        await fixture.close();
+      }
+    });
+
+    it("aborts both calls and zeroes the snapshot when speech resumes", async () => {
+      const { service, calls } = createControlledService();
+      const fixture = await openStreamServer(service, null, hedgeLimits);
+      const socket = await openSocket(fixture.url);
+      try {
+        await reachSilence(socket);
+        await delay(250);
+        expect(calls).toHaveLength(2);
+        const resumed = waitForType(socket, "speech-resumed");
+        for (let index = 0; index < 4; index += 1) {
+          socket.send(JSON.stringify({ type: "level", value: 0.05 }));
+          await delay(100);
+        }
+        await resumed;
+        sendFrames(socket, 4);
+        expect(calls[0]!.signal?.aborted).toBe(true);
+        expect(calls[1]!.signal?.aborted).toBe(true);
+        expect(calls[0]!.audio.every((byte) => byte === 0)).toBe(true);
+      } finally {
+        socket.terminate();
+        await fixture.close();
+      }
+    });
+
+    it("does not hedge when the only slot is taken, and never exceeds the concurrency limit", async () => {
+      const { service, transcribe } = createControlledService();
+      const fixture = await openStreamServer(service, null, { ...hedgeLimits, maxConcurrentTranscriptions: 1, maxQueuedTranscriptions: 1 });
+      const socket = await openSocket(fixture.url);
+      try {
+        await reachSilence(socket);
+        await delay(400);
+        expect(transcribe).toHaveBeenCalledTimes(1);
+      } finally {
+        socket.terminate();
+        await fixture.close();
+      }
+    });
+
+    it("counts the hedge against the limit so another response cannot speculate", async () => {
+      const { service, transcribe } = createControlledService();
+      const fixture = await openStreamServer(service, null, { ...hedgeLimits, maxConcurrentTranscriptions: 2, maxQueuedTranscriptions: 1 });
+      const first = await openSocket(fixture.url);
+      const second = await openSocket(fixture.url);
+      try {
+        await reachSilence(first);
+        await delay(250);
+        expect(transcribe).toHaveBeenCalledTimes(2);
+        await reachSilence(second);
+        await delay(400);
+        expect(transcribe).toHaveBeenCalledTimes(2);
+      } finally {
+        first.terminate();
+        second.terminate();
+        await fixture.close();
+      }
+    });
+  });
+
   it("reserves slots without queueing and hands a reservation to its job", async () => {
     const queue = new FinalTranscriptionQueue(1, 1);
     const reservation = queue.reserve();

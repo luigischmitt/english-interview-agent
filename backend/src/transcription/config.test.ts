@@ -15,6 +15,15 @@ describe("optional Azure assessment configuration", () => {
     expect(config.vadTrailingSilenceMs).toBe(3_500);
     expect(config.vadFinalizationGraceMs).toBe(1_500);
     expect(config.vadAmbientActivityHoldMs).toBe(8_000);
+    expect(config.hedgeAfterMs).toBe(4_000);
+  });
+
+  it("accepts a hedge delay from 0 (disabled) to 30000 and rejects anything else", () => {
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_HEDGE_AFTER_MS: "0" }).hedgeAfterMs).toBe(0);
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_HEDGE_AFTER_MS: "30000" }).hedgeAfterMs).toBe(30_000);
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_HEDGE_AFTER_MS: "30001" })).toThrow("0 to 30000");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_HEDGE_AFTER_MS: "-1" })).toThrow("0 to 30000");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_HEDGE_AFTER_MS: "1.5" })).toThrow("0 to 30000");
   });
 
   it("enables assessment only on the explicit true toggle", () => {

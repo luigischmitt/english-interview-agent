@@ -48,6 +48,7 @@ Os valores podem ser reduzidos por ambiente, mas têm tetos no backend para mant
 - `TRANSCRIPTION_STREAM_MAX_ACTIVE_SESSIONS` (padrão `8`, teto `8`)
 - `TRANSCRIPTION_STREAM_MAX_CONCURRENT_TRANSCRIPTIONS` (padrão `4`, teto `4`)
 - `TRANSCRIPTION_STREAM_MAX_QUEUED_TRANSCRIPTIONS` (padrão `4`, teto `4`)
+- `TRANSCRIPTION_HEDGE_AFTER_MS` (padrão `4000`, `0` desativa, teto `30000`; ver ENG-90)
 - `TRANSCRIPTION_TIMEOUT_MS` (padrão `55000`, teto `60000`; inclui tentativas limitadas por HTTP 429)
 
 PCM mono s16le a 16 kHz ocupa 32.000 bytes por segundo; 180 segundos representam 5.760.000 bytes, abaixo do limite de 6 MiB. O servidor monta WAV diretamente dos frames para evitar uma cópia PCM intermediária e envia o arquivo ao OpenRouter em multipart, sem expansão Base64. Cada transcrição lógica tenta no máximo três requisições quando recebe HTTP 429, respeitando `Retry-After` por até dois segundos e backoff limitado, dentro do orçamento total de `TRANSCRIPTION_TIMEOUT_MS`. Outros erros não são repetidos. O limite da sessão de captura é substituído ao receber `finalize` por um orçamento separado que cobre a espera máxima da fila, o processamento Whisper e a avaliação Azure curta; assim, uma resposta de 180 segundos não perde o resultado por causa do timer de captura.
@@ -71,3 +72,9 @@ O resultado `complete` do Whisper é entregue antes da avaliação Azure. O trab
 ## Verificação
 
 Os testes cobrem transporte PCM, construção do WAV completo, ausência de chamadas antes de `finalize`, uma chamada lógica depois, silêncio sem fala, cauda silenciosa após fala válida, duração/bytes/sessões, fila e concorrência, cancelamento e desconexão, falha do Whisper, avaliação Azure tardia e limite de 30 segundos. O harness opt-in gera uma resposta sintética, envia frames pelo WebSocket e informa latências e tamanho do texto sem imprimir a transcrição.
+
+## Requisições hedged (ENG-90)
+
+A latência do Whisper via OpenRouter tem cauda longa independente do áudio (o mesmo WAV de 61 s variou de ~1 s a ~15 s, e fixar o provedor não ajuda). Por isso, tanto a chamada especulativa quanto a chamada final normal são "hedged": se a chamada primária ainda não terminou após `TRANSCRIPTION_HEDGE_AFTER_MS` (padrão 4 s) e a sessão não foi abortada, o servidor tenta reservar mais um slot da `FinalTranscriptionQueue` (`reserve()`, nunca excedendo o limite de concorrência nem furando a fila). Se houver slot, inicia uma segunda chamada idêntica sobre o mesmo buffer. A primeira resposta bem-sucedida vence e a outra é abortada; o slot extra só é liberado depois que a chamada abortada termina. Se uma falhar, espera-se a outra; se ambas falharem, o erro da primária (com as categorias do ENG-89) é o reportado. O transcript canônico continua único: apenas o resultado vencedor é usado. Descarte da especulação, finalização manual, cancelamento, erro e fechamento do socket abortam as duas chamadas e zeram os buffers. A recuperação opcional de timestamps não é hedged.
+
+Custo: o hedge é uma chamada Whisper extra apenas em requisições lentas; o Whisper custa cerca de US$0,01 por hora de áudio. Os logs `complete` e `failed` incluem `hedge` (`not_needed`, `skipped_no_slot`, `primary_won`, `secondary_won`, `both_failed`), sem conteúdo.

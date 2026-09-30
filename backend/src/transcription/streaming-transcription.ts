@@ -13,6 +13,8 @@ export type StreamingLimits = {
   maxConcurrentTranscriptions: number;
   maxQueuedTranscriptions: number;
   finalizationTimeoutMs: number;
+  /** Delay before a slow Whisper call is hedged with one identical extra call; 0 disables hedging. */
+  hedgeAfterMs: number;
   vadConfig?: Partial<VadConfig>;
 };
 
@@ -23,6 +25,7 @@ export const defaultStreamingLimits: StreamingLimits = {
   maxConcurrentTranscriptions: 4,
   maxQueuedTranscriptions: 4,
   finalizationTimeoutMs: 128_000,
+  hedgeAfterMs: 4_000,
 };
 
 export type StreamingSession = {

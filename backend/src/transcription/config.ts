@@ -14,6 +14,7 @@ export type TranscriptionConfig = {
   vadTrailingSilenceMs: number;
   vadFinalizationGraceMs: number;
   vadAmbientActivityHoldMs: number;
+  hedgeAfterMs: number;
 };
 
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
@@ -30,6 +31,13 @@ function parsePositiveNumber(value: string | undefined, fallback: number): numbe
 function parsePositiveInteger(value: string | undefined, fallback: number, maximum = Number.MAX_SAFE_INTEGER): number {
   const parsed = parsePositiveNumber(value, fallback);
   if (!Number.isInteger(parsed) || parsed > maximum) throw new Error(`Transcription limits must be positive integers no greater than ${maximum}.`);
+  return parsed;
+}
+
+function parseNonNegativeInteger(value: string | undefined, fallback: number, maximum: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > maximum) throw new Error(`Transcription hedge delay must be an integer from 0 to ${maximum}.`);
   return parsed;
 }
 
@@ -50,5 +58,6 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     vadTrailingSilenceMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_TRAILING_SILENCE_MS, 3_500, 10_000),
     vadFinalizationGraceMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_FINALIZATION_GRACE_MS, 1_500, 5_000),
     vadAmbientActivityHoldMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_AMBIENT_HOLD_MS, 8_000, 30_000),
+    hedgeAfterMs: parseNonNegativeInteger(environment.TRANSCRIPTION_HEDGE_AFTER_MS, 4_000, 30_000),
   };
 }
