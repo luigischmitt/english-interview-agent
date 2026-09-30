@@ -1,4 +1,4 @@
-import { defaultOrchestrationTimeoutMs, type ThinkingConfig } from "./config.js";
+import { defaultOrchestrationHedgeAfterMs, defaultOrchestrationTimeoutMs, type ThinkingConfig } from "./config.js";
 import type { InterviewOrchestrationInput, InterviewOrchestrationResult, InterviewOrchestrationService } from "./types.js";
 
 type OpenRouterResponse = {
@@ -13,7 +13,12 @@ function logOrchestrationFallback(reason: OrchestrationFallbackReason): void {
   console.warn(JSON.stringify({ event: "interview_orchestration_fallback", reason }));
 }
 
-function logOrchestrationDecision(decision: "FOLLOW_UP" | "NEXT", requestedDecision: "FOLLOW_UP" | "NEXT" | null, outcome: "accepted" | "fallback", reason: OrchestrationFallbackReason | "model_decision", followUpUsed: boolean, latencyMs: number): void {
+type HedgeOutcome = "not_needed" | "primary_won" | "secondary_won" | "retried" | "failed";
+
+/** A retry needs at least this much of the overall deadline left; otherwise the fallback is faster than a doomed second call. */
+const minRetryBudgetMs = 2_000;
+
+function logOrchestrationDecision(decision: "FOLLOW_UP" | "NEXT", requestedDecision: "FOLLOW_UP" | "NEXT" | null, outcome: "accepted" | "fallback", reason: OrchestrationFallbackReason | "model_decision", followUpUsed: boolean, latencyMs: number, attempts: number, hedge: HedgeOutcome): void {
   console.info(JSON.stringify({
     event: "interview_orchestration_decision",
     decision,
@@ -22,6 +27,8 @@ function logOrchestrationDecision(decision: "FOLLOW_UP" | "NEXT", requestedDecis
     reason,
     followUpUsed,
     latencyMs: Math.max(0, Math.round(latencyMs)),
+    attempts,
+    hedge,
   }));
 }
 
@@ -36,6 +43,17 @@ const schema = {
     acknowledgement: { type: ["string", "null"], maxLength: 120 },
   },
   required: ["decision", "followUpQuestion", "nextQuestion", "anchor", "acknowledgement"],
+} as const;
+
+/** After the follow-up is spent the model may only choose NEXT, so it writes an adapted main question instead of an invalid FOLLOW_UP. */
+const nextOnlySchema = {
+  ...schema,
+  properties: {
+    ...schema.properties,
+    decision: { type: "string", enum: ["NEXT"] },
+    followUpQuestion: { type: "null" },
+    anchor: { type: "null" },
+  },
 } as const;
 
 const systemPrompt = [
@@ -252,54 +270,120 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
 
   async decide(input: InterviewOrchestrationInput): Promise<InterviewOrchestrationResult> {
     const start = Date.now();
-    const fallback = (reason: OrchestrationFallbackReason, logWarning = false, requestedDecision: "FOLLOW_UP" | "NEXT" | null = null): InterviewOrchestrationResult => {
+    const fallback = (reason: OrchestrationFallbackReason, logWarning = false, requestedDecision: "FOLLOW_UP" | "NEXT" | null = null, attempts = 0, hedge: HedgeOutcome = "not_needed"): InterviewOrchestrationResult => {
       if (logWarning && this.config.diagnosticsEnabled) logOrchestrationFallback(reason);
-      logOrchestrationDecision("NEXT", requestedDecision, "fallback", reason, input.followUpUsed, Date.now() - start);
+      logOrchestrationDecision("NEXT", requestedDecision, "fallback", reason, input.followUpUsed, Date.now() - start, attempts, hedge);
       return { decision: "NEXT", followUpQuestion: null, nextQuestion: fallbackQuestion(input), acknowledgement: null };
     };
     if (!transcriptHasUsefulContent(input.transcript)) return fallback("low_information");
     if (!this.config.openRouterApiKey) return fallback("credentials_missing");
-    const signal = AbortSignal.timeout(this.config.orchestrationTimeoutMs ?? defaultOrchestrationTimeoutMs);
-    try {
-      const response = await this.fetchImplementation("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${this.config.openRouterApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: this.config.model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: JSON.stringify({ roleContext: input.roleContext, currentQuestion: input.currentQuestion, transcript: input.transcript, nextFixedQuestion: input.nextFixedQuestion, remainingFixedQuestions: input.remainingFixedQuestions ?? (input.nextFixedQuestion ? [input.nextFixedQuestion] : []), followUpUsed: input.followUpUsed, askedQuestions: input.askedQuestions ?? [], recentAcknowledgements: input.recentAcknowledgements ?? [], previousAnswers: input.previousAnswers ?? [] }) },
-          ],
-          temperature: 0,
-          max_tokens: 320,
-          provider: { sort: "latency", require_parameters: true, data_collection: "deny" },
-          response_format: { type: "json_schema", json_schema: { name: "interview_turn_decision", strict: true, schema } },
-        }),
-        signal,
-      });
-      if (!response.ok) {
-        await response.body?.cancel();
-        return fallback("provider_unavailable", true);
+    const timeoutMs = this.config.orchestrationTimeoutMs ?? defaultOrchestrationTimeoutMs;
+    const hedgeAfterMs = this.config.orchestrationHedgeAfterMs ?? defaultOrchestrationHedgeAfterMs;
+    const requestBody = JSON.stringify({
+      model: this.config.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: JSON.stringify({ roleContext: input.roleContext, currentQuestion: input.currentQuestion, transcript: input.transcript, nextFixedQuestion: input.nextFixedQuestion, remainingFixedQuestions: input.remainingFixedQuestions ?? (input.nextFixedQuestion ? [input.nextFixedQuestion] : []), followUpUsed: input.followUpUsed, askedQuestions: input.askedQuestions ?? [], recentAcknowledgements: input.recentAcknowledgements ?? [], previousAnswers: input.previousAnswers ?? [] }) },
+      ],
+      temperature: 0,
+      max_tokens: 320,
+      provider: { sort: "latency", require_parameters: true, data_collection: "deny" },
+      response_format: { type: "json_schema", json_schema: { name: "interview_turn_decision", strict: true, schema: input.followUpUsed ? nextOnlySchema : schema } },
+    });
+
+    type Accepted = { parsed: NonNullable<ReturnType<typeof parseDecision>>; body: OpenRouterResponse };
+    type AttemptOutcome =
+      | { kind: "ok"; accepted: Accepted }
+      | { kind: "invalid"; reason: OrchestrationFallbackReason; requestedDecision: "FOLLOW_UP" | "NEXT" | null }
+      | { kind: "transient"; reason: OrchestrationFallbackReason }
+      | { kind: "fatal"; reason: OrchestrationFallbackReason };
+
+    const runAttempt = async (signal: AbortSignal): Promise<AttemptOutcome> => {
+      try {
+        const response = await this.fetchImplementation("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${this.config.openRouterApiKey}`, "Content-Type": "application/json" },
+          body: requestBody,
+          signal,
+        });
+        if (!response.ok) {
+          await response.body?.cancel().catch(() => undefined);
+          return { kind: response.status >= 500 || response.status === 429 ? "transient" : "fatal", reason: "provider_unavailable" };
+        }
+        const body = await response.json() as OpenRouterResponse;
+        let rejectionReason: OrchestrationFallbackReason = "invalid_shape";
+        let rejectedDecision: "FOLLOW_UP" | "NEXT" | null = null;
+        const parsed = parseDecision(body.choices?.[0]?.message?.content, input, (reason, requestedDecision) => {
+          rejectionReason = reason;
+          rejectedDecision = requestedDecision;
+        });
+        return parsed ? { kind: "ok", accepted: { parsed, body } } : { kind: "invalid", reason: rejectionReason, requestedDecision: rejectedDecision };
+      } catch {
+        return { kind: "transient", reason: "provider_error" };
       }
-      const body = await response.json() as OpenRouterResponse;
-      let rejectionReason: OrchestrationFallbackReason = "invalid_shape";
-      let rejectedDecision: "FOLLOW_UP" | "NEXT" | null = null;
-      const parsed = parseDecision(body.choices?.[0]?.message?.content, input, (reason, requestedDecision) => {
-        rejectionReason = reason;
-        rejectedDecision = requestedDecision;
-      });
-      if (!parsed) {
-        return fallback(rejectionReason, true, rejectedDecision);
-      }
-      const costUsd = typeof body.usage?.cost === "number" && Number.isFinite(body.usage.cost) ? body.usage.cost : null;
-      logOrchestrationDecision(parsed.decision, parsed.decision, "accepted", "model_decision", input.followUpUsed, Date.now() - start);
-      return {
-        ...parsed,
-        ...(this.config.diagnosticsEnabled ? { diagnostics: { model: typeof body.model === "string" ? body.model : this.config.model, latencyMs: Date.now() - start, costUsd } } : {}),
+    };
+
+    type Role = "primary" | "secondary" | "retry";
+    type Final = { kind: "ok"; accepted: Accepted; role: Role } | { kind: "failed"; reason: OrchestrationFallbackReason; requestedDecision: "FOLLOW_UP" | "NEXT" | null };
+    let attempts = 0;
+    let hedged = false;
+    let retried = false;
+    const final = await new Promise<Final>((resolve) => {
+      const controllers = new Set<AbortController>();
+      const timers: Array<ReturnType<typeof setTimeout>> = [];
+      let running = 0;
+      let done = false;
+      let failure: { reason: OrchestrationFallbackReason; requestedDecision: "FOLLOW_UP" | "NEXT" | null } | null = null;
+      let invalid: { reason: OrchestrationFallbackReason; requestedDecision: "FOLLOW_UP" | "NEXT" | null } | null = null;
+      const finish = (result: Final) => {
+        if (done) return;
+        done = true;
+        timers.forEach(clearTimeout);
+        controllers.forEach((controller) => controller.abort());
+        resolve(result);
       };
-    } catch {
-      return fallback("provider_error", true);
+      const launch = (role: Role) => {
+        const controller = new AbortController();
+        controllers.add(controller);
+        attempts += 1;
+        running += 1;
+        void runAttempt(controller.signal).then((outcome) => {
+          running -= 1;
+          controllers.delete(controller);
+          if (done) return;
+          if (outcome.kind === "ok") return finish({ kind: "ok", accepted: outcome.accepted, role });
+          if (outcome.kind === "invalid") invalid = { reason: outcome.reason, requestedDecision: outcome.requestedDecision };
+          else failure = { reason: outcome.reason, requestedDecision: null };
+          if (outcome.kind === "transient" && !retried && !hedged && timeoutMs - (Date.now() - start) >= minRetryBudgetMs) {
+            retried = true;
+            return launch("retry");
+          }
+          if (running === 0) finish({ kind: "failed", ...(invalid ?? failure ?? { reason: "provider_error", requestedDecision: null }) });
+        });
+      };
+      timers.push(setTimeout(() => finish({ kind: "failed", reason: "provider_error", requestedDecision: null }), timeoutMs));
+      if (hedgeAfterMs > 0 && hedgeAfterMs < timeoutMs) {
+        timers.push(setTimeout(() => {
+          if (done || retried) return;
+          hedged = true;
+          launch("secondary");
+        }, hedgeAfterMs));
+      }
+      launch("primary");
+    });
+
+    if (final.kind === "failed") {
+      const hedge: HedgeOutcome = attempts > 1 ? "failed" : "not_needed";
+      return fallback(final.reason, true, final.requestedDecision, attempts, hedge);
     }
+    const { parsed, body } = final.accepted;
+    const hedge: HedgeOutcome = final.role === "retry" ? "retried" : hedged ? (final.role === "secondary" ? "secondary_won" : "primary_won") : "not_needed";
+    const costUsd = typeof body.usage?.cost === "number" && Number.isFinite(body.usage.cost) ? body.usage.cost : null;
+    logOrchestrationDecision(parsed.decision, parsed.decision, "accepted", "model_decision", input.followUpUsed, Date.now() - start, attempts, hedge);
+    return {
+      ...parsed,
+      ...(this.config.diagnosticsEnabled ? { diagnostics: { model: typeof body.model === "string" ? body.model : this.config.model, latencyMs: Date.now() - start, costUsd } } : {}),
+    };
   }
 }
 

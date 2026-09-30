@@ -271,7 +271,7 @@ describe("OpenRouter next-turn orchestration", () => {
       expect(acceptedLog).toMatchObject({
         event: "interview_orchestration_decision", decision: "FOLLOW_UP", requestedDecision: "FOLLOW_UP", outcome: "accepted", reason: "model_decision", followUpUsed: false,
       });
-      expect(Object.keys(acceptedLog).sort()).toEqual(["decision", "event", "followUpUsed", "latencyMs", "outcome", "reason", "requestedDecision"]);
+      expect(Object.keys(acceptedLog).sort()).toEqual(["attempts", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
       expect(JSON.stringify(acceptedLog)).not.toContain(input.transcript);
       expect(JSON.stringify(acceptedLog)).not.toContain(followUp);
       expect(JSON.stringify(acceptedLog)).not.toContain(anchor);
@@ -402,7 +402,7 @@ describe("OpenRouter next-turn orchestration", () => {
       const logs = info.mock.calls.map((call) => JSON.parse(String(call[0])));
       expect(logs.map((entry) => entry.reason)).toEqual(["model_decision", "invalid_json", "low_information", "credentials_missing"]);
       for (const entry of logs) {
-        expect(Object.keys(entry).sort()).toEqual(["decision", "event", "followUpUsed", "latencyMs", "outcome", "reason", "requestedDecision"]);
+        expect(Object.keys(entry).sort()).toEqual(["attempts", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
         expect(entry.event).toBe("interview_orchestration_decision");
       }
       expect(warn).not.toHaveBeenCalled();
@@ -473,5 +473,163 @@ describe("POST /api/v1/thinking/next-turn", () => {
     const accepted = await request(app).post("/api/v1/thinking/next-turn").send({ ...input, previousAnswers: [pair, pair] });
     expect(accepted.status).toBe(200);
     expect(fakeService.decide).toHaveBeenCalledWith(expect.objectContaining({ previousAnswers: [pair, pair] }));
+  });
+});
+
+describe("OpenRouter next-turn orchestration resilience", () => {
+  const cfg = (orchestrationTimeoutMs: number, orchestrationHedgeAfterMs?: number) => ({ openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs, orchestrationHedgeAfterMs, diagnosticsEnabled: false });
+  const svc = (fetchImplementation: typeof fetch, timeout = 6000, hedge?: number) => new OpenRouterOrchestrationService(cfg(timeout, hedge), fetchImplementation);
+  const good = () => providerResponse(JSON.stringify(decision()));
+  const bad = () => providerResponse("not json");
+  const lastDecisionLog = (spy: { mock: { calls: unknown[][] } }) => JSON.parse(String(spy.mock.calls.map((c) => c[0]).filter((l) => String(l).includes("interview_orchestration_decision")).at(-1)));
+  const abortable = (signal: AbortSignal | null | undefined) => new Promise<Response>((_, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+
+  it("retries once after a fast 5xx and accepts the second response", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response("x", { status: 503 })).mockResolvedValueOnce(good());
+    await expect(svc(fetchMock).decide(input)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: followUp });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(lastDecisionLog(info)).toMatchObject({ attempts: 2, hedge: "retried", outcome: "accepted" });
+    info.mockRestore();
+  });
+
+  it("retries at most once", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => new Response("x", { status: 429 }));
+    await expect(svc(fetchMock).decide(input)).resolves.toEqual(fallback);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a network error when little budget remains", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("network"));
+    await expect(svc(fetchMock, 1500).decide(input)).resolves.toEqual(fallback);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(lastDecisionLog(info)).toMatchObject({ attempts: 1, hedge: "not_needed", reason: "provider_error" });
+    info.mockRestore();
+  });
+
+  it("does not retry a non-transient 4xx", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response("x", { status: 400 }));
+    await expect(svc(fetchMock).decide(input)).resolves.toEqual(fallback);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("hedges a slow request and aborts the primary when the secondary wins", async () => {
+    vi.useFakeTimers();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const signals: Array<AbortSignal | null | undefined> = [];
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      signals.push(init?.signal);
+      return signals.length === 1 ? abortable(init?.signal) : good();
+    });
+    const pending = svc(fetchMock).decide(input);
+    await vi.advanceTimersByTimeAsync(2499);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toMatchObject({ decision: "FOLLOW_UP" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(lastDecisionLog(info)).toMatchObject({ attempts: 2, hedge: "secondary_won" });
+    info.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("reports primary_won when the primary answers after the hedge starts", async () => {
+    vi.useFakeTimers();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((_url, init) => new Promise<Response>((resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      if (fetchMock.mock.calls.length === 1) setTimeout(() => resolve(good()), 2600);
+    }));
+    const pending = svc(fetchMock).decide(input);
+    await vi.advanceTimersByTimeAsync(2600);
+    await expect(pending).resolves.toMatchObject({ decision: "FOLLOW_UP" });
+    expect(lastDecisionLog(info)).toMatchObject({ attempts: 2, hedge: "primary_won" });
+    info.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("uses the pending secondary when the primary returns invalid content", async () => {
+    vi.useFakeTimers();
+    let call = 0;
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      call += 1;
+      if (call === 1) { await new Promise((resolve) => setTimeout(resolve, 2700)); return bad(); }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return init?.signal?.aborted ? bad() : good();
+    });
+    const pending = svc(fetchMock).decide(input);
+    await vi.advanceTimersByTimeAsync(3300);
+    await expect(pending).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: followUp });
+    vi.useRealTimers();
+  });
+
+  it("falls back with the rejection reason when both hedged responses are invalid", async () => {
+    vi.useFakeTimers();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    let call = 0;
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => {
+      call += 1;
+      await new Promise((resolve) => setTimeout(resolve, call === 1 ? 2700 : 300));
+      return bad();
+    });
+    const pending = svc(fetchMock).decide(input);
+    await vi.advanceTimersByTimeAsync(3000);
+    await expect(pending).resolves.toEqual(fallback);
+    expect(lastDecisionLog(info)).toMatchObject({ attempts: 2, hedge: "failed", reason: "invalid_json" });
+    info.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("does not hedge when disabled", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => abortable(init?.signal));
+    const pending = svc(fetchMock, 6000, 0).decide(input);
+    await vi.advanceTimersByTimeAsync(6000);
+    await expect(pending).resolves.toEqual(fallback);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("enforces one overall deadline across all calls", async () => {
+    vi.useFakeTimers();
+    const signals: Array<AbortSignal | null | undefined> = [];
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => { signals.push(init?.signal); return abortable(init?.signal); });
+    const pending = svc(fetchMock).decide(input);
+    await vi.advanceTimersByTimeAsync(5999);
+    expect(signals.every((signal) => !signal?.aborted)).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toEqual(fallback);
+    expect(signals).toHaveLength(2);
+    expect(signals.every((signal) => signal?.aborted)).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it("asks for NEXT only once the follow-up is used and accepts the adapted question", async () => {
+    let body: { response_format: { json_schema: { schema: { properties: Record<string, unknown> } } } } | undefined;
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => { body = JSON.parse(String(init?.body)); return providerResponse(JSON.stringify({ decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: null })); });
+    await expect(svc(fetchMock).decide({ ...input, followUpUsed: true })).resolves.toMatchObject({ decision: "NEXT", nextQuestion });
+    const properties = body!.response_format.json_schema.schema.properties;
+    expect(properties.decision).toEqual({ type: "string", enum: ["NEXT"] });
+    expect(properties.followUpQuestion).toEqual({ type: "null" });
+    expect(properties.anchor).toEqual({ type: "null" });
+    await svc(async (_url, init) => { body = JSON.parse(String(init?.body)); return good(); }).decide(input);
+    expect(body!.response_format.json_schema.schema.properties.decision).toEqual({ type: "string", enum: ["FOLLOW_UP", "NEXT"] });
+  });
+
+  it("still rejects FOLLOW_UP when the follow-up is used", async () => {
+    await expect(svc(async () => good()).decide({ ...input, followUpUsed: true })).resolves.toEqual(fallback);
+  });
+
+  it("logs attempts and hedge without interview content", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const secret = { ...input, transcript: "SENTINEL_TRANSCRIPT bounded retries with jitter", currentQuestion: "SENTINEL_QUESTION?" };
+    const raw = decision({ followUpQuestion: "SENTINEL_MODEL about bounded retries here?", anchor: "bounded retries", acknowledgement: "SENTINEL_ACK" });
+    await svc(async () => providerResponse(JSON.stringify(raw))).decide(secret);
+    const lines = info.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(lines).toContain('"attempts":1');
+    expect(lines).toContain('"hedge":"not_needed"');
+    expect(lines).not.toMatch(/SENTINEL|server-test-key|bounded retries/);
+    info.mockRestore();
   });
 });
