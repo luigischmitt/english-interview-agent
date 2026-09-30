@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ArrowUpRight, AudioLines, Clock3, PhoneOff, Video, VideoOff, Volume2 } from "lucide-react";
 import { MicrophoneCapture, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
-import { decideNextTurn } from "@/lib/interview/orchestration";
+import { buildPreviousAnswers, decideNextTurn } from "@/lib/interview/orchestration";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import { answerOrdinalForSequence, createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewReport, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult } from "@/lib/interview/report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
@@ -271,6 +271,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       followUpUsed,
       askedQuestions,
       recentAcknowledgements: recentAcknowledgementsRef.current,
+      previousAnswers: buildPreviousAnswers(pairInterviewTurns(reportTurnsRef.current)),
       signal: abortController.signal,
     });
     handoffTimingRef.current?.mark("decisionCompleted");

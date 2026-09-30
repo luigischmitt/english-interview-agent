@@ -20,3 +20,7 @@ test("local fallback returns null when no remaining question changes the context
   const askedQuestions = ["How do you monitor production services?"];
   assert.equal(firstUnaskedQuestion(["Tell me how you monitor production services and improve reliability?"], askedQuestions), null);
 });
+
+test("ignores the interrogative 'why' like the backend when comparing questions", () => {
+  assert.equal(repeatsAskedQuestion("Why did you choose Postgres for the orders service?", ["What did you choose Postgres for the orders service?"]), true);
+});
