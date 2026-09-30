@@ -4,6 +4,7 @@ import { WebSocket } from "ws";
 
 import { defaultVadConfig, getSilenceThreshold, VoiceActivityDetector } from "../src/transcription/voice-activity-detector.js";
 import type { SegmentTimestampResult, TranscriptionResult, TranscriptionService, TranscriptionWord } from "../src/transcription/types.js";
+import { TranscriptionUnavailableError } from "../src/transcription/errors.js";
 import { attachTranscriptionWebSocket } from "../src/transcription/transcription-websocket.js";
 import { AzureAssessmentError, type PronunciationAssessmentService } from "../src/transcription/azure-pronunciation-assessment.js";
 import { defaultStreamingLimits, FinalTranscriptionQueue, pcmToWav, StreamingTranscriptionSessions } from "../src/transcription/streaming-transcription.js";
@@ -913,6 +914,29 @@ describe("versioned transcription WebSocket", () => {
       expect(streamLogs.length).toBeGreaterThan(0);
       expect(streamLogs.join(" ")).not.toContain("secret");
       expect(streamLogs.join(" ")).not.toContain("OpenRouter");
+    } finally {
+      diagnostic.mockRestore();
+      socket.close();
+      await fixture.close();
+    }
+  });
+
+  it("logs only a fixed failure category and attempt count for an upstream failure", async () => {
+    const { service, transcribe } = createService();
+    transcribe.mockRejectedValue(new TranscriptionUnavailableError("OpenRouter returned HTTP 503 secret transcript content.", { providerStatus: "5xx", attempts: 2 }));
+    const diagnostic = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fixture = await openStreamServer(service);
+    const socket = await openSocket(fixture.url);
+    try {
+      await startStream(socket);
+      await prepareAnswer(socket);
+      const error = waitForType(socket, "error");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await expect(error).resolves.toMatchObject({ code: "UPSTREAM_UNAVAILABLE" });
+      const streamLogs = diagnostic.mock.calls.flat().filter((entry) => typeof entry === "string" && entry.includes('"event":"transcription_stream"'));
+      const failed = streamLogs.map((entry) => JSON.parse(entry as string)).find((entry) => entry.status === "failed");
+      expect(failed).toMatchObject({ code: "UPSTREAM_UNAVAILABLE", providerStatus: "5xx", attempts: 2 });
+      expect(streamLogs.join(" ")).not.toContain("secret");
     } finally {
       diagnostic.mockRestore();
       socket.close();

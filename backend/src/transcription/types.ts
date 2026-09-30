@@ -7,6 +7,8 @@ export type TranscriptionResult = {
   transcript: string;
   words?: TranscriptionWord[];
   segments?: TranscriptionWord[];
+  /** Non-enumerable HTTP attempt count, present only when a retry happened. */
+  attempts?: number;
   timingDiagnostics?: {
     wordFieldPresent: boolean;
     wordEntryCount: number;

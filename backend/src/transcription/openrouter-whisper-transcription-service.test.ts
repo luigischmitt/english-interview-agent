@@ -84,4 +84,64 @@ describe("OpenRouter Whisper final request", () => {
       .rejects.toThrow("timed out");
     expect(fetcher).toHaveBeenCalledOnce();
   });
+
+  describe("transient retry", () => {
+    const ok = () => new Response(JSON.stringify({ text: "hello there" }), { status: 200 });
+    const make = (fetcher: typeof fetch, sleep = vi.fn(async () => undefined)) =>
+      ({ sleep, service: new OpenRouterWhisperTranscriptionService({ key: "test", timeoutMs: 1_000, fetchImplementation: fetcher, sleepImplementation: sleep }) });
+    const audio = () => pcmToWav(Buffer.alloc(32_000));
+
+    it("retries once after HTTP 5xx and returns the transcript", async () => {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response("upstream secret body", { status: 503 })).mockResolvedValueOnce(ok());
+      const { service, sleep } = make(fetcher);
+      const result = await service.transcribe(audio(), "whisper-large-v3-turbo");
+      expect(result.transcript).toBe("hello there");
+      expect(result.attempts).toBe(2);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(sleep).toHaveBeenCalledWith(500);
+    });
+
+    it("fails with a fixed 5xx category after two 5xx responses", async () => {
+      const fetcher = vi.fn<typeof fetch>(async () => new Response("upstream secret body", { status: 502 }));
+      const error = await make(fetcher).service.transcribe(audio(), "whisper-large-v3-turbo").catch((caught) => caught);
+      expect(error).toMatchObject({ name: "TranscriptionUnavailableError", providerStatus: "5xx", attempts: 2 });
+      expect(error.message).not.toContain("secret");
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries once after a network error", async () => {
+      const fetcher = vi.fn<typeof fetch>().mockRejectedValueOnce(new TypeError("fetch failed")).mockResolvedValueOnce(ok());
+      const result = await make(fetcher).service.transcribe(audio(), "whisper-large-v3-turbo");
+      expect(result.transcript).toBe("hello there");
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it("reports the network category after repeated network errors", async () => {
+      const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("fetch failed"));
+      await expect(make(fetcher).service.transcribe(audio(), "whisper-large-v3-turbo")).rejects.toMatchObject({ providerStatus: "network", attempts: 2 });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not retry when the caller aborted", async () => {
+      const controller = new AbortController();
+      const fetcher = vi.fn<typeof fetch>(async () => {
+        controller.abort();
+        throw new DOMException("aborted", "AbortError");
+      });
+      await expect(make(fetcher).service.transcribe(audio(), "whisper-large-v3-turbo", "wav", controller.signal))
+        .rejects.toMatchObject({ providerStatus: "aborted", attempts: 1 });
+      expect(fetcher).toHaveBeenCalledOnce();
+    });
+
+    it("does not retry 4xx and caps 429 plus 5xx at three HTTP attempts", async () => {
+      const rejected = vi.fn<typeof fetch>(async () => new Response("no", { status: 401 }));
+      await expect(make(rejected).service.transcribe(audio(), "whisper-large-v3-turbo")).rejects.toMatchObject({ providerStatus: "rejected", attempts: 1 });
+      const mixed = vi.fn<typeof fetch>()
+        .mockResolvedValueOnce(new Response("", { status: 429 }))
+        .mockResolvedValueOnce(new Response("", { status: 500 }))
+        .mockResolvedValue(new Response("", { status: 500 }));
+      await expect(make(mixed).service.transcribe(audio(), "whisper-large-v3-turbo")).rejects.toMatchObject({ providerStatus: "5xx", attempts: 3 });
+      expect(mixed).toHaveBeenCalledTimes(3);
+    });
+  });
 });

@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 
 import { getAllowedOrigins, isOriginAllowed } from "../middlewares/allowed-origins.js";
+import { TranscriptionUnavailableError } from "./errors.js";
 import type { TranscriptionResult, TranscriptionService } from "./types.js";
 import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type SlotReservation, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
 import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
@@ -102,6 +103,15 @@ function safeTranscriptionErrorCode(error: unknown): string {
   if (/could not recognize|no speech/i.test(message)) return "NO_SPEECH_RECOGNIZED";
   if (/\b4\d\d\b/i.test(message)) return "UPSTREAM_REJECTED";
   return "TRANSCRIPTION_FAILED";
+}
+
+/** Fixed category and attempt count only; never the error message, cause, or any provider content. */
+function safeFailureDetails(error: unknown): Record<string, string | number> {
+  if (!(error instanceof TranscriptionUnavailableError)) return {};
+  return {
+    ...(error.providerStatus ? { providerStatus: error.providerStatus } : {}),
+    ...(error.attempts ? { attempts: error.attempts } : {}),
+  };
 }
 
 type AzureBlockResult = {
@@ -207,9 +217,9 @@ export function attachTranscriptionWebSocket(
       speculation = { controller, reservation, snapshot, promise, startedAt: Date.now() };
     };
 
-    const fail = (code: string, message: string, closeCode = 1011) => {
+    const fail = (code: string, message: string, closeCode = 1011, failureDetails: Record<string, string | number> = {}) => {
       if (finishing) return;
-      logStreamDiagnostic({ status: "failed", code, durationMs: retainedSession?.bytes ? Math.round(retainedSession.bytes / (pcmSampleRate * 2) * 1_000) : 0 });
+      logStreamDiagnostic({ status: "failed", code, ...failureDetails, durationMs: retainedSession?.bytes ? Math.round(retainedSession.bytes / (pcmSampleRate * 2) * 1_000) : 0 });
       finishing = true;
       if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
       silenceGraceTimer = null;
@@ -295,7 +305,7 @@ export function attachTranscriptionWebSocket(
               fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
               return;
             }
-            logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, speculation: speculationOutcome });
+            logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, speculation: speculationOutcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
             send(socket, {
               type: "complete",
               status: "complete",
@@ -410,7 +420,7 @@ export function attachTranscriptionWebSocket(
             })();
           } catch (error) {
             if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
-              fail(safeTranscriptionErrorCode(error), "We couldn't transcribe that answer. Please try again or skip/end the practice.");
+              fail(safeTranscriptionErrorCode(error), "We couldn't transcribe that answer. Please try again or skip/end the practice.", 1011, safeFailureDetails(error));
             }
           } finally {
             if (!assessmentOwnsAudio) release();
