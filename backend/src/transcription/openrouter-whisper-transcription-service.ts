@@ -1,4 +1,4 @@
-import { TranscriptionUnavailableError } from "./errors.js";
+import { TranscriptionUnavailableError, type TranscriptionFailureCategory } from "./errors.js";
 import type { AudioFormat, SegmentTimestampResult, TranscriptionProvider, TranscriptionResult, TranscriptionService, TranscriptionWord } from "./types.js";
 
 type OpenRouterWhisperTranscriptionServiceOptions = {
@@ -12,6 +12,9 @@ type OpenRouterResponse = { text?: string; words?: unknown; segments?: unknown }
 
 /** Extra timing recovery stays short so optional vocal feedback cannot delay an interview turn. */
 export const segmentTimestampRetryTimeoutMs = 12_000;
+
+const maxHttpAttempts = 3;
+const transientRetryDelayMs = 500;
 
 const modelForProvider: Record<Exclude<TranscriptionProvider, "azure">, string> = {
   "whisper-large-v3": "openai/whisper-large-v3",
@@ -34,9 +37,14 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
   async transcribe(audio: Buffer, provider: TranscriptionProvider, format: AudioFormat = "wav", signal?: AbortSignal): Promise<TranscriptionResult> {
     if (provider === "azure") throw new TranscriptionUnavailableError("This transcription provider is not configured.");
 
+    const timeoutSignal = AbortSignal.timeout(this.options.timeoutMs);
+    let attempts = 0;
+    let transientRetried = false;
+    const unavailable = (message: string, providerStatus: TranscriptionFailureCategory, cause?: unknown) =>
+      new TranscriptionUnavailableError(message, { providerStatus, attempts, ...(cause === undefined ? {} : { cause }) });
     try {
-      const timeoutSignal = AbortSignal.timeout(this.options.timeoutMs);
       const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+      // A FormData holding a Blob is re-serialized by every fetch call, so the same body can be resent.
       const form = new FormData();
       form.set("model", modelForProvider[provider]);
       form.set("file", new Blob([new Uint8Array(audio)], { type: format === "wav" ? "audio/wav" : `audio/${format}` }), `response.${format}`);
@@ -45,30 +53,50 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
       form.set("response_format", "verbose_json");
       form.append("timestamp_granularities[]", "word");
       form.append("timestamp_granularities[]", "segment");
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const response = await this.fetchImplementation("https://openrouter.ai/api/v1/audio/transcriptions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${this.options.key}` },
-          body: form,
-          signal: requestSignal,
-        });
-        if (response.status === 429 && attempt < 2) {
-          const delayMs = retryAfterMilliseconds(response.headers.get("retry-after")) ?? Math.min(2_000, 400 * (2 ** attempt));
-          try {
-            await response.body?.cancel();
-          } catch {
-            // A failed body discard should not prevent a bounded retry.
-          }
+      // At most maxHttpAttempts requests overall: 429 retries (max 2) and the single transient retry share this cap.
+      for (;;) {
+        attempts += 1;
+        let response: Response;
+        try {
+          response = await this.fetchImplementation("https://openrouter.ai/api/v1/audio/transcriptions", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${this.options.key}` },
+            body: form,
+            signal: requestSignal,
+          });
+        } catch (error) {
+          // Never retry a timeout of the overall budget or a caller abort (cancel, discarded speculation, disconnect).
+          if (requestSignal.aborted) throw unavailable("OpenRouter transcription is unavailable right now.", timeoutSignal.aborted ? "timeout" : "aborted", error);
+          if (transientRetried || attempts >= maxHttpAttempts) throw unavailable("OpenRouter transcription is unavailable right now.", "network", error);
+          transientRetried = true;
+          await sleepWithSignal(this.sleepImplementation, transientRetryDelayMs, requestSignal);
+          continue;
+        }
+        if (response.status === 429 && attempts < maxHttpAttempts) {
+          const delayMs = retryAfterMilliseconds(response.headers.get("retry-after")) ?? Math.min(2_000, 400 * (2 ** (attempts - 1)));
+          await discardBody(response);
           await sleepWithSignal(this.sleepImplementation, delayMs, requestSignal);
           continue;
         }
-        if (!response.ok) {
-          if (response.status === 429) throw new TranscriptionUnavailableError("OpenRouter returned HTTP 429 after retries.");
-          throw new TranscriptionUnavailableError(`OpenRouter returned HTTP ${response.status}.`);
+        if (response.status >= 500 && response.status <= 599 && !transientRetried && attempts < maxHttpAttempts) {
+          transientRetried = true;
+          await discardBody(response);
+          await sleepWithSignal(this.sleepImplementation, transientRetryDelayMs, requestSignal);
+          continue;
         }
-        const result = await response.json() as OpenRouterResponse;
+        if (!response.ok) {
+          const category: TranscriptionFailureCategory = response.status === 429 ? "429" : response.status >= 500 ? "5xx" : "rejected";
+          throw unavailable(response.status === 429 ? "OpenRouter returned HTTP 429 after retries." : `OpenRouter returned HTTP ${response.status}.`, category);
+        }
+        let result: OpenRouterResponse;
+        try {
+          result = await response.json() as OpenRouterResponse;
+        } catch (error) {
+          if (requestSignal.aborted) throw unavailable("OpenRouter transcription is unavailable right now.", timeoutSignal.aborted ? "timeout" : "aborted", error);
+          throw unavailable("OpenRouter transcription is unavailable right now.", "invalid_response", error);
+        }
         const transcript = result.text?.trim();
-        if (!transcript) throw new TranscriptionUnavailableError("OpenRouter could not recognize a response in this recording.");
+        if (!transcript) throw unavailable("OpenRouter could not recognize a response in this recording.", "empty");
         const durationSeconds = wavDurationSeconds(audio);
         const words = parseWhisperWords(result.words, durationSeconds);
         const segments = parseWhisperSegments(result.segments, durationSeconds);
@@ -89,12 +117,13 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
             segmentAcceptedCount: segments?.length ?? 0,
           },
         });
+        if (attempts > 1) Object.defineProperty(normalized, "attempts", { enumerable: false, value: attempts });
         return normalized;
       }
-      throw new TranscriptionUnavailableError("OpenRouter returned HTTP 429 after retries.");
     } catch (error) {
       if (error instanceof TranscriptionUnavailableError) throw error;
-      throw new TranscriptionUnavailableError("OpenRouter transcription is unavailable right now.", { cause: error });
+      // Reached when a backoff sleep is interrupted by the caller abort or the overall budget.
+      throw unavailable("OpenRouter transcription is unavailable right now.", timeoutSignal.aborted ? "timeout" : signal?.aborted ? "aborted" : "network", error);
     }
   }
 
@@ -189,4 +218,12 @@ function retryAfterMilliseconds(value: string | null): number | null {
   const milliseconds = Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(value) - Date.now();
   if (!Number.isFinite(milliseconds)) return null;
   return Math.max(0, Math.min(2_000, milliseconds));
+}
+
+async function discardBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // A failed body discard should not prevent a bounded retry.
+  }
 }
