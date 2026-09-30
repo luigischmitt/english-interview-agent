@@ -53,6 +53,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `TRANSCRIPTION_STREAM_MAX_ACTIVE_SESSIONS` | `8` | Maximum simultaneous in-memory PCM responses. |
 | `TRANSCRIPTION_STREAM_MAX_CONCURRENT_TRANSCRIPTIONS` | `4` | Maximum simultaneous final Whisper calls per backend process. |
 | `TRANSCRIPTION_STREAM_MAX_QUEUED_TRANSCRIPTIONS` | `4` | Maximum finalized recordings waiting for a Whisper slot. |
+| `TRANSCRIPTION_HEDGE_AFTER_MS` | `4000` | If a Whisper call is still pending after this delay and a concurrency slot is free, one identical extra call is started and the first success wins (ENG-90). `0` disables hedging; maximum `30000`. A hedge is an extra Whisper call only on slow requests (Whisper costs about US$0.01 per audio hour). |
 | `TRANSCRIPTION_VAD_TRAILING_SILENCE_MS` | `3500` | Silence duration before automatic finalization after speech; maximum `10000`. |
 | `TRANSCRIPTION_VAD_FINALIZATION_GRACE_MS` | `1500` | Reversible server-side grace after a silence decision; confirmed resumed activity cancels it; maximum `5000`. |
 | `TRANSCRIPTION_VAD_AMBIENT_HOLD_MS` | `8000` | Maximum grace period for ambiguous mid-band activity (quiet speech or room noise); maximum `30000`. |

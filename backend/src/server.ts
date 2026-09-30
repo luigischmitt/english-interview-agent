@@ -26,6 +26,7 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
     finalizationGraceMs: defaultTranscriptionConfig.vadFinalizationGraceMs,
     ambientActivityHoldMs: defaultTranscriptionConfig.vadAmbientActivityHoldMs,
   },
+  hedgeAfterMs: defaultTranscriptionConfig.hedgeAfterMs,
   finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
 });
 

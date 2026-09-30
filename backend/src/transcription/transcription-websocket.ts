@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 
 import { getAllowedOrigins, isOriginAllowed } from "../middlewares/allowed-origins.js";
+import { hedgedTranscribe, type HedgeOutcome } from "./hedged-transcription.js";
 import { TranscriptionUnavailableError } from "./errors.js";
 import type { TranscriptionResult, TranscriptionService } from "./types.js";
 import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type SlotReservation, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
@@ -146,6 +147,7 @@ type Speculation = {
   reservation: SlotReservation;
   snapshot: Buffer;
   promise: Promise<TranscriptionResult>;
+  hedge: { outcome: HedgeOutcome };
   startedAt: number;
 };
 
@@ -181,6 +183,15 @@ export function attachTranscriptionWebSocket(
     let requestAbortController: AbortController | null = null;
     let speculation: Speculation | null = null;
     let speculationOutcome: SpeculationOutcome = "none";
+    // Hedge outcome of the call whose result (or failure) is being reported.
+    let activeHedge: { outcome: HedgeOutcome } = { outcome: "not_needed" };
+    const hedged = (audio: Buffer, signal: AbortSignal, hedge: { outcome: HedgeOutcome }) => hedgedTranscribe({
+      start: (callSignal) => transcriptionService.transcribe(audio, "whisper-large-v3-turbo", "wav", callSignal),
+      hedgeAfterMs: limits.hedgeAfterMs,
+      tryReserve: () => finalQueue.reserve(),
+      signal,
+      onOutcome: (outcome) => { hedge.outcome = outcome; },
+    });
     let timer: ReturnType<typeof setTimeout>;
 
     // Aborts a live speculation, zeroes its snapshot and frees its slot once the provider call settles.
@@ -212,9 +223,10 @@ export function attachTranscriptionWebSocket(
         return;
       }
       const controller = new AbortController();
-      const promise = (async () => transcriptionService.transcribe(snapshot, "whisper-large-v3-turbo", "wav", controller.signal))();
+      const hedge: { outcome: HedgeOutcome } = { outcome: "not_needed" };
+      const promise = hedged(snapshot, controller.signal, hedge);
       promise.then(() => undefined, () => undefined).then(() => snapshot.fill(0));
-      speculation = { controller, reservation, snapshot, promise, startedAt: Date.now() };
+      speculation = { controller, reservation, snapshot, promise, hedge, startedAt: Date.now() };
     };
 
     const fail = (code: string, message: string, closeCode = 1011, failureDetails: Record<string, string | number> = {}) => {
@@ -287,6 +299,7 @@ export function attachTranscriptionWebSocket(
             if (reusable) {
               // The snapshot only lacks trailing silence: its transcript and timings remain valid for the full audio.
               transcriptionStartedAt = reusable.startedAt;
+              activeHedge = reusable.hedge;
               try {
                 result = await reusable.promise;
                 speculationOutcome = "reused";
@@ -294,10 +307,12 @@ export function attachTranscriptionWebSocket(
                 if (session.cancelled || abortController.signal.aborted || socket.readyState !== WebSocket.OPEN) throw error;
                 speculationOutcome = "failed";
                 transcriptionStartedAt = Date.now();
-                result = await transcriptionService.transcribe(audio, "whisper-large-v3-turbo", "wav", abortController.signal);
+                activeHedge = { outcome: "not_needed" };
+                result = await hedged(audio, abortController.signal, activeHedge);
               }
             } else {
-              result = await transcriptionService.transcribe(audio, "whisper-large-v3-turbo", "wav", abortController.signal);
+              activeHedge = { outcome: "not_needed" };
+              result = await hedged(audio, abortController.signal, activeHedge);
             }
             const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
             if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
@@ -305,7 +320,7 @@ export function attachTranscriptionWebSocket(
               fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
               return;
             }
-            logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, speculation: speculationOutcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
+            logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
             send(socket, {
               type: "complete",
               status: "complete",
@@ -420,7 +435,7 @@ export function attachTranscriptionWebSocket(
             })();
           } catch (error) {
             if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
-              fail(safeTranscriptionErrorCode(error), "We couldn't transcribe that answer. Please try again or skip/end the practice.", 1011, safeFailureDetails(error));
+              fail(safeTranscriptionErrorCode(error), "We couldn't transcribe that answer. Please try again or skip/end the practice.", 1011, { ...safeFailureDetails(error), hedge: activeHedge.outcome });
             }
           } finally {
             if (!assessmentOwnsAudio) release();
