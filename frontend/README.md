@@ -191,6 +191,17 @@ informa “salva apenas no estado local da sessão; sincronização pendente”.
 
 ## Relatório final, áudio, transcrição e privacidade
 
+Para reduzir a espera ao final, cada resposta enviada dispara em segundo plano
+(sem bloquear a entrevista) `requestInterviewTurnAnalysis`
+(`/api/v1/thinking/report/turn`, prazo de 25 s; cancelado ao sair ou desmontar).
+Ao encerrar, `collectTurnAnalyses` (`report-incremental.mjs`) aguarda até 12 s; se
+todas as respostas tiverem análise, `requestInterviewConsolidation`
+(`/report/consolidate`, prazo de 30 s) devolve o mesmo formato `v2`. Se qualquer
+análise faltar ou a consolidação falhar, o fluxo usa o relatório completo
+(`requestInterviewReport`) como antes. Persistência, seção Azure e textos da UI
+não mudam; os logs `[interview-report]` indicam `path` (`incremental` ou
+`fallback`) sem conteúdo.
+
 Os helpers `src/lib/interview/report.ts` enviam ao endpoint
 `/api/v1/thinking/report` somente configuração da vaga e pares ordenados de
 pergunta/resposta. A rota não recebe ID de sessão e faz uma única chamada

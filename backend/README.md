@@ -197,6 +197,34 @@ The backend does not fetch or persist sessions and does not authorize an
 interview ID; the authenticated frontend persists results through Supabase RLS.
 Provider/configuration errors use the standardized thinking error object.
 
+#### Incremental report (per-answer analysis)
+
+To avoid a 30+ second wait at the end, the frontend analyzes each answer in the
+background and only consolidates at the end. Both routes use the report model,
+the same prompt rules, schema fragments and evidence validation as the full
+report, and the same privacy routing (`data_collection: "deny"`).
+
+- `POST /api/v1/thinking/report/turn` takes `{ roleContext, turn }` (one
+  `sequenceNumber`/`question`/`answer`, same limits and strictness; interview IDs
+  are rejected) and returns `{ sequenceNumber, technicalStrengths, technicalGaps,
+  englishPatterns, model }` with at most 3/3/4 server-validated items. Deadline:
+  20 seconds.
+- `POST /api/v1/thinking/report/consolidate` takes `{ roleContext, turns,
+  turnAnalyses }` with exactly one analysis per turn. The server never trusts the
+  client: every item is validated again against its matching answer, English
+  patterns are deduplicated across turns, and the usual caps apply (8 strengths,
+  8 gaps, 8 patterns, 3 priorities). One small structured call then produces only
+  the summary, overall clarity, and up to three priorities that must build on a
+  validated finding. The response has the exact full-report shape (`model`,
+  `analysisVersion: "v2"`, `evidenceReview`), so persistence and UI are unchanged.
+  `evidenceReview` counts the items submitted for consolidation (turn-stage
+  rejections are visible only in the benchmark). Deadline: 25 seconds.
+
+Both routes log the content-free `interview_report_phase_timing` event with an
+extra `scope` field (`turn` or `consolidate`); the full report keeps its original
+shape. Errors use the standardized thinking error object. The frontend falls back
+to `POST /report` when any analysis or the consolidation fails.
+
 ### Compare report models (opt-in benchmark)
 
 `npm run benchmark:report-models` is not part of `npm test`. It needs
@@ -207,6 +235,10 @@ and failure counts by fixed category, median/p90 latency, total and mean
 provider-reported cost, and summed evidence accepted/rejected counts by reason.
 It never prints fixture text, model output, or credentials. The run aborts when
 cumulative cost exceeds `REPORT_BENCHMARK_MAX_USD` (default `0.50`).
+`REPORT_BENCHMARK_MODE=incremental` instead compares, per fixture, the single full
+report with the incremental path (per-turn calls in parallel, then consolidation),
+reporting the consolidation-only latency (the end-of-interview wait), cost per
+report both ways, and evidence accepted/rejected both ways.
 
 ### Run the real-time audio E2E harness
 

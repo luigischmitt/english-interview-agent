@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 
 import { ThinkingServiceError } from "../thinking/errors.js";
-import type { InterviewReportInput, InterviewReportService } from "../thinking/types.js";
+import type { InterviewReportConsolidationInput, InterviewReportInput, InterviewReportService, InterviewTurnAnalysis, InterviewTurnAnalysisInput } from "../thinking/types.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -11,59 +11,147 @@ function text(value: unknown, max: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= max;
 }
 
-function parseInput(body: unknown): InterviewReportInput | null {
-  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turns"].includes(key)) || !isRecord(body.roleContext) || !Array.isArray(body.turns)) return null;
-  const role = body.roleContext;
+type RoleContext = InterviewReportInput["roleContext"];
+type ReportTurn = InterviewReportInput["turns"][number];
+
+function parseRoleContext(value: unknown): RoleContext | null {
+  if (!isRecord(value)) return null;
+  const role = value;
   if (Object.keys(role).some((key) => !["targetRole", "seniority", "focus"].includes(key)) || !text(role.targetRole, 120)
     || (role.seniority !== undefined && (typeof role.seniority !== "string" || role.seniority.length > 80))
-    || (role.focus !== undefined && (typeof role.focus !== "string" || role.focus.length > 80))
-    || body.turns.length < 1 || body.turns.length > 30) return null;
-  let totalChars = 0;
-  let previousSequence = 0;
-  const turns: InterviewReportInput["turns"] = [];
-  for (const entry of body.turns) {
-    if (!isRecord(entry) || Object.keys(entry).some((key) => !["sequenceNumber", "question", "answer"].includes(key))
-      || !Number.isSafeInteger(entry.sequenceNumber) || (entry.sequenceNumber as number) <= previousSequence
-      || !text(entry.question, 500) || !text(entry.answer, 5_000)) return null;
-    previousSequence = entry.sequenceNumber as number;
-    totalChars += entry.question.length + entry.answer.length;
-    if (totalChars > 30_000) return null;
-    turns.push({ sequenceNumber: previousSequence, question: entry.question.trim(), answer: entry.answer.trim() });
-  }
+    || (role.focus !== undefined && (typeof role.focus !== "string" || role.focus.length > 80))) return null;
   return {
-    roleContext: {
-      targetRole: role.targetRole.trim(),
-      ...(typeof role.seniority === "string" ? { seniority: role.seniority.trim() } : {}),
-      ...(typeof role.focus === "string" ? { focus: role.focus.trim() } : {}),
-    },
-    turns,
+    targetRole: role.targetRole.trim(),
+    ...(typeof role.seniority === "string" ? { seniority: role.seniority.trim() } : {}),
+    ...(typeof role.focus === "string" ? { focus: role.focus.trim() } : {}),
   };
 }
 
-export function createInterviewReportController(service: InterviewReportService | null): RequestHandler {
+function parseTurn(entry: unknown): ReportTurn | null {
+  if (!isRecord(entry) || Object.keys(entry).some((key) => !["sequenceNumber", "question", "answer"].includes(key))
+    || !Number.isSafeInteger(entry.sequenceNumber) || (entry.sequenceNumber as number) < 1
+    || !text(entry.question, 500) || !text(entry.answer, 5_000)) return null;
+  return { sequenceNumber: entry.sequenceNumber as number, question: entry.question.trim(), answer: entry.answer.trim() };
+}
+
+function parseTurns(value: unknown): ReportTurn[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 30) return null;
+  let totalChars = 0;
+  let previousSequence = 0;
+  const turns: ReportTurn[] = [];
+  for (const entry of value) {
+    const turn = parseTurn(entry);
+    if (!turn || turn.sequenceNumber <= previousSequence) return null;
+    previousSequence = turn.sequenceNumber;
+    totalChars += turn.question.length + turn.answer.length;
+    if (totalChars > 30_000) return null;
+    turns.push(turn);
+  }
+  return turns;
+}
+
+function parseInput(body: unknown): InterviewReportInput | null {
+  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turns"].includes(key))) return null;
+  const roleContext = parseRoleContext(body.roleContext);
+  const turns = parseTurns(body.turns);
+  return roleContext && turns ? { roleContext, turns } : null;
+}
+
+function parseTurnInput(body: unknown): InterviewTurnAnalysisInput | null {
+  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turn"].includes(key))) return null;
+  const roleContext = parseRoleContext(body.roleContext);
+  const turn = parseTurn(body.turn);
+  return roleContext && turn ? { roleContext, turn } : null;
+}
+
+/**
+ * Only the envelope is checked here. Items are untrusted and are validated
+ * individually against the matching answer by the service.
+ */
+function parseConsolidationInput(body: unknown): InterviewReportConsolidationInput | null {
+  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turns", "turnAnalyses"].includes(key))) return null;
+  const roleContext = parseRoleContext(body.roleContext);
+  const turns = parseTurns(body.turns);
+  if (!roleContext || !turns || !Array.isArray(body.turnAnalyses) || body.turnAnalyses.length !== turns.length) return null;
+  const turnAnalyses: InterviewTurnAnalysis[] = [];
+  for (const entry of body.turnAnalyses) {
+    if (!isRecord(entry) || Object.keys(entry).some((key) => !["sequenceNumber", "technicalStrengths", "technicalGaps", "englishPatterns"].includes(key))
+      || !Number.isSafeInteger(entry.sequenceNumber) || !turns.some((turn) => turn.sequenceNumber === entry.sequenceNumber)
+      || turnAnalyses.some((existing) => existing.sequenceNumber === entry.sequenceNumber)) return null;
+    const lists = [entry.technicalStrengths, entry.technicalGaps, entry.englishPatterns];
+    if (!lists.every((list) => Array.isArray(list) && list.length <= 8)) return null;
+    turnAnalyses.push(entry as InterviewTurnAnalysis);
+  }
+  return { roleContext, turns, turnAnalyses };
+}
+
+type ReportRoute<Input, Output> = {
+  logName: string;
+  invalidCode: string;
+  invalidMessage: string;
+  parse: (body: unknown) => Input | null;
+  turnCount: (input: Input) => number;
+  run: (service: InterviewReportService, input: Input) => Promise<Output>;
+};
+
+function createReportRouteController<Input, Output>(service: InterviewReportService | null, route: ReportRoute<Input, Output>): RequestHandler {
   return async (request, response) => {
     if (!service) {
       response.status(503).json({ error: { code: "THINKING_NOT_CONFIGURED", message: "The reasoning service is not configured on this server." } });
       return;
     }
-    const input = parseInput(request.body);
+    const input = route.parse(request.body);
     if (!input) {
-      response.status(400).json({ error: { code: "INVALID_INTERVIEW_REPORT_REQUEST", message: "roleContext and 1–30 ordered question/answer turns are required within their length limits." } });
+      response.status(400).json({ error: { code: route.invalidCode, message: route.invalidMessage } });
       return;
     }
+    const turnCount = route.turnCount(input);
     const startedAt = Date.now();
-    console.info("[interview-report] request_started", { turnCount: input.turns.length });
+    console.info(`[${route.logName}] request_started`, { turnCount });
     try {
-      response.status(200).json(await service.generate(input));
-      console.info("[interview-report] request_completed", { turnCount: input.turns.length, durationMs: Date.now() - startedAt });
+      response.status(200).json(await route.run(service, input));
+      console.info(`[${route.logName}] request_completed`, { turnCount, durationMs: Date.now() - startedAt });
     } catch (error) {
       if (error instanceof ThinkingServiceError) {
-        console.warn("[interview-report] request_failed", { turnCount: input.turns.length, durationMs: Date.now() - startedAt, category: error.code });
+        console.warn(`[${route.logName}] request_failed`, { turnCount, durationMs: Date.now() - startedAt, category: error.code });
         response.status(error.status).json({ error: { code: error.code, message: error.message } });
         return;
       }
-      console.warn("[interview-report] request_failed", { turnCount: input.turns.length, durationMs: Date.now() - startedAt, category: "THINKING_PROVIDER_UNAVAILABLE" });
+      console.warn(`[${route.logName}] request_failed`, { turnCount, durationMs: Date.now() - startedAt, category: "THINKING_PROVIDER_UNAVAILABLE" });
       response.status(502).json({ error: { code: "THINKING_PROVIDER_UNAVAILABLE", message: "The reasoning service is unavailable." } });
     }
   };
+}
+
+export function createInterviewReportController(service: InterviewReportService | null): RequestHandler {
+  return createReportRouteController(service, {
+    logName: "interview-report",
+    invalidCode: "INVALID_INTERVIEW_REPORT_REQUEST",
+    invalidMessage: "roleContext and 1–30 ordered question/answer turns are required within their length limits.",
+    parse: parseInput,
+    turnCount: (input) => input.turns.length,
+    run: (reportService, input) => reportService.generate(input),
+  });
+}
+
+export function createInterviewReportTurnController(service: InterviewReportService | null): RequestHandler {
+  return createReportRouteController(service, {
+    logName: "interview-report-turn",
+    invalidCode: "INVALID_INTERVIEW_REPORT_TURN_REQUEST",
+    invalidMessage: "roleContext and one question/answer turn are required within their length limits.",
+    parse: parseTurnInput,
+    turnCount: () => 1,
+    run: (reportService, input) => reportService.analyzeTurn(input),
+  });
+}
+
+export function createInterviewReportConsolidationController(service: InterviewReportService | null): RequestHandler {
+  return createReportRouteController(service, {
+    logName: "interview-report-consolidate",
+    invalidCode: "INVALID_INTERVIEW_REPORT_CONSOLIDATION_REQUEST",
+    invalidMessage: "roleContext, 1–30 ordered turns and exactly one analysis per turn are required within their limits.",
+    parse: parseConsolidationInput,
+    turnCount: (input) => input.turns.length,
+    run: (reportService, input) => reportService.consolidate(input),
+  });
 }

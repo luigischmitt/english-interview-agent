@@ -384,7 +384,7 @@ describe("final interview report service", () => {
 
 describe("POST /api/v1/thinking/report", () => {
   it("returns only the batched report and rejects interview identifiers or unordered payloads before provider calls", async () => {
-    const reportService = { generate: vi.fn(async () => ({ ...validReport, model: defaultThinkingModel, analysisVersion: "v2" as const })) };
+    const reportService = { generate: vi.fn(async () => ({ ...validReport, model: defaultThinkingModel, analysisVersion: "v2" as const })), analyzeTurn: vi.fn(), consolidate: vi.fn() };
     const app = createApp({ speechConfig, reportService });
     const success = await request(app).post("/api/v1/thinking/report").send(input);
     expect(success.status).toBe(200);
@@ -399,7 +399,7 @@ describe("POST /api/v1/thinking/report", () => {
   });
 
   it("rejects excessive answer count and aggregate payload size", async () => {
-    const reportService = { generate: vi.fn() };
+    const reportService = { generate: vi.fn(), analyzeTurn: vi.fn(), consolidate: vi.fn() };
     const app = createApp({ speechConfig, reportService });
     const tooMany = await request(app).post("/api/v1/thinking/report").send({ ...input, turns: Array.from({ length: 31 }, (_, index) => ({ sequenceNumber: index + 1, question: "Q?", answer: "A." })) });
     expect(tooMany.status).toBe(400);
@@ -409,7 +409,7 @@ describe("POST /api/v1/thinking/report", () => {
   });
 
   it("does not call the provider when no answers were submitted", async () => {
-    const reportService = { generate: vi.fn() };
+    const reportService = { generate: vi.fn(), analyzeTurn: vi.fn(), consolidate: vi.fn() };
     const app = createApp({ speechConfig, reportService });
     const response = await request(app).post("/api/v1/thinking/report").send({ ...input, turns: [] });
     expect(response.status).toBe(400);

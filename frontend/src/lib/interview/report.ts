@@ -91,6 +91,54 @@ export async function requestInterviewReport(config: InterviewConfig, turns: Int
   return data;
 }
 
+export const interviewTurnAnalysisTimeoutMs = 25_000;
+export const interviewConsolidationTimeoutMs = 30_000;
+
+/** Findings for one answer; the server re-validates them when consolidating. */
+export type InterviewTurnAnalysis = {
+  sequenceNumber: number;
+  technicalStrengths: InterviewReport["technicalContent"]["strengths"];
+  technicalGaps: InterviewReport["technicalContent"]["gaps"];
+  englishPatterns: InterviewReport["englishCommunication"]["patterns"];
+};
+
+const reportUnavailableMessage = "A análise desta entrevista está indisponível agora.";
+
+function withDeadline(timeoutMs: number, signal?: AbortSignal): AbortSignal {
+  const deadline = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, deadline]) : deadline;
+}
+
+/** Analyze one submitted answer in the background; rejects on any failure. */
+export async function requestInterviewTurnAnalysis(config: InterviewConfig, turn: InterviewReportTurn, signal?: AbortSignal, endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"): Promise<InterviewTurnAnalysis> {
+  const response = await fetch(`${endpoint}/api/v1/thinking/report/turn`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus }, turn }),
+    signal: withDeadline(interviewTurnAnalysisTimeoutMs, signal),
+  });
+  const data = await response.json().catch(() => null) as (InterviewTurnAnalysis | { error?: { message?: string } } | null);
+  if (!response.ok || !data || !("technicalStrengths" in data)) {
+    throw new Error(data && "error" in data ? data.error?.message ?? reportUnavailableMessage : reportUnavailableMessage);
+  }
+  return { sequenceNumber: data.sequenceNumber, technicalStrengths: data.technicalStrengths, technicalGaps: data.technicalGaps, englishPatterns: data.englishPatterns };
+}
+
+/** Consolidate already analyzed answers into the same report shape as the full request. */
+export async function requestInterviewConsolidation(config: InterviewConfig, turns: InterviewReportTurn[], turnAnalyses: InterviewTurnAnalysis[], endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"): Promise<InterviewReportResult> {
+  const response = await fetch(`${endpoint}/api/v1/thinking/report/consolidate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus }, turns, turnAnalyses }),
+    signal: withDeadline(interviewConsolidationTimeoutMs),
+  });
+  const data = await response.json().catch(() => null) as (InterviewReportResult | { error?: { message?: string } } | null);
+  if (!response.ok || !data || !("technicalContent" in data)) {
+    throw new Error(data && "error" in data ? data.error?.message ?? reportUnavailableMessage : reportUnavailableMessage);
+  }
+  return data;
+}
+
 export async function createPendingInterviewFeedback(interviewId: string, assessments: AzureAssessmentSample[]): Promise<PersistenceResult<InterviewFeedback>> {
   try {
     const { data, error } = await getSupabaseBrowserClient().from("interview_feedback").upsert({
