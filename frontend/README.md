@@ -194,13 +194,18 @@ informa “salva apenas no estado local da sessão; sincronização pendente”.
 Para reduzir a espera ao final, cada resposta enviada dispara em segundo plano
 (sem bloquear a entrevista) `requestInterviewTurnAnalysis`
 (`/api/v1/thinking/report/turn`, prazo de 25 s; cancelado ao sair ou desmontar).
-Ao encerrar, `collectTurnAnalyses` (`report-incremental.mjs`) aguarda até 12 s; se
-todas as respostas tiverem análise, `requestInterviewConsolidation`
-(`/report/consolidate`, prazo de 30 s) devolve o mesmo formato `v2`. Se qualquer
-análise faltar ou a consolidação falhar, o fluxo usa o relatório completo
+Uma análise que falha é repetida uma vez em segundo plano após ~1,5 s
+(`analyzeTurnWithRetry`; sem retry se cancelada). Ao encerrar,
+`resolveReportAtEnd` (`report-incremental.mjs`) aguarda até 12 s (em paralelo à
+espera da Azure) e, para cada resposta ainda sem análise, pede a análise de novo
+em paralelo com prazo de 20 s — exceto quando mais da metade estiver faltando,
+caso em que vai direto ao relatório completo; quando todas existem,
+`requestInterviewConsolidation`
+(`/report/consolidate`, prazo de 30 s) devolve o mesmo formato `v2`. Se alguma
+análise continuar faltando ou a consolidação falhar, o fluxo usa o relatório completo
 (`requestInterviewReport`) como antes. Persistência, seção Azure e textos da UI
 não mudam; os logs `[interview-report]` indicam `path` (`incremental` ou
-`fallback`) sem conteúdo.
+`fallback`), `retried`, `missingAtEnd` e `recoveredAtEnd`, sem conteúdo.
 
 Os helpers `src/lib/interview/report.ts` enviam ao endpoint
 `/api/v1/thinking/report` somente configuração da vaga e pares ordenados de

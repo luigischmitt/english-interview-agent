@@ -13,7 +13,7 @@ import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuesti
 import { appendInterviewReportPair, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
-import { collectTurnAnalyses, turnAnalysisWaitMs } from "@/lib/interview/report-incremental.mjs";
+import { analyzeTurnWithRetry, resolveReportAtEnd, settleTurnAnalyses, turnAnalysisWaitMs } from "@/lib/interview/report-incremental.mjs";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
@@ -111,6 +111,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const reportPersistenceSignatureRef = useRef("");
   const reportTurnsRef = useRef(reportTurns);
   const turnAnalysesRef = useRef(new Map<number, Promise<InterviewTurnAnalysis | null>>());
+  const turnAnalysisRetriesRef = useRef(0);
   const turnAnalysisAbortsRef = useRef(new Set<AbortController>());
   const recentAcknowledgementsRef = useRef<string[]>([]);
   const voiceAssessmentsRef = useRef(voiceAssessments);
@@ -213,19 +214,21 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     turnAnalysisAbortsRef.current.clear();
   }, []);
 
-  /** Analyze a submitted answer in the background; failures are ignored and trigger the full-report fallback later. */
+  /** Analyze a submitted answer in the background, retrying once; a final miss is recovered when the interview ends. */
   const startTurnAnalysis = (turn: { sequenceNumber: number; question: string; answer: string }) => {
     const controller = new AbortController();
     turnAnalysisAbortsRef.current.add(controller);
     const startedAt = Date.now();
-    turnAnalysesRef.current.set(turn.sequenceNumber, requestInterviewTurnAnalysis(config, turn, controller.signal)
+    turnAnalysesRef.current.set(turn.sequenceNumber, analyzeTurnWithRetry({
+      turn,
+      signal: controller.signal,
+      analyze: (entry, signal) => requestInterviewTurnAnalysis(config, entry, signal),
+      onRetry: () => { turnAnalysisRetriesRef.current += 1; },
+    })
       .then((analysis) => {
-        console.info("[interview-report] turn_analysis_ready", { durationMs: Date.now() - startedAt });
+        if (analysis) console.info("[interview-report] turn_analysis_ready", { durationMs: Date.now() - startedAt });
+        else if (!controller.signal.aborted) console.warn("[interview-report] turn_analysis_failed", { durationMs: Date.now() - startedAt, retried: turnAnalysisRetriesRef.current });
         return analysis;
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) console.warn("[interview-report] turn_analysis_failed", { durationMs: Date.now() - startedAt });
-        return null;
       })
       .finally(() => { turnAnalysisAbortsRef.current.delete(controller); }));
   };
@@ -399,7 +402,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     console.info("[interview-report] lifecycle_started");
     setReportState({ status: "pending" });
     // Background turn analyses settle while pending voice assessments finish; both waits share the same clock.
-    const analysesWait = collectTurnAnalyses(pairInterviewTurns(reportTurnsRef.current), turnAnalysesRef.current, { timeoutMs: turnAnalysisWaitMs });
+    const settledAnalyses = settleTurnAnalyses(pairInterviewTurns(reportTurnsRef.current), turnAnalysesRef.current, { timeoutMs: turnAnalysisWaitMs });
     void (async () => {
       await waitForPendingAssessments(() => Object.values(voiceAssessmentsRef.current).filter((entry) => entry.state.status === "pending").length);
       const latestEntries = voiceAssessmentsRef.current;
@@ -416,25 +419,23 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
       let path: "incremental" | "fallback" = "fallback";
       try {
-        const collected = await analysesWait;
-        let result: InterviewReportResult | null = null;
-        if (collected.complete && collected.analyses.length === turns.length) {
-          try {
-            console.info("[interview-report] request_started", { path: "incremental", turnCount: turns.length, waitDurationMs: Date.now() - lifecycleStartedAt });
-            result = await requestInterviewConsolidation(config, turns, collected.analyses);
-            path = "incremental";
-          } catch {
-            console.warn("[interview-report] incremental_failed", { category: "consolidation_failed_or_timed_out", turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
-          }
-        } else {
-          console.info("[interview-report] incremental_skipped", { turnCount: turns.length, missingAnalyses: collected.missing });
-        }
-        if (!result) {
-          console.info("[interview-report] request_started", { path: "fallback", turnCount: turns.length, waitDurationMs: Date.now() - lifecycleStartedAt });
-          result = await requestInterviewReport(config, turns);
-        }
-        console.info("[interview-report] ready", { path, turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
-        if (mountedRef.current) setReportState({ status: "ready", result });
+        const endAbort = new AbortController();
+        turnAnalysisAbortsRef.current.add(endAbort);
+        const outcome = await resolveReportAtEnd<typeof turns[number], InterviewTurnAnalysis, InterviewReportResult>({
+          turns,
+          settled: settledAnalyses,
+          signal: endAbort.signal,
+          analyze: (turn, signal) => requestInterviewTurnAnalysis(config, turn, signal),
+          consolidate: (analyses) => requestInterviewConsolidation(config, turns, analyses),
+          fullReport: () => {
+            console.info("[interview-report] request_started", { path: "fallback", turnCount: turns.length, waitDurationMs: Date.now() - lifecycleStartedAt });
+            return requestInterviewReport(config, turns);
+          },
+          onEvent: (event, details) => console.info(`[interview-report] ${event}`, { turnCount: turns.length, ...details, durationMs: Date.now() - lifecycleStartedAt }),
+        }).finally(() => { turnAnalysisAbortsRef.current.delete(endAbort); });
+        path = outcome.path;
+        console.info("[interview-report] ready", { path, turnCount: turns.length, retried: turnAnalysisRetriesRef.current, missingAtEnd: outcome.missingAtEnd, recoveredAtEnd: outcome.recoveredAtEnd, durationMs: Date.now() - lifecycleStartedAt });
+        if (mountedRef.current) setReportState({ status: "ready", result: outcome.result });
       } catch {
         console.warn("[interview-report] unavailable", { category: "request_failed_or_timed_out", path, turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
         const message = "A análise detalhada falhou ou excedeu o tempo limite. As respostas registradas continuam disponíveis abaixo.";
