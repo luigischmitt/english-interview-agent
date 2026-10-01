@@ -40,6 +40,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `PORT` | `3001` | HTTP port. |
 | `ALLOWED_ORIGIN` | `http://localhost:3000` | Browser origin allowed by CORS. |
 | `SUPABASE_URL` | — | Public Supabase project URL (same value as the frontend's `NEXT_PUBLIC_SUPABASE_URL`). Required while `BACKEND_AUTH_REQUIRED` is `true`; must be `https` (or `http` for `localhost`/`127.0.0.1`). The backend fails at startup without it. |
+| `SUPABASE_PUBLISHABLE_KEY` | — | Optional public key (same value as the frontend's `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; recommended). Enables the remote token check described under Authentication; without it, only ES256 tokens with a known `kid` are accepted. |
 | `BACKEND_AUTH_REQUIRED` | `true` | `false` disables access-token checks (local development only; a content-free `auth_disabled` warning is logged at startup). Any value other than `true`/`false` fails at startup. |
 | `SPEECH_PROVIDER` | `fake` | `fake` returns deterministic test audio; `kokoro` calls a Kokoro server; `openrouter` calls Kokoro through OpenRouter. |
 | `KOKORO_BASE_URL` | `http://localhost:8880` | Kokoro HTTP base URL. |
@@ -146,6 +147,17 @@ public keys from `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` (cached for 10 
 refetched at most once every 30 seconds for an unknown `kid`), then `exp` (30 s skew), `nbf`,
 `iss` (`${SUPABASE_URL}/auth/v1`), `aud` (`authenticated`) and `sub`. No Supabase secret is
 needed and the token is never logged.
+
+When `SUPABASE_PUBLISHABLE_KEY` is set, tokens the local path cannot verify (any `alg` other than
+ES256, for example a project still signing with the legacy HS256 secret, or a `kid` still unknown after
+the allowed JWKS refetch) are checked remotely with `GET ${SUPABASE_URL}/auth/v1/user` (headers
+`apikey` and `Authorization: Bearer <token>`, 3 s timeout). `alg: none` is always rejected locally.
+`exp`, `iss` and `aud` are checked first from the unverified payload, so expired or foreign tokens never
+reach Supabase. A 200 with an `id` authenticates; 401/403 is a rejection (`rejected_by_supabase`); any
+other status, network error or timeout is a `503 AUTH_UNAVAILABLE`. Successes are cached by
+`sha256(token)` until `min(exp, now + 10 min)` (at most 500 entries; the raw token is not stored),
+failures are not cached, and identical concurrent tokens share one request. Each remote check logs
+only `{"event":"auth_remote_check","outcome":"accepted|rejected|unavailable","trigger":"non_es256|unknown_kid"}`.
 
 A missing or invalid token returns `401 {"error":{"code":"UNAUTHENTICATED","message":"Sua sessão expirou. Entre novamente."}}`
 (WebSocket: an `error` message with the same code, then close `1008`); an unreachable key set

@@ -1,6 +1,6 @@
-import { createPublicKey, verify as verifySignature, type JsonWebKey, type KeyObject } from "node:crypto";
+import { createHash, createPublicKey, verify as verifySignature, type JsonWebKey, type KeyObject } from "node:crypto";
 
-export type AuthRejectReason = "missing" | "malformed" | "bad_signature" | "expired" | "wrong_issuer" | "wrong_audience" | "unknown_kid" | "jwks_unavailable";
+export type AuthRejectReason = "missing" | "malformed" | "bad_signature" | "expired" | "wrong_issuer" | "wrong_audience" | "unknown_kid" | "rejected_by_supabase" | "jwks_unavailable";
 
 export class AuthError extends Error {
   constructor(readonly reason: AuthRejectReason) {
@@ -8,7 +8,7 @@ export class AuthError extends Error {
     this.name = "AuthError";
   }
 
-  /** JWKS problems are a server-side outage, everything else is a rejected credential. */
+  /** JWKS or Supabase Auth outages (reason jwks_unavailable) are a server-side problem, everything else is a rejected credential. */
   get status(): 401 | 503 {
     return this.reason === "jwks_unavailable" ? 503 : 401;
   }
@@ -30,7 +30,19 @@ export type AccessTokenVerifierOptions = {
   minRefetchIntervalMs?: number;
   fetchTimeoutMs?: number;
   clockSkewSeconds?: number;
+  /** Public (publishable) key; enables the remote fallback through GET /auth/v1/user. Absent: fallback disabled. */
+  publishableKey?: string | null;
+  remoteTimeoutMs?: number;
+  remoteCacheMaxMs?: number;
+  remoteCacheMaxEntries?: number;
 };
+
+type RemoteTrigger = "non_es256" | "unknown_kid";
+type RemoteOutcome = "accepted" | "rejected" | "unavailable";
+
+function logRemoteCheck(outcome: RemoteOutcome, trigger: RemoteTrigger): void {
+  console.info(JSON.stringify({ event: "auth_remote_check", outcome, trigger }));
+}
 
 const maxTokenLength = 4096;
 const maxClockSkewSeconds = 30;
@@ -61,6 +73,15 @@ export function createAccessTokenVerifier(options: AccessTokenVerifierOptions): 
   const minRefetchMs = options.minRefetchIntervalMs ?? 30_000;
   const fetchTimeoutMs = options.fetchTimeoutMs ?? 5_000;
   const skewSeconds = Math.min(options.clockSkewSeconds ?? maxClockSkewSeconds, maxClockSkewSeconds);
+
+  const publishableKey = options.publishableKey?.trim() || null;
+  const remoteTimeoutMs = options.remoteTimeoutMs ?? 3_000;
+  const remoteCacheMaxMs = options.remoteCacheMaxMs ?? 10 * 60_000;
+  const remoteCacheMaxEntries = options.remoteCacheMaxEntries ?? 500;
+  const userUrl = `${issuer}/user`;
+  /** sha256(token) -> expiry in ms. The raw token is never stored. Map keeps insertion order, so the first key is the oldest. */
+  const remoteCache = new Map<string, { userId: string; expiresAtMs: number }>();
+  const remoteInFlight = new Map<string, Promise<AuthenticatedUser>>();
 
   let keys = new Map<string, KeyObject>();
   let fetchedAt: number | null = null;
@@ -118,6 +139,65 @@ export function createAccessTokenVerifier(options: AccessTokenVerifierOptions): 
     throw new AuthError("unknown_kid");
   };
 
+  /** Cheap unverified checks so obviously bad tokens never reach Supabase. */
+  const precheckClaims = (claims: Record<string, unknown>): number => {
+    const nowSeconds = now() / 1_000;
+    if (typeof claims.exp !== "number" || !Number.isFinite(claims.exp)) throw new AuthError("malformed");
+    if (claims.exp + skewSeconds <= nowSeconds) throw new AuthError("expired");
+    if (claims.nbf !== undefined && (typeof claims.nbf !== "number" || claims.nbf - skewSeconds > nowSeconds)) throw new AuthError(typeof claims.nbf === "number" ? "expired" : "malformed");
+    if (claims.iss !== issuer) throw new AuthError("wrong_issuer");
+    const audience = claims.aud;
+    if (!(audience === "authenticated" || (Array.isArray(audience) && audience.includes("authenticated")))) throw new AuthError("wrong_audience");
+    return claims.exp;
+  };
+
+  const callSupabaseUser = async (token: string, trigger: RemoteTrigger, key: string): Promise<AuthenticatedUser> => {
+    let response: Response;
+    try {
+      response = await fetchImpl(userUrl, { signal: AbortSignal.timeout(remoteTimeoutMs), headers: { accept: "application/json", apikey: key, authorization: `Bearer ${token}` } });
+    } catch {
+      logRemoteCheck("unavailable", trigger);
+      throw new AuthError("jwks_unavailable");
+    }
+    if (response.status === 401 || response.status === 403) {
+      logRemoteCheck("rejected", trigger);
+      throw new AuthError("rejected_by_supabase");
+    }
+    let id: unknown;
+    if (response.status === 200) {
+      try {
+        id = ((await response.json()) as { id?: unknown } | null)?.id;
+      } catch {
+        id = undefined;
+      }
+    }
+    if (typeof id !== "string" || id === "") {
+      logRemoteCheck("unavailable", trigger);
+      throw new AuthError("jwks_unavailable");
+    }
+    logRemoteCheck("accepted", trigger);
+    return { userId: id };
+  };
+
+  const verifyRemotely = async (token: string, claims: Record<string, unknown>, trigger: RemoteTrigger, key: string): Promise<AuthenticatedUser> => {
+    const exp = precheckClaims(claims);
+    const digest = createHash("sha256").update(token).digest("hex");
+    const cached = remoteCache.get(digest);
+    if (cached) {
+      if (cached.expiresAtMs > now()) return { userId: cached.userId };
+      remoteCache.delete(digest);
+    }
+    const pending = remoteInFlight.get(digest);
+    if (pending) return pending;
+    const request = callSupabaseUser(token, trigger, key).then((user) => {
+      remoteCache.set(digest, { userId: user.userId, expiresAtMs: Math.min(exp * 1_000, now() + remoteCacheMaxMs) });
+      while (remoteCache.size > remoteCacheMaxEntries) remoteCache.delete(remoteCache.keys().next().value as string);
+      return user;
+    }).finally(() => remoteInFlight.delete(digest));
+    remoteInFlight.set(digest, request);
+    return request;
+  };
+
   return {
     async verify(token) {
       if (!token) throw new AuthError("missing");
@@ -126,11 +206,22 @@ export function createAccessTokenVerifier(options: AccessTokenVerifierOptions): 
       if (parts.length !== 3) throw new AuthError("malformed");
       const [headerPart, payloadPart, signaturePart] = parts as [string, string, string];
       const header = decodeJson(headerPart);
-      if (header.alg !== "ES256" || typeof header.kid !== "string" || header.kid === "") throw new AuthError("malformed");
+      if (typeof header.alg !== "string" || header.alg === "" || header.alg.toLowerCase() === "none") throw new AuthError("malformed");
       const claims = decodeJson(payloadPart);
       const signature = decodeSegment(signaturePart);
+      if (header.alg !== "ES256") {
+        if (!publishableKey) throw new AuthError("malformed");
+        return verifyRemotely(token, claims, "non_es256", publishableKey);
+      }
+      if (typeof header.kid !== "string" || header.kid === "") throw new AuthError("malformed");
 
-      const key = await getKey(header.kid);
+      let key: KeyObject;
+      try {
+        key = await getKey(header.kid);
+      } catch (error) {
+        if (publishableKey && error instanceof AuthError && error.reason === "unknown_kid") return verifyRemotely(token, claims, "unknown_kid", publishableKey);
+        throw error;
+      }
       const valid = signature.length === 64 && verifySignature("sha256", Buffer.from(`${headerPart}.${payloadPart}`), { key, dsaEncoding: "ieee-p1363" }, signature);
       if (!valid) throw new AuthError("bad_signature");
 

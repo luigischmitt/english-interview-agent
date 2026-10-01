@@ -26,7 +26,9 @@ Plain variables: `SPEECH_PROVIDER=openrouter`, `TRANSCRIPTION_PROVIDER=cartesia`
 `AZURE_SPEECH_REGION`, `AZURE_SPEECH_ASSESSMENT_ENABLED=true`,
 `SUPABASE_URL` (the public project URL, same as `NEXT_PUBLIC_SUPABASE_URL`; the
 backend refuses to start without it while `BACKEND_AUTH_REQUIRED` is unset or
-`true`), `ALLOWED_ORIGIN=https://englishinterview.vercel.app,https://english-interview-agent.vercel.app` (no trailing slash).
+`true`), `SUPABASE_PUBLISHABLE_KEY` (public, recommended; same value as
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; enables the remote token check for non-ES256 signing
+keys), `ALLOWED_ORIGIN=https://englishinterview.vercel.app,https://english-interview-agent.vercel.app` (no trailing slash).
 
 Do not set `KOKORO_BASE_URL` (unused with `openrouter`) or
 `INTERVIEW_REASONING_DIAGNOSTICS`. Cloud Run injects `PORT=8080`. Every other
@@ -83,7 +85,7 @@ gcloud run deploy english-interview-backend \
   --allow-unauthenticated \
   --max-instances 1 --min-instances 0 --cpu 1 --memory 1Gi \
   --concurrency 20 --timeout 3600 --session-affinity \
-  --set-env-vars "SPEECH_PROVIDER=openrouter,TRANSCRIPTION_PROVIDER=cartesia,AZURE_SPEECH_REGION=<region>,AZURE_SPEECH_ASSESSMENT_ENABLED=true,SUPABASE_URL=<supabase-url>,ALLOWED_ORIGIN=<vercel-origin>" \
+  --set-env-vars "SPEECH_PROVIDER=openrouter,TRANSCRIPTION_PROVIDER=cartesia,AZURE_SPEECH_REGION=<region>,AZURE_SPEECH_ASSESSMENT_ENABLED=true,SUPABASE_URL=<supabase-url>,SUPABASE_PUBLISHABLE_KEY=<publishable-key>,ALLOWED_ORIGIN=<vercel-origin>" \
   --set-secrets "OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,AZURE_SPEECH_KEY=AZURE_SPEECH_KEY:latest,CARTESIA_API_KEY=CARTESIA_API_KEY:latest"
 ```
 

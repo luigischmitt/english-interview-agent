@@ -8,5 +8,5 @@ export function resolveAccessTokenVerifier(env: NodeJS.ProcessEnv = process.env)
     warnAuthDisabledOnce();
     return null;
   }
-  return createAccessTokenVerifier({ supabaseUrl: config.supabaseUrl! });
+  return createAccessTokenVerifier({ supabaseUrl: config.supabaseUrl!, publishableKey: config.publishableKey });
 }

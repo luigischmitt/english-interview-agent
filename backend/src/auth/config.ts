@@ -2,6 +2,8 @@ export type AuthConfig = {
   required: boolean;
   /** Public Supabase project URL without a trailing slash; null only when authentication is disabled. */
   supabaseUrl: string | null;
+  /** Optional public key enabling the remote token check for non-ES256 or unknown-kid tokens. */
+  publishableKey?: string;
 };
 
 const localHosts = new Set(["localhost", "127.0.0.1"]);
@@ -26,7 +28,9 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig
   }
   const required = flag !== "false";
   const rawUrl = env.SUPABASE_URL?.trim();
-  if (!required) return { required, supabaseUrl: rawUrl ? parseSupabaseUrl(rawUrl) : null };
+  const publishableKey = env.SUPABASE_PUBLISHABLE_KEY?.trim();
+  const optional = publishableKey ? { publishableKey } : {};
+  if (!required) return { required, supabaseUrl: rawUrl ? parseSupabaseUrl(rawUrl) : null, ...optional };
   if (!rawUrl) throw new Error("SUPABASE_URL is required while BACKEND_AUTH_REQUIRED is true. Set it to the Supabase project URL (the same value as NEXT_PUBLIC_SUPABASE_URL), or set BACKEND_AUTH_REQUIRED=false for local development only.");
-  return { required, supabaseUrl: parseSupabaseUrl(rawUrl) };
+  return { required, supabaseUrl: parseSupabaseUrl(rawUrl), ...optional };
 }

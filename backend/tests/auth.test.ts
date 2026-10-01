@@ -271,3 +271,117 @@ describe("authenticated transcription WebSocket", () => {
     await ctx.cleanup();
   });
 });
+
+describe("remote token check fallback", () => {
+  const pk = "sb_publishable_test";
+  const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const hs256 = (claims: Record<string, unknown> = {}, alg = "HS256") =>
+    `${b64({ alg, typ: "JWT" })}.${b64({ iss: `${testSupabaseUrl}/auth/v1`, aud: "authenticated", sub: "u", exp: now() + 600, ...claims })}.${b64("sig")}`;
+
+  function remoteVerifier(respond: (url: string, init: RequestInit) => Response | Promise<Response>, extra: Partial<Parameters<typeof createAccessTokenVerifier>[0]> = {}) {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const jwks = fakeJwksFetch(() => [key]);
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      if (url.endsWith("/jwks.json")) return jwks.fetchImpl(url, init);
+      calls.push({ url, init });
+      return respond(url, init);
+    }) as typeof fetch;
+    return { calls, verifier: createAccessTokenVerifier({ supabaseUrl: testSupabaseUrl, fetchImpl, publishableKey: pk, ...extra }) };
+  }
+  const ok = () => new Response(JSON.stringify({ id: "remote-user" }), { status: 200 });
+
+  it("accepts an HS256 token through Supabase and caches the result", async () => {
+    const { verifier, calls } = remoteVerifier(ok);
+    const token = hs256();
+    await expect(verifier.verify(token)).resolves.toEqual({ userId: "remote-user" });
+    await expect(verifier.verify(token)).resolves.toEqual({ userId: "remote-user" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe(`${testSupabaseUrl}/auth/v1/user`);
+    expect(calls[0]!.init.headers).toMatchObject({ apikey: pk, authorization: `Bearer ${token}` });
+  });
+
+  it("shares one in-flight request between identical concurrent tokens", async () => {
+    const { verifier, calls } = remoteVerifier(async () => { await new Promise((r) => setTimeout(r, 10)); return ok(); });
+    const token = hs256();
+    await Promise.all([verifier.verify(token), verifier.verify(token)]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does not cache failures", async () => {
+    let status = 500;
+    const { verifier, calls } = remoteVerifier(() => (status === 200 ? ok() : new Response("x", { status })));
+    const token = hs256();
+    await rejectsWith(verifier.verify(token), "jwks_unavailable");
+    status = 200;
+    await expect(verifier.verify(token)).resolves.toBeDefined();
+    expect(calls).toHaveLength(2);
+  });
+
+  it("evicts the oldest cache entry when the cache is full", async () => {
+    const { verifier, calls } = remoteVerifier(ok, { remoteCacheMaxEntries: 1 });
+    const a = hs256({ sub: "a" });
+    const b = hs256({ sub: "b" });
+    await verifier.verify(a);
+    await verifier.verify(b);
+    await verifier.verify(a);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("maps remote 401/403 to a 401 and 5xx or timeouts to 503", async () => {
+    for (const status of [401, 403]) {
+      const { verifier } = remoteVerifier(() => new Response("no", { status }));
+      await expect(verifier.verify(hs256())).rejects.toMatchObject({ reason: "rejected_by_supabase", status: 401 });
+    }
+    const { verifier: failing } = remoteVerifier(() => new Response("boom", { status: 500 }));
+    await expect(failing.verify(hs256())).rejects.toMatchObject({ reason: "jwks_unavailable", status: 503 });
+    const { verifier: slow } = remoteVerifier((_url, init) => new Promise<Response>((_resolve, reject) => init.signal?.addEventListener("abort", () => reject(new Error("aborted")))), { remoteTimeoutMs: 20 });
+    await expect(slow.verify(hs256())).rejects.toMatchObject({ reason: "jwks_unavailable", status: 503 });
+  });
+
+  it("falls back to Supabase for an unknown kid", async () => {
+    const { verifier, calls } = remoteVerifier(ok, { minRefetchIntervalMs: 0 });
+    const other = createTestKey("other-kid");
+    await expect(verifier.verify(signToken(other))).resolves.toEqual({ userId: "remote-user" });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("never sends alg none remotely", async () => {
+    const { verifier, calls } = remoteVerifier(ok);
+    await rejectsWith(verifier.verify(`${b64({ alg: "none" })}.${b64({ iss: `${testSupabaseUrl}/auth/v1`, exp: now() + 600 })}.${b64("sig")}`), "malformed");
+    await rejectsWith(verifier.verify(`${b64({ alg: "none" })}.${b64({ exp: now() + 600 })}.`), "malformed");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects expired, wrong-issuer and wrong-audience tokens without calling Supabase", async () => {
+    const { verifier, calls } = remoteVerifier(ok);
+    await rejectsWith(verifier.verify(hs256({ exp: now() - 120 })), "expired");
+    await rejectsWith(verifier.verify(hs256({ iss: "https://evil.example/auth/v1" })), "wrong_issuer");
+    await rejectsWith(verifier.verify(hs256({ aud: "anon" })), "wrong_audience");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("is disabled without a publishable key", async () => {
+    const calls: string[] = [];
+    const verifier = createAccessTokenVerifier({ supabaseUrl: testSupabaseUrl, fetchImpl: (async (url: string) => { calls.push(url); return ok(); }) as typeof fetch });
+    await rejectsWith(verifier.verify(hs256()), "malformed");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("logs only content-free outcomes and never the token", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { verifier } = remoteVerifier(ok);
+    const token = hs256();
+    await verifier.verify(token);
+    const logged = info.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(logged).toContain('"event":"auth_remote_check"');
+    expect(logged).toContain('"outcome":"accepted"');
+    expect(logged).toContain('"trigger":"non_es256"');
+    expect(logged).not.toContain(token);
+    expect(logged).not.toContain("remote-user");
+  });
+
+  it("reads SUPABASE_PUBLISHABLE_KEY as optional config", () => {
+    expect(loadAuthConfig({ SUPABASE_URL: "https://p.supabase.co", SUPABASE_PUBLISHABLE_KEY: " k " }).publishableKey).toBe("k");
+    expect(loadAuthConfig({ SUPABASE_URL: "https://p.supabase.co" }).publishableKey).toBeUndefined();
+  });
+});
