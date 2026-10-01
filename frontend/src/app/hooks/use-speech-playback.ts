@@ -14,10 +14,13 @@ export function prewarmInterviewerUtterance(utterance: string) {
   return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 30_000 });
 }
 
-export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void) {
+export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void) {
   const [activeSegment, setActiveSegment] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
   const playbackRef = useRef<SpeechPlayback | null>(null);
+  // Read through a ref so a new callback identity never restarts the utterance.
+  const onFinalChunkStartedRef = useRef(onFinalChunkStarted);
+  useEffect(() => { onFinalChunkStartedRef.current = onFinalChunkStarted; }, [onFinalChunkStarted]);
   const cancelPlayback = useCallback(() => {
     playbackRef.current?.cancel();
     playbackRef.current = null;
@@ -42,6 +45,7 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
       onSynthesisStarted: () => onTimingEvent?.("synthesis-started"),
       onSynthesisCompleted: () => onTimingEvent?.("synthesis-completed"),
       onPlaybackStarted: () => onTimingEvent?.("playback-started"),
+      onFinalChunkStarted: () => onFinalChunkStartedRef.current?.(),
     });
     playbackRef.current = playback;
 

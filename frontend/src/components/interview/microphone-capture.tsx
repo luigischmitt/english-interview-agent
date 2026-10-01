@@ -6,10 +6,11 @@ import { getAccessToken } from "@/lib/auth/backend-auth";
 import { buildStreamStartMessage, notifySessionExpired } from "@/lib/auth/access-token.mjs";
 import type { VoiceTranscription } from "@/lib/interview/transcription";
 import { createSilentMicDetector, type SilentMicState } from "@/lib/interview/silent-mic-detector.mjs";
-import { getSpeechThreshold } from "@/lib/interview/vad-threshold.mjs";
+import { createBrowserMicDeps, createMicEngine, defaultSpeechThreshold, type MicEngine } from "@/lib/interview/mic-engine.mjs";
+import { createAnswerStream, StreamConnectionError, StreamSetupError, type AnswerStream, type AnswerStreamFailure, type AnswerStreamSocket } from "@/lib/interview/answer-stream.mjs";
 import { toStreamQuestion } from "@/lib/interview/stream-question.mjs";
 import { finalVoiceTranscription, transcriptionFailureMessage } from "@/lib/interview/transcription-state.mjs";
-import { nextAutoStartSignal, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
+import { nextAutoStartSignal } from "@/lib/interview/session-policy.mjs";
 import { emptyCaption, parseCaptionMessage, type CandidateCaption } from "@/lib/interview/caption-state.mjs";
 import type { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 
@@ -38,13 +39,8 @@ type StreamMessage = {
   timing?: { speechEndToFinalizationMs?: number };
 };
 
-type HandoffTimingEvent = "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed";
+type HandoffTimingEvent = "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed" | "listening";
 
-class StreamSetupError extends Error {
-  constructor(readonly code?: string) {
-    super("Transcription stream setup failed.");
-  }
-}
 export type VoiceAssessmentState =
   | { status: "pending" }
   | { status: "unavailable"; segmented?: boolean; reason?: string; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] }
@@ -70,8 +66,12 @@ type MicrophoneCaptureProps = {
   onProvisionalAnswer?: (transcript: string, revision: number) => void;
   /** The speaker resumed after a pause, so any provisional answer is stale. */
   onSpeechResumed?: () => void;
-  onHandoffTimingEvent?: (event: HandoffTimingEvent, details?: { speechEndToFinalizationMs?: number }) => void;
+  onHandoffTimingEvent?: (event: HandoffTimingEvent, details?: { speechEndToFinalizationMs?: number; preconnected?: boolean }) => void;
   autoStartSignal?: string | null;
+  /** Interview-long microphone owned by the room. Without it (or if it fails) each answer opens its own microphone. */
+  micEngine?: MicEngine | null;
+  /** Question id: the interviewer is about to finish, so open the transcription socket now (no audio is sent until the answer window opens). */
+  preconnectSignal?: string | null;
   assessmentSockets: AssessmentSocketRegistry;
   assessmentContext: AssessmentContext;
 };
@@ -79,7 +79,6 @@ type MicrophoneCaptureProps = {
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const pcmSampleRate = 16_000;
 const maximumDurationSeconds = 180;
-const maximumSocketBufferBytes = 512 * 1024;
 
 function getStreamUrl(): string {
   const url = new URL("/api/v1/transcriptions/stream", backendBaseUrl);
@@ -105,13 +104,27 @@ function toPcm16(samples: Float32Array): Int16Array {
   return output;
 }
 
-function rootMeanSquare(samples: Float32Array): number {
-  let sum = 0;
-  for (const sample of samples) sum += sample * sample;
-  return Math.sqrt(sum / Math.max(1, samples.length));
+type Attempt = {
+  generation: number;
+  attemptId: string;
+  context: AssessmentContext;
+  stream: AnswerStream;
+  assessmentEnabled: boolean;
+  awaitingAssessment: boolean;
+};
+
+/** The server reported (in `ready`) whether pronunciation assessment follows this answer. */
+function markAssessmentEnabled(attempt: Attempt, enabled: boolean) {
+  attempt.assessmentEnabled = enabled;
 }
 
-export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onCaptionChange, captionsEnabled = false, onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+function streamFailureMessage(reason: AnswerStreamFailure): string {
+  if (reason === "slow") return "A conexão de áudio está lenta. Trechos parciais não podem ser enviados; tente novamente ou pule esta pergunta.";
+  if (reason === "buffer") return "A conexão com o transcritor demorou para responder. Tente novamente ou pule esta pergunta.";
+  return "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.";
+}
+
+export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onCaptionChange, captionsEnabled = false, onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -119,14 +132,13 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const [micNotice, setMicNotice] = useState<Exclude<SilentMicState, "ok"> | null>(null);
   const micDetectorRef = useRef<ReturnType<typeof createSilentMicDetector> | null>(null);
   const micCheckTimerRef = useRef<number | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const workletRef = useRef<AudioWorkletNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const gainRef = useRef<GainNode | null>(null);
+  /** The answer in progress (its socket is owned by its AnswerStream). Null once handed to the assessment registry. */
+  const attemptRef = useRef<Attempt | null>(null);
+  /** A socket opened while the interviewer was finishing; adopted by the next startRecording. Never carries audio. */
+  const preRef = useRef<Attempt | null>(null);
+  const activeEngineRef = useRef<MicEngine | null>(null);
+  const ownedEngineRef = useRef<MicEngine | null>(null);
   const durationTimerRef = useRef<number | null>(null);
-  const connectionTimeoutRef = useRef<number | null>(null);
   const startedAtRef = useRef(0);
   const generationRef = useRef(0);
   const finalizationRequestedRef = useRef(false);
@@ -137,8 +149,16 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const captionsEnabledRef = useRef(captionsEnabled);
   const onProvisionalAnswerRef = useRef(onProvisionalAnswer);
   const onSpeechResumedRef = useRef(onSpeechResumed);
+  const onHandoffTimingEventRef = useRef(onHandoffTimingEvent);
   const assessmentContextRef = useRef(assessmentContext);
+  const micEngineRef = useRef(micEngine);
   const lastAutoStartSignalRef = useRef<string | null>(null);
+  const lastPreconnectSignalRef = useRef<string | null>(null);
+  const handlersRef = useRef<{
+    message: (attempt: Attempt, message: StreamMessage, socket: AnswerStreamSocket) => void;
+    close: (attempt: Attempt, event: { code?: number }, socket: AnswerStreamSocket) => void;
+    failure: (attempt: Attempt, reason: AnswerStreamFailure) => void;
+  } | null>(null);
 
   useEffect(() => {
     onTranscriptionChangeRef.current = onTranscriptionChange;
@@ -148,46 +168,40 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     captionsEnabledRef.current = captionsEnabled;
     onProvisionalAnswerRef.current = onProvisionalAnswer;
     onSpeechResumedRef.current = onSpeechResumed;
+    onHandoffTimingEventRef.current = onHandoffTimingEvent;
     assessmentContextRef.current = assessmentContext;
-  }, [assessmentContext, captionsEnabled, onCaptionChange, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+    micEngineRef.current = micEngine;
+  }, [assessmentContext, captionsEnabled, micEngine, onCaptionChange, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
 
   const clearCaption = useCallback(() => onCaptionChangeRef.current?.(emptyCaption), []);
 
+  /** Ends the answer window: audio stops flowing, timers stop, and a per-answer (private) microphone is released. The room's microphone stays open. */
   const releaseCapture = useCallback(() => {
     if (durationTimerRef.current !== null) window.clearInterval(durationTimerRef.current);
-    if (connectionTimeoutRef.current !== null) window.clearTimeout(connectionTimeoutRef.current);
     durationTimerRef.current = null;
-    connectionTimeoutRef.current = null;
     if (micCheckTimerRef.current !== null) window.clearInterval(micCheckTimerRef.current);
     micCheckTimerRef.current = null;
     micDetectorRef.current = null;
     setMicNotice(null);
-    if (workletRef.current) workletRef.current.port.onmessage = null;
-    workletRef.current?.disconnect();
-    sourceRef.current?.disconnect();
-    gainRef.current?.disconnect();
-    workletRef.current = null;
-    sourceRef.current = null;
-    gainRef.current = null;
-    stopMediaStreamTracks(streamRef.current);
-    streamRef.current = null;
-    const context = audioContextRef.current;
-    audioContextRef.current = null;
-    if (context && context.state !== "closed") void context.close();
+    activeEngineRef.current?.stopCapture();
+    activeEngineRef.current = null;
+    const owned = ownedEngineRef.current;
+    ownedEngineRef.current = null;
+    owned?.release();
+  }, []);
+
+  const cancelPreconnect = useCallback(() => {
+    const pre = preRef.current;
+    preRef.current = null;
+    pre?.stream.cancel();
   }, []);
 
   const fail = useCallback((message: string) => {
     generationRef.current += 1;
     releaseCapture();
-    const socket = socketRef.current;
-    socketRef.current = null;
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "cancel" }));
-    if (socket) {
-      socket.onmessage = null;
-      socket.onclose = null;
-      socket.onerror = null;
-      socket.close();
-    }
+    const attempt = attemptRef.current;
+    attemptRef.current = null;
+    attempt?.stream.cancel();
     clearCaption();
     setStatus("error");
     onCaptureStateChangeRef.current?.("unavailable");
@@ -198,46 +212,33 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   }, [clearCaption, releaseCapture]);
 
   const stopRecording = useCallback(() => {
-    const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN || finalizationRequestedRef.current) return;
+    const attempt = attemptRef.current;
+    const socket = attempt?.stream.socket;
+    if (!attempt || !socket || socket.readyState !== WebSocket.OPEN || finalizationRequestedRef.current) return;
     finalizationRequestedRef.current = true;
     clearCaption();
     setStatus("finalizing");
     onCaptureStateChangeRef.current?.("finalizing");
-    const worklet = workletRef.current;
-    if (!worklet) {
+    const engine = activeEngineRef.current;
+    const finalize = () => {
+      if (attemptRef.current !== attempt || socket.readyState !== WebSocket.OPEN) { releaseCapture(); return; }
       socket.send(JSON.stringify({ type: "finalize", reason: "silence" }));
+      const pending: VoiceTranscriptionState = { status: "pending" };
+      setTranscription(pending);
+      onTranscriptionChangeRef.current(pending);
       releaseCapture();
-      return;
-    }
-    const previousHandler = worklet.port.onmessage;
-    worklet.port.onmessage = (event: MessageEvent<{ type?: string; samples?: ArrayBuffer }>) => {
-      previousHandler?.call(worklet.port, event);
-      if (event.data?.type === "flushed") {
-        worklet.port.onmessage = previousHandler;
-        socket.send(JSON.stringify({ type: "finalize", reason: "silence" }));
-        const pending: VoiceTranscriptionState = { status: "pending" };
-        setTranscription(pending);
-        onTranscriptionChangeRef.current(pending);
-        releaseCapture();
-      }
     };
-    worklet.port.postMessage({ type: "flush" });
+    // The engine delivers the worklet's partial frame to the stream before resolving.
+    if (engine) void engine.flush().then(finalize); else finalize();
   }, [clearCaption, releaseCapture]);
 
   const cancelRecording = useCallback(() => {
     generationRef.current += 1;
     finalizationRequestedRef.current = true;
     releaseCapture();
-    const socket = socketRef.current;
-    socketRef.current = null;
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "cancel" }));
-    if (socket) {
-      socket.onmessage = null;
-      socket.onclose = null;
-      socket.onerror = null;
-      socket.close();
-    }
+    const attempt = attemptRef.current;
+    attemptRef.current = null;
+    attempt?.stream.cancel();
     clearCaption();
     setStatus("idle");
     onCaptureStateChangeRef.current?.("idle");
@@ -248,241 +249,226 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     onTranscriptionChangeRef.current(idle);
   }, [clearCaption, releaseCapture]);
 
-  const startRecording = useCallback(async (force = false) => {
+  /** Every server message after `ready` (the stream consumes `ready` and setup errors itself). */
+  const handleStreamMessage = (attempt: Attempt, message: StreamMessage, socket: AnswerStreamSocket) => {
+    const { generation, attemptId, context: attemptAssessmentContext } = attempt;
+    if (message.type === "assessment") {
+      attempt.awaitingAssessment = false;
+      assessmentSockets.finish(attemptId, socket as unknown as WebSocket);
+      const received: VoiceAssessmentState = message.status === "available" && message.scores
+        ? { status: "available", segmented: true, durationMs: message.durationMs ?? 0, scores: message.scores, blockCount: message.blockCount, assessedBlockCount: message.assessedBlockCount, failedBlockCount: message.failedBlockCount, diagnostics: message.diagnostics }
+        : { status: "unavailable", segmented: message.segmented === true, reason: message.reason, blockCount: message.blockCount, assessedBlockCount: message.assessedBlockCount, failedBlockCount: message.failedBlockCount, diagnostics: message.diagnostics };
+      onAssessmentChangeRef.current?.(attemptId, received, attemptAssessmentContext);
+      attempt.stream.release();
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.close();
+      return;
+    }
+    if (generationRef.current !== generation) return;
+    if (message.type === "error" && message.code === "UNAUTHENTICATED") notifySessionExpired();
+    if (message.type === "caption") {
+      const caption = parseCaptionMessage(message);
+      if (caption && !finalizationRequestedRef.current) onCaptionChangeRef.current?.(caption);
+      return;
+    }
+    if (message.type === "speech-started") {
+      micDetectorRef.current?.markSpeechStarted();
+      setMicNotice(null);
+      onCaptureStateChangeRef.current?.("detected");
+      return;
+    }
+    if (message.type === "answer-provisional") {
+      const { transcript, revision } = message;
+      if (typeof transcript === "string" && typeof revision === "number" && Number.isInteger(revision) && !finalizationRequestedRef.current) {
+        onProvisionalAnswerRef.current?.(transcript, revision);
+      }
+      return;
+    }
+    if (message.type === "speech-resumed") {
+      onSpeechResumedRef.current?.();
+      return;
+    }
+    if (message.type === "silence-detected") return;
+    if (message.type === "transcription-queued" || message.type === "finalizing") {
+      if (message.type === "finalizing") {
+        onHandoffTimingEventRef.current?.("finalizing", message.timing);
+        clearCaption();
+        releaseCapture();
+      } else onHandoffTimingEventRef.current?.("transcription-queued");
+      setStatus("finalizing");
+      const pending: VoiceTranscriptionState = { status: "pending" };
+      setTranscription(pending);
+      onTranscriptionChangeRef.current(pending);
+      return;
+    }
+    if (message.type === "transcription-started") {
+      onHandoffTimingEventRef.current?.("transcription-started");
+      return;
+    }
+    if (message.type === "complete") {
+      onHandoffTimingEventRef.current?.("transcription-completed");
+      clearCaption();
+      releaseCapture();
+      const result = finalVoiceTranscription(message);
+      if (result.status === "available") {
+        setTranscription(result);
+        onTranscriptionChangeRef.current(result);
+        onCaptureStateChangeRef.current?.("ready");
+        setStatus("idle");
+        setError(null);
+      } else {
+        setTranscription(result);
+        onTranscriptionChangeRef.current(result);
+        onCaptureStateChangeRef.current?.("unavailable");
+        setStatus("error");
+        setError(result.message);
+      }
+      attempt.awaitingAssessment = attempt.assessmentEnabled;
+      if (attempt.awaitingAssessment) {
+        assessmentSockets.register(attemptId, socket as unknown as WebSocket);
+        attemptRef.current = null;
+        onAssessmentChangeRef.current?.(attemptId, { status: "pending" }, attemptAssessmentContext);
+      } else {
+        onAssessmentChangeRef.current?.(attemptId, { status: "unavailable", reason: "not_enabled" }, attemptAssessmentContext);
+        attempt.stream.release();
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.close();
+        if (attemptRef.current === attempt) attemptRef.current = null;
+      }
+      return;
+    }
+    if (message.type === "error" || message.type === "transcription-error") {
+      fail(transcriptionFailureMessage(message.code));
+    }
+  };
+
+  const handleStreamClose = (attempt: Attempt, event: { code?: number }, socket: AnswerStreamSocket) => {
+    if (attempt.awaitingAssessment) {
+      attempt.awaitingAssessment = false;
+      assessmentSockets.finish(attempt.attemptId, socket as unknown as WebSocket);
+      onAssessmentChangeRef.current?.(attempt.attemptId, { status: "unavailable", segmented: true, reason: "socket_closed" }, attempt.context);
+      return;
+    }
+    if (attemptRef.current === attempt && event.code !== 1000) {
+      fail("A conexão com o transcritor foi interrompida. Tente novamente ou pule a pergunta.");
+    }
+  };
+
+  const handleStreamFailure = (attempt: Attempt, reason: AnswerStreamFailure) => {
+    if (attemptRef.current !== attempt || generationRef.current !== attempt.generation) return;
+    fail(streamFailureMessage(reason));
+  };
+
+  useEffect(() => {
+    handlersRef.current = { message: handleStreamMessage, close: handleStreamClose, failure: handleStreamFailure };
+  });
+
+  /** Builds the transport of one answer. Nothing is opened until `connect()` (pre-connect) or `begin()` (answer window). */
+  const createAttempt = useCallback((generation: number, speechThreshold: number): Attempt => {
+    const attempt = { generation, attemptId: crypto.randomUUID(), context: assessmentContextRef.current, assessmentEnabled: false, awaitingAssessment: false } as Attempt;
+    attempt.stream = createAnswerStream({
+      openSocket: () => new WebSocket(getStreamUrl()) as unknown as AnswerStreamSocket,
+      buildStartMessage: async () => {
+        let accessToken: string;
+        try {
+          accessToken = await getAccessToken();
+        } catch {
+          throw new StreamSetupError("UNAUTHENTICATED");
+        }
+        return buildStreamStartMessage({ accessToken, speechThreshold, sampleRate: pcmSampleRate, captions: captionsEnabledRef.current, question: toStreamQuestion(attempt.context.questionLabel) });
+      },
+      encodeFrame: (samples) => toPcm16(samples).buffer as ArrayBuffer,
+      onMessage: (message, socket) => handlersRef.current?.message(attempt, message as StreamMessage, socket),
+      onClose: (event, socket) => handlersRef.current?.close(attempt, event, socket),
+      onFailure: (reason) => handlersRef.current?.failure(attempt, reason),
+    });
+    return attempt;
+  }, []);
+
+  /** Zero-wait handoff: with the interview microphone ready, open and authenticate the socket before the interviewer stops talking. */
+  const preconnect = useCallback(() => {
+    const engine = micEngineRef.current;
+    if (preRef.current || attemptRef.current || !engine || engine.state !== "ready" || typeof WebSocket === "undefined") return;
+    if (status !== "idle") return;
+    const pre = createAttempt(++generationRef.current, engine.noiseFloor);
+    preRef.current = pre;
+    pre.stream.connect().catch(() => { /* A failed pre-connect is retried by begin(). */ });
+  }, [createAttempt, status]);
+
+  const startRecording = useCallback(async (force = false, options: { reacquire?: boolean } = {}) => {
     if ((!force && (status === "requesting" || status === "recording" || status === "finalizing")) || disabled) return;
     setMicNotice(null);
     setError(null);
     setStatus("requesting");
     onCaptureStateChangeRef.current?.("requesting");
-    const generation = generationRef.current + 1;
-    generationRef.current = generation;
     finalizationRequestedRef.current = false;
     clearCaption();
     setDuration(0);
     setTranscription({ status: "idle" });
     onTranscriptionChangeRef.current({ status: "idle" });
-    const attemptId = crypto.randomUUID();
-    const attemptAssessmentContext = assessmentContextRef.current;
+
+    let attempt = preRef.current;
+    preRef.current = null;
+    if (attempt && (attempt.generation !== generationRef.current || attempt.stream.state === "closed")) {
+      attempt.stream.cancel();
+      attempt = null;
+    }
+    const generation = attempt ? attempt.generation : ++generationRef.current;
 
     try {
-      if (!navigator.mediaDevices?.getUserMedia || typeof AudioWorkletNode === "undefined" || typeof WebSocket === "undefined") throw new Error("unsupported");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-      if (generationRef.current !== generation) { stopMediaStreamTracks(stream); return; }
-      streamRef.current = stream;
-      const context = new AudioContext();
-      audioContextRef.current = context;
-      await context.audioWorklet.addModule("/pcm-capture-processor.js");
-      await context.resume();
-
-      const source = context.createMediaStreamSource(stream);
-      const worklet = new AudioWorkletNode(context, "pcm-capture-processor", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
-      const mute = context.createGain();
-      mute.gain.value = 0;
-      source.connect(worklet);
-      worklet.connect(mute);
-      mute.connect(context.destination);
-      sourceRef.current = source;
-      workletRef.current = worklet;
-      gainRef.current = mute;
+      if (typeof WebSocket === "undefined") throw new Error("unsupported");
+      // Reuse the room's microphone when healthy (reacquire once if its track ended/muted, or when asked to);
+      // otherwise fall back to one microphone for this answer only.
+      let engine: MicEngine | null = null;
+      let owned = false;
+      const shared = micEngineRef.current;
+      if (shared) {
+        try { if (await shared.ensureHealthy({ force: options.reacquire === true })) engine = shared; } catch { /* Falls back below. */ }
+      }
+      if (generationRef.current !== generation) { attempt?.stream.cancel(); return; }
+      if (!engine) {
+        const own = createMicEngine(createBrowserMicDeps());
+        ownedEngineRef.current = own;
+        await own.acquire();
+        engine = own;
+        owned = true;
+      }
+      if (generationRef.current !== generation) { attempt?.stream.cancel(); return; }
+      let speechThreshold = engine.noiseFloor;
+      if (owned) {
+        // Per-answer fallback keeps the original behavior: calibrate on the first frames and send them too.
+        speechThreshold = (await engine.calibrate({ keepFrames: true })) ?? defaultSpeechThreshold;
+        if (generationRef.current !== generation) return;
+      }
+      attempt ??= createAttempt(generation, speechThreshold);
+      attemptRef.current = attempt;
+      activeEngineRef.current = engine;
       startedAtRef.current = Date.now();
-
-      const calibrationFrames: Array<{ samples: Float32Array; level: number }> = [];
-      const calibrationReady = new Promise<void>((resolve, reject) => {
-        const calibrationTimeout = window.setTimeout(() => reject(new Error("calibration")), 1_500);
-        worklet.port.onmessage = (event: MessageEvent<{ type?: string; samples?: ArrayBuffer }>) => {
-          if (!event.data?.samples || calibrationFrames.length >= 5) return;
-          const samples = new Float32Array(event.data.samples);
-          calibrationFrames.push({ samples, level: rootMeanSquare(samples) });
-          if (calibrationFrames.length === 5) {
-            window.clearTimeout(calibrationTimeout);
-            resolve();
-          }
-        };
-      });
-      await calibrationReady;
-      if (generationRef.current !== generation) return;
-      const speechThreshold = getSpeechThreshold(calibrationFrames.map(({ level }) => level));
-      const pendingFrames = [...calibrationFrames];
-      let streamReady = false;
-
-      const streamQuestion = toStreamQuestion(attemptAssessmentContext.questionLabel);
-      let accessToken: string;
-      try {
-        accessToken = await getAccessToken();
-      } catch {
-        throw new StreamSetupError("UNAUTHENTICATED");
-      }
-      if (generationRef.current !== generation) return;
-      const socket = new WebSocket(getStreamUrl());
-      socket.binaryType = "arraybuffer";
-      socketRef.current = socket;
-      let assessmentEnabled = false;
-      let awaitingAssessment = false;
-      const ready = new Promise<void>((resolve, reject) => {
-        let connectionReady = false;
-        const connectionTimeout = window.setTimeout(() => reject(new Error("timeout")), 5_000);
-        connectionTimeoutRef.current = connectionTimeout;
-        socket.onopen = () => socket.send(JSON.stringify(buildStreamStartMessage({ accessToken, speechThreshold, sampleRate: pcmSampleRate, captions: captionsEnabledRef.current, question: streamQuestion })));
-        socket.onerror = () => { window.clearTimeout(connectionTimeout); connectionTimeoutRef.current = null; reject(new Error("connection")); };
-        socket.onmessage = (event) => {
-          let message: StreamMessage;
-          try { message = JSON.parse(String(event.data)) as StreamMessage; } catch { return; }
-          if (message.type === "assessment") {
-            awaitingAssessment = false;
-            assessmentSockets.finish(attemptId, socket);
-            const received: VoiceAssessmentState = message.status === "available" && message.scores
-              ? { status: "available", segmented: true, durationMs: message.durationMs ?? 0, scores: message.scores, blockCount: message.blockCount, assessedBlockCount: message.assessedBlockCount, failedBlockCount: message.failedBlockCount, diagnostics: message.diagnostics }
-              : { status: "unavailable", segmented: message.segmented === true, reason: message.reason, blockCount: message.blockCount, assessedBlockCount: message.assessedBlockCount, failedBlockCount: message.failedBlockCount, diagnostics: message.diagnostics };
-            onAssessmentChangeRef.current?.(attemptId, received, attemptAssessmentContext);
-            socket.onmessage = null;
-            socket.onclose = null;
-            socket.onerror = null;
-            if (socket.readyState < WebSocket.CLOSING) socket.close();
-            return;
-          }
-          if (generationRef.current !== generation) return;
-          if (message.type === "ready") {
-            assessmentEnabled = message.features?.pronunciationAssessment === true;
-            connectionReady = true;
-            window.clearTimeout(connectionTimeout);
-            connectionTimeoutRef.current = null;
-            resolve();
-            return;
-          }
-          if (message.type === "error" && message.code === "UNAUTHENTICATED") notifySessionExpired();
-          if (message.type === "error" && !connectionReady) {
-            window.clearTimeout(connectionTimeout);
-            connectionTimeoutRef.current = null;
-            reject(new StreamSetupError(message.code));
-            return;
-          }
-          if (message.type === "caption") {
-            const caption = parseCaptionMessage(message);
-            if (caption && !finalizationRequestedRef.current) onCaptionChangeRef.current?.(caption);
-            return;
-          }
-          if (message.type === "speech-started") {
-            micDetectorRef.current?.markSpeechStarted();
-            setMicNotice(null);
-            onCaptureStateChangeRef.current?.("detected");
-            return;
-          }
-          if (message.type === "answer-provisional") {
-            const { transcript, revision } = message;
-            if (typeof transcript === "string" && typeof revision === "number" && Number.isInteger(revision) && !finalizationRequestedRef.current) {
-              onProvisionalAnswerRef.current?.(transcript, revision);
-            }
-            return;
-          }
-          if (message.type === "speech-resumed") {
-            onSpeechResumedRef.current?.();
-            return;
-          }
-          if (message.type === "silence-detected") return;
-          if (message.type === "transcription-queued" || message.type === "finalizing") {
-            if (message.type === "finalizing") {
-              onHandoffTimingEvent?.("finalizing", message.timing);
-              clearCaption();
-              releaseCapture();
-            } else onHandoffTimingEvent?.("transcription-queued");
-            setStatus("finalizing");
-            const pending: VoiceTranscriptionState = { status: "pending" };
-            setTranscription(pending);
-            onTranscriptionChangeRef.current(pending);
-            return;
-          }
-          if (message.type === "transcription-started") {
-            onHandoffTimingEvent?.("transcription-started");
-            return;
-          }
-          if (message.type === "complete") {
-            onHandoffTimingEvent?.("transcription-completed");
-            clearCaption();
-            releaseCapture();
-            const result = finalVoiceTranscription(message);
-            if (result.status === "available") {
-              setTranscription(result);
-              onTranscriptionChangeRef.current(result);
-              onCaptureStateChangeRef.current?.("ready");
-              setStatus("idle");
-              setError(null);
-            } else {
-              setTranscription(result);
-              onTranscriptionChangeRef.current(result);
-              onCaptureStateChangeRef.current?.("unavailable");
-              setStatus("error");
-              setError(result.message);
-            }
-            awaitingAssessment = assessmentEnabled;
-            if (awaitingAssessment) {
-              assessmentSockets.register(attemptId, socket);
-              socketRef.current = null;
-              onAssessmentChangeRef.current?.(attemptId, { status: "pending" }, attemptAssessmentContext);
-            } else {
-              onAssessmentChangeRef.current?.(attemptId, { status: "unavailable", reason: "not_enabled" }, attemptAssessmentContext);
-              socket.onmessage = null;
-              socket.onclose = null;
-              socket.onerror = null;
-              if (socket.readyState < WebSocket.CLOSING) socket.close();
-              socketRef.current = null;
-            }
-            return;
-          }
-          if (message.type === "error" || message.type === "transcription-error") {
-            fail(transcriptionFailureMessage(message.code));
-          }
-        };
-        socket.onclose = (event) => {
-          if (awaitingAssessment) {
-            awaitingAssessment = false;
-            assessmentSockets.finish(attemptId, socket);
-            const unavailable: VoiceAssessmentState = { status: "unavailable", segmented: true };
-            onAssessmentChangeRef.current?.(attemptId, { ...unavailable, reason: "socket_closed" }, attemptAssessmentContext);
-            return;
-          }
-          if (socketRef.current === socket && event.code !== 1000) {
-            window.clearTimeout(connectionTimeout);
-            connectionTimeoutRef.current = null;
-            reject(new Error("connection"));
-            fail("A conexão com o transcritor foi interrompida. Tente novamente ou pule a pergunta.");
-          }
-        };
-      });
-      const sendFrame = ({ samples, level }: { samples: Float32Array; level: number }) => {
-        if (socket.readyState !== WebSocket.OPEN) { fail("A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta."); return; }
-        if (socket.bufferedAmount > maximumSocketBufferBytes) { fail("A conexão de áudio está lenta. Trechos parciais não podem ser enviados; tente novamente ou pule esta pergunta."); return; }
-        const pcm = toPcm16(samples);
-        socket.send(pcm.buffer);
-        socket.send(JSON.stringify({ type: "level", value: level }));
-      };
-      worklet.port.onmessage = (event: MessageEvent<{ type?: string; samples?: ArrayBuffer }>) => {
-        if (generationRef.current !== generation || !event.data?.samples) return;
-        const samples = new Float32Array(event.data.samples);
-        const frame = { samples, level: rootMeanSquare(samples) };
-        micDetectorRef.current?.pushLevel(frame.level);
-        if (!streamReady) pendingFrames.push(frame);
-        else sendFrame(frame);
-      };
-      await ready;
-      if (generationRef.current !== generation) {
-        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "cancel" }));
-        socket.close();
-        return;
-      }
-      if (socket.readyState !== WebSocket.OPEN) throw new Error("connection");
-
-      streamReady = true;
       const detector = createSilentMicDetector({ startedAtMs: Date.now() });
       micDetectorRef.current = detector;
-      pendingFrames.forEach(({ level }) => detector.pushLevel(level));
+      const stream = attempt.stream;
+      // Opens the audio gate: a ready (pre-connected) socket streams immediately, otherwise frames wait in a bounded buffer.
+      const begun = stream.begin();
+      begun.catch(() => {});
+      engine.startCapture((frame) => {
+        if (generationRef.current !== generation) return;
+        detector.pushLevel(frame.level);
+        stream.pushFrame(frame);
+      }, { replayHeld: owned });
+
+      const { preconnected, readyMessage } = await begun;
+      if (generationRef.current !== generation) return;
+      markAssessmentEnabled(attempt, readyMessage?.features?.pronunciationAssessment === true);
       micCheckTimerRef.current = window.setInterval(() => {
         if (generationRef.current !== generation || finalizationRequestedRef.current) return;
         const state = detector.evaluate(Date.now());
         setMicNotice(state === "ok" ? null : state);
       }, 500);
-      pendingFrames.forEach(sendFrame);
       setStatus("recording");
       onCaptureStateChangeRef.current?.("listening");
+      onHandoffTimingEventRef.current?.("listening", { preconnected });
       durationTimerRef.current = window.setInterval(() => {
         if (generationRef.current !== generation) return;
         const seconds = Math.floor((Date.now() - startedAtRef.current) / 1_000);
@@ -491,24 +477,26 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       }, 200);
     } catch (captureError) {
       if (generationRef.current !== generation) return;
+      if (captureError instanceof StreamSetupError && captureError.code === "UNAUTHENTICATED") notifySessionExpired();
       fail(captureError instanceof StreamSetupError
-            ? transcriptionFailureMessage(captureError.code)
-            : captureError instanceof Error && captureError.message === "unsupported"
-            ? "Este navegador não pode transmitir áudio. Tente novamente em um navegador compatível ou pule esta pergunta."
-          : captureError instanceof Error && captureError.message === "timeout"
-          ? "A conexão com o transcritor demorou para responder. Tente novamente ou pule esta pergunta."
-          : captureError instanceof Error && captureError.message === "connection"
-            ? "A conexão com o transcritor falhou. Tente novamente ou pule esta pergunta."
-            : microphoneError(captureError));
+        ? transcriptionFailureMessage(captureError.code)
+        : captureError instanceof Error && captureError.message === "unsupported"
+          ? "Este navegador não pode transmitir áudio. Tente novamente em um navegador compatível ou pule esta pergunta."
+          : captureError instanceof StreamConnectionError && captureError.kind === "timeout"
+            ? "A conexão com o transcritor demorou para responder. Tente novamente ou pule esta pergunta."
+            : captureError instanceof StreamConnectionError
+              ? "A conexão com o transcritor falhou. Tente novamente ou pule esta pergunta."
+              : microphoneError(captureError));
     }
-  }, [assessmentSockets, clearCaption, disabled, fail, onHandoffTimingEvent, releaseCapture, status, stopRecording]);
+  }, [clearCaption, createAttempt, disabled, fail, status, stopRecording]);
 
   const retryCapture = useCallback(() => {
-    // Same path as "Descartar gravação" (sends cancel, releases mic/AudioContext,
-    // drops partial audio), then a fresh capture for the same question.
+    // Same path as "Descartar gravação" (sends cancel, drops partial audio), then a fresh capture for the same
+    // question. A silent microphone is reacquired (Bluetooth profile switches); "no voice" reuses the healthy one.
+    const reacquire = micNotice === "silent";
     cancelRecording();
-    void startRecording(true);
-  }, [cancelRecording, startRecording]);
+    void startRecording(true, { reacquire });
+  }, [cancelRecording, micNotice, startRecording]);
 
   useEffect(() => {
     const nextSignal = nextAutoStartSignal(autoStartSignal, disabled, lastAutoStartSignalRef.current);
@@ -517,21 +505,23 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     void startRecording();
   }, [autoStartSignal, disabled, startRecording]);
 
+  useEffect(() => {
+    if (preconnectSignal === null) { cancelPreconnect(); return; }
+    if (preconnectSignal === lastPreconnectSignalRef.current) return;
+    lastPreconnectSignalRef.current = preconnectSignal;
+    preconnect();
+  }, [cancelPreconnect, preconnect, preconnectSignal]);
+
   useEffect(() => () => {
     generationRef.current += 1;
     finalizationRequestedRef.current = true;
     clearCaption();
     releaseCapture();
-    const socket = socketRef.current;
-    socketRef.current = null;
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "cancel" }));
-    if (socket) {
-      socket.onmessage = null;
-      socket.onclose = null;
-      socket.onerror = null;
-      socket.close();
-    }
-  }, [clearCaption, releaseCapture]);
+    cancelPreconnect();
+    const attempt = attemptRef.current;
+    attemptRef.current = null;
+    attempt?.stream.cancel();
+  }, [cancelPreconnect, clearCaption, releaseCapture]);
 
   const isRecording = status === "recording";
   const isPending = status === "requesting" || status === "finalizing" || transcription.status === "pending";

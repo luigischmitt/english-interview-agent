@@ -174,6 +174,44 @@ microfone e o `AudioContext`; nada é transcrito ou salvo) e inicia uma nova
 captura para a mesma pergunta, sem contar como resposta. O aviso some quando a
 fala é detectada. A lógica fica em `src/lib/interview/silent-mic-detector.mjs`.
 
+### Microfone contínuo e conexão antecipada (handoff sem espera)
+
+O candidato deve poder responder no instante em que o entrevistador termina de
+falar. Por isso a sala abre o microfone **uma vez por entrevista**
+(`getUserMedia` + um `AudioContext` + worklet, em `src/lib/interview/mic-engine.mjs`)
+logo ao entrar, mede o ruído de fundo enquanto o entrevistador ainda não fala e
+só o libera ao encerrar, sair ou desmontar a sala. Se a permissão for negada ou
+o dispositivo falhar, a captura volta ao comportamento anterior (um microfone por
+resposta, com a mesma mensagem de erro). Se a trilha terminar (`ended`) ou ficar
+muda (`mute`), o motor reabre o microfone uma vez; "Tentar de novo" reabre o
+dispositivo quando o aviso é de microfone sem sinal e reaproveita o motor quando
+ele está saudável.
+
+Quando o último trecho da fala do entrevistador está terminando (ou ao começar,
+se for curto; `onFinalChunkStarted`, até 3 s antes do fim), a sala abre o
+WebSocket de transcrição, envia `start` com um token novo e espera `ready`, sem
+enviar áudio nem `level`. No fim da reprodução o áudio e os níveis passam a fluir
+nesse mesmo instante (`src/lib/interview/answer-stream.mjs`). Se o socket ainda
+não estiver pronto, apenas os quadros capturados depois do fim da fala ficam em
+um buffer limitado e são enviados em ordem; se a pré-conexão falhar, uma nova
+conexão é aberta uma vez. Pular, encerrar ou sair antes do fim da fala envia
+`cancel` e fecha o socket pré-aberto. Uma conexão ociosa não consome áudio
+cobrado; se o provedor fechar uma conexão ociosa, o backend usa Whisper (como em
+qualquer falha do Cartesia).
+
+**Privacidade:** o navegador mantém o indicador de microfone ligado, mas nenhum
+quadro de áudio é guardado, enviado ou persistido fora de uma janela de resposta.
+Fora dela os quadros são descartados na primeira linha do tratamento do worklet;
+ao começar a fala do entrevistador a captura é interrompida à força; o ruído de
+fundo é medido apenas com o entrevistador em silêncio; a sala mostra o aviso
+"Microfone ativo durante a entrevista — só enviamos áudio durante as suas
+respostas.".
+
+**Medição:** com `sessionStorage.setItem("english-interview:handoff-timing", "1")`,
+o console também registra `interview_listening_handoff` com
+`playbackEndedToListeningMs` (do fim da fala do entrevistador até o estado
+"ouvindo") e `preconnected`. Sem conteúdo, desabilitada por padrão.
+
 ### Medir o handoff até a próxima fala (diagnóstico local)
 
 Para habilitar uma medição opt-in no navegador, abra o console do DevTools e

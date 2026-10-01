@@ -76,3 +76,22 @@ export function createInterviewHandoffTiming({ speechEndToFinalizationMs = 0, no
     },
   };
 }
+
+/**
+ * Zero-wait handoff metric (content-free): milliseconds from the interviewer's playback ending to the candidate's
+ * stream listening. Mark the end when playback completes and the listening instant when the stream is live.
+ */
+export function createListeningHandoffTiming({ now = () => performance.now(), onComplete = () => {} } = {}) {
+  let endedAt = null;
+  return {
+    markPlaybackEnded() {
+      endedAt = now();
+    },
+    markListening({ preconnected = false } = {}) {
+      if (endedAt === null) return;
+      const playbackEndedToListeningMs = Math.max(0, Math.round(now() - endedAt));
+      endedAt = null;
+      onComplete({ playbackEndedToListeningMs, preconnected: preconnected === true });
+    },
+  };
+}

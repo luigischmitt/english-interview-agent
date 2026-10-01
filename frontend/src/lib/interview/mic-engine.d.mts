@@ -1,0 +1,40 @@
+export type MicEngineState = "idle" | "acquiring" | "ready" | "failed";
+export type MicFrame = { samples: Float32Array; level: number };
+export type MicLostReason = "ended" | "muted";
+
+export type MicEngineDeps = {
+  isSupported: () => boolean;
+  getUserMedia: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
+  createAudioContext: () => AudioContext;
+  createWorkletNode: (context: AudioContext) => AudioWorkletNode;
+  workletUrl: string;
+  stopTracks: (stream: MediaStream | null | undefined) => void;
+  setTimeout: (callback: () => void, delay: number) => unknown;
+  clearTimeout: (id: unknown) => void;
+};
+
+export type MicEngine = {
+  readonly state: MicEngineState;
+  readonly error: unknown;
+  /** Speech threshold for the stream `start` message: the calibrated noise floor, or the conservative default. */
+  readonly noiseFloor: number;
+  readonly calibrated: boolean;
+  readonly capturing: boolean;
+  acquire(): Promise<void>;
+  isHealthy(): boolean;
+  ensureHealthy(options?: { force?: boolean }): Promise<boolean>;
+  calibrate(options?: { keepFrames?: boolean; frames?: number; timeoutMs?: number }): Promise<number | null>;
+  beginInterviewerSpeech(): void;
+  startCapture(sink: (frame: MicFrame) => void, options?: { replayHeld?: boolean }): void;
+  stopCapture(): void;
+  flush(): Promise<void>;
+  on(event: "state", listener: (state: MicEngineState) => void): () => void;
+  on(event: "lost", listener: (reason: MicLostReason) => void): () => void;
+  release(): void;
+};
+
+export const calibrationFrameCount: number;
+export const defaultSpeechThreshold: number;
+export function rootMeanSquare(samples: Float32Array): number;
+export function createBrowserMicDeps(): MicEngineDeps;
+export function createMicEngine(deps: MicEngineDeps): MicEngine;

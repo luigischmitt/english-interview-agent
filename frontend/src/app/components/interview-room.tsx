@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, AudioLines, Clock3, PhoneOff, Video, VideoOff, Volume2 } from "lucide-react";
+import { ArrowUpRight, AudioLines, Clock3, Mic, PhoneOff, Video, VideoOff, Volume2 } from "lucide-react";
 import { MicrophoneCapture, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { buildPreviousAnswers, decideNextTurn, type TurnDecision } from "@/lib/interview/orchestration";
@@ -20,8 +20,9 @@ import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { prewarmInterviewerUtterance, useSpeechPlayback, type SpeechTimingEvent } from "../hooks/use-speech-playback";
+import { useMicEngine } from "../hooks/use-mic-engine";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
-import { createInterviewHandoffTiming, isHandoffTimingEnabled } from "@/lib/interview/handoff-timing.mjs";
+import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTimingEnabled } from "@/lib/interview/handoff-timing.mjs";
 import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/interview/opening-timing.mjs";
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 
@@ -101,6 +102,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const [voiceTranscription, setVoiceTranscription] = useState<VoiceTranscriptionState>({ status: "idle" });
   const [voiceCaptureState, setVoiceCaptureState] = useState<VoiceCaptureState>("idle");
   const [autoCaptureQuestionId, setAutoCaptureQuestionId] = useState<string | null>(null);
+  const [preconnectQuestionId, setPreconnectQuestionId] = useState<string | null>(null);
   const [voiceAssessments, setVoiceAssessments] = useState<Record<string, AssessmentEntry>>({});
   const [reportState, setReportState] = useState<ReportState>({ status: "idle" });
   const [feedbackSyncMessage, setFeedbackSyncMessage] = useState<string | null>(null);
@@ -125,6 +127,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const elapsedSecondsRef = useRef(0);
   const handoffTimingRef = useRef<{ mark: (stage: string) => void; markPrepared: () => void } | null>(null);
   const openingTimingRef = useRef<{ mark: (stage: string) => void } | null>(null);
+  const listeningTimingRef = useRef<ReturnType<typeof createListeningHandoffTiming> | null>(null);
   const openingUtterance = composeContextualOpening(config, question.prompt);
   const closingUtterance = composeInterviewClosing();
   const currentUtterance = phase === "introducing"
@@ -139,15 +142,24 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     phaseRef.current = phase;
     currentQuestionIdRef.current = question.id;
   }, [phase, question.id]);
+  // One microphone for the whole interview; released when the interviewer closes (or the room unmounts).
+  const { engine: micEngine, state: micEngineState } = useMicEngine(phase !== "closing" && phase !== "ending");
   const transitionPhase = (nextPhase: InterviewPhase) => {
     if (nextPhase === "closing") handoffTimingRef.current = null;
+    // A pre-opened transcription socket only lives until the answer window opens; any other transition cancels it.
+    if (nextPhase !== "answering") setPreconnectQuestionId(null);
     phaseRef.current = nextPhase;
     setPhase(nextPhase);
   };
   useEffect(() => { elapsedSecondsRef.current = seconds; }, [seconds]);
   useEffect(() => { voiceAssessmentsRef.current = voiceAssessments; }, [voiceAssessments]);
 
-  const onHandoffTimingEvent = useCallback((event: "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed", details?: { speechEndToFinalizationMs?: number }) => {
+  const onHandoffTimingEvent = useCallback((event: "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed" | "listening", details?: { speechEndToFinalizationMs?: number; preconnected?: boolean }) => {
+    if (event === "listening") {
+      listeningTimingRef.current?.markListening({ preconnected: details?.preconnected });
+      listeningTimingRef.current = null;
+      return;
+    }
     if (event === "finalizing") {
       handoffTimingRef.current = null;
       if (!isHandoffTimingEnabled()) return;
@@ -168,6 +180,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   }, []);
 
   const onSpeechTimingEvent = useCallback((event: SpeechTimingEvent) => {
+    // The interviewer is audible: no microphone frame may be captured or sent until the next answer window.
+    if (event === "playback-started") micEngine.beginInterviewerSpeech();
     if (phaseRef.current === "introducing" && isOpeningTimingEnabled()) {
       openingTimingRef.current ??= createOpeningSpeechTiming({
         onComplete: (metrics) => console.info(JSON.stringify({ event: "interview_opening_timing", ...metrics })),
@@ -180,7 +194,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       "playback-started": "playbackStarted",
     } as const;
     handoffTimingRef.current?.mark(stageByEvent[event]);
-  }, []);
+  }, [micEngine]);
+
+  const onFinalChunkStarted = useCallback(() => {
+    if (!autoCaptureVoice || (phaseRef.current !== "introducing" && phaseRef.current !== "speaking")) return;
+    setPreconnectQuestionId(currentQuestionIdRef.current);
+  }, [autoCaptureVoice]);
 
   const onInterviewerUtteranceReady = useCallback(() => {
     if (phaseRef.current === "closing") {
@@ -191,6 +210,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       return;
     }
     if (phaseRef.current !== "introducing" && phaseRef.current !== "speaking") return;
+    if (autoCaptureVoice && isHandoffTimingEnabled()) {
+      listeningTimingRef.current = createListeningHandoffTiming({
+        onComplete: (metrics) => console.info(JSON.stringify({ event: "interview_listening_handoff", ...metrics })),
+      });
+      listeningTimingRef.current.markPlaybackEnded();
+    }
     transitionPhase("answering");
     setVoiceCaptureState("idle");
     if (autoCaptureVoice) setAutoCaptureQuestionId(question.id);
@@ -200,7 +225,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     () => splitInterviewerSpeech(currentUtterance),
     [currentUtterance],
   );
-  const { activeSegment, speechMessage, setSpeechMessage, cancelPlayback } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent);
+  const { activeSegment, speechMessage, setSpeechMessage, cancelPlayback } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
   const currentAssessmentSamples = assessmentSamples(voiceAssessments);
   const currentAzureSummary = summarizeAzureAssessments(currentAssessmentSamples);
@@ -671,6 +696,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           {speechMessage && <div role="status" className="alert alert-warning alert-soft mt-3 text-sm"><Volume2 className="size-4 shrink-0" aria-hidden="true" /><span>{speechMessage} O texto da pergunta continua disponível.</span></div>}
           {persistenceMessage && <div role="status" className="alert alert-info alert-soft mt-3 text-sm"><span>{persistenceMessage}</span></div>}
           {timeLimitReached && <p className="alert alert-warning alert-soft mt-3 py-3 text-sm" role="status">O tempo chegou ao fim. Você pode concluir esta resposta; uma nova pergunta não será iniciada.</p>}
+          {micEngineState === "ready" && (
+            <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-muted-foreground" data-testid="mic-held-note">
+              <Mic className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />
+              <span>Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.</span>
+            </p>
+          )}
           <MicrophoneCapture
             key={question.id}
             disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"}
@@ -700,6 +731,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             onSpeechResumed={() => abortPreparation("speech_resumed")}
             onHandoffTimingEvent={onHandoffTimingEvent}
             autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
+            micEngine={micEngine}
+            preconnectSignal={autoCaptureVoice && preconnectQuestionId === question.id ? question.id : null}
             onAssessmentChange={(attemptId, assessment, context) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { ...context, state: assessment } }))}
           />
           <div className="mt-4 flex flex-col gap-3 border-t border-base-300 pt-4 sm:flex-row sm:items-center sm:justify-between">
