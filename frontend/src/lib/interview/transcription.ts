@@ -1,4 +1,4 @@
-import { authorizedFetch } from "@/lib/auth/access-token";
+import { authorizedFetch } from "@/lib/auth/backend-auth";
 export type VoiceTranscription = {
   provider: TranscriptionProvider;
   transcript: string;

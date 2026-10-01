@@ -2,7 +2,7 @@
 
 import { LoaderCircle, Mic, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getAccessToken } from "@/lib/auth/access-token";
+import { getAccessToken } from "@/lib/auth/backend-auth";
 import { buildStreamStartMessage, notifySessionExpired } from "@/lib/auth/access-token.mjs";
 import type { VoiceTranscription } from "@/lib/interview/transcription";
 import { getSpeechThreshold } from "@/lib/interview/vad-threshold.mjs";

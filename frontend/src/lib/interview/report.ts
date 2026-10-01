@@ -1,4 +1,4 @@
-import { authorizedFetch } from "@/lib/auth/access-token";
+import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { InterviewConfig, PersistenceResult } from "./types";
 import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";

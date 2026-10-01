@@ -1,4 +1,4 @@
-import { authorizedFetch } from "@/lib/auth/access-token";
+import { authorizedFetch } from "@/lib/auth/backend-auth";
 import type { InterviewConfig } from "./types";
 import { firstUnaskedQuestion } from "./question-history.mjs";
 import { fallbackTurnDecision, normalizeNextTurnDecision } from "./orchestration-policy.mjs";

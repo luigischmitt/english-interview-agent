@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
-import { authorizedFetch } from "@/lib/auth/access-token";
+import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { synthesizeInterviewerQuestion, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";

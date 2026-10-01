@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { authorizedFetch } from "@/lib/auth/access-token";
+import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
 
 export type SpeechTimingEvent = "synthesis-started" | "synthesis-completed" | "playback-started";
