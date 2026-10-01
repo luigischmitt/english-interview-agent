@@ -19,6 +19,7 @@ export type TranscriptionConfig = {
   cartesiaApiKey: string | null;
   cartesiaAnswerGraceMs: number;
   cartesiaIncompleteGraceMs: number;
+  azureTimingFromInkTurns: boolean;
   cartesiaTurnEndTimeoutMs: number | null;
 };
 
@@ -82,6 +83,7 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     cartesiaApiKey: environment.CARTESIA_API_KEY?.trim() || null,
     cartesiaAnswerGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS, 3_500, 500, 10_000, "Cartesia answer grace"),
     cartesiaIncompleteGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_INCOMPLETE_GRACE_MS, 6_000, 500, 15_000, "Cartesia incomplete-turn grace"),
+    azureTimingFromInkTurns: environment.AZURE_TIMING_FROM_INK_TURNS === "true",
     cartesiaTurnEndTimeoutMs: environment.CARTESIA_TURN_END_TIMEOUT_MS?.trim()
       ? parseIntegerInRange(environment.CARTESIA_TURN_END_TIMEOUT_MS, 640, 640, 11_200, "Cartesia turn end timeout")
       : null,

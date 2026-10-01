@@ -79,7 +79,14 @@ export class CartesiaInkSession {
   private terminateTimer: ReturnType<typeof setTimeout> | null = null;
   private settleWaiters: Array<() => void> = [];
 
+  private turnObserver: ((kind: "start" | "end", transcript: string) => void) | null = null;
+
   constructor(private readonly options: CartesiaInkOptions) {}
+
+  /** Observes turn boundaries (arrival time of `turn.start` / `turn.end`); used to place Azure assessment blocks. */
+  setTurnObserver(observer: ((kind: "start" | "end", transcript: string) => void) | null): void {
+    this.turnObserver = observer;
+  }
 
   get failed(): boolean { return this.failedReason !== null; }
   get failureReason(): CartesiaFailureReason | null { return this.failedReason; }
@@ -247,6 +254,7 @@ export class CartesiaInkSession {
       case "turn.start":
         this.activeTurn = true;
         this.partial = "";
+        this.turnObserver?.("start", "");
         this.options.onTurnStart?.();
         break;
       case "turn.update":
@@ -262,6 +270,7 @@ export class CartesiaInkSession {
         this.activeTurn = false;
         this.turnEnds += 1;
         this.lastTurnEndAt = Date.now();
+        this.turnObserver?.("end", finalText);
         this.options.onCaptionChange?.();
         this.options.onTurnEnd?.(finalText);
         break;
