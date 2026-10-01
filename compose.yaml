@@ -24,6 +24,8 @@ services:
       KOKORO_BASE_URL: http://kokoro:8880
       INTERVIEWER_VOICE: af_bella+af_heart
       ALLOWED_ORIGIN: http://localhost:3000
+      # Ink-2 is the default in Docker; without CARTESIA_API_KEY the backend logs missing_cartesia_key and uses Whisper.
+      TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-cartesia}
       TRANSCRIPTION_TIMEOUT_MS: ${TRANSCRIPTION_TIMEOUT_MS:-55000}
       TRANSCRIPTION_STREAM_MAX_DURATION_MS: ${TRANSCRIPTION_STREAM_MAX_DURATION_MS:-180000}
       TRANSCRIPTION_STREAM_MAX_BYTES: ${TRANSCRIPTION_STREAM_MAX_BYTES:-6291456}

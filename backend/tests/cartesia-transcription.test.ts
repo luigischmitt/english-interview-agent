@@ -297,7 +297,7 @@ describe("Cartesia Ink-2 transcription over the stream WebSocket", () => {
   it("assesses with Whisper timings in the background without delaying complete", async () => {
     const assess = vi.fn(async (_audio: Buffer, _format: "wav", _referenceText: string) => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 80, fluency: 75, prosody: 70 } }));
     const whisper = createWhisper("Whisper words only", 700);
-    const { ink, fixture } = await setup({}, whisper, {}, { assess } as unknown as PronunciationAssessmentService);
+    const { ink, fixture } = await setup({}, whisper, { azureFromInkTurns: true }, { assess } as unknown as PronunciationAssessmentService);
     await start(fixture);
     await speak(fixture);
     ink.emit({ type: "turn.end", turn_id: 0, transcript: "Ink canonical text." });
@@ -309,6 +309,62 @@ describe("Cartesia Ink-2 transcription over the stream WebSocket", () => {
     expect(assessment).toMatchObject({ status: "available" });
     expect(whisper.transcribe).toHaveBeenCalledTimes(1);
     expect(assess.mock.calls[0]![2]).toBe("Whisper words only");
+  });
+});
+
+describe("Cartesia Ink-2 turns as Azure assessment blocks", () => {
+  const okAssess = () => vi.fn(async (_audio: Buffer, _format: "wav", _referenceText: string) => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 80, fluency: 75, prosody: 70 } }));
+
+  async function twoTurnAnswer(ink: FakeInk, fixture: Fixture) {
+    await start(fixture);
+    await speak(fixture, 300);
+    ink.emit({ type: "turn.start", turn_id: 0 });
+    await speak(fixture, 800);
+    ink.emit({ type: "turn.end", turn_id: 0, transcript: "Ink first sentence." });
+    await speak(fixture, 300, 0.001);
+    ink.emit({ type: "turn.start", turn_id: 1 });
+    await speak(fixture, 800);
+    ink.emit({ type: "turn.end", turn_id: 1, transcript: "Ink second sentence." });
+  }
+
+  it("assesses Ink-2 turn blocks with Ink text and no Whisper call", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const assess = okAssess();
+    const whisper = createWhisper("Whisper must not be used");
+    const { ink, fixture } = await setup({}, whisper, { azureFromInkTurns: true }, { assess } as unknown as PronunciationAssessmentService);
+    await twoTurnAnswer(ink, fixture);
+    const complete = await fixture.waitFor("complete");
+    expect(complete.transcript).toBe("Ink first sentence. Ink second sentence.");
+    const assessment = await fixture.waitFor("assessment");
+    expect(assessment).toMatchObject({ status: "available", segmented: true });
+    expect(whisper.transcribe).not.toHaveBeenCalled();
+    expect(assess).toHaveBeenCalledTimes(1);
+    expect(assess.mock.calls[0]![2]).toBe("Ink first sentence. Ink second sentence.");
+    const audio = assess.mock.calls[0]![0];
+    expect(audio.length).toBeGreaterThan(44);
+    expect((audio.length - 44) / 32_000).toBeLessThanOrEqual(30);
+    const logs = logsOf(info);
+    expect(logs).toContain('"timingSource":"ink_turns"');
+    expect(logs).not.toContain("Ink first");
+    expect(logs).not.toContain(sentinelKey);
+  });
+
+  it("falls back to background Whisper timings when Ink-2 turn data is inconsistent", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const assess = okAssess();
+    const whisper = createWhisper("Whisper fallback words");
+    const { ink, fixture } = await setup({}, whisper, { azureFromInkTurns: true }, { assess } as unknown as PronunciationAssessmentService);
+    await start(fixture);
+    await speak(fixture);
+    // turn.end with no turn.start: boundaries cannot be trusted.
+    ink.emit({ type: "turn.end", turn_id: 0, transcript: "Ink canonical text." });
+    await fixture.waitFor("assessment");
+    expect(whisper.transcribe).toHaveBeenCalledTimes(1);
+    expect(assess.mock.calls[0]![2]).toBe("Whisper fallback words");
+    const logs = logsOf(info);
+    expect(logs).toContain('"reason":"inconsistent_turns"');
+    expect(logs).toContain('"timingSource":"whisper_background"');
+    expect(logs).not.toContain("Ink canonical");
   });
 });
 

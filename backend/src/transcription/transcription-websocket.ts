@@ -8,6 +8,7 @@ import type { TranscriptionResult, TranscriptionService } from "./types.js";
 import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type SlotReservation, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
 import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
 import { CartesiaInkSession, sanitizeKeyterms } from "./cartesia-ink-session.js";
+import { InkTurnRecorder } from "./ink-turn-blocks.js";
 import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
@@ -160,6 +161,8 @@ export type CartesiaStreamingOptions = {
   answerGraceMs: number;
   /** Grace after a turn that looks unfinished (no final punctuation or a trailing connector); defaults to answerGraceMs. */
   incompleteGraceMs?: number;
+  /** Experimental: cut Azure blocks at Ink-2 turn boundaries instead of background Whisper timings (off by default; scored lower in live tests). */
+  azureFromInkTurns?: boolean;
   turnEndTimeoutMs?: number | null;
   /** Upper bound for flushing Ink-2 at the end of an answer. */
   flushTimeoutMs?: number;
@@ -214,6 +217,7 @@ export function attachTranscriptionWebSocket(
     let silenceGraceTimer: ReturnType<typeof setTimeout> | null = null;
     let requestAbortController: AbortController | null = null;
     let inkSession: CartesiaInkSession | null = null;
+    let inkTurns: InkTurnRecorder | null = null;
     let inkGraceTimer: ReturnType<typeof setTimeout> | null = null;
     const clearInkGrace = () => {
       if (inkGraceTimer !== null) clearTimeout(inkGraceTimer);
@@ -310,8 +314,10 @@ export function attachTranscriptionWebSocket(
       abortController: AbortController;
       release: () => void;
       getTiming: () => Promise<TranscriptionResult | null>;
+      /** Blocks already built from Ink-2 turns; when present, no Whisper timing call is made. */
+      inkBlocks?: AzureAudioBlock[];
     }) => {
-      const { session, audio, durationMs, transcriptionDurationMs, abortController, release, getTiming } = context;
+      const { session, audio, durationMs, transcriptionDurationMs, abortController, release, getTiming, inkBlocks } = context;
       const service = assessmentService;
       if (!service) {
         release();
@@ -323,20 +329,23 @@ export function attachTranscriptionWebSocket(
         let timingRetryOutcome = "not_needed";
         let blocks: AzureAudioBlock[] = [];
         try {
-          const timing = await getTiming();
-          if (!timing) {
+          const timing = inkBlocks ? null : await getTiming();
+          if (inkBlocks) {
+            blocks = inkBlocks;
+            timingSource = "ink_turns";
+          } else if (!timing) {
             const totalDurationMs = Date.now() - assessmentStartedAt;
             logAzureAssessment({ status: "unavailable", reason: "timing_recovery_capacity", timingSource, timingRetryOutcome: "queue_full", blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs });
             send(socket, { type: "assessment", status: "unavailable", reason: "timing_recovery_capacity", blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs } });
             return;
           }
-          const candidates = [
+          const candidates = timing ? [
             { source: "word", timings: timing.words },
             { source: "segment", timings: timing.segments },
-          ] as const;
+          ] as const : [];
           for (const candidate of candidates) {
             if (!candidate.timings?.length) continue;
-            const aligned = alignSegmentTimingToTranscript(candidate.timings, timing.transcript);
+            const aligned = alignSegmentTimingToTranscript(candidate.timings, timing!.transcript);
             const candidateBlocks = aligned?.length ? createAzureAlignedBlocks(audio, aligned) : [];
             if (candidateBlocks.length) {
               timingSource = candidate.source;
@@ -345,7 +354,7 @@ export function attachTranscriptionWebSocket(
             }
           }
 
-          if (!blocks.length && transcriptionService.retrySegmentTimestamps) {
+          if (!blocks.length && timing && transcriptionService.retrySegmentTimestamps) {
             timingRetryOutcome = "requested";
             const retryStartedAt = Date.now();
             let releaseTimingSlot: (() => void) | null = null;
@@ -375,9 +384,9 @@ export function attachTranscriptionWebSocket(
             logAzureAssessment({ status: "timing_retry", outcome: timingRetryOutcome, durationMs: Date.now() - retryStartedAt });
           }
 
-          const timingDetails = timing.timingDiagnostics ?? {
-            wordFieldPresent: Boolean(timing.words?.length), wordEntryCount: timing.words?.length ?? 0, wordAcceptedCount: timing.words?.length ?? 0,
-            segmentFieldPresent: Boolean(timing.segments?.length), segmentEntryCount: timing.segments?.length ?? 0, segmentAcceptedCount: timing.segments?.length ?? 0,
+          const timingDetails = timing?.timingDiagnostics ?? {
+            wordFieldPresent: Boolean(timing?.words?.length), wordEntryCount: timing?.words?.length ?? 0, wordAcceptedCount: timing?.words?.length ?? 0,
+            segmentFieldPresent: Boolean(timing?.segments?.length), segmentEntryCount: timing?.segments?.length ?? 0, segmentAcceptedCount: timing?.segments?.length ?? 0,
           };
           if (!blocks.length) {
             const providerOmittedTiming = !timingDetails.wordFieldPresent && !timingDetails.segmentFieldPresent;
@@ -496,8 +505,9 @@ export function attachTranscriptionWebSocket(
           audio = sessions.toWav(id);
           handedOff = true;
           const assessmentAudio = audio;
+          const inkBlocks = cartesia?.azureFromInkTurns ? buildInkAssessmentBlocks(inkTurns, transcript, session.bytes) : undefined;
           startAssessment({
-            session, audio: assessmentAudio, durationMs, transcriptionDurationMs, abortController, release,
+            session, audio: assessmentAudio, durationMs, transcriptionDurationMs, abortController, release, inkBlocks,
             getTiming: async () => {
               const timingSlot = await acquireTimingRecoverySlot(abortController.signal);
               if (!timingSlot) return null;
@@ -695,6 +705,8 @@ export function attachTranscriptionWebSocket(
                 logStreamDiagnostic({ status: "cartesia_unavailable", reason: failure });
               },
             });
+            inkTurns = new InkTurnRecorder(() => session.bytes);
+            inkSession.setTurnObserver((kind, text) => inkTurns?.turnEvent(kind, text));
             inkSession.open();
           }
           send(socket, {
@@ -716,6 +728,7 @@ export function attachTranscriptionWebSocket(
       if (message.type === "level" && sessionId) {
         const session = sessions.get(sessionId);
         if (!session) return;
+        inkTurns?.recordLevel(message.value);
         const update = session.vad.update(message.value, Date.now());
         if (update.speechStarted) send(socket, { type: "speech-started" });
         if (update.speechResumed) {
@@ -784,6 +797,23 @@ export function attachTranscriptionWebSocket(
       retainedSession = null;
     });
   });
+}
+
+/** Azure blocks from Ink-2 turn boundaries, or undefined (logging a content-free reason) to use the Whisper timing path. */
+function buildInkAssessmentBlocks(recorder: InkTurnRecorder | null, canonicalTranscript: string, totalBytes: number): AzureAudioBlock[] | undefined {
+  let fallbackReason = "no_recorder";
+  if (recorder) {
+    const result = recorder.build(totalBytes);
+    if (!result.ok) fallbackReason = result.reason;
+    else if (recorder.joinedText() !== canonicalTranscript.replace(/\s+/g, " ").trim()) fallbackReason = "transcript_mismatch";
+    else {
+      recorder.clear();
+      return result.blocks;
+    }
+    recorder.clear();
+  }
+  logAzureAssessment({ status: "ink_turns_fallback", reason: fallbackReason, timingSource: "whisper_background" });
+  return undefined;
 }
 
 async function assessBlocks(
