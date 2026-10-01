@@ -29,6 +29,8 @@ The server runs on `http://localhost:3001` by default.
 
 ### Environment variables
 
+Production deploy (Cloud Run): see [`docs/deploy.md`](../docs/deploy.md).
+
 The backend does not require Supabase credentials: interview persistence is
 performed by the authenticated frontend client. The speech service accepts:
 

@@ -1,0 +1,5 @@
+# Keeps local secrets and build output out of `vercel deploy` uploads.
+.env*
+node_modules
+.next
+.vercel

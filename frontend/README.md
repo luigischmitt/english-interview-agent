@@ -84,6 +84,8 @@ automaticamente quando o processamento termina.
 
 ## Variáveis de ambiente
 
+Para o deploy em produção (Vercel + Cloud Run), veja [`docs/deploy.md`](../docs/deploy.md) (em inglês).
+
 Crie `frontend/.env.local` (esse arquivo não deve ser commitado):
 
 ```bash
