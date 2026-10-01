@@ -4,6 +4,7 @@ import { LoaderCircle, Mic, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { VoiceTranscription } from "@/lib/interview/transcription";
 import { getSpeechThreshold } from "@/lib/interview/vad-threshold.mjs";
+import { toStreamQuestion } from "@/lib/interview/stream-question.mjs";
 import { finalVoiceTranscription, transcriptionFailureMessage } from "@/lib/interview/transcription-state.mjs";
 import { nextAutoStartSignal, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { emptyCaption, parseCaptionMessage, type CandidateCaption } from "@/lib/interview/caption-state.mjs";
@@ -293,6 +294,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       const pendingFrames = [...calibrationFrames];
       let streamReady = false;
 
+      const streamQuestion = toStreamQuestion(attemptAssessmentContext.questionLabel);
       const socket = new WebSocket(getStreamUrl());
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
@@ -302,7 +304,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
         let connectionReady = false;
         const connectionTimeout = window.setTimeout(() => reject(new Error("timeout")), 5_000);
         connectionTimeoutRef.current = connectionTimeout;
-        socket.onopen = () => socket.send(JSON.stringify({ type: "start", version: 2, sampleRate: pcmSampleRate, channels: 1, encoding: "s16le", speechThreshold, ...(captionsEnabledRef.current ? { captions: true } : {}) }));
+        socket.onopen = () => socket.send(JSON.stringify({ type: "start", version: 2, sampleRate: pcmSampleRate, channels: 1, encoding: "s16le", speechThreshold, ...(captionsEnabledRef.current ? { captions: true } : {}), ...(streamQuestion ? { question: streamQuestion } : {}) }));
         socket.onerror = () => { window.clearTimeout(connectionTimeout); connectionTimeoutRef.current = null; reject(new Error("connection")); };
         socket.onmessage = (event) => {
           let message: StreamMessage;

@@ -85,4 +85,10 @@ describe("optional Cartesia Ink-2 configuration", () => {
     expect(() => loadTranscriptionConfig({ CARTESIA_TURN_END_TIMEOUT_MS: "639" })).toThrow("640 to 11200");
     expect(() => loadTranscriptionConfig({ CARTESIA_TURN_END_TIMEOUT_MS: "11201" })).toThrow("640 to 11200");
   });
+
+  it("enables the semantic end check by default and validates its timeout", () => {
+    expect(loadTranscriptionConfig({})).toMatchObject({ semanticEndEnabled: true, semanticEndTimeoutMs: 1_500 });
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_SEMANTIC_END_ENABLED: "false", TRANSCRIPTION_SEMANTIC_END_TIMEOUT_MS: "800" })).toMatchObject({ semanticEndEnabled: false, semanticEndTimeoutMs: 800 });
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_SEMANTIC_END_TIMEOUT_MS: "100" })).toThrow("200 to 5000");
+  });
 });

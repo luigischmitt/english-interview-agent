@@ -3,6 +3,8 @@ import "dotenv/config";
 import { createServer } from "node:http";
 
 import { app, defaultPronunciationAssessmentService, defaultTranscriptionConfig, defaultTranscriptionService } from "./app.js";
+import { loadThinkingConfig } from "./thinking/config.js";
+import { OpenRouterAnswerCompletionService } from "./thinking/answer-completion-service.js";
 import { attachTranscriptionWebSocket } from "./transcription/transcription-websocket.js";
 
 const port = Number(process.env.PORT ?? 3001);
@@ -20,6 +22,10 @@ const cartesiaApiKey = defaultTranscriptionConfig.cartesiaApiKey;
 if (cartesiaRequested && !cartesiaApiKey) {
   console.info(JSON.stringify({ event: "transcription_provider", provider: "whisper", reason: "missing_cartesia_key" }));
 }
+const thinkingConfig = loadThinkingConfig();
+const answerCompletion = defaultTranscriptionConfig.semanticEndEnabled && thinkingConfig.openRouterApiKey
+  ? new OpenRouterAnswerCompletionService({ apiKey: thinkingConfig.openRouterApiKey, model: thinkingConfig.model, timeoutMs: defaultTranscriptionConfig.semanticEndTimeoutMs })
+  : null;
 attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunciationAssessmentService, {
   maxDurationMs: defaultTranscriptionConfig.streamMaxDurationMs,
   maxBytes: defaultTranscriptionConfig.streamMaxBytes,
@@ -34,7 +40,7 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
   hedgeAfterMs: defaultTranscriptionConfig.hedgeAfterMs,
   finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
 }, cartesiaRequested && cartesiaApiKey
-  ? { apiKey: cartesiaApiKey, answerGraceMs: defaultTranscriptionConfig.cartesiaAnswerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.cartesiaIncompleteGraceMs, azureFromInkTurns: defaultTranscriptionConfig.azureTimingFromInkTurns, turnEndTimeoutMs: defaultTranscriptionConfig.cartesiaTurnEndTimeoutMs, prepareAfterMs: defaultTranscriptionConfig.cartesiaPrepareAfterMs, maxPrepares: defaultTranscriptionConfig.cartesiaMaxPrepares }
+  ? { apiKey: cartesiaApiKey, answerGraceMs: defaultTranscriptionConfig.cartesiaAnswerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.cartesiaIncompleteGraceMs, azureFromInkTurns: defaultTranscriptionConfig.azureTimingFromInkTurns, turnEndTimeoutMs: defaultTranscriptionConfig.cartesiaTurnEndTimeoutMs, prepareAfterMs: defaultTranscriptionConfig.cartesiaPrepareAfterMs, maxPrepares: defaultTranscriptionConfig.cartesiaMaxPrepares, answerCompletion }
   : null);
 
 server.listen(port, () => {

@@ -308,3 +308,5 @@ logs, commits ou ambientes de teste compartilhados.
 - Tailwind CSS, daisyUI e componentes locais
 - AudioWorklet e WebSocket para captura PCM e transcrição final em lote
 - Backend Express + Kokoro para fala do entrevistador
+
+No modo Cartesia, a mensagem `start` do stream inclui `question` (a pergunta atual da entrevistadora, no máximo 400 caracteres) para o backend decidir semanticamente se a resposta já terminou.
