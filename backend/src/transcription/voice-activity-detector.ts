@@ -8,6 +8,8 @@ export type VadConfig = {
   ambientActivityHoldMs: number;
   maxDurationMs: number;
   maxBytes: number;
+  /** Silence that counts as a pause (`pauseStarted`); only used by the Ink-Whisper turn detection. Defaults to 800. */
+  pauseMs?: number;
 };
 
 export const defaultVadConfig: VadConfig = {
@@ -34,7 +36,7 @@ export function getSilenceThreshold(speechThreshold: number): number {
   return Math.max(0.008, Math.min(0.08, speechThreshold * 0.55));
 }
 
-export type VadUpdate = { speechStarted: boolean; speechResumed: boolean; shouldFinalize: boolean };
+export type VadUpdate = { speechStarted: boolean; speechResumed: boolean; shouldFinalize: boolean; pauseStarted: boolean };
 
 export class VoiceActivityDetector {
   private speechCandidateStartedAt: number | null = null;
@@ -44,13 +46,14 @@ export class VoiceActivityDetector {
   private resumedSpeechCandidateStartedAt: number | null = null;
   private resumedActivityCandidateStartedAt: number | null = null;
   private midBandStartedAt: number | null = null;
+  private pauseSignalledFor: number | null = null;
   private lastUpdatedAt = 0;
   private finalizationReasonValue: "silence" | "ambient_activity" | null = null;
 
   constructor(private readonly config: VadConfig = defaultVadConfig) {}
 
   update(level: number, now: number): VadUpdate {
-    if (!Number.isFinite(level) || level < 0) return { speechStarted: false, speechResumed: false, shouldFinalize: false };
+    if (!Number.isFinite(level) || level < 0) return { speechStarted: false, speechResumed: false, shouldFinalize: false, pauseStarted: false };
     this.lastUpdatedAt = now;
     let speechResumed = false;
 
@@ -60,12 +63,12 @@ export class VoiceActivityDetector {
         if (now - this.speechCandidateStartedAt >= 200) {
           this.speechStartedAt = this.speechCandidateStartedAt;
           this.lastSpeechActivityAt = now;
-          return { speechStarted: true, speechResumed: false, shouldFinalize: false };
+          return { speechStarted: true, speechResumed: false, shouldFinalize: false, pauseStarted: false };
         }
       } else {
         this.speechCandidateStartedAt = null;
       }
-      return { speechStarted: false, speechResumed: false, shouldFinalize: false };
+      return { speechStarted: false, speechResumed: false, shouldFinalize: false, pauseStarted: false };
     }
 
     if (level >= this.config.speechThreshold) {
@@ -120,10 +123,19 @@ export class VoiceActivityDetector {
       && now - this.midBandStartedAt >= this.config.ambientActivityHoldMs;
     if (silenceFinalized) this.finalizationReasonValue = "silence";
     else if (ambientFinalized) this.finalizationReasonValue = "ambient_activity";
+    // One signal per silence episode, once the silence has lasted pauseMs (independent of the finalization flags).
+    const pauseStarted = duration >= this.config.minimumSpeechMs
+      && this.silenceStartedAt !== null
+      && this.resumedSpeechCandidateStartedAt === null
+      && this.resumedActivityCandidateStartedAt === null
+      && this.pauseSignalledFor !== this.silenceStartedAt
+      && now - this.silenceStartedAt >= (this.config.pauseMs ?? 800);
+    if (pauseStarted) this.pauseSignalledFor = this.silenceStartedAt;
     return {
       speechStarted: false,
       speechResumed,
       shouldFinalize: silenceFinalized || ambientFinalized,
+      pauseStarted,
     };
   }
 

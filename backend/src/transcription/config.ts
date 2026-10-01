@@ -17,6 +17,8 @@ export type TranscriptionConfig = {
   hedgeAfterMs: number;
   transcriptionProvider: "whisper" | "cartesia";
   cartesiaApiKey: string | null;
+  cartesiaModel: "ink-2" | "ink-whisper";
+  cartesiaPauseMs: number;
   cartesiaAnswerGraceMs: number;
   cartesiaIncompleteGraceMs: number;
   azureTimingFromInkTurns: boolean;
@@ -65,6 +67,13 @@ function parseTranscriptionProvider(value: string | undefined): "whisper" | "car
   return normalized;
 }
 
+function parseCartesiaModel(value: string | undefined): "ink-2" | "ink-whisper" {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return "ink-2";
+  if (normalized !== "ink-2" && normalized !== "ink-whisper") throw new Error("CARTESIA_STT_MODEL must be ink-2 or ink-whisper.");
+  return normalized;
+}
+
 export function loadTranscriptionConfig(environment = process.env): TranscriptionConfig {
   return {
     azureSpeechKey: environment.AZURE_SPEECH_KEY?.trim() || null,
@@ -85,6 +94,8 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     hedgeAfterMs: parseNonNegativeInteger(environment.TRANSCRIPTION_HEDGE_AFTER_MS, 4_000, 30_000),
     transcriptionProvider: parseTranscriptionProvider(environment.TRANSCRIPTION_PROVIDER),
     cartesiaApiKey: environment.CARTESIA_API_KEY?.trim() || null,
+    cartesiaModel: parseCartesiaModel(environment.CARTESIA_STT_MODEL),
+    cartesiaPauseMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_PAUSE_MS, 800, 300, 3_000, "Cartesia pause"),
     cartesiaAnswerGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS, 3_500, 500, 10_000, "Cartesia answer grace"),
     cartesiaIncompleteGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_INCOMPLETE_GRACE_MS, 6_000, 500, 15_000, "Cartesia incomplete-turn grace"),
     azureTimingFromInkTurns: environment.AZURE_TIMING_FROM_INK_TURNS === "true",

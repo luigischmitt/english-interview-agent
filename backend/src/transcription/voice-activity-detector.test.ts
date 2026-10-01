@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { VoiceActivityDetector } from "./voice-activity-detector.js";
+import { defaultVadConfig, VoiceActivityDetector } from "./voice-activity-detector.js";
 
 afterEach(() => vi.useRealTimers());
 
@@ -159,5 +159,56 @@ describe("VoiceActivityDetector ambient activity", () => {
     expect(graceTimer).toBeNull();
     vi.advanceTimersByTime(1_800);
     expect(finalized).toBe(false);
+  });
+});
+
+describe("VoiceActivityDetector pause signal", () => {
+  function speaking(config?: Partial<ConstructorParameters<typeof VoiceActivityDetector>[0]>): VoiceActivityDetector {
+    const detector = new VoiceActivityDetector({ ...defaultVadConfig, ...config });
+    detector.update(0.04, 0);
+    detector.update(0.04, 100);
+    expect(detector.update(0.04, 200).speechStarted).toBe(true);
+    for (let at = 300; at <= 1_000; at += 100) detector.update(0.04, at);
+    return detector;
+  }
+
+  it("fires once per silence episode after pauseMs of silence, not before", () => {
+    const detector = speaking();
+    expect(detector.update(0.005, 1_100).pauseStarted).toBe(false);
+    expect(detector.update(0.005, 1_890).pauseStarted).toBe(false);
+    expect(detector.update(0.005, 1_900).pauseStarted).toBe(true);
+    expect(detector.update(0.005, 2_000).pauseStarted).toBe(false);
+    expect(detector.update(0.005, 3_000).pauseStarted).toBe(false);
+  });
+
+  it("fires again after speech resumes and a new silence lasts pauseMs", () => {
+    const detector = speaking({ pauseMs: 500 });
+    detector.update(0.005, 1_100);
+    expect(detector.update(0.005, 1_600).pauseStarted).toBe(true);
+    for (let at = 1_700; at <= 2_100; at += 100) detector.update(0.04, at);
+    detector.update(0.005, 2_200);
+    expect(detector.update(0.005, 2_700).pauseStarted).toBe(true);
+  });
+
+  it("does not fire before speech started or with brief speech below minimumSpeechMs", () => {
+    const idle = new VoiceActivityDetector();
+    for (let at = 0; at <= 3_000; at += 100) expect(idle.update(0.005, at).pauseStarted).toBe(false);
+    const brief = new VoiceActivityDetector({ ...defaultVadConfig, pauseMs: 300, minimumSpeechMs: 2_000 });
+    brief.update(0.04, 0);
+    brief.update(0.04, 100);
+    brief.update(0.04, 200);
+    brief.update(0.005, 300);
+    expect(brief.update(0.005, 700).pauseStarted).toBe(false);
+  });
+
+  it("does not fire while mid-band or resumed-speech candidates are pending, and keeps the finalize flags unchanged", () => {
+    const detector = speaking({ pauseMs: 300 });
+    detector.update(0.005, 1_100);
+    detector.update(0.04, 1_300);
+    expect(detector.update(0.04, 1_500).pauseStarted).toBe(false);
+    expect(detector.update(0.005, 1_600).shouldFinalize).toBe(false);
+    const finalizing = speaking();
+    finalizing.update(0.005, 1_100);
+    expect(finalizing.update(0.005, 4_600).shouldFinalize).toBe(true);
   });
 });

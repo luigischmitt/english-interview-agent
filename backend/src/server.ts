@@ -40,7 +40,7 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
   hedgeAfterMs: defaultTranscriptionConfig.hedgeAfterMs,
   finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
 }, cartesiaRequested && cartesiaApiKey
-  ? { apiKey: cartesiaApiKey, answerGraceMs: defaultTranscriptionConfig.cartesiaAnswerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.cartesiaIncompleteGraceMs, azureFromInkTurns: defaultTranscriptionConfig.azureTimingFromInkTurns, turnEndTimeoutMs: defaultTranscriptionConfig.cartesiaTurnEndTimeoutMs, prepareAfterMs: defaultTranscriptionConfig.cartesiaPrepareAfterMs, maxPrepares: defaultTranscriptionConfig.cartesiaMaxPrepares, answerCompletion }
+  ? { apiKey: cartesiaApiKey, answerGraceMs: defaultTranscriptionConfig.cartesiaAnswerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.cartesiaIncompleteGraceMs, azureFromInkTurns: defaultTranscriptionConfig.azureTimingFromInkTurns, turnEndTimeoutMs: defaultTranscriptionConfig.cartesiaTurnEndTimeoutMs, model: defaultTranscriptionConfig.cartesiaModel, pauseMs: defaultTranscriptionConfig.cartesiaPauseMs, prepareAfterMs: defaultTranscriptionConfig.cartesiaPrepareAfterMs, maxPrepares: defaultTranscriptionConfig.cartesiaMaxPrepares, answerCompletion }
   : null);
 
 server.listen(port, () => {

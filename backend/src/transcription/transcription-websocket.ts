@@ -174,6 +174,10 @@ export type CartesiaStreamingOptions = {
   /** Experimental: cut Azure blocks at Ink-2 turn boundaries instead of background Whisper timings (off by default; scored lower in live tests). */
   azureFromInkTurns?: boolean;
   turnEndTimeoutMs?: number | null;
+  /** Cartesia model: `ink-2` (default) or `ink-whisper` (cheaper; the local VAD pause drives turn ends). */
+  model?: "ink-2" | "ink-whisper";
+  /** Ink-Whisper only: local silence that counts as a turn end (default 800). */
+  pauseMs?: number;
   /**
    * Delay after a turn end (with no new speech) before sending `answer-provisional`, so the browser can prepare the next
    * question during the grace. 0 or undefined disables; it only applies when shorter than the grace that is running.
@@ -217,7 +221,13 @@ export function attachTranscriptionWebSocket(
   cartesia: CartesiaStreamingOptions | null = null,
 ): void {
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, perMessageDeflate: false });
-  const sessions = new StreamingTranscriptionSessions(transcriptionService, undefined, undefined, limits);
+  // Ink-Whisper turn ends come from the local VAD pause; the pause length only matters for that flag.
+  const sessionLimits = cartesia?.model === "ink-whisper" && cartesia.pauseMs
+    ? { ...limits, vadConfig: { ...limits.vadConfig, pauseMs: cartesia.pauseMs } }
+    : limits;
+  const sessions = new StreamingTranscriptionSessions(transcriptionService, undefined, undefined, sessionLimits);
+  const inkWhisperMode = cartesia?.model === "ink-whisper";
+  const cartesiaProviderName = inkWhisperMode ? "cartesia-ink-whisper" : "cartesia-ink-2";
   const finalQueue = new FinalTranscriptionQueue(limits.maxConcurrentTranscriptions, limits.maxQueuedTranscriptions);
 
   server.on("upgrade", (request, socket, head) => {
@@ -555,15 +565,15 @@ export function attachTranscriptionWebSocket(
           }
           const transcriptionDurationMs = Date.now() - flushStartedAt;
           const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
-          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "cartesia", cartesiaTurns: ink.turnCount, preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict, semanticLatencyMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
-          send(socket, { type: "complete", status: "complete", provider: "cartesia-ink-2", durationMs, transcript });
+          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "cartesia", cartesiaModel: cartesia?.model ?? "ink-2", cartesiaTurns: ink.turnCount, preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict, semanticLatencyMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
+          send(socket, { type: "complete", status: "complete", provider: cartesiaProviderName, durationMs, transcript });
           clearTimeout(timer);
 
           if (!assessmentService) return;
           audio = sessions.toWav(id);
           handedOff = true;
           const assessmentAudio = audio;
-          const inkBlocks = cartesia?.azureFromInkTurns ? buildInkAssessmentBlocks(inkTurns, transcript, session.bytes) : undefined;
+          const inkBlocks = cartesia?.azureFromInkTurns && !inkWhisperMode ? buildInkAssessmentBlocks(inkTurns, transcript, session.bytes) : undefined;
           startAssessment({
             session, audio: assessmentAudio, durationMs, transcriptionDurationMs, abortController, release, inkBlocks,
             getTiming: async () => {
@@ -652,7 +662,7 @@ export function attachTranscriptionWebSocket(
                 fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
                 return;
               }
-              logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "whisper", answerEndReason, ...(cartesia ? { cartesiaTurns: inkSession?.turnCount ?? 0 } : {}), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
+              logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "whisper", answerEndReason, ...(cartesia ? { cartesiaModel: cartesia.model ?? "ink-2", cartesiaTurns: inkSession?.turnCount ?? 0 } : {}), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
               send(socket, {
                 type: "complete",
                 status: "complete",
@@ -743,8 +753,9 @@ export function attachTranscriptionWebSocket(
             if (keyterms === null) logStreamDiagnostic({ status: "invalid_message", field: "start.keyterms" });
             inkSession = new CartesiaInkSession({
               apiKey: cartesia.apiKey,
-              keyterms: keyterms ?? [],
-              turnEndTimeoutMs: cartesia.turnEndTimeoutMs,
+              model: cartesia.model,
+              keyterms: inkWhisperMode ? [] : keyterms ?? [],
+              turnEndTimeoutMs: inkWhisperMode ? null : cartesia.turnEndTimeoutMs,
               endpoint: cartesia.endpoint,
               openTimeoutMs: cartesia.openTimeoutMs,
               onTurnStart: () => clearInkGrace(),
@@ -813,6 +824,10 @@ export function attachTranscriptionWebSocket(
         inkTurns?.recordLevel(message.value);
         const update = session.vad.update(message.value, Date.now());
         if (update.speechStarted) send(socket, { type: "speech-started" });
+        if (inkWhisperMode && inkSession && !inkSession.failed) {
+          if (update.speechStarted || update.speechResumed) inkSession.markSpeech();
+          else if (update.pauseStarted && !finalRequested && !finishing) void inkSession.endTurn(cartesia?.flushTimeoutMs ?? 1_500);
+        }
         if (update.speechResumed) {
           silenceDetected = false;
           clearInkGrace();
