@@ -10,6 +10,7 @@ const baseConfig = {
   playInterviewerAudio: true,
   showQuestionCaptions: true,
   autoCaptureVoice: true,
+  showCandidateCaptions: true,
   candidateCameraEnabled: false,
 };
 
@@ -32,15 +33,17 @@ test("session summary reports interviewer audio, captions, microphone, camera, d
     { label: "Duração", value: "Até 15 min" },
     { label: "Como o entrevistador fala", value: "Com áudio" },
     { label: "Legendas das perguntas", value: "Ligadas" },
+    { label: "Legenda da sua fala", value: "Ligada" },
     { label: "Microfone", value: "Inicia após cada pergunta" },
     { label: "Câmera", value: "Desligada" },
   ]);
 
-  const textSummary = getInterviewSetupSummary({ ...baseConfig, role: " ", playInterviewerAudio: false, showQuestionCaptions: false, autoCaptureVoice: false, candidateCameraEnabled: true }, {}, {});
+  const textSummary = getInterviewSetupSummary({ ...baseConfig, role: " ", playInterviewerAudio: false, showQuestionCaptions: false, autoCaptureVoice: false, showCandidateCaptions: false, candidateCameraEnabled: true }, {}, {});
   assert.equal(textSummary[0].value, "Não selecionado");
   assert.equal(textSummary[4].value, "Somente texto");
   assert.equal(textSummary[5].value, "Sempre visíveis (somente texto)");
-  assert.equal(textSummary[6].value, "Início manual");
-  assert.equal(textSummary[7].value, "Prévia local ligada");
+  assert.equal(textSummary[6].value, "Desligada");
+  assert.equal(textSummary[7].value, "Início manual");
+  assert.equal(textSummary[8].value, "Prévia local ligada");
   assert.equal(summary.some(({ label }) => label.toLowerCase().includes("minha fala")), false);
 });

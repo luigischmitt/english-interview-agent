@@ -7,6 +7,7 @@ import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { buildPreviousAnswers, decideNextTurn } from "@/lib/interview/orchestration";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import { answerOrdinalForSequence, createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
+import { emptyCaption, reduceCaption, shouldShowCandidateCaption, type CandidateCaption } from "@/lib/interview/caption-state.mjs";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import { emptyEnglishEvidenceMessage, emptyReportEvidenceMessage, partialEvidenceReviewNote } from "@/lib/interview/report-evidence-copy.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
@@ -83,7 +84,9 @@ function CapturedAnswers({ turns }: { turns: ReturnType<typeof pairInterviewTurn
 
 export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; onLeave: () => void }) {
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
-  const { autoCaptureVoice } = resolveCandidateVoicePreferences(config);
+  const { autoCaptureVoice, showCandidateCaptions } = resolveCandidateVoicePreferences(config);
+  const [candidateCaption, setCandidateCaption] = useState<CandidateCaption>(emptyCaption);
+  const updateCandidateCaption = useCallback((next: CandidateCaption) => setCandidateCaption((current) => reduceCaption(current, next)), []);
   const questions = getFixedInterviewQuestions(config);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [question, setQuestion] = useState<InterviewQuestion>(() => questions[0]);
@@ -553,7 +556,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         <progress className="progress progress-primary mx-auto mb-4 block h-1 w-full max-w-7xl" value={progress} max="100" aria-label={`${progress}% do tempo planejado`} />
 
         <section className="mx-auto grid w-full max-w-7xl gap-3 sm:grid-cols-2 sm:gap-4 lg:gap-5" aria-label="Participantes da sala">
-          <CandidateCamera initialEnabled={config.candidateCameraEnabled} active={phase !== "ending"} captureState={voiceCaptureState} />
+          <CandidateCamera initialEnabled={config.candidateCameraEnabled} active={phase !== "ending"} captureState={voiceCaptureState} caption={candidateCaption} captionsEnabled={showCandidateCaptions && phase === "answering"} />
           <section className={`relative flex min-h-[270px] flex-col overflow-hidden rounded-xl border border-base-300 bg-base-200 sm:min-h-[min(56vh,540px)] ${isInterviewerSpeaking ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`} aria-label="Entrevistador">
             <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center sm:px-8">
               <AudioLines className={`size-10 text-primary sm:size-12 ${isInterviewerSpeaking ? "motion-safe:animate-pulse" : ""}`} aria-hidden="true" />
@@ -607,6 +610,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
               })) void submitAnswer(transcription, false, expectedQuestionId);
             }}
             onCaptureStateChange={setVoiceCaptureState}
+            captionsEnabled={showCandidateCaptions}
+            onCaptionChange={updateCandidateCaption}
             onHandoffTimingEvent={onHandoffTimingEvent}
             autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
             onAssessmentChange={(attemptId, assessment, context) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { ...context, state: assessment } }))}
@@ -621,7 +626,26 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   );
 }
 
-function CandidateCamera({ initialEnabled, active, captureState }: { initialEnabled: boolean; active: boolean; captureState: VoiceCaptureState }) {
+function CandidateCaptionBlock({ caption }: { caption: CandidateCaption }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [caption]);
+  return (
+    <div className="border-t border-base-300 bg-base-100/95 px-4 py-3 sm:px-6 sm:py-4">
+      <p className="text-xs font-medium text-muted-foreground">VOCÊ</p>
+      {/* Display-only and updated several times per second, so it is deliberately not announced to screen readers. */}
+      <div ref={scrollRef} className="mt-1 h-[4.5rem] overflow-y-auto text-sm leading-6 sm:text-base sm:leading-6" lang="en" aria-live="off" data-testid="candidate-caption">
+        <span>{caption.committed}</span>
+        {caption.committed && caption.partial ? " " : null}
+        <span className="text-muted-foreground">{caption.partial}</span>
+      </div>
+    </div>
+  );
+}
+
+function CandidateCamera({ initialEnabled, active, captureState, caption, captionsEnabled }: { initialEnabled: boolean; active: boolean; captureState: VoiceCaptureState; caption: CandidateCaption; captionsEnabled: boolean }) {
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraState, setCameraState] = useState<"off" | "requesting" | "on" | "error">("off");
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -690,6 +714,7 @@ function CandidateCamera({ initialEnabled, active, captureState }: { initialEnab
         {cameraEnabled && stream && <span className="absolute left-4 top-4 rounded-md bg-base-100/90 px-3 py-2 text-sm font-medium">Você · câmera local</span>}
         {cameraState === "requesting" && <span className="loading loading-spinner loading-sm absolute right-4 top-4" aria-label="Iniciando câmera" />}
       </div>
+      {shouldShowCandidateCaption({ enabled: captionsEnabled, captureState, caption }) && <CandidateCaptionBlock caption={caption} />}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-base-300 px-4 py-3">
         <p className="max-w-[48ch] text-xs leading-5 text-muted-foreground">A câmera é uma prévia local e não é enviada nem salva.</p>
         <button type="button" className="btn btn-sm min-h-11 gap-2" onClick={() => cameraEnabled || cameraState === "requesting" ? turnCameraOff() : void turnCameraOn()} aria-pressed={cameraEnabled} disabled={!active}><Video className="size-4" aria-hidden="true" />{cameraEnabled ? "Desligar câmera" : cameraState === "requesting" ? "Cancelar câmera" : cameraState === "error" ? "Tentar câmera" : "Ligar câmera"}</button>

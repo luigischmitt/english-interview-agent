@@ -11,10 +11,13 @@ import { CartesiaInkSession, sanitizeKeyterms } from "./cartesia-ink-session.js"
 import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
-  | { type: "start"; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; keyterms?: unknown }
+  | { type: "start"; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; keyterms?: unknown; captions?: unknown }
   | { type: "level"; value: number }
   | { type: "finalize"; reason: "manual" | "silence" }
   | { type: "cancel" };
+
+/** Minimum spacing between live caption messages (about 5 per second). */
+const captionIntervalMs = 200;
 
 const azureWaiters: Array<{ resolve: (release: () => void) => void; reject: (error: Error) => void; signal: AbortSignal; abort: () => void }> = [];
 let activeAzureAssessments = 0;
@@ -216,7 +219,33 @@ export function attachTranscriptionWebSocket(
       if (inkGraceTimer !== null) clearTimeout(inkGraceTimer);
       inkGraceTimer = null;
     };
+    // Live caption (display-only, never logged or stored): throttled, sent only when the text changed.
+    let captionsEnabled = false;
+    let captionTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastCaptionAt = 0;
+    let lastCaption = "";
+    const clearCaptionTimer = () => {
+      if (captionTimer !== null) clearTimeout(captionTimer);
+      captionTimer = null;
+    };
+    const emitCaption = () => {
+      captionTimer = null;
+      if (!captionsEnabled || finalRequested || finishing || !inkSession || inkSession.failed) return;
+      const committed = inkSession.committedText();
+      const partial = inkSession.partialText();
+      const key = `${committed}\u0000${partial}`;
+      if (key === lastCaption) return;
+      lastCaption = key;
+      lastCaptionAt = Date.now();
+      send(socket, { type: "caption", committed, partial });
+    };
+    const scheduleCaption = () => {
+      if (!captionsEnabled || finalRequested || finishing || captionTimer !== null) return;
+      const wait = Math.max(0, lastCaptionAt + captionIntervalMs - Date.now());
+      captionTimer = setTimeout(emitCaption, wait);
+    };
     const closeInk = () => {
+      clearCaptionTimer();
       clearInkGrace();
       inkSession?.close();
       inkSession = null;
@@ -498,6 +527,7 @@ export function attachTranscriptionWebSocket(
       if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
       silenceGraceTimer = null;
       clearInkGrace();
+      clearCaptionTimer();
       if (reason === "manual") discardSpeculation();
       const speechEndToFinalizationMs = Math.round(session.vad.speechEndToFinalizationAt(Date.now()));
       logStreamDiagnostic({ status: "finalizing", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(session.bytes / (pcmSampleRate * 2) * 1_000), speechDurationMs: Math.round(session.vad.speechDurationMs), speechEndToFinalizationMs });
@@ -637,6 +667,7 @@ export function attachTranscriptionWebSocket(
           retainedSession = session;
           started = true;
           logStreamDiagnostic({ status: "started", speechThresholdBand: session.vad.speechThresholdBand });
+          captionsEnabled = Boolean(cartesia) && message.captions === true;
           if (cartesia) {
             // Invalid keyterm lists are ignored entirely (and never logged); the answer simply gets no biasing.
             const keyterms = message.keyterms === undefined ? [] : sanitizeKeyterms(message.keyterms);
@@ -648,6 +679,7 @@ export function attachTranscriptionWebSocket(
               endpoint: cartesia.endpoint,
               openTimeoutMs: cartesia.openTimeoutMs,
               onTurnStart: () => clearInkGrace(),
+              onCaptionChange: scheduleCaption,
               onTurnEnd: (turnTranscript) => {
                 if (finalRequested || finishing || !turnTranscript) return;
                 clearInkGrace();

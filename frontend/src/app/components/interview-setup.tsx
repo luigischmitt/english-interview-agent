@@ -55,7 +55,7 @@ export function InterviewSetup({
     }
   };
 
-  const updateOption = (field: "playInterviewerAudio" | "showQuestionCaptions" | "candidateCameraEnabled" | "autoCaptureVoice", value: boolean) => {
+  const updateOption = (field: "playInterviewerAudio" | "showQuestionCaptions" | "candidateCameraEnabled" | "autoCaptureVoice" | "showCandidateCaptions", value: boolean) => {
     setConfig((current) => ({ ...current, [field]: value }));
   };
 
@@ -242,6 +242,7 @@ export function InterviewSetup({
               <p className="mt-1 text-sm leading-6 text-muted-foreground">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel="Sempre visível" onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
+                <SettingToggle id="show-candidate-captions" label="Legenda da sua fala" description="Veja o que você diz, palavra por palavra, enquanto responde. Só aparece quando o transcritor em tempo real está ativo e nunca é salva; a transcrição final continua sendo a usada." checked={config.showCandidateCaptions} onChange={(checked) => updateOption("showCandidateCaptions", checked)} />
                 <SettingToggle id="candidate-camera" label="Prévia da câmera" description="Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
                 <SettingToggle id="auto-capture-voice" label="Iniciar microfone automaticamente" description="Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala." checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
               </div>

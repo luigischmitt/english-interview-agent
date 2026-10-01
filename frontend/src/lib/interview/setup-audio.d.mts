@@ -17,6 +17,7 @@ export function getInterviewSetupSummary(
     playInterviewerAudio: boolean;
     showQuestionCaptions: boolean;
     autoCaptureVoice: boolean;
+    showCandidateCaptions?: boolean;
     candidateCameraEnabled: boolean;
   },
   seniorityLabels: Record<string, string>,

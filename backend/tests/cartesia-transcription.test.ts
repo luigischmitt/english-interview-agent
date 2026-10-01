@@ -312,6 +312,92 @@ describe("Cartesia Ink-2 transcription over the stream WebSocket", () => {
   });
 });
 
+describe("Cartesia Ink-2 live captions", () => {
+  const captionsOf = (fixture: Fixture) => fixture.messages.filter((message) => message.type === "caption");
+
+  it("sends ordered, throttled committed/partial captions only when requested and never logs the text", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { ink, fixture } = await setup({}, createWhisper(), { answerGraceMs: 1_500 });
+    await start(fixture, { captions: true });
+    await speak(fixture, 300);
+    ink.emit({ type: "turn.start", turn_id: 0 });
+    // A burst of updates inside one throttle window collapses into at most two messages.
+    for (const text of ["Zeta", "Zeta one", "Zeta one two", "Zeta one two three"]) ink.emit({ type: "turn.update", turn_id: 0, transcript: text });
+    await delay(350);
+    ink.emit({ type: "turn.end", turn_id: 0, transcript: "Zeta one two three." });
+    await delay(350);
+    ink.emit({ type: "turn.start", turn_id: 1 });
+    ink.emit({ type: "turn.update", turn_id: 1, transcript: "Then more" });
+    await delay(350);
+    // Unchanged text is not re-sent.
+    ink.emit({ type: "turn.update", turn_id: 1, transcript: "Then more" });
+    await delay(350);
+
+    const captions = captionsOf(fixture);
+    expect(captions.length).toBeGreaterThanOrEqual(3);
+    expect(captions.length).toBeLessThanOrEqual(5);
+    expect(captions[0]).toMatchObject({ type: "caption", committed: "" });
+    expect(captions.some((caption) => caption.committed === "" && caption.partial === "Zeta one two three")).toBe(true);
+    expect(captions.some((caption) => caption.committed === "Zeta one two three." && caption.partial === "")).toBe(true);
+    expect(captions[captions.length - 1]).toMatchObject({ committed: "Zeta one two three.", partial: "Then more" });
+    for (let index = 1; index < captions.length; index += 1) {
+      expect(captions[index].at - captions[index - 1].at).toBeGreaterThanOrEqual(150);
+      expect(`${captions[index].committed}|${captions[index].partial}`).not.toBe(`${captions[index - 1].committed}|${captions[index - 1].partial}`);
+    }
+    expect(logsOf(info) + logsOf(error)).not.toContain("Zeta");
+    expect(logsOf(info) + logsOf(error)).not.toContain("Then more");
+  });
+
+  it("does not send captions without the start flag", async () => {
+    const { ink, fixture } = await setup({}, createWhisper(), { answerGraceMs: 1_500 });
+    await start(fixture);
+    await speak(fixture, 300);
+    ink.emit({ type: "turn.start", turn_id: 0 });
+    ink.emit({ type: "turn.update", turn_id: 0, transcript: "No caption please" });
+    await delay(400);
+    expect(captionsOf(fixture)).toHaveLength(0);
+  });
+
+  it("does not send captions after finalizing", async () => {
+    const { ink, fixture } = await setup({}, createWhisper(), { answerGraceMs: 1_500 });
+    await start(fixture, { captions: true });
+    await speak(fixture, 800);
+    ink.emit({ type: "turn.start", turn_id: 0 });
+    ink.emit({ type: "turn.update", turn_id: 0, transcript: "Before finalize" });
+    await delay(300);
+    const before = captionsOf(fixture).length;
+    expect(before).toBeGreaterThanOrEqual(1);
+    fixture.socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+    await fixture.waitFor("finalizing");
+    ink.emit({ type: "turn.update", turn_id: 0, transcript: "Before finalize and after" });
+    ink.emit({ type: "turn.end", turn_id: 0, transcript: "Before finalize and after." });
+    await fixture.waitFor("complete");
+    await delay(300);
+    expect(captionsOf(fixture)).toHaveLength(before);
+  });
+
+  it("does not send captions in Whisper mode even when requested", async () => {
+    const whisper = createWhisper();
+    const server = createServer();
+    attachTranscriptionWebSocket(server, whisper.service, null, defaultStreamingLimits, null);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const socket = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/transcriptions/stream`);
+    const received: Array<Record<string, any>> = [];
+    socket.on("message", (raw) => received.push(JSON.parse(raw.toString())));
+    await new Promise<void>((resolve) => socket.once("open", resolve));
+    socket.send(JSON.stringify({ type: "start", version: 2, sampleRate: 16_000, channels: 1, encoding: "s16le", speechThreshold: 0.025, captions: true }));
+    await delay(100);
+    for (let index = 0; index < 8; index += 1) { socket.send(JSON.stringify({ type: "level", value: 0.05 })); socket.send(Buffer.alloc(frameBytes, 0x20)); await delay(100); }
+    socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+    await delay(500);
+    expect(received.find((message) => message.type === "complete")).toBeDefined();
+    expect(received.some((message) => message.type === "caption")).toBe(false);
+    socket.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+});
+
 describe("looksUnfinished", () => {
   it("treats sentences with final punctuation as complete", () => {
     expect(looksUnfinished("I chose Redis for the product catalog.")).toBe(false);
