@@ -27,6 +27,12 @@ const focusLabels: Record<InterviewConfig["focus"], string> = {
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const audioTestPhrase = "Hello, thanks for joining me today. Could you tell me about a recent project?";
 
+const cardFieldInput =
+  "w-full rounded-lg border border-[#d9e3dc] bg-[#f3f4ee] px-4 py-2.5 text-[15px] text-[#0e2a1f] placeholder:text-[#8a9c92] outline-none transition-colors duration-200 focus:border-[#1f6b45]";
+
+const summaryPillButton =
+  "block w-full rounded-full bg-[#f3f4ee] px-6 py-3.5 text-center text-base font-medium text-[#0e2a1f] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-white active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0";
+
 export function InterviewSetup({
   onBack,
   onStart,
@@ -108,7 +114,7 @@ export function InterviewSetup({
     onStart({ ...config, role: config.role.trim() });
   };
 
-  const setupSummary = getInterviewSetupSummary(config, seniorityLabels, focusLabels);
+  const [cargoSummary, ...restSummary] = getInterviewSetupSummary(config, seniorityLabels, focusLabels);
 
   return (
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
@@ -127,22 +133,22 @@ export function InterviewSetup({
       />
 
       <form onSubmit={handleSubmit} className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)]" noValidate>
-        <section className="card card-border bg-card" aria-labelledby="interview-details-title" data-aos="fade-up" data-aos-duration="450">
-          <div className="card-body gap-7 p-5 sm:p-8">
+        <section className="border border-[#d9e3dc] bg-white" aria-labelledby="interview-details-title" data-aos="fade-up" data-aos-duration="450">
+          <div className="flex flex-col gap-7 p-5 sm:p-8">
             <div>
-              <h2 id="interview-details-title" className="card-title text-xl tracking-[-0.02em]">
-                Detalhes da entrevista
+              <h2 id="interview-details-title" className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1f6b45]">
+                01 · Detalhes da entrevista
               </h2>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 Você pode mudar essas opções a cada nova sessão.
               </p>
             </div>
 
             <div className="grid gap-6 sm:grid-cols-2">
-              <label className="fieldset gap-2 sm:col-span-2">
-                <span className="fieldset-legend text-sm font-medium">Cargo para praticar <span className="text-error" aria-hidden="true">*</span></span>
+              <label className="flex flex-col gap-2 sm:col-span-2">
+                <span className="text-sm font-medium">Cargo para praticar <span className="text-error" aria-hidden="true">*</span></span>
                 <input
-                  className={`input input-bordered h-11 w-full bg-base-100 ${showErrors ? "input-error" : ""}`}
+                  className={`${cardFieldInput} ${showErrors ? "border-error" : ""}`}
                   value={config.role}
                   onChange={(event) => updateConfig("role", event.target.value)}
                   placeholder="ex.: Software Engineer"
@@ -151,14 +157,14 @@ export function InterviewSetup({
                   required
                 />
                 {showErrors && !config.role.trim() && (
-                  <span id="role-error" className="label text-error">Informe o cargo para o qual você quer praticar.</span>
+                  <span id="role-error" className="text-sm text-error">Informe o cargo para o qual você quer praticar.</span>
                 )}
               </label>
 
-              <label className="fieldset gap-2">
-                <span className="fieldset-legend text-sm font-medium">Senioridade</span>
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Senioridade</span>
                 <select
-                  className="select select-bordered h-11 w-full bg-base-100"
+                  className={cardFieldInput}
                   value={config.seniority}
                   onChange={(event) => updateConfig("seniority", event.target.value)}
                 >
@@ -169,10 +175,10 @@ export function InterviewSetup({
                 </select>
               </label>
 
-              <label className="fieldset gap-2">
-                <span className="fieldset-legend text-sm font-medium">Foco da prática</span>
+              <label className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Foco da prática</span>
                 <select
-                  className="select select-bordered h-11 w-full bg-base-100"
+                  className={cardFieldInput}
                   value={config.focus}
                   onChange={(event) => updateConfig("focus", event.target.value)}
                 >
@@ -183,18 +189,18 @@ export function InterviewSetup({
                 </select>
               </label>
 
-              <fieldset className="fieldset gap-2">
-                <legend className="fieldset-legend text-sm font-medium">Duração da sessão</legend>
+              <fieldset className="flex flex-col gap-2">
+                <legend className="text-sm font-medium">Duração da sessão</legend>
                 <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-4" role="radiogroup" aria-label="Duração da sessão">
                   {interviewDurationOptions.map((option) => {
                     const minutes = String(option);
                     return (
-                    <label key={minutes} className={`flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${config.duration === minutes ? "border-primary bg-primary/10 text-foreground" : "border-base-300 bg-base-100 hover:bg-base-200"}`}>
+                    <label key={minutes} className={`flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border px-3 text-sm font-medium transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${config.duration === minutes ? "border-[#0e2a1f] bg-[#0e2a1f] text-[#f3f4ee]" : "border-[#d9e3dc] bg-[#f3f4ee] hover:border-[#1f6b45]"}`}>
                       <input
                         type="radio"
                         name="duration"
                         value={minutes}
-                        className="radio radio-primary radio-sm"
+                        className="sr-only"
                         checked={config.duration === minutes}
                         onChange={(event) => updateConfig("duration", event.target.value)}
                       />
@@ -206,19 +212,19 @@ export function InterviewSetup({
               </fieldset>
             </div>
 
-            <section className="border-t pt-6" aria-labelledby="interviewer-audio-title">
-              <h3 id="interviewer-audio-title" className="text-lg font-semibold">Como o entrevistador fala</h3>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.</p>
-              <fieldset className="mt-4 space-y-3">
+            <section className="border-t border-[#d9e3dc] pt-6" aria-labelledby="interviewer-audio-title">
+              <h3 id="interviewer-audio-title" className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1f6b45]">02 · Como o entrevistador fala</h3>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.</p>
+              <fieldset className="mt-4 grid gap-3 sm:grid-cols-2">
                 <legend className="sr-only">Como o entrevistador fala</legend>
-                <label className={`flex min-h-20 cursor-pointer items-start gap-4 rounded-lg border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${config.playInterviewerAudio ? "border-primary bg-primary/10" : "border-base-300 bg-base-100 hover:bg-base-200"}`}>
+                <label className={`flex min-h-20 cursor-pointer items-start gap-3 border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${config.playInterviewerAudio ? "border-[#1f6b45] bg-[#e9f3ed]" : "border-[#d9e3dc] bg-[#f3f4ee] hover:bg-[#eceee5]"}`}>
                   <input type="radio" name="interviewer-audio-mode" value="audio" className="radio radio-primary mt-1" checked={getInterviewerAudioMode(config) === "audio"} onChange={() => updateInterviewerAudioMode("audio")} />
                   <span className="min-w-0">
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">Com áudio <span className="badge badge-sm badge-outline">Recomendado</span></span>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">Com áudio <span className="rounded-full border border-[#1f6b45] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#1f6b45]">Recomendado</span></span>
                     <span className="mt-1 block text-sm leading-6 text-muted-foreground">O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.</span>
                   </span>
                 </label>
-                <label className={`flex min-h-20 cursor-pointer items-start gap-4 rounded-lg border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${!config.playInterviewerAudio ? "border-primary bg-primary/10" : "border-base-300 bg-base-100 hover:bg-base-200"}`}>
+                <label className={`flex min-h-20 cursor-pointer items-start gap-3 border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${!config.playInterviewerAudio ? "border-[#1f6b45] bg-[#e9f3ed]" : "border-[#d9e3dc] bg-[#f3f4ee] hover:bg-[#eceee5]"}`}>
                   <input type="radio" name="interviewer-audio-mode" value="text" className="radio radio-primary mt-1" checked={getInterviewerAudioMode(config) === "text"} onChange={() => updateInterviewerAudioMode("text")} />
                   <span className="min-w-0">
                     <span className="block font-medium">Somente texto</span>
@@ -229,7 +235,7 @@ export function InterviewSetup({
 
               {config.playInterviewerAudio && (
                 <div className="mt-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-                  <button type="button" className="btn btn-outline min-h-11" onClick={() => void testAudio()}>
+                  <button type="button" className="btn btn-outline min-h-11 rounded-full" onClick={() => void testAudio()}>
                     {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
                   </button>
                   <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "text-error" : audioTestStatus.kind === "success" ? "text-success" : "text-muted-foreground"}`}>
@@ -239,9 +245,9 @@ export function InterviewSetup({
               )}
             </section>
 
-            <section className="border-t pt-6" aria-labelledby="room-options-title">
-              <h3 id="room-options-title" className="text-base font-semibold">Preferências da sala</h3>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
+            <section className="border-t border-[#d9e3dc] pt-6" aria-labelledby="room-options-title">
+              <h3 id="room-options-title" className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1f6b45]">03 · Preferências da sala</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel="Sempre visível" onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
                 <SettingToggle id="show-candidate-captions" label="Legenda da sua fala" description="Veja o que você diz, palavra por palavra, enquanto responde. Só aparece quando o transcritor em tempo real está ativo e nunca é salva; a transcrição final continua sendo a usada." checked={config.showCandidateCaptions} onChange={(checked) => updateOption("showCandidateCaptions", checked)} />
@@ -249,28 +255,37 @@ export function InterviewSetup({
                 <SettingToggle id="auto-capture-voice" label="Iniciar microfone automaticamente" description="Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala." checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
               </div>
             </section>
-
-            <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-end">
-              <button type="button" className="btn btn-ghost order-2 sm:order-1" onClick={onBack}>Cancelar</button>
-              <button type="submit" className="btn btn-primary order-1 gap-2 sm:order-2">{config.playInterviewerAudio ? "Iniciar com áudio" : "Iniciar somente com texto"} <ArrowUpRight className="size-4" aria-hidden="true" /></button>
-            </div>
           </div>
         </section>
 
-        <aside className="border-y border-border py-6 lg:py-8" aria-labelledby="session-preview-title" data-aos="fade-up" data-aos-delay="80" data-aos-duration="450">
-          <h2 id="session-preview-title" className="text-lg font-semibold tracking-[-0.02em]">Sua sessão</h2>
-          <dl className="mt-5 space-y-3 text-sm">
-            {setupSummary.map(({ label, value }) => (
-              <div key={label} className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-                <dt className="shrink-0 text-muted-foreground">{label}</dt>
-                <dd className="min-w-0 text-right font-medium [overflow-wrap:anywhere]">{value}</dd>
-              </div>
-            ))}
-          </dl>
+        <div data-aos="fade-up" data-aos-delay="80" data-aos-duration="450">
+          <aside className="bg-[#0e2a1f] px-6 py-8 text-[#f3f4ee] sm:px-8" aria-labelledby="session-preview-title">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#9fc4ac]">Sua sessão</p>
+            <h2
+              id="session-preview-title"
+              className="mt-3 text-balance font-[family-name:var(--font-landing-serif)] text-3xl leading-tight tracking-[-0.02em]"
+            >
+              {cargoSummary.value}
+            </h2>
+            <dl className="mt-6 space-y-3 border-t border-white/15 pt-5 text-sm">
+              {restSummary.map(({ label, value }) => (
+                <div key={label} className="flex items-baseline justify-between gap-4 border-b border-white/10 pb-3">
+                  <dt className="shrink-0 text-[#9fc4ac]">{label}</dt>
+                  <dd className="min-w-0 text-right font-medium [overflow-wrap:anywhere]">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <button type="submit" className={`${summaryPillButton} mt-7 flex items-center justify-center gap-2`}>
+              {config.playInterviewerAudio ? "Iniciar com áudio" : "Iniciar somente com texto"} <ArrowUpRight className="size-4" aria-hidden="true" />
+            </button>
+            <button type="button" className="mt-3 block w-full text-center text-sm text-[#9fc4ac] underline-offset-4 hover:text-[#f3f4ee] hover:underline" onClick={onBack}>
+              Cancelar
+            </button>
+          </aside>
           <p className="mt-6 text-sm leading-6 text-muted-foreground">
             Você pode encerrar a qualquer momento. Uma resposta já iniciada pode terminar após o tempo planejado.
           </p>
-        </aside>
+        </div>
       </form>
     </main>
   );
@@ -297,12 +312,12 @@ function SettingToggle({
   const stateLabel = disabled ? (disabledStatusLabel ?? "Desligado") : checked ? "Ligado" : "Desligado";
 
   return (
-    <label htmlFor={id} className={`flex min-h-11 w-full items-start gap-3 rounded-lg border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${disabled ? "cursor-not-allowed border-base-300 bg-base-200/70" : checked ? "cursor-pointer border-primary bg-primary/10" : "cursor-pointer border-base-300 bg-base-100 hover:bg-base-200"}`}>
+    <label htmlFor={id} className={`flex min-h-11 w-full items-start gap-3 border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${disabled ? "cursor-not-allowed border-[#d9e3dc] bg-[#eceee5]" : checked ? "cursor-pointer border-[#1f6b45] bg-[#e9f3ed]" : "cursor-pointer border-[#d9e3dc] bg-[#f3f4ee] hover:bg-[#eceee5]"}`}>
       <input id={id} type="checkbox" className="checkbox checkbox-primary mt-0.5 size-5 shrink-0" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <span className="text-sm font-medium">{label}</span>
-          <span className={`shrink-0 text-xs font-semibold ${disabled ? "text-base-content/70" : checked ? "text-primary" : "text-muted-foreground"}`}>{stateLabel}</span>
+          <span className={`shrink-0 text-xs font-semibold ${disabled ? "text-muted-foreground/70" : checked ? "text-[#1f6b45]" : "text-muted-foreground"}`}>{stateLabel}</span>
         </span>
         <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
       </span>

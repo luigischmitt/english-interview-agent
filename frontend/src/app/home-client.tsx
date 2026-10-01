@@ -2,20 +2,18 @@
 
 import AOS from "aos";
 import gsap from "gsap";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   Home,
   LineChart,
-  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
   SlidersHorizontal,
-  Sun,
   Target,
   Video,
-  Volume2,
 } from "lucide-react";
 
 import { SessionExpiredNotice } from "@/components/auth/session-expired-notice";
@@ -77,17 +75,20 @@ const warmUpPrompts = [
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <div className={`flex items-center ${compact ? "justify-center" : "gap-3"}`}>
-      <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
-        <Volume2 className="size-4" aria-hidden="true" />
-      </span>
-      <span
-        className={`overflow-hidden whitespace-nowrap text-sm font-semibold tracking-[-0.01em] transition-[width,opacity] duration-200 ${
-          compact ? "w-0 opacity-0" : "w-40 opacity-100"
-        }`}
-      >
-        English Interview Agent
-      </span>
+    <div className={`flex items-center gap-2.5 ${compact ? "justify-center" : ""}`}>
+      <Image
+        src="/landing/tucano.png"
+        alt=""
+        width={26}
+        height={30}
+        className="h-[26px] w-auto shrink-0"
+        priority
+      />
+      {!compact && (
+        <span className="whitespace-nowrap text-sm font-semibold tracking-[-0.01em]">
+          English Interview Agent
+        </span>
+      )}
     </div>
   );
 }
@@ -130,10 +131,10 @@ function Navigation({
         id="desktop-sidebar"
         aria-label="Navegação para desktop"
         className={`sticky top-0 hidden h-dvh max-h-dvh min-h-0 shrink-0 self-start overflow-y-auto border-r bg-sidebar px-4 py-5 transition-[width] duration-200 lg:flex lg:flex-col ${
-          sidebarExpanded ? "w-60" : "w-20"
+          sidebarExpanded ? "w-72" : "w-20"
         }`}
       >
-        <div className={`flex flex-col gap-3 pb-8 ${sidebarExpanded ? "" : "items-center"}`}>
+        <div className={`flex items-center pb-8 ${sidebarExpanded ? "justify-between gap-2" : "flex-col gap-3"}`}>
           <Brand compact={!sidebarExpanded} />
           <button
             type="button"
@@ -141,12 +142,9 @@ function Navigation({
             aria-expanded={sidebarExpanded}
             aria-controls="desktop-sidebar"
             onClick={onToggleSidebar}
-            className={`btn btn-ghost min-h-11 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-              sidebarExpanded ? "w-full justify-start gap-2 px-3" : "btn-square size-11"
-            }`}
+            className="grid size-8 shrink-0 place-items-center rounded-lg text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {sidebarExpanded ? <PanelLeftClose className="size-4" aria-hidden="true" /> : <PanelLeftOpen className="size-4" aria-hidden="true" />}
-            {sidebarExpanded && <span>Recolher barra lateral</span>}
           </button>
         </div>
         <nav aria-label="Navegação principal">
@@ -190,15 +188,7 @@ function Navigation({
   );
 }
 
-function Topbar({
-  view,
-  darkMode,
-  onToggleTheme,
-}: {
-  view: View;
-  darkMode: boolean;
-  onToggleTheme: () => void;
-}) {
+function Topbar({ view }: { view: View }) {
   return (
     <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background px-4 sm:px-8">
       <div className="lg:hidden">
@@ -208,14 +198,6 @@ function Topbar({
         {viewLabels[view]}
       </p>
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={darkMode ? "Usar tema claro" : "Usar tema escuro"}
-          onClick={onToggleTheme}
-        >
-          {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
-        </Button>
         <SignOutButton />
       </div>
     </header>
@@ -259,7 +241,7 @@ function HomeView({
         <div className="border-t border-border pt-6">
           <h2 className="text-2xl font-semibold tracking-[-0.025em]">Prepare sua prática.</h2>
           <p className="mt-3 max-w-[52ch] text-base leading-7 text-muted-foreground">Escolha o cargo e o foco. Na entrevista, as perguntas aparecem em texto e também podem ser lidas em voz alta.</p>
-          <Button className="mt-7 min-h-12 gap-2 px-5" onClick={onStart}><Play className="size-4 fill-current" /> Começar prática</Button>
+          <Button className="mt-7 min-h-12 gap-2 rounded-full px-5" onClick={onStart}><Play className="size-4 fill-current" /> Começar prática</Button>
         </div>
         <aside className="border-y border-border py-6" aria-labelledby="warm-up-title">
           <div className="flex items-start justify-between gap-4"><div><h2 id="warm-up-title" className="text-lg font-semibold">Aquecimento opcional</h2><p className="mt-1 text-sm text-muted-foreground">Use uma pergunta para começar a pensar em inglês.</p></div><Target className="mt-1 size-5 text-primary" aria-hidden="true" /></div>
@@ -281,34 +263,13 @@ function HomeView({
   );
 }
 
-function SettingsView({
-  darkMode,
-  onToggleTheme,
-}: {
-  darkMode: boolean;
-  onToggleTheme: () => void;
-}) {
+function SettingsView() {
   return (
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-4xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
       <PageIntro
         title="Configurações"
         description="Escolha como você prefere usar a plataforma."
       />
-      <section className="mt-12" data-aos="fade-up" data-aos-duration="450">
-        <SectionHeading title="Aparência" />
-        <div className="mt-4 flex flex-col gap-5 border-y py-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium">{darkMode ? "Tema escuro" : "Tema claro"}</p>
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              Escolha o tema que fica melhor para você.
-            </p>
-          </div>
-          <Button variant="outline" className="w-full gap-2 sm:w-auto" onClick={onToggleTheme}>
-            {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            Usar tema {darkMode ? "claro" : "escuro"}
-          </Button>
-        </div>
-      </section>
       <section className="mt-12" data-aos="fade-up" data-aos-duration="450">
         <SectionHeading title="Experiência da entrevista" />
         <div className="mt-4 border-y">
@@ -338,7 +299,6 @@ function SettingsView({
 export default function App() {
   const [view, setView] = useState<View>("home");
   const [interviewConfig, setInterviewConfig] = useState<InterviewConfig>(defaultInterviewConfig);
-  const [darkMode, setDarkMode] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   useEffect(() => {
@@ -356,11 +316,6 @@ export default function App() {
     return () => window.clearTimeout(refreshTimer);
   }, [view]);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkMode);
-    document.documentElement.dataset.theme = darkMode ? "interview-dark" : "interview-light";
-  }, [darkMode]);
-
   const navigate = (nextView: View) => {
     setView(nextView);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -377,11 +332,7 @@ export default function App() {
           onToggleSidebar={() => setSidebarExpanded((expanded) => !expanded)}
         />
         <div className="min-w-0 flex-1">
-          <Topbar
-            view={view}
-            darkMode={darkMode}
-            onToggleTheme={() => setDarkMode((value) => !value)}
-          />
+          <Topbar view={view} />
           <SessionExpiredNotice />
           {view === "home" && (
             <HomeView
@@ -406,12 +357,7 @@ export default function App() {
             <InterviewRoom config={interviewConfig} onLeave={() => navigate("home")} />
           )}
           {view === "progress" && <ProgressView />}
-          {view === "settings" && (
-            <SettingsView
-              darkMode={darkMode}
-              onToggleTheme={() => setDarkMode((value) => !value)}
-            />
-          )}
+          {view === "settings" && <SettingsView />}
         </div>
       </div>
     </div>

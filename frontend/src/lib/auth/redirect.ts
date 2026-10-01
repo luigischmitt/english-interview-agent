@@ -1,6 +1,6 @@
 const internalOrigin = "http://english-interview-agent.internal";
 
-export function sanitizeNextPath(value: string | null | undefined, fallback = "/") {
+export function sanitizeNextPath(value: string | null | undefined, fallback = "/dashboard") {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
     return fallback;
   }

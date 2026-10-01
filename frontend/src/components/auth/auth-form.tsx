@@ -108,13 +108,13 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
           password,
           options: {
             data: { full_name: name.trim() },
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=%2F`,
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=%2Fdashboard`,
           },
         });
 
         if (signUpError) throw signUpError;
         if (data.session) {
-          router.replace("/");
+          router.replace("/dashboard");
           return;
         }
 

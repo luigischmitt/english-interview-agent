@@ -67,7 +67,7 @@ export async function updateSupabaseSession(request: NextRequest) {
   }
 
   if (user && authEntryRoutes.has(request.nextUrl.pathname)) {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   return response;
