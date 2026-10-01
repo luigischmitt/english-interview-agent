@@ -47,6 +47,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `KOKORO_TIMEOUT_MS` | `15000` | Positive request timeout in milliseconds (also used by `openrouter`). |
 | `INTERVIEWER_VOICE` | `af_bella+af_heart` (`af_heart` with `openrouter`) | Voice passed to the provider. Blends containing `+` are rejected at startup with `openrouter`. |
 | `OPENROUTER_SPEECH_MODEL` | `hexgrad/kokoro-82m` | Speech model when `SPEECH_PROVIDER=openrouter`. Requires `OPENROUTER_API_KEY`, otherwise the backend fails at startup. |
+| `OPENROUTER_SPEECH_HEDGE_AFTER_MS` | `1500` | Integer 0-10000. With `openrouter`, synthesis goes to DeepInfra first; if it has not answered after this delay (or fails sooner), a second request routed to Together starts and the first successful response wins. `0` disables hedging. |
 | `OPENROUTER_SPEECH_URL` | `https://openrouter.ai/api/v1/audio/speech` | Speech endpoint override, mainly for tests. |
 | `INTERVIEWER_SPEED` | `1` | Positive default speech speed. |
 | `AZURE_SPEECH_KEY` | — | Azure Speech resource key. Required only for voice transcription. Keep it server-side. |
@@ -98,6 +99,11 @@ the OpenRouter price is not confirmed. Only single voices work (default
 they are rejected at startup. `speed` is sent only when `INTERVIEWER_SPEED`
 is not `1` (verified live), and every request asks OpenRouter for
 `data_collection: "deny"`. `/api/v1/speech/health` reports `ready` without calling OpenRouter.
+Upstream latency varies a lot (0.5-10 s), so requests are hedged: the primary asks
+OpenRouter to prefer DeepInfra, and after `OPENROUTER_SPEECH_HEDGE_AFTER_MS` a second
+request prefers Together (about 6x the price, paid only when the hedge starts); the loser is aborted.
+The `speech_synthesis_timing` log gains a content-free `hedge` field:
+`not_needed`, `primary_won`, `hedge_won` or `both_failed`.
 When synthesis fails, the API returns `503 SPEECH_PROVIDER_UNAVAILABLE` and the
 frontend keeps showing the question as text with an audio-unavailable message.
 

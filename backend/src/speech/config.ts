@@ -7,7 +7,7 @@ export type SpeechConfig = {
   interviewerVoice: string;
   defaultSpeed: number;
   format: AudioFormat;
-  openRouter?: { apiKey: string; url: string; model: string };
+  openRouter?: { apiKey: string; url: string; model: string; hedgeAfterMs: number };
 };
 
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
@@ -20,6 +20,15 @@ function parsePositiveNumber(value: string | undefined, fallback: number): numbe
     throw new Error("Speech configuration values must be positive numbers.");
   }
 
+  return parsed;
+}
+
+function parseHedgeAfterMs(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return 1_500;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 10_000) {
+    throw new Error("OPENROUTER_SPEECH_HEDGE_AFTER_MS must be an integer between 0 and 10000.");
+  }
   return parsed;
 }
 
@@ -47,6 +56,7 @@ export function loadSpeechConfig(environment = process.env): SpeechConfig {
       apiKey,
       url: environment.OPENROUTER_SPEECH_URL?.trim() || "https://openrouter.ai/api/v1/audio/speech",
       model: environment.OPENROUTER_SPEECH_MODEL?.trim() || "hexgrad/kokoro-82m",
+      hedgeAfterMs: parseHedgeAfterMs(environment.OPENROUTER_SPEECH_HEDGE_AFTER_MS),
     };
   }
 

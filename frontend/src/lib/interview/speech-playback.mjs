@@ -130,6 +130,24 @@ function acquireSpeechBlob(options, text) {
   };
 }
 
+/** Advances caption segments against the playback progress of one audio track (estimated by word count). */
+function createCaptionUpdater(captionSegments, getAudio, isCancelled, onSegment) {
+  const wordCount = (segment) => segment.split(/\s+/u).filter(Boolean).length;
+  const totalWords = captionSegments.reduce((total, segment) => total + wordCount(segment), 0);
+  return () => {
+    const audio = getAudio();
+    if (!captionSegments.length || !Number.isFinite(audio?.duration) || audio.duration <= 0 || totalWords === 0) return;
+    const playedWords = Math.min(1, audio.currentTime / audio.duration) * totalWords;
+    let boundary = 0;
+    let segmentIndex = captionSegments.length - 1;
+    for (let index = 0; index < captionSegments.length; index += 1) {
+      boundary += wordCount(captionSegments[index]);
+      if (playedWords < boundary) { segmentIndex = index; break; }
+    }
+    if (!isCancelled()) onSegment?.(captionSegments[segmentIndex]);
+  };
+}
+
 export function synthesizeInterviewerQuestion(text, options) {
   const timeoutMs = options.timeoutMs ?? 20_000;
   const playbackTimeoutMs = options.playbackTimeoutMs
@@ -206,19 +224,7 @@ export function synthesizeInterviewerQuestion(text, options) {
         const onError = () => reject(new Error("Audio playback failed."));
         const onPlaying = () => options.onPlaybackStarted?.();
         const captionSegments = options.captionSegments?.filter(Boolean) ?? [];
-        const totalWords = captionSegments.reduce((total, segment) => total + segment.split(/\s+/u).filter(Boolean).length, 0);
-        const onTimeUpdate = () => {
-          if (!captionSegments.length || !Number.isFinite(audio?.duration) || audio.duration <= 0 || totalWords === 0) return;
-          const playedRatio = Math.min(1, audio.currentTime / audio.duration);
-          const playedWords = playedRatio * totalWords;
-          let boundary = 0;
-          let segmentIndex = captionSegments.length - 1;
-          for (let index = 0; index < captionSegments.length; index += 1) {
-            boundary += captionSegments[index].split(/\s+/u).filter(Boolean).length;
-            if (playedWords < boundary) { segmentIndex = index; break; }
-          }
-          if (!cancelled) options.onSegment?.(captionSegments[segmentIndex]);
-        };
+        const onTimeUpdate = createCaptionUpdater(captionSegments, () => audio, () => cancelled, options.onSegment);
         if (captionSegments.length && !cancelled) options.onSegment?.(captionSegments[0]);
         audio.addEventListener("ended", onEnded, { once: true });
         audio.addEventListener("error", onError, { once: true });
@@ -263,52 +269,214 @@ export function synthesizeInterviewerQuestion(text, options) {
   return { promise, cancel };
 }
 
-export function playInterviewerSegments(segments, options) {
-  let cancelled = false;
-  let activePlayback = null;
+// Sentences shorter than this are merged with the next one so no request is tiny; a sentence is never split.
+export const minimumChunkCharacters = 40;
+// At most this many chunk requests are in flight at once.
+export const maxConcurrentChunkRequests = 3;
 
-  const utterance = segments.map((segment) => segment.trim()).filter(Boolean);
-  const promise = (async () => {
-    if (cancelled) return { status: "cancelled" };
-    if (!utterance.length) return { status: "completed" };
-    activePlayback = synthesizeInterviewerQuestion(utterance.join(" "), { ...options, captionSegments: utterance });
-    const result = await activePlayback.promise;
-    activePlayback = null;
-    return result;
-  })();
+/** Groups sentences into synthesis chunks: each chunk is at least `minimumChunkCharacters` long, except a lone short utterance. */
+export function groupInterviewerSentences(segments) {
+  const sentences = segments.map((segment) => segment.trim()).filter(Boolean);
+  const chunks = [];
+  let pending = [];
+  for (const sentence of sentences) {
+    pending.push(sentence);
+    if (pending.join(" ").length >= minimumChunkCharacters) {
+      chunks.push(pending);
+      pending = [];
+    }
+  }
+  if (pending.length) {
+    if (chunks.length) chunks[chunks.length - 1].push(...pending);
+    else chunks.push(pending);
+  }
+  return chunks.map((group) => ({ text: group.join(" "), sentences: group }));
+}
+
+/** Requests every chunk (at most `maxConcurrentChunkRequests` at a time, in order); leases dedupe against prewarmed blobs. */
+function requestChunks(chunks, options) {
+  let active = 0;
+  let next = 0;
+  let stopped = false;
+  const entries = chunks.map((chunk) => {
+    const entry = { chunk, lease: null };
+    entry.promise = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
+    entry.promise.catch(() => {});
+    return entry;
+  });
+  const pump = () => {
+    while (!stopped && active < maxConcurrentChunkRequests && next < entries.length) {
+      const entry = entries[next++];
+      active += 1;
+      entry.lease = acquireSpeechBlob(options, entry.chunk.text);
+      entry.lease.promise.then(entry.resolve, entry.reject).then(() => { active -= 1; pump(); });
+      if (next === 1) options.onSynthesisStarted?.();
+    }
+  };
+  pump();
+  return {
+    entries,
+    stop() {
+      stopped = true;
+      for (const entry of entries) entry.lease?.release(false);
+    },
+  };
+}
+
+const unavailableMessages = {
+  default: "O áudio não está disponível agora. Você pode continuar sem ele.",
+  network: "O áudio demorou demais para responder. Você pode continuar sem ele.",
+  playback: "A reprodução do áudio demorou demais. Você pode continuar sem ele.",
+};
+
+/**
+ * Plays an utterance chunk by chunk (see `groupInterviewerSentences`). Every chunk is requested right away, so chunk 1
+ * starts as soon as it arrives and later chunks are decoded ahead (preloaded Audio) to avoid audible gaps. A failed
+ * chunk ends playback as "unavailable" and the caller keeps the text visible; cancelling aborts pending requests.
+ */
+export function playInterviewerSegments(segments, options) {
+  const chunks = groupInterviewerSentences(segments);
+  const makeAudio = options.makeAudio ?? ((url) => new Audio(url));
+  const createObjectUrl = options.createObjectUrl ?? ((blob) => URL.createObjectURL(blob));
+  const revokeObjectUrl = options.revokeObjectUrl ?? ((url) => URL.revokeObjectURL(url));
+  const schedule = options.setTimeout ?? ((callback, delay) => window.setTimeout(callback, delay));
+  const unschedule = options.clearTimeout ?? ((id) => window.clearTimeout(id));
+  const timeoutMs = options.timeoutMs ?? 20_000;
+  let cancelled = false;
+  let requests = null;
+  let stopPlaying = null;
+  const prepared = [];
+  let resolveCancellation;
+  const cancellationResult = new Promise((resolve) => { resolveCancellation = resolve; });
+
+  const withDeadline = (promise, delay, message) => {
+    let id = null;
+    const deadline = new Promise((_resolve, reject) => {
+      id = schedule(() => reject(Object.assign(new Error(message), { isSpeechTimeout: true })), delay);
+    });
+    return Promise.race([promise, deadline]).finally(() => { if (id !== null) unschedule(id); });
+  };
+
+  // Waits for a chunk's blob and builds its Audio element so the browser can buffer it before it is needed.
+  const prepare = async (index) => {
+    const blob = await withDeadline(requests.entries[index].promise, timeoutMs, unavailableMessages.network);
+    if (index === 0) options.onSynthesisCompleted?.();
+    if (cancelled) throw Object.assign(new Error("cancelled"), { isCancelled: true });
+    const item = { url: createObjectUrl(blob), audio: null };
+    prepared.push(item);
+    item.audio = makeAudio(item.url);
+    try { item.audio.preload = "auto"; } catch { /* Best effort. */ }
+    return item;
+  };
+
+  const release = (item) => {
+    const audio = item.audio;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute?.("src");
+      if (typeof audio.load === "function") audio.load();
+    }
+    item.audio = null;
+    if (item.url) revokeObjectUrl(item.url);
+    item.url = null;
+  };
+
+  const playChunk = (item, chunk, isFirst) => new Promise((resolve, reject) => {
+    const audio = item.audio;
+    const words = chunk.text.split(/\s+/u).length;
+    const playbackTimeoutMs = options.playbackTimeoutMs ?? Math.min(45_000, Math.max(12_000, words * 800));
+    const onTimeUpdate = createCaptionUpdater(chunk.sentences, () => audio, () => cancelled, options.onSegment);
+    const onEnded = () => finish(resolve, "ended");
+    const onError = () => finish(reject, new Error("Audio playback failed."));
+    const onPlaying = () => { if (isFirst) options.onPlaybackStarted?.(); };
+    const timer = schedule(() => finish(reject, Object.assign(new Error("playback timeout"), { isPlaybackTimeout: true })), playbackTimeoutMs);
+    function finish(settle, value) {
+      unschedule(timer);
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onError);
+      audio.removeEventListener("playing", onPlaying);
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("durationchange", onTimeUpdate);
+      stopPlaying = null;
+      settle(value);
+    }
+    stopPlaying = () => finish(resolve, "cancelled");
+    audio.addEventListener("ended", onEnded, { once: true });
+    audio.addEventListener("error", onError, { once: true });
+    audio.addEventListener("playing", onPlaying, { once: true });
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("durationchange", onTimeUpdate);
+    if (chunk.sentences.length && !cancelled) options.onSegment?.(chunk.sentences[0]);
+    Promise.resolve(audio.play()).catch((error) => finish(reject, error));
+  });
+
+  const run = async () => {
+    if (!chunks.length) return { status: "completed" };
+    requests = requestChunks(chunks, options);
+    let upcoming = prepare(0);
+    upcoming.catch(() => {});
+    for (let index = 0; index < chunks.length; index += 1) {
+      const item = await upcoming;
+      if (cancelled) return { status: "cancelled" };
+      // Start buffering the following chunk while this one plays.
+      upcoming = index + 1 < chunks.length ? prepare(index + 1) : null;
+      upcoming?.catch(() => {});
+      const outcome = await playChunk(item, chunks[index], index === 0);
+      release(item);
+      if (cancelled || outcome === "cancelled") return { status: "cancelled" };
+    }
+    return { status: "completed" };
+  };
+
+  const promise = Promise.race([run(), cancellationResult]).catch((error) => {
+    if (cancelled || error?.isCancelled) return { status: "cancelled" };
+    return {
+      status: "unavailable",
+      message: error?.isSpeechTimeout ? unavailableMessages.network
+        : error?.isPlaybackTimeout ? unavailableMessages.playback
+        : (error?.isSpeechResponseError || error?.isUnauthenticated) && error.message ? error.message
+        : unavailableMessages.default,
+    };
+  }).finally(() => {
+    requests?.stop();
+    stopPlaying?.();
+    for (const item of prepared) release(item);
+  });
 
   return {
     promise,
     cancel() {
       if (cancelled) return;
       cancelled = true;
-      activePlayback?.cancel();
-      activePlayback = null;
+      requests?.stop();
+      stopPlaying?.();
+      resolveCancellation({ status: "cancelled" });
+      for (const item of prepared) release(item);
     },
   };
 }
 
 /**
- * Starts synthesizing an utterance before it is needed. The request body matches `playInterviewerSegments` for the same
- * segments, so a later playback joins the in-flight request or reuses the finished blob (retained for `retainMs`).
- * `cancel()` aborts the request unless a playback has attached to it meanwhile.
+ * Starts synthesizing an utterance before it is needed, chunk by chunk with the same chunking and request bodies as
+ * `playInterviewerSegments`, so a later playback joins in-flight requests or reuses finished blobs (retained for
+ * `retainMs`). `cancel()` aborts the requests unless a playback has attached to them meanwhile.
  */
 export function prewarmInterviewerSpeech(segments, options) {
-  const text = segments.map((segment) => segment.trim()).filter(Boolean).join(" ");
-  if (!text) return { promise: Promise.resolve(false), cancel() {} };
+  const chunks = groupInterviewerSentences(segments);
+  if (!chunks.length) return { promise: Promise.resolve(false), cancel() {} };
   const schedule = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
   const unschedule = options.clearTimeout ?? ((id) => clearTimeout(id));
-  const lease = acquireSpeechBlob({ ...options, retainMs: options.retainMs ?? 30_000 }, text);
-  const timeoutId = schedule(() => lease.release(false), options.timeoutMs ?? 20_000);
-  const promise = lease.promise.then(() => true, () => false).finally(() => {
+  const requests = requestChunks(chunks, { ...options, retainMs: options.retainMs ?? 30_000, onSynthesisStarted: undefined });
+  const timeoutId = schedule(() => requests.stop(), options.timeoutMs ?? 20_000);
+  const promise = Promise.all(requests.entries.map((entry) => entry.promise)).then(() => true, () => false).finally(() => {
     unschedule(timeoutId);
-    lease.release(false);
+    requests.stop();
   });
   return {
     promise,
     cancel() {
       unschedule(timeoutId);
-      lease.release(false);
+      requests.stop();
     },
   };
 }
