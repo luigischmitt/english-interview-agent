@@ -8,10 +8,9 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     this.frameSamples = 1_600;
     this.frame = new Float32Array(this.frameSamples);
     this.frameOffset = 0;
-    this.flushing = false;
     this.port.onmessage = (event) => {
       if (event.data?.type !== "flush") return;
-      this.flushing = true;
+      // Emits the partial frame and keeps running: the microphone stays open between answers.
       this.postFrame();
       this.port.postMessage({ type: "flushed" });
     };
@@ -26,7 +25,6 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
   }
 
   process(inputs) {
-    if (this.flushing) return true;
     const channels = inputs[0];
     if (!channels?.length) return true;
     const frameCount = channels[0].length;

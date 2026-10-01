@@ -18,3 +18,9 @@ export function createInterviewHandoffTiming(options?: {
   now?: () => number;
   onComplete?: (metrics: InterviewHandoffMetrics) => void;
 }): { mark(stage: string): void; markPrepared(): void };
+
+export type ListeningHandoffMetrics = { playbackEndedToListeningMs: number; preconnected: boolean };
+export function createListeningHandoffTiming(options?: {
+  now?: () => number;
+  onComplete?: (metrics: ListeningHandoffMetrics) => void;
+}): { markPlaybackEnded(): void; markListening(details?: { preconnected?: boolean }): void };

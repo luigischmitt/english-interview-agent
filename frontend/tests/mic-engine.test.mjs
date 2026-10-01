@@ -1,0 +1,184 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { calibrationFrameCount, createMicEngine, defaultSpeechThreshold } from "../src/lib/interview/mic-engine.mjs";
+import { getSpeechThreshold } from "../src/lib/interview/vad-threshold.mjs";
+import { createFakeMicDeps } from "./mic-fakes.mjs";
+
+const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} !~ ${expected}`);
+
+async function readyEngine(options) {
+  const deps = createFakeMicDeps(options);
+  const engine = createMicEngine(deps);
+  await engine.acquire();
+  return { deps, engine, worklet: deps.log.worklets[0], track: deps.log.tracks[0] };
+}
+
+test("the microphone is acquired once, reused for every answer and released with the room", async () => {
+  const { deps, engine, worklet, track } = await readyEngine();
+  await engine.acquire();
+  assert.equal(await engine.ensureHealthy(), true);
+  assert.equal(deps.log.getUserMedia, 1);
+  assert.equal(deps.log.contexts.length, 1);
+
+  for (let answer = 0; answer < 3; answer += 1) {
+    const frames = [];
+    engine.startCapture((frame) => frames.push(frame));
+    worklet.frame(0.1);
+    engine.stopCapture();
+    assert.equal(frames.length, 1, `answer ${answer}`);
+    assert.equal(await engine.ensureHealthy(), true);
+  }
+  assert.equal(deps.log.getUserMedia, 1);
+  assert.equal(deps.log.contexts.length, 1);
+  assert.equal(track.stopped, false);
+
+  engine.release();
+  assert.equal(track.stopped, true);
+  assert.equal(deps.log.contexts[0].state, "closed");
+  assert.equal(worklet.port.onmessage, null);
+  assert.equal(engine.state, "idle");
+});
+
+test("frames outside an answer window are discarded and never reach a consumer", async () => {
+  const { engine, worklet } = await readyEngine();
+  const received = [];
+  worklet.frame(0.2); // idle: nobody is listening
+  engine.startCapture((frame) => received.push(frame.level.toFixed(2)));
+  worklet.frame(0.1);
+  engine.beginInterviewerSpeech(); // playback started: capture is force-stopped
+  worklet.frame(0.3);
+  worklet.frame(0.4);
+  assert.deepEqual(received, ["0.10"]);
+  assert.equal(engine.capturing, false);
+});
+
+test("frames already in flight when the answer window opens are dropped until the worklet flushes", async () => {
+  const { engine, worklet } = await readyEngine({ autoFlush: false });
+  const received = [];
+  engine.startCapture((frame) => received.push(frame.level.toFixed(2)));
+  worklet.frame(0.5); // the interviewer's tail, posted before the window opened
+  assert.deepEqual(received, []);
+  worklet.deliverFlush();
+  worklet.frame(0.1);
+  assert.deepEqual(received, ["0.10"]);
+});
+
+test("the noise floor is calibrated once from silent frames and never while the interviewer speaks", async () => {
+  const { engine, worklet } = await readyEngine();
+  assert.equal(engine.calibrated, false);
+  assert.equal(engine.noiseFloor, defaultSpeechThreshold);
+  const calibration = engine.calibrate();
+  for (let index = 0; index < calibrationFrameCount; index += 1) worklet.frame(0.01);
+  near(await calibration, getSpeechThreshold(Array(calibrationFrameCount).fill(0.01)));
+  assert.equal(engine.calibrated, true);
+  worklet.frame(0.01);
+
+  const aborted = readyEngine();
+  const second = await aborted;
+  const pending = second.engine.calibrate();
+  second.worklet.frame(0.01);
+  second.engine.beginInterviewerSpeech(); // TTS starts mid-calibration
+  assert.equal(await pending, null);
+  assert.equal(second.engine.calibrated, false);
+  assert.equal(await second.engine.calibrate(), null, "no calibration while the interviewer speaks");
+});
+
+test("calibration frames are never forwarded to a consumer", async () => {
+  const { engine, worklet } = await readyEngine();
+  const calibration = engine.calibrate();
+  for (let index = 0; index < calibrationFrameCount; index += 1) worklet.frame(0.01);
+  await calibration;
+  const received = [];
+  engine.startCapture((frame) => received.push(frame), { replayHeld: false });
+  assert.deepEqual(received, []);
+});
+
+test("the answer's first frames refresh the noise floor unless speech contaminated them", async () => {
+  const { engine, worklet } = await readyEngine();
+  engine.startCapture(() => {});
+  for (let index = 0; index < calibrationFrameCount; index += 1) worklet.frame(0.02);
+  near(engine.noiseFloor, 0.025);
+  const refreshed = engine.noiseFloor;
+  engine.stopCapture();
+
+  engine.startCapture(() => {});
+  for (let index = 0; index < calibrationFrameCount; index += 1) worklet.frame(0.2); // speaking from the first frame
+  assert.equal(engine.noiseFloor, refreshed);
+  assert.notEqual(refreshed, defaultSpeechThreshold);
+});
+
+test("a private engine keeps its calibration frames for the answer and replays them in order", async () => {
+  const { engine, worklet } = await readyEngine();
+  const calibration = engine.calibrate({ keepFrames: true });
+  for (let index = 1; index <= calibrationFrameCount; index += 1) worklet.frame(index / 100);
+  await calibration;
+  worklet.frame(0.06);
+  const received = [];
+  engine.startCapture((frame) => received.push(frame.level.toFixed(2)), { replayHeld: true });
+  worklet.frame(0.07);
+  assert.deepEqual(received, ["0.01", "0.02", "0.03", "0.04", "0.05", "0.06", "0.07"]);
+});
+
+test("flush delivers the partial frame to the sink before resolving", async () => {
+  const { engine, worklet } = await readyEngine();
+  const received = [];
+  engine.startCapture((frame) => received.push(frame.samples.length));
+  worklet.partialLevel = 0.1;
+  await engine.flush();
+  assert.deepEqual(received, [800]);
+});
+
+test("an ended track is reacquired once automatically while idle", async () => {
+  const { deps, engine, track } = await readyEngine();
+  const lost = [];
+  engine.on("lost", (reason) => lost.push(reason));
+  track.emit("ended");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(lost, ["ended"]);
+  assert.equal(deps.log.getUserMedia, 2);
+  assert.equal(engine.state, "ready");
+
+  deps.log.tracks[1].emit("ended"); // a second loss in the same answer cycle is not retried automatically
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(deps.log.getUserMedia, 2);
+  assert.equal(engine.isHealthy(), false);
+  assert.equal(await engine.ensureHealthy(), true, "the next answer window reacquires");
+  assert.equal(deps.log.getUserMedia, 3);
+});
+
+test("ensureHealthy reuses a healthy microphone, reacquires a muted or forced one", async () => {
+  const { deps, engine, track } = await readyEngine();
+  assert.equal(await engine.ensureHealthy(), true);
+  assert.equal(deps.log.getUserMedia, 1);
+
+  track.emit("mute");
+  assert.equal(engine.isHealthy(), false);
+  assert.equal(await engine.ensureHealthy(), true);
+  assert.equal(deps.log.getUserMedia, 2);
+  assert.equal(track.stopped, true, "the muted track is released");
+
+  assert.equal(await engine.ensureHealthy({ force: true }), true);
+  assert.equal(deps.log.getUserMedia, 3);
+});
+
+test("a denied microphone leaves the engine failed so the caller can fall back", async () => {
+  const deps = createFakeMicDeps({ rejectWith: Object.assign(new Error("denied"), { name: "NotAllowedError" }) });
+  const engine = createMicEngine(deps);
+  await assert.rejects(engine.acquire(), /denied/);
+  assert.equal(engine.state, "failed");
+  assert.equal(await engine.ensureHealthy(), false);
+  assert.equal(deps.log.contexts.length, 0);
+});
+
+test("releasing during acquisition stops the late stream and a released engine does not revive", async () => {
+  const deps = createFakeMicDeps();
+  const engine = createMicEngine(deps);
+  const pending = engine.acquire();
+  engine.release();
+  await assert.rejects(pending, /cancelled/);
+  assert.equal(deps.log.tracks[0].stopped, true);
+  assert.equal(engine.state, "idle");
+  assert.equal(await engine.ensureHealthy(), false);
+  await engine.acquire(); // StrictMode style re-acquire is allowed
+  assert.equal(engine.state, "ready");
+});

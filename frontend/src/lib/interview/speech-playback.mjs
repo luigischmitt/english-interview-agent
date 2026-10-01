@@ -271,6 +271,8 @@ export function synthesizeInterviewerQuestion(text, options) {
 
 // Sentences shorter than this are merged with the next one so no request is tiny; a sentence is never split.
 export const minimumChunkCharacters = 40;
+// The final chunk reports it is ending once at most this much of it remains (or at its start when it is shorter).
+export const finalChunkLeadMs = 3_000;
 // At most this many chunk requests are in flight at once.
 export const maxConcurrentChunkRequests = 3;
 
@@ -381,14 +383,30 @@ export function playInterviewerSegments(segments, options) {
     item.url = null;
   };
 
-  const playChunk = (item, chunk, isFirst) => new Promise((resolve, reject) => {
+  const handoffLeadMs = options.finalChunkLeadMs ?? finalChunkLeadMs;
+  let finalChunkAnnounced = false;
+  const playChunk = (item, chunk, isFirst, isLast) => new Promise((resolve, reject) => {
     const audio = item.audio;
     const words = chunk.text.split(/\s+/u).length;
     const playbackTimeoutMs = options.playbackTimeoutMs ?? Math.min(45_000, Math.max(12_000, words * 800));
-    const onTimeUpdate = createCaptionUpdater(chunk.sentences, () => audio, () => cancelled, options.onSegment);
+    const updateCaption = createCaptionUpdater(chunk.sentences, () => audio, () => cancelled, options.onSegment);
+    let playingStarted = false;
+    // Zero-wait handoff: tells the caller the utterance is about to end (final chunk, <= handoffLeadMs left) once.
+    const announceFinalChunk = () => {
+      if (!isLast || !playingStarted || finalChunkAnnounced || cancelled) return;
+      const duration = audio.duration;
+      if (Number.isFinite(duration) && duration > 0 && duration * 1_000 - (audio.currentTime || 0) * 1_000 > handoffLeadMs) return;
+      finalChunkAnnounced = true;
+      options.onFinalChunkStarted?.();
+    };
+    const onTimeUpdate = () => { updateCaption(); announceFinalChunk(); };
     const onEnded = () => finish(resolve, "ended");
     const onError = () => finish(reject, new Error("Audio playback failed."));
-    const onPlaying = () => { if (isFirst) options.onPlaybackStarted?.(); };
+    const onPlaying = () => {
+      playingStarted = true;
+      if (isFirst) options.onPlaybackStarted?.();
+      announceFinalChunk();
+    };
     const timer = schedule(() => finish(reject, Object.assign(new Error("playback timeout"), { isPlaybackTimeout: true })), playbackTimeoutMs);
     function finish(settle, value) {
       unschedule(timer);
@@ -421,7 +439,7 @@ export function playInterviewerSegments(segments, options) {
       // Start buffering the following chunk while this one plays.
       upcoming = index + 1 < chunks.length ? prepare(index + 1) : null;
       upcoming?.catch(() => {});
-      const outcome = await playChunk(item, chunks[index], index === 0);
+      const outcome = await playChunk(item, chunks[index], index === 0, index === chunks.length - 1);
       release(item);
       if (cancelled || outcome === "cancelled") return { status: "cancelled" };
     }

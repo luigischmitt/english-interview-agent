@@ -29,6 +29,9 @@ export type SpeechPlaybackOptions = {
   onSynthesisStarted?: () => void;
   onSynthesisCompleted?: () => void;
   onPlaybackStarted?: () => void;
+  /** playInterviewerSegments only: fired once when the final chunk is playing and at most `finalChunkLeadMs` of it remains (at its start if shorter). */
+  onFinalChunkStarted?: () => void;
+  finalChunkLeadMs?: number;
   /** Caption excerpts from one utterance, advanced against the single audio track duration (synthesizeInterviewerQuestion only; playInterviewerSegments derives them per chunk). */
   captionSegments?: string[];
 };
@@ -50,6 +53,7 @@ export function resolveInterviewerCaption(input: {
 }): string;
 export function synthesizeInterviewerQuestion(text: string, options: SpeechPlaybackOptions): SpeechPlayback;
 export const minimumChunkCharacters: number;
+export const finalChunkLeadMs: number;
 export const maxConcurrentChunkRequests: number;
 /** Groups sentences into synthesis chunks; sentences under ~40 characters merge with the next, none is ever split. */
 export function groupInterviewerSentences(segments: string[]): { text: string; sentences: string[] }[];
