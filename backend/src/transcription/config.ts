@@ -21,6 +21,8 @@ export type TranscriptionConfig = {
   cartesiaIncompleteGraceMs: number;
   azureTimingFromInkTurns: boolean;
   cartesiaTurnEndTimeoutMs: number | null;
+  cartesiaPrepareAfterMs: number;
+  cartesiaMaxPrepares: number;
 };
 
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
@@ -84,6 +86,8 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     cartesiaAnswerGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS, 3_500, 500, 10_000, "Cartesia answer grace"),
     cartesiaIncompleteGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_INCOMPLETE_GRACE_MS, 6_000, 500, 15_000, "Cartesia incomplete-turn grace"),
     azureTimingFromInkTurns: environment.AZURE_TIMING_FROM_INK_TURNS === "true",
+    cartesiaPrepareAfterMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS, 1_200, 0, 10_000, "Cartesia prepare delay"),
+    cartesiaMaxPrepares: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_MAX_PREPARES, 2, 0, 5, "Cartesia max prepares"),
     cartesiaTurnEndTimeoutMs: environment.CARTESIA_TURN_END_TIMEOUT_MS?.trim()
       ? parseIntegerInRange(environment.CARTESIA_TURN_END_TIMEOUT_MS, 640, 640, 11_200, "Cartesia turn end timeout")
       : null,

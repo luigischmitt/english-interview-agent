@@ -34,8 +34,13 @@ export function createInterviewHandoffTiming({ speechEndToFinalizationMs = 0, no
   const marks = {};
   const serverVadMs = safeDuration(speechEndToFinalizationMs);
   let completed = false;
+  let prepared = false;
 
   return {
+    /** The next turn was decided and pre-synthesized before the final transcript arrived. */
+    markPrepared() {
+      if (!completed) prepared = true;
+    },
     mark(stage) {
       if (completed || !timingStages.includes(stage) || Number.isFinite(marks[stage])) return;
       marks[stage] = now();
@@ -66,6 +71,7 @@ export function createInterviewHandoffTiming({ speechEndToFinalizationMs = 0, no
         synthesisMs,
         playbackStartMs,
         unaccountedMs,
+        prepared,
       });
     },
   };

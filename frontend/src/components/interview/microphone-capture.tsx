@@ -26,6 +26,7 @@ type StreamMessage = {
   reason?: string;
   committed?: string;
   partial?: string;
+  revision?: number;
   blockCount?: number;
   assessedBlockCount?: number;
   failedBlockCount?: number;
@@ -61,6 +62,10 @@ type MicrophoneCaptureProps = {
   /** Live, display-only caption of the answer in progress (Cartesia Ink-2 only). Cleared on new capture, finalize, cancel and unmount. */
   onCaptionChange?: (caption: CandidateCaption) => void;
   captionsEnabled?: boolean;
+  /** Cartesia only: the backend expects the answer to end soon with this text (display-independent; never submitted). */
+  onProvisionalAnswer?: (transcript: string, revision: number) => void;
+  /** The speaker resumed after a pause, so any provisional answer is stale. */
+  onSpeechResumed?: () => void;
   onHandoffTimingEvent?: (event: HandoffTimingEvent, details?: { speechEndToFinalizationMs?: number }) => void;
   autoStartSignal?: string | null;
   assessmentSockets: AssessmentSocketRegistry;
@@ -102,7 +107,7 @@ function rootMeanSquare(samples: Float32Array): number {
   return Math.sqrt(sum / Math.max(1, samples.length));
 }
 
-export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onCaptionChange, captionsEnabled = false, onHandoffTimingEvent, autoStartSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onCaptionChange, captionsEnabled = false, onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +128,8 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const onCaptureStateChangeRef = useRef(onCaptureStateChange);
   const onCaptionChangeRef = useRef(onCaptionChange);
   const captionsEnabledRef = useRef(captionsEnabled);
+  const onProvisionalAnswerRef = useRef(onProvisionalAnswer);
+  const onSpeechResumedRef = useRef(onSpeechResumed);
   const assessmentContextRef = useRef(assessmentContext);
   const lastAutoStartSignalRef = useRef<string | null>(null);
 
@@ -132,8 +139,10 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     onCaptureStateChangeRef.current = onCaptureStateChange;
     onCaptionChangeRef.current = onCaptionChange;
     captionsEnabledRef.current = captionsEnabled;
+    onProvisionalAnswerRef.current = onProvisionalAnswer;
+    onSpeechResumedRef.current = onSpeechResumed;
     assessmentContextRef.current = assessmentContext;
-  }, [assessmentContext, captionsEnabled, onCaptionChange, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+  }, [assessmentContext, captionsEnabled, onCaptionChange, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
 
   const clearCaption = useCallback(() => onCaptionChangeRef.current?.(emptyCaption), []);
 
@@ -335,7 +344,18 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             onCaptureStateChangeRef.current?.("detected");
             return;
           }
-          if (message.type === "silence-detected" || message.type === "speech-resumed") return;
+          if (message.type === "answer-provisional") {
+            const { transcript, revision } = message;
+            if (typeof transcript === "string" && typeof revision === "number" && Number.isInteger(revision) && !finalizationRequestedRef.current) {
+              onProvisionalAnswerRef.current?.(transcript, revision);
+            }
+            return;
+          }
+          if (message.type === "speech-resumed") {
+            onSpeechResumedRef.current?.();
+            return;
+          }
+          if (message.type === "silence-detected") return;
           if (message.type === "transcription-queued" || message.type === "finalizing") {
             if (message.type === "finalizing") {
               onHandoffTimingEvent?.("finalizing", message.timing);

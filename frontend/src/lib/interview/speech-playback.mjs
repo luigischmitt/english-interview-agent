@@ -53,6 +53,22 @@ export function resolveInterviewerCaption({ audioEnabled, isSpeaking, playbackFa
 }
 
 const speechFlights = new Map();
+// Finished blobs of prepared (pre-synthesized) utterances, reusable by an identical request for a short time.
+const retainedSpeechBlobs = new Map();
+
+function retainSpeechBlob(key, blob, retainMs) {
+  const previous = retainedSpeechBlobs.get(key);
+  if (previous) clearTimeout(previous.timer);
+  const timer = setTimeout(() => { if (retainedSpeechBlobs.get(key)?.blob === blob) retainedSpeechBlobs.delete(key); }, retainMs);
+  timer.unref?.();
+  retainedSpeechBlobs.set(key, { blob, timer });
+}
+
+/** Test hook: forgets retained blobs and their timers. */
+export function clearRetainedSpeechBlobs() {
+  for (const entry of retainedSpeechBlobs.values()) clearTimeout(entry.timer);
+  retainedSpeechBlobs.clear();
+}
 
 function acquireSpeechBlob(options, text) {
   const request = {
@@ -61,6 +77,8 @@ function acquireSpeechBlob(options, text) {
     body: JSON.stringify(options.requestBody ?? { text }),
   };
   const key = JSON.stringify([options.endpoint, request.method, request.headers, request.body]);
+  const retained = retainedSpeechBlobs.get(key);
+  if (retained) return { promise: Promise.resolve(retained.blob), release() {} };
   let flight = speechFlights.get(key);
   if (!flight) {
     const controller = new AbortController();
@@ -77,7 +95,9 @@ function acquireSpeechBlob(options, text) {
           error.isSpeechResponseError = true;
           throw error;
         }
-        return response.blob();
+        const blob = await response.blob();
+        if (options.retainMs > 0 && !controller.signal.aborted) retainSpeechBlob(key, blob, options.retainMs);
+        return blob;
       }),
     };
     speechFlights.set(key, flight);
@@ -264,6 +284,31 @@ export function playInterviewerSegments(segments, options) {
       cancelled = true;
       activePlayback?.cancel();
       activePlayback = null;
+    },
+  };
+}
+
+/**
+ * Starts synthesizing an utterance before it is needed. The request body matches `playInterviewerSegments` for the same
+ * segments, so a later playback joins the in-flight request or reuses the finished blob (retained for `retainMs`).
+ * `cancel()` aborts the request unless a playback has attached to it meanwhile.
+ */
+export function prewarmInterviewerSpeech(segments, options) {
+  const text = segments.map((segment) => segment.trim()).filter(Boolean).join(" ");
+  if (!text) return { promise: Promise.resolve(false), cancel() {} };
+  const schedule = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
+  const unschedule = options.clearTimeout ?? ((id) => clearTimeout(id));
+  const lease = acquireSpeechBlob({ ...options, retainMs: options.retainMs ?? 30_000 }, text);
+  const timeoutId = schedule(() => lease.release(false), options.timeoutMs ?? 20_000);
+  const promise = lease.promise.then(() => true, () => false).finally(() => {
+    unschedule(timeoutId);
+    lease.release(false);
+  });
+  return {
+    promise,
+    cancel() {
+      unschedule(timeoutId);
+      lease.release(false);
     },
   };
 }

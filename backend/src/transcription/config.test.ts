@@ -67,6 +67,10 @@ describe("optional Cartesia Ink-2 configuration", () => {
     expect(config.cartesiaAnswerGraceMs).toBe(3_500);
     expect(config.cartesiaIncompleteGraceMs).toBe(6_000);
     expect(config.cartesiaTurnEndTimeoutMs).toBeNull();
+    expect(config.cartesiaPrepareAfterMs).toBe(1_200);
+    expect(config.cartesiaMaxPrepares).toBe(2);
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS: "0" }).cartesiaPrepareAfterMs).toBe(0);
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_MAX_PREPARES: "6" })).toThrow("0 to 5");
   });
 
   it("parses the provider, key and bounded timings", () => {

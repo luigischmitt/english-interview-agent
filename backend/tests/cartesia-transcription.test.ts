@@ -454,6 +454,97 @@ describe("Cartesia Ink-2 live captions", () => {
   });
 });
 
+describe("Cartesia Ink-2 provisional answers", () => {
+  const provisionals = (fixture: Fixture) => fixture.messages.filter((message) => message.type === "answer-provisional");
+  const endTurn = (ink: FakeInk, id: number, text: string) => {
+    ink.emit({ type: "turn.start", turn_id: id });
+    ink.emit({ type: "turn.update", turn_id: id, transcript: text });
+    ink.emit({ type: "turn.end", turn_id: id, transcript: text });
+  };
+
+  it("sends the committed transcript after the delay, before complete, without captions or logging the text", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { ink, fixture } = await setup({}, createWhisper(), { answerGraceMs: 1_500, prepareAfterMs: 300 });
+    await start(fixture);
+    await speak(fixture, 800);
+    endTurn(ink, 0, "Zeta provisional sentence.");
+    const endedAt = Date.now();
+    const provisional = await fixture.waitFor("answer-provisional");
+    expect(provisional.transcript).toBe("Zeta provisional sentence.");
+    expect(provisional.revision).toBe(1);
+    expect(provisional.at - endedAt).toBeGreaterThanOrEqual(250);
+    const complete = await fixture.waitFor("complete");
+    expect(complete.transcript).toBe(provisional.transcript);
+    expect(provisional.at).toBeLessThan(complete.at);
+    expect(provisionals(fixture)).toHaveLength(1);
+    const logs = logsOf(info);
+    expect(logs).not.toContain("Zeta");
+    expect(logs).toContain('"preparesSent":1');
+  });
+
+  it("is cancelled by a new Ink-2 turn", async () => {
+    const { ink, fixture } = await setup({}, createWhisper(), { answerGraceMs: 2_000, prepareAfterMs: 400 });
+    await start(fixture);
+    await speak(fixture, 800);
+    endTurn(ink, 0, "First sentence.");
+    await delay(200);
+    ink.emit({ type: "turn.start", turn_id: 1 });
+    await delay(500);
+    expect(provisionals(fixture)).toHaveLength(0);
+  });
+
+  it("is cancelled by resumed local VAD speech", async () => {
+    const { ink, fixture } = await setup({}, createWhisper(), { answerGraceMs: 2_500, prepareAfterMs: 900 });
+    await start(fixture);
+    await speak(fixture, 800);
+    endTurn(ink, 0, "Second sentence.");
+    fixture.socket.send(JSON.stringify({ type: "level", value: 0.001 }));
+    await delay(100);
+    await speak(fixture, 500);
+    await delay(700);
+    expect(fixture.find("speech-resumed")).toBeDefined();
+    expect(provisionals(fixture)).toHaveLength(0);
+  });
+
+  it("is not sent when disabled", async () => {
+    const disabled = await setup({}, createWhisper(), { answerGraceMs: 1_000, prepareAfterMs: 0 });
+    await start(disabled.fixture);
+    await speak(disabled.fixture, 800);
+    endTurn(disabled.ink, 0, "Quiet sentence.");
+    await disabled.fixture.waitFor("complete");
+    expect(provisionals(disabled.fixture)).toHaveLength(0);
+  });
+
+  it("sends at most two per answer with increasing revisions and none after finalizing", async () => {
+    const { ink, fixture } = await setup({}, createWhisper(), { answerGraceMs: 1_500, prepareAfterMs: 200, maxPrepares: 2 });
+    await start(fixture);
+    await speak(fixture, 800);
+    endTurn(ink, 0, "One.");
+    await delay(450);
+    endTurn(ink, 1, "Two.");
+    await delay(450);
+    endTurn(ink, 2, "Three.");
+    await delay(450);
+    expect(provisionals(fixture).map((message) => [message.transcript, message.revision])).toEqual([["One.", 1], ["One. Two.", 2]]);
+    fixture.socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+    await fixture.waitFor("finalizing");
+    await fixture.waitFor("complete");
+    await delay(400);
+    expect(provisionals(fixture)).toHaveLength(2);
+  });
+
+  it("does not send once finalizing has begun", async () => {
+    const { ink, fixture } = await setup({}, createWhisper(), { answerGraceMs: 1_500, prepareAfterMs: 400 });
+    await start(fixture);
+    await speak(fixture, 800);
+    endTurn(ink, 0, "Late sentence.");
+    fixture.socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+    await fixture.waitFor("complete");
+    await delay(600);
+    expect(provisionals(fixture)).toHaveLength(0);
+  });
+});
+
 describe("looksUnfinished", () => {
   it("treats sentences with final punctuation as complete", () => {
     expect(looksUnfinished("I chose Redis for the product catalog.")).toBe(false);
