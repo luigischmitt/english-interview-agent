@@ -8,6 +8,7 @@ export type InterviewConfig = {
   showQuestionCaptions: boolean;
   candidateCameraEnabled: boolean;
   autoCaptureVoice: boolean;
+  showCandidateCaptions: boolean;
 };
 
 export type InterviewQuestion = {

@@ -28,8 +28,12 @@ prática da resposta em inglês da análise futura de áudio.
   persistido; a presença do entrevistador é apenas tipográfica/sonora, sem
   avatar ou câmera simulada.
 - Respostas somente por voz usando `AudioWorklet`. O microfone pode iniciar
-  automaticamente após a pergunta ou manualmente; não há resposta digitada nem
-  legenda visível da fala do candidato. O navegador envia PCM mono s16le a
+  automaticamente após a pergunta ou manualmente; não há resposta digitada. Com
+  `TRANSCRIPTION_PROVIDER=cartesia` no backend, a fala aparece como legenda ao
+  vivo ("VOCÊ", trecho já fechado em tinta normal e trecho em andamento em tom
+  esmaecido) abaixo do bloco "Você", opção "Legenda da sua fala" ligada por
+  padrão na configuração. A legenda é só de exibição: não é salva, enviada nem
+  usada no relatório. Com Whisper não há legenda. O navegador envia PCM mono s16le a
   16 kHz em frames de aproximadamente 100 ms pelo WebSocket v2. Após detectar
   3,5 segundos de silêncio, o backend mantém uma janela automática e reversível
   de 1,5 segundo, continuando a receber áudio; se a fala recomeçar nesse
@@ -70,9 +74,12 @@ prática da resposta em inglês da análise futura de áudio.
 
 O estado da câmera e do microfone é temporário e os tracks são encerrados ao
 desligar, sair da sala ou desmontar o componente. As legendas visíveis durante
-a entrevista são somente as do entrevistador; o texto final reconhecido da
-fala do candidato permanece interno para envio, raciocínio da entrevista e
-persistência autorizada. Uma transcrição final não vazia é submetida
+a entrevista são as do entrevistador e, quando o backend usa Cartesia Ink-2 e a
+opção está ligada, a legenda ao vivo da sua fala (mensagem `caption` do
+WebSocket, `aria-live="off"`, sem animação de digitação, limpa ao finalizar,
+cancelar ou trocar de pergunta). O texto parcial nunca é persistido; o texto
+final reconhecido (`complete`) permanece a única fonte para envio, raciocínio da
+entrevista e persistência autorizada. Uma transcrição final não vazia é submetida
 automaticamente quando o processamento termina.
 
 ## Variáveis de ambiente

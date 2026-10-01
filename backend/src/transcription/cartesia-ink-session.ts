@@ -27,6 +27,8 @@ export type CartesiaInkOptions = {
   onTurnStart?: () => void;
   /** Called after each `turn.end` with that turn's final transcript. */
   onTurnEnd?: (transcript: string) => void;
+  /** Called whenever the live caption text (finished turns or the current partial turn) may have changed. Display-only. */
+  onCaptionChange?: () => void;
   /** Called once, with a fixed content-free reason, when the connection fails or the server reports an error. */
   onFailure?: (reason: CartesiaFailureReason) => void;
 };
@@ -87,6 +89,16 @@ export class CartesiaInkSession {
   /** Accumulated answer transcript: every finished turn in order, plus the latest unfinished turn if any. */
   transcript(): string {
     return [...this.finals, this.activeTurn ? this.partial : ""].join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  /** Finished turns joined in order (display-only caption text). */
+  committedText(): string {
+    return this.finals.join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  /** Latest text of the turn in progress; empty once that turn ended (display-only caption text). */
+  partialText(): string {
+    return (this.activeTurn ? this.partial : "").replace(/\s+/g, " ").trim();
   }
 
   open(): void {
@@ -241,6 +253,7 @@ export class CartesiaInkSession {
       case "turn.eager_end":
         this.activeTurn = true;
         this.partial = text;
+        this.options.onCaptionChange?.();
         break;
       case "turn.end": {
         const finalText = text.trim();
@@ -249,6 +262,7 @@ export class CartesiaInkSession {
         this.activeTurn = false;
         this.turnEnds += 1;
         this.lastTurnEndAt = Date.now();
+        this.options.onCaptionChange?.();
         this.options.onTurnEnd?.(finalText);
         break;
       }

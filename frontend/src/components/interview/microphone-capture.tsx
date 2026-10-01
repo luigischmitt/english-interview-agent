@@ -6,6 +6,7 @@ import type { VoiceTranscription } from "@/lib/interview/transcription";
 import { getSpeechThreshold } from "@/lib/interview/vad-threshold.mjs";
 import { finalVoiceTranscription, transcriptionFailureMessage } from "@/lib/interview/transcription-state.mjs";
 import { nextAutoStartSignal, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
+import { emptyCaption, parseCaptionMessage, type CandidateCaption } from "@/lib/interview/caption-state.mjs";
 import type { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 
 type RecorderStatus = "idle" | "requesting" | "recording" | "finalizing" | "error";
@@ -23,6 +24,8 @@ type StreamMessage = {
   durationMs?: number;
   segmented?: boolean;
   reason?: string;
+  committed?: string;
+  partial?: string;
   blockCount?: number;
   assessedBlockCount?: number;
   failedBlockCount?: number;
@@ -55,6 +58,9 @@ type MicrophoneCaptureProps = {
   onTranscriptionChange: (state: VoiceTranscriptionState) => void;
   onAssessmentChange?: (attemptId: string, state: VoiceAssessmentState, context: AssessmentContext) => void;
   onCaptureStateChange?: (state: VoiceCaptureState) => void;
+  /** Live, display-only caption of the answer in progress (Cartesia Ink-2 only). Cleared on new capture, finalize, cancel and unmount. */
+  onCaptionChange?: (caption: CandidateCaption) => void;
+  captionsEnabled?: boolean;
   onHandoffTimingEvent?: (event: HandoffTimingEvent, details?: { speechEndToFinalizationMs?: number }) => void;
   autoStartSignal?: string | null;
   assessmentSockets: AssessmentSocketRegistry;
@@ -96,7 +102,7 @@ function rootMeanSquare(samples: Float32Array): number {
   return Math.sqrt(sum / Math.max(1, samples.length));
 }
 
-export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onHandoffTimingEvent, autoStartSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onCaptionChange, captionsEnabled = false, onHandoffTimingEvent, autoStartSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +121,8 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const onTranscriptionChangeRef = useRef(onTranscriptionChange);
   const onAssessmentChangeRef = useRef(onAssessmentChange);
   const onCaptureStateChangeRef = useRef(onCaptureStateChange);
+  const onCaptionChangeRef = useRef(onCaptionChange);
+  const captionsEnabledRef = useRef(captionsEnabled);
   const assessmentContextRef = useRef(assessmentContext);
   const lastAutoStartSignalRef = useRef<string | null>(null);
 
@@ -122,8 +130,12 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     onTranscriptionChangeRef.current = onTranscriptionChange;
     onAssessmentChangeRef.current = onAssessmentChange;
     onCaptureStateChangeRef.current = onCaptureStateChange;
+    onCaptionChangeRef.current = onCaptionChange;
+    captionsEnabledRef.current = captionsEnabled;
     assessmentContextRef.current = assessmentContext;
-  }, [assessmentContext, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+  }, [assessmentContext, captionsEnabled, onCaptionChange, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+
+  const clearCaption = useCallback(() => onCaptionChangeRef.current?.(emptyCaption), []);
 
   const releaseCapture = useCallback(() => {
     if (durationTimerRef.current !== null) window.clearInterval(durationTimerRef.current);
@@ -156,18 +168,20 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       socket.onerror = null;
       socket.close();
     }
+    clearCaption();
     setStatus("error");
     onCaptureStateChangeRef.current?.("unavailable");
     setError(message);
     const failed: VoiceTranscriptionState = { status: "failed", message };
     setTranscription(failed);
     onTranscriptionChangeRef.current(failed);
-  }, [releaseCapture]);
+  }, [clearCaption, releaseCapture]);
 
   const stopRecording = useCallback(() => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN || finalizationRequestedRef.current) return;
     finalizationRequestedRef.current = true;
+    clearCaption();
     setStatus("finalizing");
     onCaptureStateChangeRef.current?.("finalizing");
     const worklet = workletRef.current;
@@ -189,7 +203,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       }
     };
     worklet.port.postMessage({ type: "flush" });
-  }, [releaseCapture]);
+  }, [clearCaption, releaseCapture]);
 
   const cancelRecording = useCallback(() => {
     generationRef.current += 1;
@@ -204,6 +218,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       socket.onerror = null;
       socket.close();
     }
+    clearCaption();
     setStatus("idle");
     onCaptureStateChangeRef.current?.("idle");
     setDuration(0);
@@ -211,7 +226,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     const idle: VoiceTranscriptionState = { status: "idle" };
     setTranscription(idle);
     onTranscriptionChangeRef.current(idle);
-  }, [releaseCapture]);
+  }, [clearCaption, releaseCapture]);
 
   const startRecording = useCallback(async () => {
     if (status === "requesting" || status === "recording" || status === "finalizing" || disabled) return;
@@ -221,6 +236,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     finalizationRequestedRef.current = false;
+    clearCaption();
     setDuration(0);
     setTranscription({ status: "idle" });
     onTranscriptionChangeRef.current({ status: "idle" });
@@ -277,7 +293,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
         let connectionReady = false;
         const connectionTimeout = window.setTimeout(() => reject(new Error("timeout")), 5_000);
         connectionTimeoutRef.current = connectionTimeout;
-        socket.onopen = () => socket.send(JSON.stringify({ type: "start", version: 2, sampleRate: pcmSampleRate, channels: 1, encoding: "s16le", speechThreshold }));
+        socket.onopen = () => socket.send(JSON.stringify({ type: "start", version: 2, sampleRate: pcmSampleRate, channels: 1, encoding: "s16le", speechThreshold, ...(captionsEnabledRef.current ? { captions: true } : {}) }));
         socket.onerror = () => { window.clearTimeout(connectionTimeout); connectionTimeoutRef.current = null; reject(new Error("connection")); };
         socket.onmessage = (event) => {
           let message: StreamMessage;
@@ -310,6 +326,11 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             reject(new StreamSetupError(message.code));
             return;
           }
+          if (message.type === "caption") {
+            const caption = parseCaptionMessage(message);
+            if (caption && !finalizationRequestedRef.current) onCaptionChangeRef.current?.(caption);
+            return;
+          }
           if (message.type === "speech-started") {
             onCaptureStateChangeRef.current?.("detected");
             return;
@@ -318,6 +339,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
           if (message.type === "transcription-queued" || message.type === "finalizing") {
             if (message.type === "finalizing") {
               onHandoffTimingEvent?.("finalizing", message.timing);
+              clearCaption();
               releaseCapture();
             } else onHandoffTimingEvent?.("transcription-queued");
             setStatus("finalizing");
@@ -332,6 +354,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
           }
           if (message.type === "complete") {
             onHandoffTimingEvent?.("transcription-completed");
+            clearCaption();
             releaseCapture();
             const result = finalVoiceTranscription(message);
             if (result.status === "available") {
@@ -426,7 +449,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             ? "A conexão com o transcritor falhou. Tente novamente ou pule esta pergunta."
             : microphoneError(captureError));
     }
-  }, [assessmentSockets, disabled, fail, onHandoffTimingEvent, releaseCapture, status, stopRecording]);
+  }, [assessmentSockets, clearCaption, disabled, fail, onHandoffTimingEvent, releaseCapture, status, stopRecording]);
 
   useEffect(() => {
     const nextSignal = nextAutoStartSignal(autoStartSignal, disabled, lastAutoStartSignalRef.current);
@@ -438,6 +461,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   useEffect(() => () => {
     generationRef.current += 1;
     finalizationRequestedRef.current = true;
+    clearCaption();
     releaseCapture();
     const socket = socketRef.current;
     socketRef.current = null;
@@ -448,7 +472,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       socket.onerror = null;
       socket.close();
     }
-  }, [releaseCapture]);
+  }, [clearCaption, releaseCapture]);
 
   const isRecording = status === "recording";
   const isPending = status === "requesting" || status === "finalizing" || transcription.status === "pending";
