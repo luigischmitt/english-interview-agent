@@ -436,7 +436,7 @@ describe("POST /api/v1/thinking/report", () => {
     const report = await reportService?.generate(input);
     expect(report?.model).toBe("vendor/report");
 
-    const orchestration = new OpenRouterOrchestrationService(config, capture(JSON.stringify({ decision: "NEXT", followUpQuestion: null, nextQuestion: "Next?", anchor: null, acknowledgement: null })));
+    const orchestration = new OpenRouterOrchestrationService(config, capture(JSON.stringify({ decision: "NEXT", followUpQuestion: null, nextQuestion: "Next?", anchor: null, acknowledgement: null })), null);
     await orchestration.decide({
       currentQuestion: "How would you make a REST API reliable?", transcript: "I add bounded retries with jitter and a circuit breaker for the downstream calls.", nextFixedQuestion: "Next?", remainingFixedQuestions: ["Next?"],
       askedQuestions: ["Q?"], followUpUsed: false, roleContext: input.roleContext,

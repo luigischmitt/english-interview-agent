@@ -81,6 +81,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `INTERVIEW_REASONING_TIMEOUT_MS` | `15000` | Positive timeout in milliseconds for interview reasoning requests. |
 | `INTERVIEW_ORCHESTRATION_TIMEOUT_MS` | `6000` | Positive overall deadline in milliseconds for one next-turn decision, shared by every provider call (retry and hedge included). |
 | `INTERVIEW_ORCHESTRATION_HEDGE_AFTER_MS` | `2500` | If the provider has not answered after this many milliseconds, one identical request is started and the first response that passes validation wins; the other is aborted. `0` disables hedging. |
+| `INTERVIEW_BRIDGE_TIMEOUT_MS` | `1800` | Timeout in milliseconds of the small second call that writes the spoken bridge before the next question; clamped to `300`–`5000`. It never exceeds the remaining part of the overall next-turn deadline and is skipped when less than 1200 ms remain. |
 | `INTERVIEW_REPORT_MODEL` | value of `INTERVIEW_REASONING_MODEL` | OpenRouter model used only for the final interview report (trimmed; blank falls back to `INTERVIEW_REASONING_MODEL`, then the default). Next-turn orchestration keeps using `INTERVIEW_REASONING_MODEL`. The returned `model` field reflects the report model. |
 | `INTERVIEW_REPORT_TIMEOUT_MS` | `45000` | Report-only provider deadline in milliseconds; accepts positive values up to `60000`. The browser deadline is 65 seconds by default. |
 | `INTERVIEW_REASONING_DIAGNOSTICS` | `false` | Set to `true` to include model, latency, and provider-reported cost in next-turn responses. Keep disabled outside local testing. |
@@ -455,23 +456,62 @@ For `FOLLOW_UP`, it returns an `anchor` of 1–8 literal transcript words and
 one short question that deepens a stated technology, decision, action,
 difficulty, or result. The backend requires the anchor to occur in both the
 transcript and question, rejects obvious noise and duplicate questions, then
-removes the anchor from the public response. `NEXT` requires a null anchor. A
-brief natural bridge is optional and cannot quote transcript text. Noise-only
-answers skip the provider call and use a neutral transition. At most one
-follow-up is accepted per planned question; timeout, rate limiting, provider
-errors, missing credentials, or malformed output use a neutral transition and
-the first remaining fixed question that is not repetitive, or close the room
-when no safe planned question remains. Every orchestration decision emits one
+removes the anchor from the public response. `NEXT` requires a null anchor. The
+decision call only decides and writes the question; its own optional
+acknowledgement stays a short neutral phrase and is used only as a fallback.
+Noise-only answers skip the provider call. At most one follow-up is accepted per
+planned question; timeout, rate limiting, provider errors, missing credentials,
+or malformed output use the first remaining fixed question that is not
+repetitive, or close the room when no safe planned question remains.
+
+Bridge step (ENG-105): after a valid decision is chosen (including the
+deterministic fallback `NEXT`), a second, separate call
+(`interview-bridge-service.ts`) writes one spoken bridge said right before the
+question. It uses `INTERVIEW_REASONING_MODEL`, temperature 0.2, a strict
+`{"bridge": string|null}` schema and the same provider routing (latency sort,
+required parameters, no data collection). Its input is the decision, current
+question, transcript, the chosen question, a deterministic `bridgeLeadIn`
+(rotating, avoiding the first two words of the last three
+`recentAcknowledgements`) and role context. The bridge restates what the
+candidate did using only transcript facts; for `FOLLOW_UP` it is one sentence of
+at most 22 words, for `NEXT` a restating sentence plus an optional short
+transition (at most 12 words), 30 words in total. It is validated
+deterministically and an invalid bridge only drops the bridge, never the
+question: praise or evaluation and inferred feelings, a question mark, extra
+sentences, invented details (every non-glue content word must come from the
+transcript, one paraphrase word tolerated when at least two overlap, and a
+new capitalized name or number never), copying more than eight consecutive
+transcript words, an exact repeat of `recentAcknowledgements`, and a question
+that adds no new content word. For `NEXT`, if the question shares two or more
+content words with the restating sentence, only the transition sentence is
+dropped. Outcome: `FOLLOW_UP` uses a valid bridge instead of the decision's own
+acknowledgement, otherwise keeps that acknowledgement (or null); `NEXT` uses a
+valid bridge, otherwise a deterministic neutral transition that rotates and
+avoids recent acknowledgements, and null when no question is left.
+Low-information transcripts skip the call (`NEXT` gets a neutral transition).
+The call has its own timeout (`INTERVIEW_BRIDGE_TIMEOUT_MS`, default 1800 ms),
+is capped by what remains of the overall next-turn deadline, and is skipped when
+less than 1200 ms remain, so the 6-second budget still holds. Every orchestration decision emits one
 content-free `interview_orchestration_decision` log line with the accepted
 decision or deterministic fallback, any valid model decision that was rejected,
-a fixed reason category, `followUpUsed`, and latency. It never contains a
+a fixed reason category, `followUpUsed`, and latency (the decision call only).
+The same line carries the bridge summary: `bridge` (`grounded`, `neutral`,
+`none` or `dropped`), `bridgeOutcome` (`generated`, `dropped`, `timeout`,
+`error`, `skipped_no_time`, `skipped_low_info`), a fixed `bridgeDropReason`
+(`invalid_text`, `too_long`, `evaluative`, `repeated_recent`,
+`not_one_sentence`, `not_grounded`, `invented_detail`, `copies_transcript`,
+`redundant_with_question`), `bridgeLatencyMs`, `leadInFollowed` (grounded only)
+and `transitionDropped` (only when true), never the bridge text. It never contains a
 question, transcript, anchor, acknowledgement, model name, session identifier,
 credential, or raw provider response. Model, latency, provider-reported cost,
 and the separate `interview_orchestration_fallback` warning can be enabled with
 the server-only `INTERVIEW_REASONING_DIAGNOSTICS=true` flag; it defaults off.
-Provider-reported cost and model details are returned only when this flag is
-enabled. Unsafe optional acknowledgments
-are dropped without discarding a valid question. Orchestration
+Provider-reported cost (decision plus bridge) and model details are returned only
+when this flag is enabled. The opt-in `npm run eval:followup` reports bridge
+rates (overall and by decision), the bridge outcome and drop-reason histograms,
+lead-in variety and an interview-sequence pass that feeds accepted bridges back
+as `recentAcknowledgements`; with `FOLLOWUP_EVAL_PRINT_ACCEPTED=true` it prints
+the accepted bridges locally. Orchestration
 uses a separate 6-second timeout by default; answer assessment retains its
 15-second timeout. The browser cancels orchestration requests after 7 seconds
 so its fallback stays slightly outside the backend timeout.

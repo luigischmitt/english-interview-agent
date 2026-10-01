@@ -1,4 +1,6 @@
 import { defaultOrchestrationHedgeAfterMs, defaultOrchestrationTimeoutMs, type ThinkingConfig } from "./config.js";
+import { containsNoiseToken, contentWords, followUpStopWords, hasExactAnchorMention, lowInformationWords, normalizedWords, questionStopWords, sequenceIndices, tokenPattern, transcriptHasUsefulContent } from "./interview-text.js";
+import { createBridgeService, pickFallbackTransition, type BridgeDropReason, type BridgeCallOutcome, type InterviewBridgeService } from "./interview-bridge-service.js";
 import type { InterviewOrchestrationInput, InterviewOrchestrationResult, InterviewOrchestrationService } from "./types.js";
 
 type OpenRouterResponse = {
@@ -35,7 +37,17 @@ function correctiveNote(reason: OrchestrationFallbackReason): string {
   return `Your previous reply was rejected: ${correctableReasons[reason] ?? "it was invalid"}. Return the same JSON shape; the anchor must be copied exactly from the transcript (1–12 words), and the question must explore that same detail.`;
 }
 
-function logOrchestrationDecision(decision: "FOLLOW_UP" | "NEXT", requestedDecision: "FOLLOW_UP" | "NEXT" | null, outcome: "accepted" | "fallback", reason: OrchestrationFallbackReason | "model_decision", followUpUsed: boolean, latencyMs: number, attempts: number, hedge: HedgeOutcome, corrective: CorrectiveOutcome = "not_needed", recoveredFrom?: OrchestrationFallbackReason): void {
+/** Content-free summary of the bridge step: only kinds, fixed reasons and numbers are ever logged. */
+type BridgeLog = {
+  bridge: "grounded" | "neutral" | "none" | "dropped";
+  outcome?: BridgeCallOutcome;
+  dropReason?: BridgeDropReason;
+  latencyMs?: number;
+  leadInFollowed?: boolean;
+  transitionDropped?: boolean;
+};
+
+function logOrchestrationDecision(decision: "FOLLOW_UP" | "NEXT", requestedDecision: "FOLLOW_UP" | "NEXT" | null, outcome: "accepted" | "fallback", reason: OrchestrationFallbackReason | "model_decision", followUpUsed: boolean, latencyMs: number, attempts: number, hedge: HedgeOutcome, corrective: CorrectiveOutcome = "not_needed", recoveredFrom?: OrchestrationFallbackReason, bridge: BridgeLog = { bridge: "none" }): void {
   console.info(JSON.stringify({
     event: "interview_orchestration_decision",
     decision,
@@ -48,6 +60,12 @@ function logOrchestrationDecision(decision: "FOLLOW_UP" | "NEXT", requestedDecis
     hedge,
     corrective,
     ...(recoveredFrom ? { recoveredFrom } : {}),
+    bridge: bridge.bridge,
+    ...(bridge.outcome ? { bridgeOutcome: bridge.outcome } : {}),
+    ...(bridge.dropReason ? { bridgeDropReason: bridge.dropReason } : {}),
+    ...(bridge.latencyMs !== undefined ? { bridgeLatencyMs: Math.max(0, Math.round(bridge.latencyMs)) } : {}),
+    ...(bridge.leadInFollowed !== undefined ? { leadInFollowed: bridge.leadInFollowed } : {}),
+    ...(bridge.transitionDropped ? { transitionDropped: true } : {}),
   }));
 }
 
@@ -102,49 +120,13 @@ function hasExactWordSequence(text: string, excerpt: string): boolean {
   return needle.length > 0 && haystack.some((_, index) => needle.every((word, offset) => haystack[index + offset] === word));
 }
 
-const tokenPattern = /[\p{L}\p{N}]+(?:[+#]+)?/gu;
-
-/** Case-, punctuation- and whitespace-insensitive word tokens; "C++" and "C#" stay distinct, hyphens and quotes split words. */
-function normalizedWords(text: string): string[] {
-  return (text.toLocaleLowerCase().match(tokenPattern) ?? []);
-}
-
-function sequenceIndices(haystack: string[], needle: string[]): number[] {
-  if (needle.length === 0) return [];
-  const indices: number[] = [];
-  for (let index = 0; index + needle.length <= haystack.length; index += 1) {
-    if (needle.every((word, offset) => haystack[index + offset] === word)) indices.push(index);
-  }
-  return indices;
-}
-
-function hasExactAnchorMention(text: string, anchor: string): boolean {
-  return sequenceIndices(normalizedWords(text), normalizedWords(anchor)).length > 0;
-}
-
 function repeatsTranscriptPhrase(text: string, transcript: string): boolean {
   const words = text.trim().split(/\s+/u).filter(Boolean);
   return words.some((_, index) => words.length - index >= 3 && hasExactWordSequence(transcript, words.slice(index, index + 3).join(" ")));
 }
 
 const trivialSingleWordAnchors = new Set(["a", "an", "and", "are", "as", "at", "but", "by", "for", "from", "he", "her", "i", "in", "is", "it", "me", "my", "of", "on", "or", "our", "she", "so", "that", "the", "their", "them", "they", "this", "to", "us", "was", "we", "were", "what", "when", "where", "which", "who", "why", "with", "you", "your"]);
-const lowInformationWords = new Set(["a", "about", "ah", "am", "an", "and", "are", "as", "at", "but", "by", "for", "from", "hmm", "i", "is", "it", "like", "maybe", "me", "mm", "my", "of", "oh", "okay", "ok", "on", "or", "so", "the", "this", "uh", "um", "uhm", "well", "yeah", "yes", "you"]);
-const questionStopWords = new Set(["a", "about", "an", "and", "are", "as", "at", "can", "could", "describe", "did", "do", "for", "from", "give", "had", "have", "how", "i", "in", "is", "it", "me", "of", "on", "or", "please", "tell", "that", "the", "there", "to", "was", "way", "what", "when", "where", "which", "who", "why", "with", "would", "you", "your"]);
-const followUpStopWords = new Set([...questionStopWords, "also", "any", "choose", "choosing", "chosen", "consider", "considered", "cons", "didn", "does", "during", "else", "ever", "exactly", "factor", "factors", "happen", "happened", "impact", "make", "made", "much", "off", "offs", "one", "particular", "pro", "pros", "project", "reason", "reasons", "select", "selected", "selecting", "specific", "system", "thing", "things", "through", "trade", "tradeoff", "tradeoffs", "use", "used", "using", "way", "work", "worked"]);
 const acknowledgementGenericWords = new Set(["a", "about", "another", "area", "at", "clear", "clearer", "context", "different", "experience", "for", "give", "gives", "helpful", "i", "me", "move", "now", "of", "on", "okay", "ok", "part", "picture", "see", "sense", "shift", "talk", "thanks", "that", "the", "to", "understand", "understanding", "way", "with", "your", "approach"]);
-
-function contentWords(text: string): Set<string> {
-  const words = text.toLocaleLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/gu, "").match(/[\p{L}\p{N}]+/gu) ?? [];
-  return new Set(words.filter((word) => word.length > 2 && !followUpStopWords.has(word)).map((word) => {
-    let stem = word;
-    if (stem.endsWith("ies") && stem.length > 4) stem = `${stem.slice(0, -3)}y`;
-    else if (stem.endsWith("ing") && stem.length > 5) stem = stem.slice(0, -3);
-    else if (stem.endsWith("ed") && stem.length > 4) stem = stem.slice(0, -2);
-    else if (stem.endsWith("es") && stem.length > 4) stem = stem.slice(0, -2);
-    else if (stem.endsWith("s") && !stem.endsWith("ss") && stem.length > 3) stem = stem.slice(0, -1);
-    return stem.length > 4 && stem.endsWith("e") ? stem.slice(0, -1) : stem;
-  }));
-}
 
 const anchorWindowWords = 8;
 
@@ -187,18 +169,9 @@ function referencesAnchorContext(question: string, anchor: string, transcript: s
   return (sharesAnchorWord || hasExactAnchorMention(question, anchor)) && addsNoNewWords;
 }
 
-function containsNoiseToken(text: string): boolean {
-  return (text.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).some((word) => /^(?:p+f{2,}|tf{3,})$/u.test(word));
-}
-
 function namesTranscriptDetail(text: string, transcript: string): boolean {
   const answerWords = new Set((transcript.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter((word) => word.length > 2 && !lowInformationWords.has(word)));
   return (text.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).some((word) => answerWords.has(word) && !acknowledgementGenericWords.has(word));
-}
-
-function transcriptHasUsefulContent(transcript: string): boolean {
-  const words = transcript.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-  return new Set(words.filter((word) => word.length > 1 && !lowInformationWords.has(word))).size >= 2;
 }
 
 function canonicalQuestionWords(question: string): Set<string> {
@@ -316,21 +289,54 @@ function parseDecision(content: unknown, input: InterviewOrchestrationInput, onI
 
 export class OpenRouterOrchestrationService implements InterviewOrchestrationService {
   private readonly fetchImplementation: typeof fetch;
+  private readonly bridgeService: InterviewBridgeService | null;
 
-  constructor(private readonly config: ThinkingConfig, fetchImplementation: typeof fetch = fetch) {
+  /** `bridgeService` defaults to the OpenRouter bridge step; pass null to disable it (the decision is then returned untouched). */
+  constructor(private readonly config: ThinkingConfig, fetchImplementation: typeof fetch = fetch, bridgeService?: InterviewBridgeService | null) {
     this.fetchImplementation = fetchImplementation;
+    this.bridgeService = bridgeService === undefined ? createBridgeService(config, fetchImplementation) : bridgeService;
+  }
+
+  /**
+   * Second step: after a decision is chosen (model or deterministic fallback), a separate small call writes the spoken
+   * bridge. FOLLOW_UP keeps the decision's own validated acknowledgement when no bridge is available; NEXT falls back to a
+   * neutral rotating transition (and to null when there is no question left).
+   */
+  private async applyBridge(input: InterviewOrchestrationInput, result: InterviewOrchestrationResult, deadlineAt: number): Promise<{ result: InterviewOrchestrationResult; log: BridgeLog; costUsd: number | null }> {
+    const question = result.decision === "FOLLOW_UP" ? result.followUpQuestion : result.nextQuestion;
+    const own = result.decision === "FOLLOW_UP" ? result.acknowledgement : null;
+    if (!this.bridgeService || !question) return { result, log: { bridge: own ? "neutral" : "none" }, costUsd: null };
+    const written = await this.bridgeService.write({ decision: result.decision, currentQuestion: input.currentQuestion, transcript: input.transcript, question, roleContext: input.roleContext, recentAcknowledgements: input.recentAcknowledgements, deadlineAt });
+    const timing = { outcome: written.outcome, latencyMs: written.latencyMs };
+    if (written.bridge) {
+      return {
+        result: { ...result, acknowledgement: written.bridge },
+        log: { bridge: "grounded", ...timing, ...(written.leadInFollowed !== undefined ? { leadInFollowed: written.leadInFollowed } : {}), ...(written.transitionDropped ? { transitionDropped: true } : {}) },
+        costUsd: written.costUsd,
+      };
+    }
+    const acknowledgement = own ?? (result.decision === "NEXT" ? pickFallbackTransition(input.recentAcknowledgements) : null);
+    return {
+      result: { ...result, acknowledgement },
+      log: { bridge: written.outcome === "dropped" ? "dropped" : acknowledgement ? "neutral" : "none", ...timing, ...(written.dropReason ? { dropReason: written.dropReason } : {}) },
+      costUsd: written.costUsd,
+    };
   }
 
   async decide(input: InterviewOrchestrationInput): Promise<InterviewOrchestrationResult> {
     const start = Date.now();
-    const fallback = (reason: OrchestrationFallbackReason, logWarning = false, requestedDecision: "FOLLOW_UP" | "NEXT" | null = null, attempts = 0, hedge: HedgeOutcome = "not_needed"): InterviewOrchestrationResult => {
+    const timeoutMs = this.config.orchestrationTimeoutMs ?? defaultOrchestrationTimeoutMs;
+    /** The bridge step shares the overall next-turn deadline with the decision call. */
+    const deadlineAt = start + timeoutMs;
+    const fallback = async (reason: OrchestrationFallbackReason, logWarning = false, requestedDecision: "FOLLOW_UP" | "NEXT" | null = null, attempts = 0, hedge: HedgeOutcome = "not_needed", corrective: CorrectiveOutcome = "not_needed"): Promise<InterviewOrchestrationResult> => {
       if (logWarning && this.config.diagnosticsEnabled) logOrchestrationFallback(reason);
-      logOrchestrationDecision("NEXT", requestedDecision, "fallback", reason, input.followUpUsed, Date.now() - start, attempts, hedge);
-      return { decision: "NEXT", followUpQuestion: null, nextQuestion: fallbackQuestion(input), acknowledgement: null };
+      const decisionLatencyMs = Date.now() - start;
+      const bridged = await this.applyBridge(input, { decision: "NEXT", followUpQuestion: null, nextQuestion: fallbackQuestion(input), acknowledgement: null }, deadlineAt);
+      logOrchestrationDecision("NEXT", requestedDecision, "fallback", reason, input.followUpUsed, decisionLatencyMs, attempts, hedge, corrective, undefined, bridged.log);
+      return bridged.result;
     };
     if (!transcriptHasUsefulContent(input.transcript)) return fallback("low_information");
     if (!this.config.openRouterApiKey) return fallback("credentials_missing");
-    const timeoutMs = this.config.orchestrationTimeoutMs ?? defaultOrchestrationTimeoutMs;
     const hedgeAfterMs = this.config.orchestrationHedgeAfterMs ?? defaultOrchestrationHedgeAfterMs;
     const buildBody = (correction?: string) => JSON.stringify({
       model: this.config.model,
@@ -378,7 +384,6 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
 
     type Role = "primary" | "secondary" | "retry" | "corrective";
     type Final = { kind: "ok"; accepted: Accepted; role: Role } | { kind: "failed"; reason: OrchestrationFallbackReason; requestedDecision: "FOLLOW_UP" | "NEXT" | null };
-    const deadlineAt = start + timeoutMs;
     let attempts = 0;
     let hedged = false;
     let retried = false;
@@ -445,20 +450,22 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
       const hedge: HedgeOutcome = attempts > 1 ? "failed" : "not_needed";
       const reason = firstRejection ?? final.reason;
       if (this.config.diagnosticsEnabled) logOrchestrationFallback(reason);
-      logOrchestrationDecision("NEXT", firstRejection ? "FOLLOW_UP" : final.requestedDecision, "fallback", reason, input.followUpUsed, Date.now() - start, attempts, hedge, corrective);
-      return { decision: "NEXT", followUpQuestion: null, nextQuestion: fallbackQuestion(input), acknowledgement: null };
+      return fallback(reason, false, firstRejection ? "FOLLOW_UP" : final.requestedDecision, attempts, hedge, corrective);
     }
     const { parsed, body } = final.accepted;
     const hedge: HedgeOutcome = corrective === "recovered" ? firstRoundHedge : final.role === "retry" ? "retried" : hedged ? (final.role === "secondary" ? "secondary_won" : "primary_won") : "not_needed";
     const costUsd = typeof body.usage?.cost === "number" && Number.isFinite(body.usage.cost) ? body.usage.cost : null;
-    logOrchestrationDecision(parsed.decision, parsed.decision, "accepted", "model_decision", input.followUpUsed, Date.now() - start, attempts, hedge, corrective, corrective === "recovered" && firstRejection ? firstRejection : undefined);
+    const decisionLatencyMs = Date.now() - start;
+    const bridged = await this.applyBridge(input, parsed, deadlineAt);
+    logOrchestrationDecision(parsed.decision, parsed.decision, "accepted", "model_decision", input.followUpUsed, decisionLatencyMs, attempts, hedge, corrective, corrective === "recovered" && firstRejection ? firstRejection : undefined, bridged.log);
+    const totalCostUsd = costUsd === null && bridged.costUsd === null ? null : (costUsd ?? 0) + (bridged.costUsd ?? 0);
     return {
-      ...parsed,
-      ...(this.config.diagnosticsEnabled ? { diagnostics: { model: typeof body.model === "string" ? body.model : this.config.model, latencyMs: Date.now() - start, costUsd } } : {}),
+      ...bridged.result,
+      ...(this.config.diagnosticsEnabled ? { diagnostics: { model: typeof body.model === "string" ? body.model : this.config.model, latencyMs: Date.now() - start, costUsd: totalCostUsd } } : {}),
     };
   }
 }
 
-export function createOrchestrationService(config: ThinkingConfig, fetchImplementation?: typeof fetch): InterviewOrchestrationService {
-  return new OpenRouterOrchestrationService(config, fetchImplementation);
+export function createOrchestrationService(config: ThinkingConfig, fetchImplementation?: typeof fetch, bridgeService?: InterviewBridgeService | null): InterviewOrchestrationService {
+  return new OpenRouterOrchestrationService(config, fetchImplementation, bridgeService);
 }

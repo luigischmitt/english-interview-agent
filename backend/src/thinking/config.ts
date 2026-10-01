@@ -2,6 +2,7 @@ export const defaultThinkingModel = "mistralai/mistral-small-3.2-24b-instruct";
 export const defaultThinkingTimeoutMs = 15_000;
 export const defaultOrchestrationTimeoutMs = 6_000;
 export const defaultOrchestrationHedgeAfterMs = 2_500;
+export const defaultBridgeTimeoutMs = 1_800;
 export const defaultInterviewReportTimeoutMs = 45_000;
 export const defaultInterviewTurnAnalysisTimeoutMs = 20_000;
 export const defaultInterviewConsolidationTimeoutMs = 25_000;
@@ -16,6 +17,8 @@ export type ThinkingConfig = {
   /** Start one identical hedge request after this many ms without a response; 0 disables. Defaults to 2500. */
   orchestrationHedgeAfterMs?: number;
   reportTimeoutMs?: number;
+  /** Timeout of the small bridge call that follows a next-turn decision (300–5000 ms; defaults to 1800). */
+  bridgeTimeoutMs?: number;
   diagnosticsEnabled: boolean;
 };
 
@@ -43,6 +46,11 @@ function parseReportTimeout(value: string | undefined): number {
   return timeout;
 }
 
+function normalizeBridgeTimeout(value: string | undefined): number {
+  const parsed = value === undefined || value.trim() === "" ? Number.NaN : Number(value);
+  return Number.isFinite(parsed) ? Math.min(5_000, Math.max(300, Math.round(parsed))) : defaultBridgeTimeoutMs;
+}
+
 export function loadThinkingConfig(environment = process.env): ThinkingConfig {
   const model = environment.INTERVIEW_REASONING_MODEL?.trim() || defaultThinkingModel;
   return {
@@ -52,6 +60,7 @@ export function loadThinkingConfig(environment = process.env): ThinkingConfig {
     timeoutMs: parsePositiveNumber(environment.INTERVIEW_REASONING_TIMEOUT_MS, defaultThinkingTimeoutMs),
     orchestrationTimeoutMs: parsePositiveNumber(environment.INTERVIEW_ORCHESTRATION_TIMEOUT_MS, defaultOrchestrationTimeoutMs),
     orchestrationHedgeAfterMs: parseNonNegativeNumber(environment.INTERVIEW_ORCHESTRATION_HEDGE_AFTER_MS, defaultOrchestrationHedgeAfterMs),
+    bridgeTimeoutMs: normalizeBridgeTimeout(environment.INTERVIEW_BRIDGE_TIMEOUT_MS),
     reportTimeoutMs: parseReportTimeout(environment.INTERVIEW_REPORT_TIMEOUT_MS),
     diagnosticsEnabled: environment.INTERVIEW_REASONING_DIAGNOSTICS?.trim().toLowerCase() === "true",
   };

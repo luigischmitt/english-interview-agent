@@ -27,7 +27,7 @@ function providerResponse(content: string, extras: Record<string, unknown> = {},
 }
 
 function service(fetchImplementation: typeof fetch) {
-  return new OpenRouterOrchestrationService({ openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs: 1000, diagnosticsEnabled: true }, fetchImplementation);
+  return new OpenRouterOrchestrationService({ openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs: 1000, diagnosticsEnabled: true }, fetchImplementation, null);
 }
 
 function decision(overrides: Record<string, unknown> = {}) {
@@ -271,7 +271,7 @@ describe("OpenRouter next-turn orchestration", () => {
       expect(acceptedLog).toMatchObject({
         event: "interview_orchestration_decision", decision: "FOLLOW_UP", requestedDecision: "FOLLOW_UP", outcome: "accepted", reason: "model_decision", followUpUsed: false,
       });
-      expect(Object.keys(acceptedLog).sort()).toEqual(["attempts", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
+      expect(Object.keys(acceptedLog).sort()).toEqual(["attempts", "bridge", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
       expect(JSON.stringify(acceptedLog)).not.toContain(input.transcript);
       expect(JSON.stringify(acceptedLog)).not.toContain(followUp);
       expect(JSON.stringify(acceptedLog)).not.toContain(anchor);
@@ -394,15 +394,15 @@ describe("OpenRouter next-turn orchestration", () => {
     const sentinelInput = { ...input, transcript: "SENTINEL_TRANSCRIPT I add SENTINEL_ANCHOR to every call. Also nothing else matters here.", currentQuestion: "SENTINEL_QUESTION how do you build services?" };
     const accepted = { decision: "FOLLOW_UP", followUpQuestion: "SENTINEL_FOLLOWUP what about SENTINEL_ANCHOR limits?", nextQuestion: null, anchor: "SENTINEL_ANCHOR", acknowledgement: "SENTINEL_ACK makes sense." };
     try {
-      const acceptedResult = await new OpenRouterOrchestrationService(config, async () => providerResponse(JSON.stringify(accepted))).decide(sentinelInput);
+      const acceptedResult = await new OpenRouterOrchestrationService(config, async () => providerResponse(JSON.stringify(accepted)), null).decide(sentinelInput);
       expect(acceptedResult.diagnostics).toBeUndefined();
-      await new OpenRouterOrchestrationService(config, async () => providerResponse("not-json")).decide(sentinelInput);
-      await new OpenRouterOrchestrationService(config, async () => { throw new Error("must not call provider"); }).decide({ ...sentinelInput, transcript: "um yeah" });
-      await new OpenRouterOrchestrationService({ ...config, openRouterApiKey: null }, async () => { throw new Error("must not call provider"); }).decide(sentinelInput);
+      await new OpenRouterOrchestrationService(config, async () => providerResponse("not-json"), null).decide(sentinelInput);
+      await new OpenRouterOrchestrationService(config, async () => { throw new Error("must not call provider"); }, null).decide({ ...sentinelInput, transcript: "um yeah" });
+      await new OpenRouterOrchestrationService({ ...config, openRouterApiKey: null }, async () => { throw new Error("must not call provider"); }, null).decide(sentinelInput);
       const logs = info.mock.calls.map((call) => JSON.parse(String(call[0])));
       expect(logs.map((entry) => entry.reason)).toEqual(["model_decision", "invalid_json", "low_information", "credentials_missing"]);
       for (const entry of logs) {
-        expect(Object.keys(entry).sort()).toEqual(["attempts", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
+        expect(Object.keys(entry).sort()).toEqual(["attempts", "bridge", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
         expect(entry.event).toBe("interview_orchestration_decision");
       }
       expect(warn).not.toHaveBeenCalled();
@@ -425,7 +425,7 @@ describe("OpenRouter next-turn orchestration", () => {
 
   it("uses NEXT when the server has no key without making a request", async () => {
     const fetchImplementation = vi.fn();
-    const serviceWithoutKey = new OpenRouterOrchestrationService({ openRouterApiKey: null, model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs: defaultOrchestrationTimeoutMs, diagnosticsEnabled: false }, fetchImplementation);
+    const serviceWithoutKey = new OpenRouterOrchestrationService({ openRouterApiKey: null, model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs: defaultOrchestrationTimeoutMs, diagnosticsEnabled: false }, fetchImplementation, null);
     await expect(serviceWithoutKey.decide(input)).resolves.toEqual(fallback);
     expect(fetchImplementation).not.toHaveBeenCalled();
   });
@@ -478,7 +478,7 @@ describe("POST /api/v1/thinking/next-turn", () => {
 
 describe("OpenRouter next-turn orchestration resilience", () => {
   const cfg = (orchestrationTimeoutMs: number, orchestrationHedgeAfterMs?: number) => ({ openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs, orchestrationHedgeAfterMs, diagnosticsEnabled: false });
-  const svc = (fetchImplementation: typeof fetch, timeout = 6000, hedge?: number) => new OpenRouterOrchestrationService(cfg(timeout, hedge), fetchImplementation);
+  const svc = (fetchImplementation: typeof fetch, timeout = 6000, hedge?: number) => new OpenRouterOrchestrationService(cfg(timeout, hedge), fetchImplementation, null);
   const good = () => providerResponse(JSON.stringify(decision()));
   const bad = () => providerResponse("not json");
   const lastDecisionLog = (spy: { mock: { calls: unknown[][] } }) => JSON.parse(String(spy.mock.calls.map((c) => c[0]).filter((l) => String(l).includes("interview_orchestration_decision")).at(-1)));
@@ -696,7 +696,7 @@ describe("OpenRouter next-turn anchor tolerance (ENG-104)", () => {
 });
 
 describe("OpenRouter next-turn corrective retry (ENG-104)", () => {
-  const svc = (fetchImplementation: typeof fetch, timeout = 6000) => new OpenRouterOrchestrationService({ openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs: timeout, diagnosticsEnabled: false }, fetchImplementation);
+  const svc = (fetchImplementation: typeof fetch, timeout = 6000) => new OpenRouterOrchestrationService({ openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs: timeout, diagnosticsEnabled: false }, fetchImplementation, null);
   const wrongAnchor = () => providerResponse(JSON.stringify(decision({ anchor: "missing phrase" })));
   const good = () => providerResponse(JSON.stringify(decision()));
   const lastLog = (spy: { mock: { calls: unknown[][] } }) => JSON.parse(String(spy.mock.calls.map((c) => c[0]).filter((l) => String(l).includes("interview_orchestration_decision")).at(-1)));
