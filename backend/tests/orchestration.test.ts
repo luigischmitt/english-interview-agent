@@ -271,7 +271,7 @@ describe("OpenRouter next-turn orchestration", () => {
       expect(acceptedLog).toMatchObject({
         event: "interview_orchestration_decision", decision: "FOLLOW_UP", requestedDecision: "FOLLOW_UP", outcome: "accepted", reason: "model_decision", followUpUsed: false,
       });
-      expect(Object.keys(acceptedLog).sort()).toEqual(["attempts", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
+      expect(Object.keys(acceptedLog).sort()).toEqual(["attempts", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
       expect(JSON.stringify(acceptedLog)).not.toContain(input.transcript);
       expect(JSON.stringify(acceptedLog)).not.toContain(followUp);
       expect(JSON.stringify(acceptedLog)).not.toContain(anchor);
@@ -402,7 +402,7 @@ describe("OpenRouter next-turn orchestration", () => {
       const logs = info.mock.calls.map((call) => JSON.parse(String(call[0])));
       expect(logs.map((entry) => entry.reason)).toEqual(["model_decision", "invalid_json", "low_information", "credentials_missing"]);
       for (const entry of logs) {
-        expect(Object.keys(entry).sort()).toEqual(["attempts", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
+        expect(Object.keys(entry).sort()).toEqual(["attempts", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
         expect(entry.event).toBe("interview_orchestration_decision");
       }
       expect(warn).not.toHaveBeenCalled();
@@ -631,5 +631,147 @@ describe("OpenRouter next-turn orchestration resilience", () => {
     expect(lines).toContain('"hedge":"not_needed"');
     expect(lines).not.toMatch(/SENTINEL|server-test-key|bounded retries/);
     info.mockRestore();
+  });
+});
+
+describe("OpenRouter next-turn anchor tolerance (ENG-104)", () => {
+  const withTranscript = (transcript: string): InterviewOrchestrationInput => ({ ...input, transcript });
+  const ask = (transcript: string, anchorText: string | null, question: string) => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => providerResponse(JSON.stringify({ decision: "FOLLOW_UP", followUpQuestion: question, nextQuestion: null, anchor: anchorText, acknowledgement: null })));
+    return { fetcher, result: service(fetcher).decide(withTranscript(transcript)) };
+  };
+  const migration = "We migrated the billing service from a monolith to event driven microservices last year.";
+
+  it("accepts an anchor of exactly 12 words", async () => {
+    const { result } = ask(migration, "migrated the billing service from a monolith to event driven microservices last", "Why did you migrate billing to event driven microservices?");
+    await expect(result).resolves.toMatchObject({ decision: "FOLLOW_UP" });
+  });
+
+  it("still rejects an anchor of 13 words, even though a 12-word part of it matches the transcript", async () => {
+    const { result } = ask(migration, "migrated the billing service from a monolith to event driven microservices last year", "Why did you migrate billing to event driven microservices?");
+    await expect(result).resolves.toEqual(fallback);
+  });
+
+  it.each(["kafka", "postgres", "kubernetes", "caching"])("accepts the lowercase technical single-word anchor %s", async (term) => {
+    const { result } = ask(`We rely on ${term} for the order pipeline.`, term, `Why did you rely on ${term} for the order pipeline?`);
+    await expect(result).resolves.toMatchObject({ decision: "FOLLOW_UP" });
+  });
+
+  it.each(["the", "they", "actually", "basically", "yeah", "stuff", "pfffff", "12"])("still rejects the single-word anchor %s", async (word) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const { result } = ask(`Actually the team used the retry policy a lot, yeah, 12 stuff basically, they pfffff.`, word, "Why did the team use the retry policy so much?");
+      await expect(result).resolves.toEqual(fallback);
+      expect(JSON.parse(String(info.mock.calls.at(-1)?.[0]))).toMatchObject({ outcome: "fallback", reason: "invalid_anchor" });
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it.each([
+    { name: "case and punctuation", transcript: "We store data in PostgreSQL, Redis and S3 for the reporting pipeline.", anchor: "postgresql redis", question: "Why did you choose PostgreSQL and Redis together for reporting?" },
+    { name: "hyphen versus space", transcript: "We built a real-time dashboard for the support team.", anchor: "real time dashboard", question: "How did you keep the real time dashboard fast?" },
+    { name: "space versus hyphen", transcript: "We built a real time dashboard for the support team.", anchor: "Real-Time dashboard", question: "How did you keep the dashboard fast for the support team?" },
+    { name: "curly quotes in the transcript", transcript: "We didn’t change the team’s retry policy for the payments API.", anchor: "team's retry policy", question: "How did the retry policy affect the payments API?" },
+    { name: "curly quotes in the anchor and extra whitespace", transcript: "He said \"bounded   retries\"  were important\nfor our API.", anchor: "“bounded retries”", question: "How did you decide the bounded retries limit?" },
+  ])("matches the anchor ignoring $name differences", async ({ transcript, anchor: anchorText, question }) => {
+    const { result } = ask(transcript, anchorText, question);
+    await expect(result).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: question });
+  });
+
+  it("keeps symbolic technologies distinct after normalization", async () => {
+    const { result } = ask("We use C# for this service and tested it a lot.", "C++", "Why did you choose C++ for this service?");
+    await expect(result).resolves.toEqual(fallback);
+  });
+
+  it("rejects an anchor that is absent from the transcript even after normalization", async () => {
+    const { result } = ask(migration, "payment gateway", "Why did you migrate billing to event driven microservices?");
+    await expect(result).resolves.toEqual(fallback);
+  });
+
+  it("rejects an unrelated question riding on a lowercase single-word anchor", async () => {
+    const { result } = ask("We use kafka for events. Onboarding copy was researched too.", "kafka", "Kafka is great; how did the user interviews change onboarding?");
+    await expect(result).resolves.toEqual(fallback);
+  });
+});
+
+describe("OpenRouter next-turn corrective retry (ENG-104)", () => {
+  const svc = (fetchImplementation: typeof fetch, timeout = 6000) => new OpenRouterOrchestrationService({ openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs: timeout, diagnosticsEnabled: false }, fetchImplementation);
+  const wrongAnchor = () => providerResponse(JSON.stringify(decision({ anchor: "missing phrase" })));
+  const good = () => providerResponse(JSON.stringify(decision()));
+  const lastLog = (spy: { mock: { calls: unknown[][] } }) => JSON.parse(String(spy.mock.calls.map((c) => c[0]).filter((l) => String(l).includes("interview_orchestration_decision")).at(-1)));
+
+  it("recovers with one corrective call and logs the first rejection reason", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const bodies: string[] = [];
+    const fetchMock = vi.fn<typeof fetch>().mockImplementationOnce(async (_u, init) => { bodies.push(String(init?.body)); return wrongAnchor(); }).mockImplementationOnce(async (_u, init) => { bodies.push(String(init?.body)); return good(); });
+    await expect(svc(fetchMock).decide(input)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: followUp });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = JSON.parse(bodies[0]);
+    const second = JSON.parse(bodies[1]);
+    expect(first.messages[0].content).not.toContain("previous reply was rejected");
+    expect(second.messages[0].content).toContain("Your previous reply was rejected");
+    expect(second.messages[0].content).toContain("1–12 words");
+    expect(second.messages[1]).toEqual(first.messages[1]);
+    expect(second.messages[0].content).not.toContain("missing phrase");
+    const log = lastLog(info);
+    expect(log).toMatchObject({ outcome: "accepted", reason: "model_decision", corrective: "recovered", recoveredFrom: "anchor_not_in_transcript", attempts: 2, requestedDecision: "FOLLOW_UP" });
+    expect(JSON.stringify(log)).not.toContain("missing phrase");
+    info.mockRestore();
+  });
+
+  it("falls back after a failed corrective call and keeps the first rejection reason", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fetchMock = vi.fn<typeof fetch>().mockImplementationOnce(async () => wrongAnchor()).mockImplementationOnce(async () => providerResponse(JSON.stringify(decision({ anchor: "the" }))));
+    await expect(svc(fetchMock).decide(input)).resolves.toEqual(fallback);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(lastLog(info)).toMatchObject({ outcome: "fallback", reason: "anchor_not_in_transcript", corrective: "failed", attempts: 2 });
+    expect(lastLog(info)).not.toHaveProperty("recoveredFrom");
+    info.mockRestore();
+  });
+
+  it("corrects an invalid follow-up question once", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementationOnce(async () => providerResponse(JSON.stringify(decision({ followUpQuestion: "What about bounded retries?" })))).mockImplementationOnce(async () => good());
+    await expect(svc(fetchMock).decide(input)).resolves.toMatchObject({ decision: "FOLLOW_UP" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips the corrective call when too little of the deadline remains", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => wrongAnchor());
+    await expect(svc(fetchMock, 1000).decide(input)).resolves.toEqual(fallback);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(lastLog(info)).toMatchObject({ reason: "anchor_not_in_transcript", corrective: "skipped_no_time", attempts: 1 });
+    info.mockRestore();
+  });
+
+  it("does not attempt a corrective call when the follow-up was already used", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => wrongAnchor());
+    await expect(svc(fetchMock).decide({ ...input, followUpUsed: true })).resolves.toEqual(fallback);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(lastLog(info)).toMatchObject({ reason: "follow_up_not_allowed", corrective: "not_needed" });
+    info.mockRestore();
+  });
+
+  it("does not correct non-anchor rejections such as invalid JSON", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => providerResponse("not json"));
+    await expect(svc(fetchMock).decide(input)).resolves.toEqual(fallback);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("never exceeds the overall deadline when the corrective call hangs", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn<typeof fetch>().mockImplementationOnce(async () => wrongAnchor()).mockImplementationOnce((_u, init) => new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted")))));
+    const pending = svc(fetchMock).decide(input);
+    await vi.advanceTimersByTimeAsync(5999);
+    let settled = false;
+    void pending.then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toEqual(fallback);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });
