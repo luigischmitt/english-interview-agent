@@ -8,14 +8,24 @@ import type { TranscriptionResult, TranscriptionService } from "./types.js";
 import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type SlotReservation, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
 import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
 import { CartesiaInkSession, sanitizeKeyterms } from "./cartesia-ink-session.js";
+import { AnswerCompletionError, type AnswerCompletionService } from "../thinking/answer-completion-service.js";
 import { InkTurnRecorder } from "./ink-turn-blocks.js";
 import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
-  | { type: "start"; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; keyterms?: unknown; captions?: unknown }
+  | { type: "start"; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; keyterms?: unknown; captions?: unknown; question?: unknown }
   | { type: "level"; value: number }
   | { type: "finalize"; reason: "manual" | "silence" }
   | { type: "cancel" };
+
+const maxQuestionLength = 400;
+
+/** Interviewer question from `start`: control characters become spaces; empty or over-long values are ignored. Never logged. */
+export function sanitizeQuestion(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.replace(/[\u0000-\u001f\u007f-\u009f]+/gu, " ").replace(/\s+/gu, " ").trim();
+  return text.length > 0 && text.length <= maxQuestionLength ? text : null;
+}
 
 /** Minimum spacing between live caption messages (about 5 per second). */
 const captionIntervalMs = 200;
@@ -169,8 +179,13 @@ export type CartesiaStreamingOptions = {
    * question during the grace. 0 or undefined disables; it only applies when shorter than the grace that is running.
    */
   prepareAfterMs?: number;
-  /** Maximum provisional messages per answer. Defaults to 2. */
+  /** Maximum provisional messages (and semantic completion checks) per answer. Defaults to 2. */
   maxPrepares?: number;
+  /**
+   * Semantic end-of-answer classifier, called at the `answer-provisional` trigger when the browser sent the interviewer
+   * question. Absent or null disables it. A "complete" verdict ends the answer immediately; anything else keeps the grace.
+   */
+  answerCompletion?: AnswerCompletionService | null;
   /** Upper bound for flushing Ink-2 at the end of an answer. */
   flushTimeoutMs?: number;
   /** Test hook. */
@@ -178,7 +193,9 @@ export type CartesiaStreamingOptions = {
   openTimeoutMs?: number;
 };
 
-type AnswerEndReason = "cartesia_turn_end" | "vad_silence" | "fallback_whisper";
+type AnswerEndReason = "cartesia_turn_end" | "semantic_complete" | "vad_silence" | "fallback_whisper";
+
+type SemanticVerdict = "complete" | "incomplete" | "timeout" | "error" | "none";
 
 type SpeculationOutcome = "reused" | "discarded" | "skipped_no_slot" | "failed" | "none";
 
@@ -230,7 +247,16 @@ export function attachTranscriptionWebSocket(
     let prepareTimer: ReturnType<typeof setTimeout> | null = null;
     let preparesSent = 0;
     let lastProvisional = "";
+    // Semantic end-of-answer check (question and transcript are never logged; only counts, verdict and latency are).
+    let interviewerQuestion: string | null = null;
+    let semanticAbort: AbortController | null = null;
+    let semanticChecks = 0;
+    let semanticVerdict: SemanticVerdict = "none";
+    let semanticLatencyMs = 0;
+    let lastSemanticText = "";
     const clearInkGrace = () => {
+      semanticAbort?.abort();
+      semanticAbort = null;
       if (inkGraceTimer !== null) clearTimeout(inkGraceTimer);
       inkGraceTimer = null;
       if (prepareTimer !== null) clearTimeout(prepareTimer);
@@ -266,6 +292,25 @@ export function attachTranscriptionWebSocket(
       clearInkGrace();
       inkSession?.close();
       inkSession = null;
+    };
+    // Ends the answer early when the classifier says it is finished; every other outcome leaves the running grace untouched.
+    const runSemanticCheck = (classifier: AnswerCompletionService, question: string, transcript: string) => {
+      semanticAbort?.abort();
+      const controller = new AbortController();
+      semanticAbort = controller;
+      semanticChecks += 1;
+      const startedAt = Date.now();
+      classifier.isComplete({ question, answer: transcript, signal: controller.signal }).then((complete) => ({ complete, kind: null }), (error: unknown) => ({ complete: false, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const })).then((outcome) => {
+        if (controller.signal.aborted) return;
+        if (semanticAbort === controller) semanticAbort = null;
+        semanticLatencyMs = Date.now() - startedAt;
+        semanticVerdict = outcome.kind ?? (outcome.complete ? "complete" : "incomplete");
+        if (!outcome.complete) return;
+        const current = sessionId ? sessions.get(sessionId) : undefined;
+        if (finalRequested || finishing || !inkSession || inkSession.failed || inkSession.turnActive || !current?.vad.hasSpeech) return;
+        if (inkSession.committedText() !== transcript) return;
+        finalize("silence", "semantic");
+      });
     };
     let speculation: Speculation | null = null;
     let speculationOutcome: SpeculationOutcome = "none";
@@ -510,7 +555,7 @@ export function attachTranscriptionWebSocket(
           }
           const transcriptionDurationMs = Date.now() - flushStartedAt;
           const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
-          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "cartesia", cartesiaTurns: ink.turnCount, preparesSent, answerEndReason, speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
+          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "cartesia", cartesiaTurns: ink.turnCount, preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict, semanticLatencyMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
           send(socket, { type: "complete", status: "complete", provider: "cartesia-ink-2", durationMs, transcript });
           clearTimeout(timer);
 
@@ -541,7 +586,7 @@ export function attachTranscriptionWebSocket(
       })();
     };
 
-    const finalize = (reason: "manual" | "silence", triggeredBy: "vad" | "cartesia" = "vad") => {
+    const finalize = (reason: "manual" | "silence", triggeredBy: "vad" | "cartesia" | "semantic" = "vad") => {
       if (!sessionId || finalRequested || finishing) return;
       const id = sessionId;
       const session = sessions.get(id);
@@ -641,7 +686,7 @@ export function attachTranscriptionWebSocket(
       };
 
       if (inkSession && !inkSession.failed) {
-        finalizeWithInk(id, session, reason, triggeredBy === "cartesia" ? "cartesia_turn_end" : "vad_silence", runWhisperFinalization);
+        finalizeWithInk(id, session, reason, triggeredBy === "semantic" ? "semantic_complete" : triggeredBy === "cartesia" ? "cartesia_turn_end" : "vad_silence", runWhisperFinalization);
         return;
       }
       runWhisperFinalization(cartesia ? "fallback_whisper" : "vad_silence");
@@ -691,6 +736,7 @@ export function attachTranscriptionWebSocket(
           started = true;
           logStreamDiagnostic({ status: "started", speechThresholdBand: session.vad.speechThresholdBand });
           captionsEnabled = Boolean(cartesia) && message.captions === true;
+          interviewerQuestion = cartesia?.answerCompletion ? sanitizeQuestion(message.question) : null;
           if (cartesia) {
             // Invalid keyterm lists are ignored entirely (and never logged); the answer simply gets no biasing.
             const keyterms = message.keyterms === undefined ? [] : sanitizeKeyterms(message.keyterms);
@@ -714,16 +760,25 @@ export function attachTranscriptionWebSocket(
                   if (current?.vad.hasSpeech) finalize("silence", "cartesia");
                 }, graceMs);
                 const prepareAfterMs = cartesia.prepareAfterMs ?? 0;
-                if (prepareAfterMs > 0 && prepareAfterMs < graceMs && preparesSent < (cartesia.maxPrepares ?? 2)) {
+                const maxPrepares = cartesia.maxPrepares ?? 2;
+                const canPrepare = preparesSent < maxPrepares;
+                const canCheckSemantically = interviewerQuestion !== null && Boolean(cartesia.answerCompletion) && semanticChecks < maxPrepares;
+                if (prepareAfterMs > 0 && prepareAfterMs < graceMs && (canPrepare || canCheckSemantically)) {
                   prepareTimer = setTimeout(() => {
                     prepareTimer = null;
                     const current = sessionId ? sessions.get(sessionId) : undefined;
                     if (finalRequested || finishing || !inkSession || inkSession.failed || inkSession.turnActive || !current?.vad.hasSpeech) return;
                     const transcript = inkSession.committedText();
-                    if (!transcript || transcript === lastProvisional) return;
-                    lastProvisional = transcript;
-                    preparesSent += 1;
-                    send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
+                    if (!transcript) return;
+                    if (transcript !== lastProvisional && preparesSent < maxPrepares) {
+                      lastProvisional = transcript;
+                      preparesSent += 1;
+                      send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
+                    }
+                    if (transcript !== lastSemanticText && interviewerQuestion !== null && cartesia.answerCompletion && semanticChecks < maxPrepares) {
+                      lastSemanticText = transcript;
+                      runSemanticCheck(cartesia.answerCompletion, interviewerQuestion, transcript);
+                    }
                   }, prepareAfterMs);
                 }
               },

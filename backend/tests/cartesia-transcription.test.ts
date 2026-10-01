@@ -4,7 +4,8 @@ import type { AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
 
 import { buildCartesiaInkUrl, sanitizeKeyterms } from "../src/transcription/cartesia-ink-session.js";
-import { attachTranscriptionWebSocket, looksUnfinished, type CartesiaStreamingOptions } from "../src/transcription/transcription-websocket.js";
+import { AnswerCompletionError, type AnswerCompletionInput, type AnswerCompletionService } from "../src/thinking/answer-completion-service.js";
+import { attachTranscriptionWebSocket, looksUnfinished, sanitizeQuestion, type CartesiaStreamingOptions } from "../src/transcription/transcription-websocket.js";
 import type { TranscriptionResult, TranscriptionService } from "../src/transcription/types.js";
 import type { PronunciationAssessmentService } from "../src/transcription/azure-pronunciation-assessment.js";
 import { defaultStreamingLimits } from "../src/transcription/streaming-transcription.js";
@@ -542,6 +543,186 @@ describe("Cartesia Ink-2 provisional answers", () => {
     await fixture.waitFor("complete");
     await delay(600);
     expect(provisionals(fixture)).toHaveLength(0);
+  });
+});
+
+describe("Cartesia Ink-2 semantic end of answer", () => {
+  const question = "Tell me about a hard bug you fixed.";
+  const answerText = "Zeta fixed it by adding a lock around the cache.";
+  const endTurn = (ink: FakeInk, id: number, text: string) => {
+    ink.emit({ type: "turn.start", turn_id: id });
+    ink.emit({ type: "turn.update", turn_id: id, transcript: text });
+    ink.emit({ type: "turn.end", turn_id: id, transcript: text });
+  };
+  function classifier(behavior: (input: AnswerCompletionInput, index: number) => Promise<boolean>) {
+    const calls: AnswerCompletionInput[] = [];
+    const signals: AbortSignal[] = [];
+    const service: AnswerCompletionService = { isComplete: (input) => { calls.push(input); signals.push(input.signal!); return behavior(input, calls.length - 1); } };
+    return { service, calls, signals };
+  }
+  const options = (service: AnswerCompletionService | null, extra: Partial<CartesiaStreamingOptions> = {}): Partial<CartesiaStreamingOptions> => ({ answerGraceMs: 2_500, prepareAfterMs: 300, answerCompletion: service, ...extra });
+
+  it("sanitizes the question: control characters, empty and over-long values", () => {
+    expect(sanitizeQuestion("  Tell\nme\u0000 more\t ")).toBe("Tell me more");
+    expect(sanitizeQuestion("")).toBeNull();
+    expect(sanitizeQuestion("   ")).toBeNull();
+    expect(sanitizeQuestion(42)).toBeNull();
+    expect(sanitizeQuestion("a".repeat(401))).toBeNull();
+    expect(sanitizeQuestion("a".repeat(400))).toHaveLength(400);
+  });
+
+  it("finalizes at the trigger when the classifier says complete, with diagnostics and no text in logs", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fake = classifier(async () => { await delay(50); return true; });
+    const { ink, fixture } = await setup({}, createWhisper(), options(fake.service));
+    await start(fixture, { question });
+    await speak(fixture, 800);
+    endTurn(ink, 0, answerText);
+    const endedAt = Date.now();
+    const complete = await fixture.waitFor("complete");
+    expect(complete.transcript).toBe(answerText);
+    expect(complete.at - endedAt).toBeLessThan(1_600);
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]).toMatchObject({ question, answer: answerText });
+    const logs = logsOf(info);
+    expect(logs).toContain('"answerEndReason":"semantic_complete"');
+    expect(logs).toContain('"semanticChecks":1');
+    expect(logs).toContain('"semanticVerdict":"complete"');
+    expect(logs).toContain('"semanticLatencyMs"');
+    expect(logs).not.toContain("Zeta");
+    expect(logs).not.toContain("hard bug");
+    expect(logs).not.toContain(sentinelKey);
+  });
+
+  it("keeps the grace when the classifier says incomplete", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fake = classifier(async () => false);
+    const { ink, fixture } = await setup({}, createWhisper(), options(fake.service, { answerGraceMs: 1_200 }));
+    await start(fixture, { question });
+    await speak(fixture, 800);
+    endTurn(ink, 0, answerText);
+    const endedAt = Date.now();
+    const complete = await fixture.waitFor("complete");
+    expect(complete.at - endedAt).toBeGreaterThanOrEqual(1_100);
+    expect(fake.calls).toHaveLength(1);
+    const logs = logsOf(info);
+    expect(logs).toContain('"answerEndReason":"cartesia_turn_end"');
+    expect(logs).toContain('"semanticVerdict":"incomplete"');
+  });
+
+  it.each([["error", () => Promise.reject(new AnswerCompletionError("error", "x"))], ["timeout", () => Promise.reject(new AnswerCompletionError("timeout", "x"))]])("keeps the grace on a classifier %s", async (verdict, behavior) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fake = classifier(behavior as () => Promise<boolean>);
+    const { ink, fixture } = await setup({}, createWhisper(), options(fake.service, { answerGraceMs: 1_000 }));
+    await start(fixture, { question });
+    await speak(fixture, 800);
+    endTurn(ink, 0, answerText);
+    const endedAt = Date.now();
+    const complete = await fixture.waitFor("complete");
+    expect(complete.at - endedAt).toBeGreaterThanOrEqual(900);
+    expect(logsOf(info)).toContain(`"semanticVerdict":"${verdict}"`);
+  });
+
+  it("aborts a slow classifier on a new turn and does not finalize", async () => {
+    const fake = classifier(() => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 600)));
+    const { ink, fixture } = await setup({}, createWhisper(), options(fake.service, { answerGraceMs: 3_000 }));
+    await start(fixture, { question });
+    await speak(fixture, 800);
+    endTurn(ink, 0, answerText);
+    await delay(450);
+    expect(fake.calls).toHaveLength(1);
+    ink.emit({ type: "turn.start", turn_id: 1 });
+    await delay(100);
+    expect(fake.signals[0]!.aborted).toBe(true);
+    await delay(700);
+    expect(fixture.find("finalizing")).toBeUndefined();
+    expect(fixture.find("complete")).toBeUndefined();
+  });
+
+  it("aborts the classifier on resumed local VAD speech", async () => {
+    const fake = classifier(() => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 700)));
+    const { ink, fixture } = await setup({}, createWhisper(), options(fake.service, { answerGraceMs: 3_000 }));
+    await start(fixture, { question });
+    await speak(fixture, 800);
+    endTurn(ink, 0, answerText);
+    fixture.socket.send(JSON.stringify({ type: "level", value: 0.001 }));
+    await delay(450);
+    expect(fake.calls).toHaveLength(1);
+    await speak(fixture, 400);
+    expect(fake.signals[0]!.aborted).toBe(true);
+    await delay(500);
+    expect(fixture.find("finalizing")).toBeUndefined();
+  });
+
+  it("aborts the classifier when the client cancels", async () => {
+    const fake = classifier(() => new Promise<boolean>(() => undefined));
+    const { ink, fixture } = await setup({}, createWhisper(), options(fake.service));
+    await start(fixture, { question });
+    await speak(fixture, 800);
+    endTurn(ink, 0, answerText);
+    await delay(450);
+    fixture.socket.send(JSON.stringify({ type: "cancel" }));
+    await delay(200);
+    expect(fake.signals[0]!.aborted).toBe(true);
+  });
+
+  it("does not call the classifier without a valid question", async () => {
+    const fake = classifier(async () => true);
+    const missing = await setup({}, createWhisper(), options(fake.service, { answerGraceMs: 900 }));
+    await start(missing.fixture);
+    await speak(missing.fixture, 800);
+    endTurn(missing.ink, 0, answerText);
+    await missing.fixture.waitFor("complete");
+    const tooLong = await setup({}, createWhisper(), options(fake.service, { answerGraceMs: 900 }));
+    await start(tooLong.fixture, { question: "q".repeat(401) });
+    await speak(tooLong.fixture, 800);
+    endTurn(tooLong.ink, 0, answerText);
+    await tooLong.fixture.waitFor("complete");
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("does not call the classifier when disabled", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { ink, fixture } = await setup({}, createWhisper(), options(null, { answerGraceMs: 900 }));
+    await start(fixture, { question });
+    await speak(fixture, 800);
+    endTurn(ink, 0, answerText);
+    await fixture.waitFor("complete");
+    expect(logsOf(info)).toContain('"semanticVerdict":"none"');
+  });
+
+  it("calls the classifier at most twice per answer", async () => {
+    const fake = classifier(async () => false);
+    const { ink, fixture } = await setup({}, createWhisper(), options(fake.service, { answerGraceMs: 1_800, prepareAfterMs: 200, maxPrepares: 2 }));
+    await start(fixture, { question });
+    await speak(fixture, 800);
+    endTurn(ink, 0, "One.");
+    await delay(450);
+    endTurn(ink, 1, "Two.");
+    await delay(450);
+    endTurn(ink, 2, "Three.");
+    await delay(450);
+    expect(fake.calls.map((call) => call.answer)).toEqual(["One.", "One. Two."]);
+  });
+
+  it("leaves Whisper mode unchanged", async () => {
+    const fake = classifier(async () => true);
+    const whisper = createWhisper("I led the migration");
+    const server = createServer();
+    attachTranscriptionWebSocket(server, whisper.service, null, defaultStreamingLimits, null);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const socket = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/transcriptions/stream`);
+    const messages: Array<Record<string, any>> = [];
+    socket.on("message", (raw) => messages.push(JSON.parse(raw.toString())));
+    await new Promise<void>((resolve) => socket.once("open", resolve));
+    cleanups.push(async () => { socket.close(); await new Promise<void>((resolve) => server.close(() => resolve())); });
+    socket.send(JSON.stringify({ type: "start", version: 2, sampleRate: 16_000, channels: 1, encoding: "s16le", speechThreshold: 0.025, question }));
+    await delay(200);
+    for (let elapsed = 0; elapsed < 800; elapsed += 100) { socket.send(JSON.stringify({ type: "level", value: 0.05 })); socket.send(Buffer.alloc(frameBytes, 0x20)); await delay(100); }
+    socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+    for (let waited = 0; waited < 3_000 && !messages.some((message) => message.type === "complete"); waited += 50) await delay(50);
+    expect(messages.find((message) => message.type === "complete")?.provider).toBe("whisper-large-v3-turbo");
+    expect(fake.calls).toHaveLength(0);
   });
 });
 
