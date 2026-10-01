@@ -36,10 +36,12 @@ performed by the authenticated frontend client. The speech service accepts:
 | --- | --- | --- |
 | `PORT` | `3001` | HTTP port. |
 | `ALLOWED_ORIGIN` | `http://localhost:3000` | Browser origin allowed by CORS. |
-| `SPEECH_PROVIDER` | `fake` | `fake` returns deterministic test audio; `kokoro` calls Kokoro. |
+| `SPEECH_PROVIDER` | `fake` | `fake` returns deterministic test audio; `kokoro` calls a Kokoro server; `openrouter` calls Kokoro through OpenRouter. |
 | `KOKORO_BASE_URL` | `http://localhost:8880` | Kokoro HTTP base URL. |
-| `KOKORO_TIMEOUT_MS` | `15000` | Positive request timeout in milliseconds. |
-| `INTERVIEWER_VOICE` | `af_bella+af_heart` | Voice passed to Kokoro. |
+| `KOKORO_TIMEOUT_MS` | `15000` | Positive request timeout in milliseconds (also used by `openrouter`). |
+| `INTERVIEWER_VOICE` | `af_bella+af_heart` (`af_heart` with `openrouter`) | Voice passed to the provider. Blends containing `+` are rejected at startup with `openrouter`. |
+| `OPENROUTER_SPEECH_MODEL` | `hexgrad/kokoro-82m` | Speech model when `SPEECH_PROVIDER=openrouter`. Requires `OPENROUTER_API_KEY`, otherwise the backend fails at startup. |
+| `OPENROUTER_SPEECH_URL` | `https://openrouter.ai/api/v1/audio/speech` | Speech endpoint override, mainly for tests. |
 | `INTERVIEWER_SPEED` | `1` | Positive default speech speed. |
 | `AZURE_SPEECH_KEY` | — | Azure Speech resource key. Required only for voice transcription. Keep it server-side. |
 | `AZURE_SPEECH_REGION` | — | Azure Speech resource region, such as `brazilsouth`. Required only for voice transcription. |
@@ -78,6 +80,20 @@ performed by the authenticated frontend client. The speech service accepts:
 
 Do not add Supabase `service_role` keys or other private credentials to this
 service unless a future server-side integration explicitly requires them.
+
+## Interviewer voice via OpenRouter
+
+Production has no Kokoro server, so `SPEECH_PROVIDER=openrouter` synthesizes the
+interviewer with the same Kokoro model (`hexgrad/kokoro-82m`) through OpenRouter,
+reusing `OPENROUTER_API_KEY`, which stays server-side. Measured latency was
+1.5-1.9 s per question. Cost is about US$0.62 per 1M characters on DeepInfra;
+the OpenRouter price is not confirmed. Only single voices work (default
+`af_heart`): blends such as `af_bella+af_heart` return HTTP 400 upstream, so
+they are rejected at startup. `speed` is sent only when `INTERVIEWER_SPEED`
+is not `1` (verified live), and every request asks OpenRouter for
+`data_collection: "deny"`. `/api/v1/speech/health` reports `ready` without calling OpenRouter.
+When synthesis fails, the API returns `503 SPEECH_PROVIDER_UNAVAILABLE` and the
+frontend keeps showing the question as text with an audio-unavailable message.
 
 ## Run Kokoro with a local backend
 
