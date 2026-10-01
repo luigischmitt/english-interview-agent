@@ -1,6 +1,7 @@
 import type { Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 
+import { AuthError, logAuthRejected, type AccessTokenVerifier } from "../auth/access-token-verifier.js";
 import { getAllowedOrigins, isOriginAllowed } from "../middlewares/allowed-origins.js";
 import { hedgedTranscribe, type HedgeOutcome } from "./hedged-transcription.js";
 import { TranscriptionUnavailableError } from "./errors.js";
@@ -13,7 +14,7 @@ import { InkTurnRecorder } from "./ink-turn-blocks.js";
 import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
-  | { type: "start"; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; keyterms?: unknown; captions?: unknown; question?: unknown }
+  | { type: "start"; accessToken?: unknown; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; keyterms?: unknown; captions?: unknown; question?: unknown }
   | { type: "level"; value: number }
   | { type: "finalize"; reason: "manual" | "silence" }
   | { type: "cancel" };
@@ -219,7 +220,10 @@ export function attachTranscriptionWebSocket(
   assessmentService: PronunciationAssessmentService | null = null,
   limits: StreamingLimits = defaultStreamingLimits,
   cartesia: CartesiaStreamingOptions | null = null,
+  authentication: { verifier: AccessTokenVerifier | null; startTimeoutMs?: number } = { verifier: null },
 ): void {
+  const accessTokenVerifier = authentication.verifier;
+  const authStartTimeoutMs = authentication.startTimeoutMs ?? 10_000;
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, perMessageDeflate: false });
   // Ink-Whisper turn ends come from the local VAD pause; the pause length only matters for that flag.
   const sessionLimits = cartesia?.model === "ink-whisper" && cartesia.pauseMs
@@ -707,7 +711,57 @@ export function attachTranscriptionWebSocket(
       else if (socket.readyState === WebSocket.OPEN) socket.close(1008, "Stream timeout");
     }, limits.maxDurationMs + 30_000);
 
+    // Nothing but an authenticated `start` is processed until the access token is verified.
+    let authenticated = accessTokenVerifier === null;
+    let authenticating = false;
+    let authTimer: ReturnType<typeof setTimeout> | null = null;
+    const rejectAuth = (error: AuthError | null) => {
+      const reason = error?.reason ?? "missing";
+      logAuthRejected({ channel: "transcription_stream" }, reason);
+      if (authTimer !== null) clearTimeout(authTimer);
+      authTimer = null;
+      finishing = true;
+      clearTimeout(timer);
+      const unavailable = error?.status === 503;
+      send(socket, unavailable
+        ? { type: "error", code: "AUTH_UNAVAILABLE", message: "Não foi possível verificar sua sessão agora. Tente novamente em instantes." }
+        : { type: "error", code: "UNAUTHENTICATED", message: "Sua sessão expirou. Entre novamente." });
+      if (socket.readyState === WebSocket.OPEN) socket.close(unavailable ? 1013 : 1008, "Unauthenticated");
+    };
+    if (!authenticated) {
+      authTimer = setTimeout(() => {
+        if (!authenticated && !finishing) rejectAuth(null);
+      }, authStartTimeoutMs);
+    }
+
     socket.on("message", (data, isBinary) => {
+      if (!authenticated) {
+        if (authenticating) return;
+        const candidate = isBinary || !Buffer.isBuffer(data) ? null : parseMessage(data);
+        if (!candidate || candidate.type !== "start") {
+          rejectAuth(null);
+          return;
+        }
+        authenticating = true;
+        const token = typeof candidate.accessToken === "string" ? candidate.accessToken : null;
+        accessTokenVerifier!.verify(token).then(() => {
+          authenticating = false;
+          if (socket.readyState !== WebSocket.OPEN || finishing) return;
+          authenticated = true;
+          if (authTimer !== null) clearTimeout(authTimer);
+          authTimer = null;
+          handleMessage(data, isBinary);
+        }, (error: unknown) => {
+          authenticating = false;
+          if (socket.readyState !== WebSocket.OPEN) return;
+          rejectAuth(error instanceof AuthError ? error : new AuthError("malformed"));
+        });
+        return;
+      }
+      handleMessage(data, isBinary);
+    });
+
+    const handleMessage = (data: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => {
       if (isBinary) {
         if (finalRequested || finishing) return;
         if (!started || !sessionId || !Buffer.isBuffer(data)) {
@@ -876,9 +930,11 @@ export function attachTranscriptionWebSocket(
         finishing = true;
         socket.close(1000, "Recording cancelled");
       }
-    });
+    };
 
     socket.on("close", () => {
+      if (authTimer !== null) clearTimeout(authTimer);
+      authTimer = null;
       if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
       silenceGraceTimer = null;
       clearTimeout(timer);

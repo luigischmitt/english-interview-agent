@@ -2,6 +2,8 @@
 
 import { LoaderCircle, Mic, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getAccessToken } from "@/lib/auth/access-token";
+import { buildStreamStartMessage, notifySessionExpired } from "@/lib/auth/access-token.mjs";
 import type { VoiceTranscription } from "@/lib/interview/transcription";
 import { getSpeechThreshold } from "@/lib/interview/vad-threshold.mjs";
 import { toStreamQuestion } from "@/lib/interview/stream-question.mjs";
@@ -295,6 +297,13 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       let streamReady = false;
 
       const streamQuestion = toStreamQuestion(attemptAssessmentContext.questionLabel);
+      let accessToken: string;
+      try {
+        accessToken = await getAccessToken();
+      } catch {
+        throw new StreamSetupError("UNAUTHENTICATED");
+      }
+      if (generationRef.current !== generation) return;
       const socket = new WebSocket(getStreamUrl());
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
@@ -304,7 +313,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
         let connectionReady = false;
         const connectionTimeout = window.setTimeout(() => reject(new Error("timeout")), 5_000);
         connectionTimeoutRef.current = connectionTimeout;
-        socket.onopen = () => socket.send(JSON.stringify({ type: "start", version: 2, sampleRate: pcmSampleRate, channels: 1, encoding: "s16le", speechThreshold, ...(captionsEnabledRef.current ? { captions: true } : {}), ...(streamQuestion ? { question: streamQuestion } : {}) }));
+        socket.onopen = () => socket.send(JSON.stringify(buildStreamStartMessage({ accessToken, speechThreshold, sampleRate: pcmSampleRate, captions: captionsEnabledRef.current, question: streamQuestion })));
         socket.onerror = () => { window.clearTimeout(connectionTimeout); connectionTimeoutRef.current = null; reject(new Error("connection")); };
         socket.onmessage = (event) => {
           let message: StreamMessage;
@@ -331,6 +340,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             resolve();
             return;
           }
+          if (message.type === "error" && message.code === "UNAUTHENTICATED") notifySessionExpired();
           if (message.type === "error" && !connectionReady) {
             window.clearTimeout(connectionTimeout);
             connectionTimeoutRef.current = null;

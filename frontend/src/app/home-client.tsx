@@ -18,6 +18,7 @@ import {
   Volume2,
 } from "lucide-react";
 
+import { SessionExpiredNotice } from "@/components/auth/session-expired-notice";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Button } from "@/components/ui/button";
 import type { InterviewConfig } from "@/lib/interview/types";
@@ -378,6 +379,7 @@ export default function App() {
             darkMode={darkMode}
             onToggleTheme={() => setDarkMode((value) => !value)}
           />
+          <SessionExpiredNotice />
           {view === "home" && (
             <HomeView
               onStart={() => navigate("interview-setup")}

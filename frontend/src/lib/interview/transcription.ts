@@ -1,3 +1,4 @@
+import { authorizedFetch } from "@/lib/auth/access-token";
 export type VoiceTranscription = {
   provider: TranscriptionProvider;
   transcript: string;
@@ -53,7 +54,7 @@ async function convertToAzureWav(recording: Blob): Promise<Blob> {
 
 export async function requestVoiceTranscription(recording: Blob, endpoint: string, provider: TranscriptionProvider): Promise<VoiceTranscription> {
   const audio = await convertToAzureWav(recording);
-  const response = await fetch(endpoint, {
+  const response = await authorizedFetch(endpoint, {
     method: "POST",
     headers: { "content-type": "audio/wav", "x-transcription-provider": provider },
     body: audio,
@@ -69,7 +70,7 @@ export async function requestVoiceTranscription(recording: Blob, endpoint: strin
 
 export async function requestAvailableTranscriptionProviders(endpoint: string): Promise<TranscriptionProvider[]> {
   try {
-    const response = await fetch(`${endpoint}/providers`);
+    const response = await authorizedFetch(`${endpoint}/providers`);
     if (!response.ok) return ["azure"];
     const data = await response.json() as { providers?: unknown };
     if (!Array.isArray(data.providers)) return ["azure"];

@@ -31,13 +31,16 @@ The server runs on `http://localhost:3001` by default.
 
 Production deploy (Cloud Run): see [`docs/deploy.md`](../docs/deploy.md).
 
-The backend does not require Supabase credentials: interview persistence is
+The backend needs only the public Supabase project URL, to verify access tokens
+(see "Authentication"); it never holds Supabase keys: interview persistence is
 performed by the authenticated frontend client. The speech service accepts:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `3001` | HTTP port. |
 | `ALLOWED_ORIGIN` | `http://localhost:3000` | Browser origin allowed by CORS. |
+| `SUPABASE_URL` | — | Public Supabase project URL (same value as the frontend's `NEXT_PUBLIC_SUPABASE_URL`). Required while `BACKEND_AUTH_REQUIRED` is `true`; must be `https` (or `http` for `localhost`/`127.0.0.1`). The backend fails at startup without it. |
+| `BACKEND_AUTH_REQUIRED` | `true` | `false` disables access-token checks (local development only; a content-free `auth_disabled` warning is logged at startup). Any value other than `true`/`false` fails at startup. |
 | `SPEECH_PROVIDER` | `fake` | `fake` returns deterministic test audio; `kokoro` calls a Kokoro server; `openrouter` calls Kokoro through OpenRouter. |
 | `KOKORO_BASE_URL` | `http://localhost:8880` | Kokoro HTTP base URL. |
 | `KOKORO_TIMEOUT_MS` | `15000` | Positive request timeout in milliseconds (also used by `openrouter`). |
@@ -129,6 +132,26 @@ Each `POST /api/v1/speech` synthesis logs one content-free
 `speech_synthesis_timing` line with `status` (`ok`, `error`, or `aborted`),
 `provider`, `durationMs`, and `textLength`. It never contains the text, voice
 settings, or upstream error messages.
+
+## Authentication
+
+Every `/api/v1` route except `GET /api/v1/speech/health` (and `GET /health`) requires the
+user's Supabase access token: `Authorization: Bearer <access token>` on HTTP calls. Browsers
+cannot set headers on WebSockets, so `/api/v1/transcriptions/stream` takes it in the first
+`start` message as `accessToken`; nothing else is processed before an authenticated `start`,
+and a socket that has not authenticated within 10 seconds is closed.
+
+Tokens are verified locally with `node:crypto`: ES256 only, signature against the project's
+public keys from `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` (cached for 10 minutes,
+refetched at most once every 30 seconds for an unknown `kid`), then `exp` (30 s skew), `nbf`,
+`iss` (`${SUPABASE_URL}/auth/v1`), `aud` (`authenticated`) and `sub`. No Supabase secret is
+needed and the token is never logged.
+
+A missing or invalid token returns `401 {"error":{"code":"UNAUTHENTICATED","message":"Sua sessão expirou. Entre novamente."}}`
+(WebSocket: an `error` message with the same code, then close `1008`); an unreachable key set
+returns a generic `503 AUTH_UNAVAILABLE`. Rejections log only
+`{"event":"auth_rejected","route"|"channel":...,"reason":...}`. For Docker, add
+`SUPABASE_URL=<same as NEXT_PUBLIC_SUPABASE_URL>` to `backend/.env`.
 
 ## Current routes
 

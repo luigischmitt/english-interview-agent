@@ -8,6 +8,7 @@ prática da resposta em inglês da análise futura de áudio.
 
 - Página pública inicial, com links para criar conta e entrar.
 - Autenticação Supabase: cadastro, login, recuperação e atualização de senha.
+- As chamadas ao backend (HTTP e WebSocket de transcrição) levam o access token da sessão Supabase; se o backend responder 401, a interface avisa que a sessão expirou e oferece o link para entrar novamente.
 - Área protegida com cargo, senioridade, foco e duração (5, 10, 15 ou 25
   minutos), sem contagem fixa de perguntas. A sala respeita o tempo, permite
   concluir uma resposta já iniciada e encerra sem repetir o banco interno de

@@ -1,6 +1,9 @@
 import cors from "cors";
 import express from "express";
 
+import { resolveAccessTokenVerifier } from "./auth/resolve-verifier.js";
+import type { AccessTokenVerifier } from "./auth/access-token-verifier.js";
+import { requireAccessToken } from "./middlewares/require-access-token.js";
 import { errorHandler } from "./middlewares/error-handler.js";
 import { notFoundHandler } from "./middlewares/not-found-handler.js";
 import { getAllowedOrigins, isOriginAllowed } from "./middlewares/allowed-origins.js";
@@ -18,6 +21,8 @@ import { createTranscriptionService } from "./transcription/create-transcription
 import { createPronunciationAssessmentService } from "./transcription/create-pronunciation-assessment-service.js";
 import type { TranscriptionService } from "./transcription/types.js";
 
+/** Resolved once at import so a missing SUPABASE_URL fails startup; null when BACKEND_AUTH_REQUIRED=false. */
+export const defaultAccessTokenVerifier = resolveAccessTokenVerifier();
 export const defaultTranscriptionConfig = loadTranscriptionConfig();
 export const defaultTranscriptionService = createTranscriptionService(defaultTranscriptionConfig);
 export const defaultPronunciationAssessmentService = createPronunciationAssessmentService(defaultTranscriptionConfig);
@@ -31,9 +36,11 @@ type AppDependencies = {
   thinkingService?: ThinkingService | null;
   orchestrationService?: InterviewOrchestrationService;
   reportService?: InterviewReportService | null;
+  /** Omit for the environment default; pass null to disable authentication. */
+  accessTokenVerifier?: AccessTokenVerifier | null;
 };
 
-export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService }: AppDependencies = {}) {
+export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, accessTokenVerifier }: AppDependencies = {}) {
   const resolvedSpeechConfig = speechConfig ?? loadSpeechConfig();
   const resolvedSpeechProvider = speechProvider ?? createSpeechProvider(resolvedSpeechConfig);
   const resolvedTranscriptionService = transcriptionService
@@ -55,6 +62,8 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
     response.status(200).json({ status: "ok" });
   });
 
+  const verifier = accessTokenVerifier === undefined ? defaultAccessTokenVerifier : accessTokenVerifier;
+  app.use("/api/v1", requireAccessToken(verifier, (request) => request.method === "GET" && request.path === "/speech/health"));
   app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService));
   app.use(notFoundHandler);
   app.use(errorHandler);

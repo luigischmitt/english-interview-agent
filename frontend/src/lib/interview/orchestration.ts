@@ -1,3 +1,4 @@
+import { authorizedFetch } from "@/lib/auth/access-token";
 import type { InterviewConfig } from "./types";
 import { firstUnaskedQuestion } from "./question-history.mjs";
 import { fallbackTurnDecision, normalizeNextTurnDecision } from "./orchestration-policy.mjs";
@@ -33,7 +34,7 @@ export async function decideNextTurn(input: {
   const fallback: TurnDecision = fallbackTurnDecision(fallbackQuestion);
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
-    const response = await fetch(`${baseUrl}/api/v1/thinking/next-turn`, {
+    const response = await authorizedFetch(`${baseUrl}/api/v1/thinking/next-turn`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
