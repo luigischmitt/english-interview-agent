@@ -1,13 +1,15 @@
 import WebSocket from "ws";
 
 /**
- * Minimal client for Cartesia Ink-2 streaming speech-to-text (turn-based WebSocket).
+ * Minimal client for Cartesia streaming speech-to-text: Ink-2 (turn-based WebSocket, default) or Ink-Whisper
+ * (segment WebSocket, cheaper; turn ends come from the caller through `endTurn`).
  *
  * Privacy: audio is forwarded as it arrives and never stored here; neither transcripts, keyterms nor the API key are logged.
  * The API key is only ever sent as a request header to Cartesia.
  */
 
 export const cartesiaInkEndpoint = "wss://api.cartesia.ai/stt/turns/websocket";
+export const cartesiaInkWhisperEndpoint = "wss://api.cartesia.ai/stt/websocket";
 export const cartesiaVersion = "2026-03-01";
 export const maxKeyterms = 30;
 export const maxKeytermLength = 40;
@@ -15,17 +17,21 @@ const maxPendingBytes = 8 * 1024 * 1024;
 
 type WebSocketConstructor = new (url: string, options?: { headers?: Record<string, string> }) => WebSocket;
 
+export type CartesiaModel = "ink-2" | "ink-whisper";
+
 export type CartesiaInkOptions = {
   apiKey: string;
+  /** `ink-2` (default) or `ink-whisper`; Ink-Whisper has no turn events, no keyterms and uses a different endpoint. */
+  model?: CartesiaModel;
   keyterms?: string[];
   /** Optional Ink-2 turn_end_timeout_ms (640-11200). */
   turnEndTimeoutMs?: number | null;
   endpoint?: string;
   WebSocketImpl?: WebSocketConstructor;
-  /** Maximum time to wait for the `connected` message before treating the session as failed. */
+  /** Maximum time to wait for the `connected` message (Ink-Whisper: the socket opening) before treating the session as failed. */
   openTimeoutMs?: number;
   onTurnStart?: () => void;
-  /** Called after each `turn.end` with that turn's final transcript. */
+  /** Called after each `turn.end` (Ink-Whisper: after each local `endTurn`) with that turn's final transcript. */
   onTurnEnd?: (transcript: string) => void;
   /** Called whenever the live caption text (finished turns or the current partial turn) may have changed. Display-only. */
   onCaptionChange?: () => void;
@@ -53,7 +59,11 @@ export function sanitizeKeyterms(value: unknown): string[] | null {
   return terms;
 }
 
-export function buildCartesiaInkUrl(options: Pick<CartesiaInkOptions, "endpoint" | "keyterms" | "turnEndTimeoutMs">): string {
+export function buildCartesiaInkUrl(options: Pick<CartesiaInkOptions, "endpoint" | "keyterms" | "turnEndTimeoutMs" | "model">): string {
+  if (options.model === "ink-whisper") {
+    // Ink-Whisper rejects the turns endpoint and does not support keyterms or a turn timeout.
+    return `${options.endpoint ?? cartesiaInkWhisperEndpoint}?model=ink-whisper&encoding=pcm_s16le&sample_rate=16000&language=en`;
+  }
   const parts = ["model=ink-2", "encoding=pcm_s16le", "sample_rate=16000"];
   if (options.turnEndTimeoutMs) parts.push(`turn_end_timeout_ms=${Math.round(options.turnEndTimeoutMs)}`);
   // encodeURIComponent writes spaces as %20, which Cartesia requires (a "+" would be taken literally).
@@ -78,6 +88,10 @@ export class CartesiaInkSession {
   private openTimer: ReturnType<typeof setTimeout> | null = null;
   private terminateTimer: ReturnType<typeof setTimeout> | null = null;
   private settleWaiters: Array<() => void> = [];
+  // Ink-Whisper local turn bookkeeping.
+  private turnStartIndex = 0;
+  private endTurnWaiter: (() => void) | null = null;
+  private speechDuringEndTurn = false;
 
   private turnObserver: ((kind: "start" | "end", transcript: string) => void) | null = null;
 
@@ -92,6 +106,47 @@ export class CartesiaInkSession {
   get failureReason(): CartesiaFailureReason | null { return this.failedReason; }
   get turnCount(): number { return this.turnEnds; }
   get turnActive(): boolean { return this.activeTurn; }
+  private get inkWhisper(): boolean { return this.options.model === "ink-whisper"; }
+  private get alive(): boolean { return !this.closed && !this.failed && !this.closeRequested; }
+
+  /** Ink-Whisper only: marks speech activity so `turnActive` mirrors an Ink-2 turn in progress until the next local turn end. */
+  markSpeech(): void {
+    if (!this.inkWhisper || !this.alive) return;
+    this.speechDuringEndTurn = true;
+    if (this.activeTurn) return;
+    this.activeTurn = true;
+    this.turnObserver?.("start", "");
+    this.options.onTurnStart?.();
+  }
+
+  /**
+   * Ink-Whisper only: asks the server to finalize pending audio (text `finalize`), waits for `flush_done` (bounded by
+   * `timeoutMs`) and then registers a local turn end with the segments finalized since the previous one. If speech
+   * resumed meanwhile, no turn end is registered and those segments roll into the next one.
+   */
+  async endTurn(timeoutMs: number): Promise<void> {
+    if (!this.inkWhisper || !this.alive || !this.connected || this.endTurnWaiter || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+    this.speechDuringEndTurn = false;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(done, timeoutMs);
+      function done() {
+        clearTimeout(timer);
+        resolve();
+      }
+      this.endTurnWaiter = done;
+      this.socket!.send("finalize");
+    });
+    this.endTurnWaiter = null;
+    if (!this.alive || this.speechDuringEndTurn) return;
+    const turnText = this.finals.slice(this.turnStartIndex).join(" ").replace(/\s+/g, " ").trim();
+    this.turnStartIndex = this.finals.length;
+    this.activeTurn = false;
+    this.turnEnds += 1;
+    this.lastTurnEndAt = Date.now();
+    this.turnObserver?.("end", turnText);
+    this.options.onCaptionChange?.();
+    this.options.onTurnEnd?.(turnText);
+  }
 
   /** Accumulated answer transcript: every finished turn in order, plus the latest unfinished turn if any. */
   transcript(): string {
@@ -121,6 +176,8 @@ export class CartesiaInkSession {
     }
     const socket = this.socket;
     this.openTimer = setTimeout(() => this.fail("open_timeout"), this.options.openTimeoutMs ?? 5_000);
+    // Ink-Whisper sends no `connected` message: an open socket is ready.
+    if (this.inkWhisper) socket.on("open", () => this.markConnected());
     socket.on("message", (data, isBinary) => {
       if (isBinary) return;
       this.handleMessage(data.toString());
@@ -133,6 +190,7 @@ export class CartesiaInkSession {
       this.cleanupTimers();
       if (this.terminateTimer) clearTimeout(this.terminateTimer);
       this.settle();
+      this.endTurnWaiter?.();
     });
   }
 
@@ -152,6 +210,7 @@ export class CartesiaInkSession {
   /**
    * Asks Ink-2 to flush and finish, then resolves with the accumulated transcript. Resolves early when no turn is
    * in progress and the last turn ended a while ago; otherwise waits for the server to close, bounded by `timeoutMs`.
+   * Ink-Whisper (text `close`, acknowledged by `done`) always waits: trailing audio may hold words never finalized.
    */
   flush(timeoutMs: number): Promise<string> {
     if (this.closed || this.failed) {
@@ -173,7 +232,7 @@ export class CartesiaInkSession {
       this.closeRequested = true;
       if (this.connected) {
         this.sendClose();
-        if (!this.activeTurn && Date.now() - this.lastTurnEndAt >= 500) done();
+        if (!this.inkWhisper && !this.activeTurn && Date.now() - this.lastTurnEndAt >= 500) done();
       }
     });
   }
@@ -217,7 +276,7 @@ export class CartesiaInkSession {
   private sendClose(): void {
     if (this.closeSent || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
     this.closeSent = true;
-    this.socket.send(JSON.stringify({ type: "close" }));
+    this.socket.send(this.inkWhisper ? "close" : JSON.stringify({ type: "close" }));
   }
 
   private markFailed(reason: CartesiaFailureReason): void {
@@ -231,10 +290,21 @@ export class CartesiaInkSession {
     this.cleanupTimers();
     this.destroy();
     this.settle();
+    this.endTurnWaiter?.();
+  }
+
+  private markConnected(): void {
+    if (this.connected || this.closed) return;
+    this.connected = true;
+    this.cleanupTimers();
+    for (const frame of this.pending) this.socket?.send(frame);
+    this.pending = [];
+    this.pendingBytes = 0;
+    if (this.closeRequested) this.sendClose();
   }
 
   private handleMessage(raw: string): void {
-    let message: { type?: unknown; transcript?: unknown };
+    let message: { type?: unknown; transcript?: unknown; text?: unknown; is_final?: unknown };
     try {
       message = JSON.parse(raw) as typeof message;
     } catch {
@@ -242,15 +312,24 @@ export class CartesiaInkSession {
     }
     const text = typeof message.transcript === "string" ? message.transcript : "";
     switch (message.type) {
-      case "connected": {
-        this.connected = true;
-        this.cleanupTimers();
-        for (const frame of this.pending) this.socket?.send(frame);
-        this.pending = [];
-        this.pendingBytes = 0;
-        if (this.closeRequested) this.sendClose();
+      case "connected":
+        this.markConnected();
+        break;
+      case "transcript": {
+        // Ink-Whisper: final segments only; a segment is not a turn end (the caller decides those through `endTurn`).
+        if (!this.inkWhisper || message.is_final !== true || typeof message.text !== "string") break;
+        const segment = message.text.trim();
+        if (!segment) break;
+        this.finals.push(segment);
+        this.options.onCaptionChange?.();
         break;
       }
+      case "flush_done":
+        this.endTurnWaiter?.();
+        break;
+      case "done":
+        if (this.inkWhisper) this.settle();
+        break;
       case "turn.start":
         this.activeTurn = true;
         this.partial = "";

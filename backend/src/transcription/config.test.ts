@@ -92,3 +92,17 @@ describe("optional Cartesia Ink-2 configuration", () => {
     expect(() => loadTranscriptionConfig({ TRANSCRIPTION_SEMANTIC_END_TIMEOUT_MS: "100" })).toThrow("200 to 5000");
   });
 });
+
+describe("Cartesia Ink-Whisper configuration", () => {
+  it("defaults to Ink-2 with an 800 ms local pause", () => {
+    expect(loadTranscriptionConfig({})).toMatchObject({ cartesiaModel: "ink-2", cartesiaPauseMs: 800 });
+  });
+
+  it("parses the model and the pause, rejecting invalid values", () => {
+    expect(loadTranscriptionConfig({ CARTESIA_STT_MODEL: " Ink-Whisper ", TRANSCRIPTION_CARTESIA_PAUSE_MS: "300" })).toMatchObject({ cartesiaModel: "ink-whisper", cartesiaPauseMs: 300 });
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_PAUSE_MS: "3000" }).cartesiaPauseMs).toBe(3_000);
+    expect(() => loadTranscriptionConfig({ CARTESIA_STT_MODEL: "ink-3" })).toThrow("ink-2 or ink-whisper");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_PAUSE_MS: "299" })).toThrow("300 to 3000");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_PAUSE_MS: "3001" })).toThrow("300 to 3000");
+  });
+});
