@@ -45,7 +45,7 @@ export function PageIntro({
   return (
     <div ref={introRef} className="flex min-w-0 flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0 max-w-2xl">
-        <h1 className="text-balance text-[clamp(1.875rem,calc(1.25rem+3.125vw),2.5rem)] font-semibold leading-[1.12] tracking-[-0.03em]">
+        <h1 className="text-balance font-[family-name:var(--font-landing-serif)] text-[clamp(2.25rem,calc(1.5rem+3.75vw),3rem)] leading-[1.08] tracking-[-0.02em]">
           {title.split(" ").map((word, index) => (
             <span key={`${word}-${index}`} className="mr-[0.24em] inline-block overflow-hidden align-bottom last:mr-0">
               <span className="inline-block" data-page-intro-word>

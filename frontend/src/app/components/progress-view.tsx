@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { loadInterviewSession, listInterviewSessions } from "@/lib/interview/persistence";
 import type { InterviewSession } from "@/lib/interview/types";
 import { PageIntro, SectionHeading } from "./shared";
@@ -124,14 +123,14 @@ export function ProgressView() {
       {isLoading ? (
         <section className="mt-12 space-y-8" aria-busy="true" aria-label="Carregando progresso">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="skeleton h-28 w-full rounded-box" />
-            <div className="skeleton h-28 w-full rounded-box" />
+            <div className="skeleton h-28 w-full" />
+            <div className="skeleton h-28 w-full" />
           </div>
-          <div className="skeleton h-56 w-full rounded-box" />
+          <div className="skeleton h-56 w-full" />
         </section>
       ) : error ? (
         <section className="mt-12" role="alert">
-          <div className="alert alert-error items-start">
+          <div className="alert alert-error items-start rounded-lg">
             <div>
               <h2 className="font-semibold">Não foi possível carregar seu progresso.</h2>
               <p className="mt-1 text-sm">Verifique sua conexão e tente novamente.</p>
@@ -143,38 +142,32 @@ export function ProgressView() {
         </section>
       ) : completedSessions.length === 0 ? (
         <section className="mt-12" data-aos="fade-up" data-aos-duration="500">
-          <Card className="border-dashed">
-            <div className="card-body items-start gap-4 p-6 sm:p-8">
-              <span className="badge badge-ghost">Nenhuma sessão concluída ainda</span>
-              <div>
-                <h2 className="text-xl font-semibold tracking-[-0.02em]">Ainda não há sessões concluídas.</h2>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                  Conclua uma entrevista para ver o tempo de prática e o histórico aqui. Sessões em andamento ou abandonadas não entram na lista.
-                </p>
-              </div>
+          <div className="border border-dashed border-border p-6 sm:p-8">
+            <span className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground">Nenhuma sessão concluída ainda</span>
+            <div className="mt-4">
+              <h2 className="text-xl font-semibold tracking-[-0.02em]">Ainda não há sessões concluídas.</h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+                Conclua uma entrevista para ver o tempo de prática e o histórico aqui. Sessões em andamento ou abandonadas não entram na lista.
+              </p>
             </div>
-          </Card>
+          </div>
         </section>
       ) : (
         <>
           <section className="mt-12 grid gap-4 sm:grid-cols-2" data-aos="fade-up" data-aos-duration="500">
-            <Card>
-              <div className="card-body gap-2 p-5 sm:p-6">
-                <p className="text-sm text-muted-foreground">Sessões concluídas</p>
-                <p className="text-3xl font-semibold tracking-[-0.04em] tabular-nums">{completedSessions.length}</p>
-              </div>
-            </Card>
-            <Card>
-              <div className="card-body gap-2 p-5 sm:p-6">
-                <p className="text-sm text-muted-foreground">Tempo de prática</p>
-                <p className="text-3xl font-semibold tracking-[-0.04em] tabular-nums">{hasKnownDuration ? formatPracticeDuration(practicedMilliseconds) : "Indisponível"}</p>
-                <p className="text-xs text-muted-foreground">Com base nos horários disponíveis das sessões concluídas</p>
-              </div>
-            </Card>
+            <div className="border border-border p-5 sm:p-6">
+              <p className="text-sm text-muted-foreground">Sessões concluídas</p>
+              <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] tabular-nums">{completedSessions.length}</p>
+            </div>
+            <div className="border border-border p-5 sm:p-6">
+              <p className="text-sm text-muted-foreground">Tempo de prática</p>
+              <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] tabular-nums">{hasKnownDuration ? formatPracticeDuration(practicedMilliseconds) : "Indisponível"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Com base nos horários disponíveis das sessões concluídas</p>
+            </div>
           </section>
           <section className="mt-12" data-aos="fade-up" data-aos-duration="450">
             <SectionHeading title="Sessões concluídas" description="Suas práticas de entrevista mais recentes primeiro." />
-            <div className="mt-6 overflow-x-auto rounded-box border border-base-300">
+            <div className="mt-6 overflow-x-auto border border-border">
               <table className="table">
                 <caption className="sr-only">Sessões de entrevista concluídas</caption>
                 <thead>

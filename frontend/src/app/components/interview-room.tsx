@@ -565,7 +565,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         <section className="mx-auto w-full max-w-4xl" aria-labelledby="interview-complete-title">
           <div className="border-b border-base-300 pb-6">
             <p className="text-sm font-medium text-primary">Prática concluída</p>
-            <h1 id="interview-complete-title" className="mt-2 text-3xl font-semibold tracking-[-0.03em]">Seu relatório de entrevista</h1>
+            <h1 id="interview-complete-title" className="mt-2 font-[family-name:var(--font-landing-serif)] text-4xl tracking-[-0.02em]">Seu relatório de entrevista</h1>
             <p className="mt-3 max-w-[60ch] text-sm leading-6 text-muted-foreground">{persistenceLabel} As respostas por voz foram transcritas; o áudio não é salvo.</p>
             <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
               <p><span className="text-muted-foreground">Cargo</span> <span className="font-medium">{config.role}</span></p>
@@ -614,7 +614,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           </section>
           <div className="mt-8 flex flex-col gap-3 border-t border-base-300 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs leading-5 text-muted-foreground">{persistenceLabel}</p>
-            <button type="button" className="btn btn-primary min-h-11 gap-2" onClick={onLeave}>Voltar à visão geral <ArrowUpRight className="size-4" aria-hidden="true" /></button>
+            <button type="button" className="btn btn-primary min-h-11 gap-2 rounded-full" onClick={onLeave}>Voltar à visão geral <ArrowUpRight className="size-4" aria-hidden="true" /></button>
           </div>
         </section>
       )}
@@ -622,7 +622,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       <div hidden={phase === "ending"} aria-hidden={phase === "ending"}>
         <header className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 pb-4">
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold tracking-[-0.02em] sm:text-xl">Entrevista em andamento</h1>
+            <h1 className="font-[family-name:var(--font-landing-serif)] text-xl tracking-[-0.02em] sm:text-2xl">Entrevista em andamento</h1>
             <p className="mt-1 max-w-[65ch] break-words text-sm text-muted-foreground">{config.role} · {config.seniority.replace("-", " ")} · {config.focus.replaceAll("-", " ")}</p>
           </div>
           <div className="flex items-center gap-2 text-sm tabular-nums sm:gap-4">
@@ -640,7 +640,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           <section className={`relative flex min-h-[270px] flex-col overflow-hidden rounded-xl border border-base-300 bg-base-200 sm:min-h-[min(56vh,540px)] ${isInterviewerSpeaking ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`} aria-label="Entrevistador">
             <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center sm:px-8">
               <AudioLines className={`size-10 text-primary sm:size-12 ${isInterviewerSpeaking ? "motion-safe:animate-pulse" : ""}`} aria-hidden="true" />
-              <h2 className="mt-4 text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">Entrevistador</h2>
+              <h2 className="mt-4 font-[family-name:var(--font-landing-serif)] text-3xl tracking-[-0.02em] sm:text-4xl">Entrevistador</h2>
               <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite">
                 <span className={`status ${isInterviewerSpeaking ? "status-primary" : isAdvancing ? "status-warning" : "status-neutral"}`} aria-hidden="true" />
                 {phase === "introducing" ? "Apresentando a primeira pergunta" : phase === "closing" ? "Encerrando a entrevista" : phase === "speaking" ? "Fazendo a pergunta" : isAdvancing ? "Preparando a próxima pergunta" : "Aguardando sua resposta"}
@@ -704,7 +704,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           />
           <div className="mt-4 flex flex-col gap-3 border-t border-base-300 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs leading-5 text-muted-foreground" role="status" aria-live="polite">{persistenceLabel}</p>
-            <button type="button" className="btn btn-error btn-outline min-h-11 gap-2 self-start sm:self-auto" onClick={leaveInterview}><PhoneOff className="size-4" aria-hidden="true" /> Sair sem concluir</button>
+            <button type="button" className="btn btn-error btn-outline min-h-11 gap-2 rounded-full self-start sm:self-auto" onClick={leaveInterview}><PhoneOff className="size-4" aria-hidden="true" /> Sair sem concluir</button>
           </div>
         </section>
       </div>
@@ -796,7 +796,7 @@ function CandidateCamera({ initialEnabled, active, captureState, caption, captio
   return (
     <section className={`relative flex min-h-[270px] flex-col overflow-hidden rounded-xl border border-base-300 bg-base-200 sm:min-h-[min(56vh,540px)] ${captureState === "listening" || captureState === "detected" || captureState === "finalizing" ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`} aria-label="Você">
       <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-5 py-8 text-center">
-        {cameraEnabled && stream ? <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 size-full object-cover" aria-label="Prévia local da sua câmera" /> : <div className="relative"><VideoOff className="mx-auto size-10 text-muted-foreground" aria-hidden="true" /><p className="mt-4 text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">Você</p><p className="mt-2 text-sm text-muted-foreground">{captureState === "detected" || captureState === "listening" ? "Você está falando" : captureState === "finalizing" ? "Processando sua resposta" : "Sua vez de responder"}</p></div>}
+        {cameraEnabled && stream ? <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 size-full object-cover" aria-label="Prévia local da sua câmera" /> : <div className="relative"><VideoOff className="mx-auto size-10 text-muted-foreground" aria-hidden="true" /><p className="mt-4 font-[family-name:var(--font-landing-serif)] text-3xl tracking-[-0.02em] sm:text-4xl">Você</p><p className="mt-2 text-sm text-muted-foreground">{captureState === "detected" || captureState === "listening" ? "Você está falando" : captureState === "finalizing" ? "Processando sua resposta" : "Sua vez de responder"}</p></div>}
         {cameraEnabled && stream && <span className="absolute left-4 top-4 rounded-md bg-base-100/90 px-3 py-2 text-sm font-medium">Você · câmera local</span>}
         {cameraState === "requesting" && <span className="loading loading-spinner loading-sm absolute right-4 top-4" aria-label="Iniciando câmera" />}
       </div>
