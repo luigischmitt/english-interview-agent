@@ -165,6 +165,15 @@ backend (ou aponte `NEXT_PUBLIC_BACKEND_URL` para uma API compatível). Sem ele,
 o texto da pergunta continua disponível e a falha de reprodução não bloqueia a
 prática por voz.
 
+### Aviso de microfone sem áudio
+
+Durante a gravação, se nenhum sinal de áudio chegar em 3 s (RMS < 0,003) ou se
+o servidor não detectar fala em 10 s, a captura mostra um aviso discreto com o
+botão "Tentar de novo". O botão descarta a tentativa (envia `cancel`, libera o
+microfone e o `AudioContext`; nada é transcrito ou salvo) e inicia uma nova
+captura para a mesma pergunta, sem contar como resposta. O aviso some quando a
+fala é detectada. A lógica fica em `src/lib/interview/silent-mic-detector.mjs`.
+
 ### Medir o handoff até a próxima fala (diagnóstico local)
 
 Para habilitar uma medição opt-in no navegador, abra o console do DevTools e

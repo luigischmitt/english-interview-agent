@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getAccessToken } from "@/lib/auth/backend-auth";
 import { buildStreamStartMessage, notifySessionExpired } from "@/lib/auth/access-token.mjs";
 import type { VoiceTranscription } from "@/lib/interview/transcription";
+import { createSilentMicDetector, type SilentMicState } from "@/lib/interview/silent-mic-detector.mjs";
 import { getSpeechThreshold } from "@/lib/interview/vad-threshold.mjs";
 import { toStreamQuestion } from "@/lib/interview/stream-question.mjs";
 import { finalVoiceTranscription, transcriptionFailureMessage } from "@/lib/interview/transcription-state.mjs";
@@ -115,6 +116,9 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [transcription, setTranscription] = useState<VoiceTranscriptionState>({ status: "idle" });
+  const [micNotice, setMicNotice] = useState<Exclude<SilentMicState, "ok"> | null>(null);
+  const micDetectorRef = useRef<ReturnType<typeof createSilentMicDetector> | null>(null);
+  const micCheckTimerRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -154,6 +158,10 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     if (connectionTimeoutRef.current !== null) window.clearTimeout(connectionTimeoutRef.current);
     durationTimerRef.current = null;
     connectionTimeoutRef.current = null;
+    if (micCheckTimerRef.current !== null) window.clearInterval(micCheckTimerRef.current);
+    micCheckTimerRef.current = null;
+    micDetectorRef.current = null;
+    setMicNotice(null);
     if (workletRef.current) workletRef.current.port.onmessage = null;
     workletRef.current?.disconnect();
     sourceRef.current?.disconnect();
@@ -240,8 +248,9 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     onTranscriptionChangeRef.current(idle);
   }, [clearCaption, releaseCapture]);
 
-  const startRecording = useCallback(async () => {
-    if (status === "requesting" || status === "recording" || status === "finalizing" || disabled) return;
+  const startRecording = useCallback(async (force = false) => {
+    if ((!force && (status === "requesting" || status === "recording" || status === "finalizing")) || disabled) return;
+    setMicNotice(null);
     setError(null);
     setStatus("requesting");
     onCaptureStateChangeRef.current?.("requesting");
@@ -353,6 +362,8 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             return;
           }
           if (message.type === "speech-started") {
+            micDetectorRef.current?.markSpeechStarted();
+            setMicNotice(null);
             onCaptureStateChangeRef.current?.("detected");
             return;
           }
@@ -448,6 +459,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
         if (generationRef.current !== generation || !event.data?.samples) return;
         const samples = new Float32Array(event.data.samples);
         const frame = { samples, level: rootMeanSquare(samples) };
+        micDetectorRef.current?.pushLevel(frame.level);
         if (!streamReady) pendingFrames.push(frame);
         else sendFrame(frame);
       };
@@ -460,6 +472,14 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       if (socket.readyState !== WebSocket.OPEN) throw new Error("connection");
 
       streamReady = true;
+      const detector = createSilentMicDetector({ startedAtMs: Date.now() });
+      micDetectorRef.current = detector;
+      pendingFrames.forEach(({ level }) => detector.pushLevel(level));
+      micCheckTimerRef.current = window.setInterval(() => {
+        if (generationRef.current !== generation || finalizationRequestedRef.current) return;
+        const state = detector.evaluate(Date.now());
+        setMicNotice(state === "ok" ? null : state);
+      }, 500);
       pendingFrames.forEach(sendFrame);
       setStatus("recording");
       onCaptureStateChangeRef.current?.("listening");
@@ -482,6 +502,13 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
             : microphoneError(captureError));
     }
   }, [assessmentSockets, clearCaption, disabled, fail, onHandoffTimingEvent, releaseCapture, status, stopRecording]);
+
+  const retryCapture = useCallback(() => {
+    // Same path as "Descartar gravação" (sends cancel, releases mic/AudioContext,
+    // drops partial audio), then a fresh capture for the same question.
+    cancelRecording();
+    void startRecording(true);
+  }, [cancelRecording, startRecording]);
 
   useEffect(() => {
     const nextSignal = nextAutoStartSignal(autoStartSignal, disabled, lastAutoStartSignalRef.current);
@@ -530,6 +557,15 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
           {isPending && <LoaderCircle className="size-5 motion-safe:animate-spin self-center text-muted-foreground" aria-hidden="true" />}
         </div>
       </div>
+      {isRecording && micNotice && (
+        <div role="status" className="alert alert-warning alert-soft mt-3 flex-wrap text-sm">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">{micNotice === "silent" ? "Não estamos recebendo áudio do seu microfone." : "Ainda não ouvimos sua voz."}</p>
+            <p className="mt-1">{micNotice === "silent" ? "Confira se o microfone certo está selecionado e se não está mudo. Fones Bluetooth às vezes levam alguns segundos para ativar o microfone." : "Fale normalmente perto do microfone ou tente de novo."}</p>
+          </div>
+          <button type="button" className="btn btn-sm btn-outline min-h-11 gap-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" onClick={retryCapture}>Tentar de novo</button>
+        </div>
+      )}
       {error && transcription.status !== "failed" && <p className="mt-3 text-sm text-error" role="alert">{error}</p>}
       {transcription.status === "failed" && <p className="mt-3 text-sm text-error" role="alert">{transcription.message}</p>}
     </section>
