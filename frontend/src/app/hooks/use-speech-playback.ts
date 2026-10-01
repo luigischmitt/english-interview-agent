@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { authorizedFetch } from "@/lib/auth/access-token";
 import { playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
 
 export type SpeechTimingEvent = "synthesis-started" | "synthesis-completed" | "playback-started";
@@ -10,7 +11,7 @@ const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
 
 /** Starts synthesizing the next interviewer utterance early; the later playback of the same utterance reuses it. */
 export function prewarmInterviewerUtterance(utterance: string) {
-  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, timeoutMs: 20_000, retainMs: 30_000 });
+  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 30_000 });
 }
 
 export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void) {
@@ -31,6 +32,7 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
 
     const playback = playInterviewerSegments(segments, {
       endpoint: speechEndpoint,
+      fetcher: authorizedFetch,
       // Kokoro's backend budget is 15s; leave 5s for network and body transfer.
       timeoutMs: 20_000,
       onSegment: (segment) => {

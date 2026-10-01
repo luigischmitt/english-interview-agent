@@ -16,6 +16,7 @@ export type SpeechPlaybackOptions = {
   timeoutMs?: number;
   /** Maximum time to wait for play() and the media ended event. Defaults to a text-length estimate. */
   playbackTimeoutMs?: number;
+  /** Defaults to fetch; the app passes authorizedFetch so the backend receives the Supabase access token. */
   fetcher?: typeof fetch;
   /** Keep a finished blob reusable by an identical request for this long (prepared utterances only). */
   retainMs?: number;

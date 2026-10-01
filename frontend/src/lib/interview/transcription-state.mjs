@@ -13,6 +13,7 @@ const failureMessages = {
   STREAM_CAPACITY_REACHED: "A sala está processando o máximo de gravações agora. Aguarde um instante e tente novamente, pule a pergunta ou encerre a prática.",
   TRANSCRIPTION_CAPACITY_REACHED: "Há muitas respostas sendo processadas agora. Aguarde um instante e tente novamente, pule a pergunta ou encerre a prática.",
   TRANSCRIPTION_NOT_CONFIGURED: "A transcrição não está disponível agora. Tente novamente, pule a pergunta ou encerre a prática.",
+  UNAUTHENTICATED: "Sua sessão expirou. Entre novamente para continuar a entrevista.",
   UNSUPPORTED_PCM_PROTOCOL: "O formato de áudio deste navegador não é compatível. Tente em outro navegador, pule a pergunta ou encerre a prática.",
 };
 

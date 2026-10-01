@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
+import { authorizedFetch } from "@/lib/auth/access-token";
 import { synthesizeInterviewerQuestion, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
@@ -78,6 +79,7 @@ export function InterviewSetup({
     setAudioTestStatus({ kind: "loading", message: "Gerando e reproduzindo uma frase em inglês…" });
     const playback = synthesizeInterviewerQuestion(audioTestPhrase, {
       endpoint: `${backendBaseUrl}/api/v1/speech`,
+      fetcher: authorizedFetch,
     });
     audioTestRef.current = playback;
     const result = await playback.promise;

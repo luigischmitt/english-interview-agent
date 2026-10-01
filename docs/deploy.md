@@ -24,7 +24,11 @@ Secrets (Secret Manager): `OPENROUTER_API_KEY`, `AZURE_SPEECH_KEY`,
 
 Plain variables: `SPEECH_PROVIDER=openrouter`, `TRANSCRIPTION_PROVIDER=cartesia`,
 `AZURE_SPEECH_REGION`, `AZURE_SPEECH_ASSESSMENT_ENABLED=true`,
-`ALLOWED_ORIGIN=https://englishinterview.vercel.app,https://english-interview-agent.vercel.app` (no trailing slash).
+`SUPABASE_URL` (the public project URL, same as `NEXT_PUBLIC_SUPABASE_URL`; the
+backend refuses to start without it while `BACKEND_AUTH_REQUIRED` is unset or
+`true`), `SUPABASE_PUBLISHABLE_KEY` (public, recommended; same value as
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; enables the remote token check for non-ES256 signing
+keys), `ALLOWED_ORIGIN=https://englishinterview.vercel.app,https://english-interview-agent.vercel.app` (no trailing slash).
 
 Do not set `KOKORO_BASE_URL` (unused with `openrouter`) or
 `INTERVIEW_REASONING_DIAGNOSTICS`. Cloud Run injects `PORT=8080`. Every other
@@ -81,12 +85,14 @@ gcloud run deploy english-interview-backend \
   --allow-unauthenticated \
   --max-instances 1 --min-instances 0 --cpu 1 --memory 1Gi \
   --concurrency 20 --timeout 3600 --session-affinity \
-  --set-env-vars "SPEECH_PROVIDER=openrouter,TRANSCRIPTION_PROVIDER=cartesia,AZURE_SPEECH_REGION=<region>,AZURE_SPEECH_ASSESSMENT_ENABLED=true,ALLOWED_ORIGIN=<vercel-origin>" \
+  --set-env-vars "SPEECH_PROVIDER=openrouter,TRANSCRIPTION_PROVIDER=cartesia,AZURE_SPEECH_REGION=<region>,AZURE_SPEECH_ASSESSMENT_ENABLED=true,SUPABASE_URL=<supabase-url>,SUPABASE_PUBLISHABLE_KEY=<publishable-key>,ALLOWED_ORIGIN=<vercel-origin>" \
   --set-secrets "OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,AZURE_SPEECH_KEY=AZURE_SPEECH_KEY:latest,CARTESIA_API_KEY=CARTESIA_API_KEY:latest"
 ```
 
 `--allow-unauthenticated` is required because browsers call the service
-directly; protect it with application auth (see Launch blockers). The deploy
+directly; every `/api/v1` route that spends providers and the transcription
+WebSocket require a Supabase access token (ENG-102, see `backend/README.md`
+"Authentication"). The deploy
 prints the service URL (`https://english-interview-backend-<hash>-ue.a.run.app`).
 Check it: `curl <url>/health` returns `{"status":"ok"}`.
 
@@ -165,9 +171,8 @@ Logs never include audio, transcripts or keys by design; keep it that way.
 
 ## Launch blockers
 
-- **Backend authentication (ENG-102)**: the backend has no authentication today.
-  Anyone with the Cloud Run URL can spend OpenRouter, Cartesia and Azure credits.
-  Do not announce the product publicly until Supabase token checks land.
+- **No per-user usage limits**: any signed-up user can spend provider credits;
+  limits were deferred while usage is small.
 - **Cartesia credits and data retention**: confirm the credit balance covers
   expected usage and review Cartesia's retention terms before real users send
   audio.

@@ -249,7 +249,7 @@ export function synthesizeInterviewerQuestion(text, options) {
       if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
       return {
         status: "unavailable",
-        message: error?.isSpeechResponseError && error.message
+        message: (error?.isSpeechResponseError || error?.isUnauthenticated) && error.message
           ? error.message
           : "O áudio não está disponível agora. Você pode continuar sem ele.",
       };

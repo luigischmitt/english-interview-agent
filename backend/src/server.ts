@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import { createServer } from "node:http";
 
-import { app, defaultPronunciationAssessmentService, defaultTranscriptionConfig, defaultTranscriptionService } from "./app.js";
+import { app, defaultAccessTokenVerifier, defaultPronunciationAssessmentService, defaultTranscriptionConfig, defaultTranscriptionService } from "./app.js";
 import { loadThinkingConfig } from "./thinking/config.js";
 import { OpenRouterAnswerCompletionService } from "./thinking/answer-completion-service.js";
 import { attachTranscriptionWebSocket } from "./transcription/transcription-websocket.js";
@@ -41,7 +41,7 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
   finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
 }, cartesiaRequested && cartesiaApiKey
   ? { apiKey: cartesiaApiKey, answerGraceMs: defaultTranscriptionConfig.cartesiaAnswerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.cartesiaIncompleteGraceMs, azureFromInkTurns: defaultTranscriptionConfig.azureTimingFromInkTurns, turnEndTimeoutMs: defaultTranscriptionConfig.cartesiaTurnEndTimeoutMs, model: defaultTranscriptionConfig.cartesiaModel, pauseMs: defaultTranscriptionConfig.cartesiaPauseMs, prepareAfterMs: defaultTranscriptionConfig.cartesiaPrepareAfterMs, maxPrepares: defaultTranscriptionConfig.cartesiaMaxPrepares, answerCompletion }
-  : null);
+  : null, { verifier: defaultAccessTokenVerifier });
 
 server.listen(port, () => {
   console.info(`Backend listening on port ${port}`);

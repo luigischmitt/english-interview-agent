@@ -1,3 +1,4 @@
+import { authorizedFetch } from "@/lib/auth/access-token";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { InterviewConfig, PersistenceResult } from "./types";
 import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";
@@ -75,7 +76,7 @@ export { answerOrdinalForSequence, pairInterviewTurns };
 export const interviewReportTimeoutMs = 65_000;
 
 export async function requestInterviewReport(config: InterviewConfig, turns: InterviewReportTurn[], endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"): Promise<InterviewReportResult> {
-  const response = await fetch(`${endpoint}/api/v1/thinking/report`, {
+  const response = await authorizedFetch(`${endpoint}/api/v1/thinking/report`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -111,7 +112,7 @@ function withDeadline(timeoutMs: number, signal?: AbortSignal): AbortSignal {
 
 /** Analyze one submitted answer in the background; rejects on any failure. */
 export async function requestInterviewTurnAnalysis(config: InterviewConfig, turn: InterviewReportTurn, signal?: AbortSignal, endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"): Promise<InterviewTurnAnalysis> {
-  const response = await fetch(`${endpoint}/api/v1/thinking/report/turn`, {
+  const response = await authorizedFetch(`${endpoint}/api/v1/thinking/report/turn`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus }, turn }),
@@ -126,7 +127,7 @@ export async function requestInterviewTurnAnalysis(config: InterviewConfig, turn
 
 /** Consolidate already analyzed answers into the same report shape as the full request. */
 export async function requestInterviewConsolidation(config: InterviewConfig, turns: InterviewReportTurn[], turnAnalyses: InterviewTurnAnalysis[], endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"): Promise<InterviewReportResult> {
-  const response = await fetch(`${endpoint}/api/v1/thinking/report/consolidate`, {
+  const response = await authorizedFetch(`${endpoint}/api/v1/thinking/report/consolidate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus }, turns, turnAnalyses }),
