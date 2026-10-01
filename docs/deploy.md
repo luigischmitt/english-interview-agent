@@ -24,7 +24,7 @@ Secrets (Secret Manager): `OPENROUTER_API_KEY`, `AZURE_SPEECH_KEY`,
 
 Plain variables: `SPEECH_PROVIDER=openrouter`, `TRANSCRIPTION_PROVIDER=cartesia`,
 `AZURE_SPEECH_REGION`, `AZURE_SPEECH_ASSESSMENT_ENABLED=true`,
-`ALLOWED_ORIGIN=<Vercel production origin>` (no trailing slash).
+`ALLOWED_ORIGIN=https://englishinterview.vercel.app,https://english-interview-agent.vercel.app` (no trailing slash).
 
 Do not set `KOKORO_BASE_URL` (unused with `openrouter`) or
 `INTERVIEW_REASONING_DIAGNOSTICS`. Cloud Run injects `PORT=8080`. Every other
@@ -95,19 +95,36 @@ answer lasts up to 180 s, well inside the 3600 s request timeout.
 
 ## Frontend on Vercel
 
-1. Import the GitHub repository in Vercel and set **Root Directory** to `frontend`.
-2. Environment variables (Production): `NEXT_PUBLIC_SUPABASE_URL`,
-   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_BACKEND_URL` (the Cloud
-   Run service URL, no trailing slash). The frontend converts `https://` to
-   `wss://` for the stream.
-3. Deploy, then copy the production origin (for example
-   `https://<project>.vercel.app`).
-4. Update the backend CORS origin and create a new revision:
+The GitHub repository belongs to another account, so the Vercel GitHub app
+cannot import it. The frontend is deployed with the Vercel CLI from `frontend/`
+(`frontend/.vercelignore` keeps `.env*`, `node_modules` and `.next` out of the
+upload).
 
-   ```bash
-   gcloud run services update english-interview-backend --region $REGION \
-     --update-env-vars ALLOWED_ORIGIN=<vercel-origin>
-   ```
+- Project: `english-interview-agent` (Root Directory `.` because the CLI runs
+  inside `frontend/`). Production domain: `https://englishinterview.vercel.app`
+  (also `https://english-interview-agent.vercel.app`).
+- Environment variables (Production): `NEXT_PUBLIC_SUPABASE_URL`,
+  `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_BACKEND_URL` (the Cloud
+  Run service URL, no trailing slash). The frontend converts `https://` to
+  `wss://` for the stream. Add values without echoing them, for example
+  `grep '^NAME=' .env.local | cut -d= -f2- | tr -d '\n' | vercel env add NAME production`.
+- Deploy (after every merge that changes the frontend):
+
+  ```bash
+  cd frontend
+  vercel link --yes --project english-interview-agent   # once per checkout
+  vercel deploy --prod --yes
+  ```
+
+- The backend allows the production origins:
+
+  ```bash
+  gcloud run services update english-interview-backend --region $REGION \
+    --update-env-vars "^@^ALLOWED_ORIGIN=https://englishinterview.vercel.app,https://english-interview-agent.vercel.app"
+  ```
+
+  The `^@^` prefix changes gcloud's list delimiter so the comma stays inside the
+  value.
 
 `NEXT_PUBLIC_*` values are inlined at build time; redeploy the frontend after
 changing them.
@@ -158,5 +175,9 @@ Logs never include audio, transcripts or keys by design; keep it that way.
 ## Verified locally vs. only documented
 
 Verified locally: `npm run build`, `node dist/server.js` health check, and the
-production image build and `/health` check with Docker. The `gcloud`, Vercel and
-Supabase steps above were not run from this repository.
+production image build and `/health` check with Docker. First production deploy
+(2026-10-01): Cloud Build image, Cloud Run revision in `us-east1`, `/health`
+200, speech through OpenRouter 200 in about 0.9 s, WebSocket `ready` from the
+production origin and refused (503) from other origins, Vercel production
+deploy on `englishinterview.vercel.app`. Supabase URL configuration is done in
+the Supabase dashboard.
