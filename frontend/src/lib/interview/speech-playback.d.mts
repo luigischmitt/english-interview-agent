@@ -17,6 +17,8 @@ export type SpeechPlaybackOptions = {
   /** Maximum time to wait for play() and the media ended event. Defaults to a text-length estimate. */
   playbackTimeoutMs?: number;
   fetcher?: typeof fetch;
+  /** Keep a finished blob reusable by an identical request for this long (prepared utterances only). */
+  retainMs?: number;
   makeAudio?: (url: string) => HTMLAudioElement;
   createObjectUrl?: (blob: Blob) => string;
   revokeObjectUrl?: (url: string) => void;
@@ -47,3 +49,5 @@ export function resolveInterviewerCaption(input: {
 }): string;
 export function synthesizeInterviewerQuestion(text: string, options: SpeechPlaybackOptions): SpeechPlayback;
 export function playInterviewerSegments(segments: string[], options: SpeechPlaybackOptions): SpeechPlayback;
+export function prewarmInterviewerSpeech(segments: string[], options: SpeechPlaybackOptions): { promise: Promise<boolean>; cancel: () => void };
+export function clearRetainedSpeechBlobs(): void;

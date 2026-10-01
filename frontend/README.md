@@ -169,7 +169,7 @@ execute `sessionStorage.setItem("english-interview:handoff-timing", "1")` antes
 de iniciar uma nova entrevista. Após a primeira fala do entrevistador que segue
 uma resposta, o console registra um objeto JSON `interview_handoff_timing` com
 durações totais e por etapa: finalização/VAD, fila, Whisper, decisão, síntese e
-início da reprodução. Para desabilitar, execute
+início da reprodução (mais `prepared: true` quando a próxima pergunta foi preparada durante a espera, veja abaixo). Para desabilitar, execute
 `sessionStorage.removeItem("english-interview:handoff-timing")` e recarregue a
 página. A medição não registra nem inclui áudio, transcrição, IDs de sessão ou
 segredos; fica desabilitada por padrão e dura apenas a sessão da aba.
@@ -180,6 +180,24 @@ iniciar uma nova entrevista. O console registra uma única linha
 `interview_opening_timing` com os tempos numéricos de síntese e do fim da síntese
 até o início da reprodução. A medição fica desabilitada por padrão; remova a
 chave da sessão para desabilitá-la.
+
+### Preparação antecipada da próxima pergunta (Cartesia)
+
+Com `TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS` ativo no backend, depois de um
+fim de turno sem nova fala o backend envia `answer-provisional` com a
+transcrição provisória da resposta. O navegador chama `decideNextTurn` com as
+mesmas entradas que usaria ao enviar a resposta e, em seguida, pré-sintetiza o
+áudio da próxima fala (`prewarmInterviewerSpeech`; o blob pronto fica reutilizável
+por 30 s). Só a preparação mais recente é mantida: ela é abortada quando chega
+outra transcrição provisória, quando a fala é retomada (`speech-resumed` ou
+legenda parcial não vazia), ao pular, sair ou desmontar a sala. No `complete`, a
+decisão preparada só é usada se a transcrição final for igual (após `trim`) à
+provisória e as entradas da decisão forem idênticas; caso contrário é descartada
+e o caminho normal roda. O console registra, sem conteúdo, o evento
+`interview_next_turn_preparation` com `prepared_used` ou `prepared_discarded` e
+as contagens acumuladas (`used`, `discarded`). Sem legendas, uma nova fala do
+Ink-2 sem pausa local só é percebida no `complete` (a preparação é descartada
+por transcrição diferente).
 
 ## Persistência e falhas
 

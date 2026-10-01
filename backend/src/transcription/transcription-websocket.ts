@@ -164,6 +164,13 @@ export type CartesiaStreamingOptions = {
   /** Experimental: cut Azure blocks at Ink-2 turn boundaries instead of background Whisper timings (off by default; scored lower in live tests). */
   azureFromInkTurns?: boolean;
   turnEndTimeoutMs?: number | null;
+  /**
+   * Delay after a turn end (with no new speech) before sending `answer-provisional`, so the browser can prepare the next
+   * question during the grace. 0 or undefined disables; it only applies when shorter than the grace that is running.
+   */
+  prepareAfterMs?: number;
+  /** Maximum provisional messages per answer. Defaults to 2. */
+  maxPrepares?: number;
   /** Upper bound for flushing Ink-2 at the end of an answer. */
   flushTimeoutMs?: number;
   /** Test hook. */
@@ -219,9 +226,15 @@ export function attachTranscriptionWebSocket(
     let inkSession: CartesiaInkSession | null = null;
     let inkTurns: InkTurnRecorder | null = null;
     let inkGraceTimer: ReturnType<typeof setTimeout> | null = null;
+    // Provisional answer for next-turn preparation (never logged; only the count is).
+    let prepareTimer: ReturnType<typeof setTimeout> | null = null;
+    let preparesSent = 0;
+    let lastProvisional = "";
     const clearInkGrace = () => {
       if (inkGraceTimer !== null) clearTimeout(inkGraceTimer);
       inkGraceTimer = null;
+      if (prepareTimer !== null) clearTimeout(prepareTimer);
+      prepareTimer = null;
     };
     // Live caption (display-only, never logged or stored): throttled, sent only when the text changed.
     let captionsEnabled = false;
@@ -497,7 +510,7 @@ export function attachTranscriptionWebSocket(
           }
           const transcriptionDurationMs = Date.now() - flushStartedAt;
           const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
-          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "cartesia", cartesiaTurns: ink.turnCount, answerEndReason, speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
+          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "cartesia", cartesiaTurns: ink.turnCount, preparesSent, answerEndReason, speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
           send(socket, { type: "complete", status: "complete", provider: "cartesia-ink-2", durationMs, transcript });
           clearTimeout(timer);
 
@@ -693,12 +706,26 @@ export function attachTranscriptionWebSocket(
               onTurnEnd: (turnTranscript) => {
                 if (finalRequested || finishing || !turnTranscript) return;
                 clearInkGrace();
+                const graceMs = looksUnfinished(turnTranscript) ? (cartesia.incompleteGraceMs ?? cartesia.answerGraceMs) : cartesia.answerGraceMs;
                 inkGraceTimer = setTimeout(() => {
                   inkGraceTimer = null;
                   const current = sessionId ? sessions.get(sessionId) : undefined;
                   // Noise before the first words can end an empty turn; only a real answer may be closed by Ink-2.
                   if (current?.vad.hasSpeech) finalize("silence", "cartesia");
-                }, looksUnfinished(turnTranscript) ? (cartesia.incompleteGraceMs ?? cartesia.answerGraceMs) : cartesia.answerGraceMs);
+                }, graceMs);
+                const prepareAfterMs = cartesia.prepareAfterMs ?? 0;
+                if (prepareAfterMs > 0 && prepareAfterMs < graceMs && preparesSent < (cartesia.maxPrepares ?? 2)) {
+                  prepareTimer = setTimeout(() => {
+                    prepareTimer = null;
+                    const current = sessionId ? sessions.get(sessionId) : undefined;
+                    if (finalRequested || finishing || !inkSession || inkSession.failed || inkSession.turnActive || !current?.vad.hasSpeech) return;
+                    const transcript = inkSession.committedText();
+                    if (!transcript || transcript === lastProvisional) return;
+                    lastProvisional = transcript;
+                    preparesSent += 1;
+                    send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
+                  }, prepareAfterMs);
+                }
               },
               onFailure: (failure) => {
                 clearInkGrace();

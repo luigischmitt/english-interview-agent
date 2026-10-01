@@ -61,6 +61,8 @@ performed by the authenticated frontend client. The speech service accepts:
 | `CARTESIA_API_KEY` | — | Cartesia key, server-side only (set it in the ignored `backend/.env`). Never sent to the browser, never logged. |
 | `TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS` | `3500` | After an Ink-2 `turn.end` whose text ends like a complete sentence, wait this long for another turn or resumed local speech before ending the answer; `500` to `10000`. |
 | `TRANSCRIPTION_CARTESIA_INCOMPLETE_GRACE_MS` | `6000` | Grace after a turn that looks unfinished (no final punctuation or a trailing connector such as "because", "and", "the"), so a thinking pause is not cut; `500` to `15000`. |
+| `TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS` | `1200` | After a `turn.end` with no `turn.start` or resumed local VAD speech for this long, send `answer-provisional` so the browser can prepare the next question during the grace. `0` disables; it only applies when smaller than the grace that is running; `0` to `10000`. |
+| `TRANSCRIPTION_CARTESIA_MAX_PREPARES` | `2` | Maximum `answer-provisional` messages per answer; `0` to `5`. |
 | `CARTESIA_TURN_END_TIMEOUT_MS` | — | Optional Ink-2 `turn_end_timeout_ms`, `640` to `11200`. |
 | `INTERVIEW_REASONING_MODEL` | `mistralai/mistral-small-3.2-24b-instruct` | OpenRouter model for interview reasoning and next-turn orchestration. Keep this configuration server-side. |
 | `INTERVIEW_REASONING_TIMEOUT_MS` | `15000` | Positive timeout in milliseconds for interview reasoning requests. |
@@ -447,3 +449,7 @@ Required: `CARTESIA_API_KEY` in the ignored `backend/.env`. Optional tuning: `TR
 Cost: Ink-2 bills about 3 credits per second of audio. Approximate monthly audio per plan: Free about 1 h 51 min, Pro (US$5) about 9 h, Startup (US$49) about 116 h; concurrent streams are limited to 8, 12 and 20 respectively. Each answer holds one Ink-2 stream, so keep `TRANSCRIPTION_STREAM_MAX_ACTIVE_SESSIONS` within the plan's concurrency.
 
 Privacy: audio is sent to Cartesia, and zero data retention is offered only on Enterprise plans. Confirm the plan before using real candidate audio.
+
+#### Provisional answers (next-turn preparation)
+
+In Cartesia mode, `TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS` (default 1200 ms) after a `turn.end` with no `turn.start` and no resumed local VAD speech, the backend sends `{ "type": "answer-provisional", "transcript": string, "revision": number }`. `transcript` is the current concatenation of ended turns (what `complete` would carry if nothing else is said) and `revision` increments per message in the answer (at most `TRANSCRIPTION_CARTESIA_MAX_PREPARES`, default 2, and identical text is not resent). A new turn, resumed VAD speech or finalizing cancels the pending message and nothing is sent after `finalizing`. It is sent regardless of the captions flag, is never logged, and is only a hint: the browser may start deciding and synthesizing the next question, but the canonical transcript is still `complete`. The `complete` diagnostic adds `preparesSent` (a count, never text).

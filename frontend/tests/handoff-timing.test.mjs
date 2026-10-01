@@ -35,8 +35,9 @@ test("handoff timing decomposes VAD, queue, Whisper, decision, synthesis, and pl
     synthesisMs: 500,
     playbackStartMs: 200,
     unaccountedMs: 50,
+    prepared: false,
   });
-  assert.deepEqual(Object.keys(metrics), ["totalMs", "vadFinalizationMs", "queueWaitMs", "whisperMs", "decisionMs", "synthesisMs", "playbackStartMs", "unaccountedMs"]);
+  assert.deepEqual(Object.keys(metrics), ["totalMs", "vadFinalizationMs", "queueWaitMs", "whisperMs", "decisionMs", "synthesisMs", "playbackStartMs", "unaccountedMs", "prepared"]);
 });
 
 test("handoff timing is emitted once and leaves unknown queue wait at zero", () => {
@@ -65,4 +66,17 @@ test("diagnostics are opt-in through session storage and default off", () => {
     if (originalWindow === undefined) delete globalThis.window;
     else globalThis.window = originalWindow;
   }
+});
+
+test("handoff timing flags a prepared next turn", () => {
+  let now = 0;
+  let metrics;
+  const timing = createInterviewHandoffTiming({ now: () => now, onComplete: (value) => { metrics = value; } });
+  timing.markPrepared();
+  for (const stage of ["finalizingReceived", "decisionStarted", "decisionCompleted", "synthesisStarted", "synthesisCompleted", "playbackStarted"]) {
+    now += 10;
+    timing.mark(stage);
+  }
+  assert.equal(metrics.prepared, true);
+  assert.equal(metrics.decisionMs, 10);
 });
