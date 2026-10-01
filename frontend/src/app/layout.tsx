@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "English Interview Agent",
-  description: "Pratique entrevistas em inglês com confiança.",
+  title: "English Interview Agent — inglês de entrevista para dev brasileiro",
+  description: "Entrevista em inglês para dev brasileiro mirando vaga na gringa. No fim, um relatório do seu inglês sob pressão.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
