@@ -3,7 +3,7 @@ export type VoiceTranscription = {
   transcript: string;
 };
 
-export const transcriptionProviders = ["azure", "whisper-large-v3", "whisper-large-v3-turbo"] as const;
+export const transcriptionProviders = ["azure", "whisper-large-v3", "whisper-large-v3-turbo", "cartesia-ink-2"] as const;
 
 export type TranscriptionProvider = (typeof transcriptionProviders)[number];
 

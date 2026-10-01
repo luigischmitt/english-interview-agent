@@ -15,6 +15,11 @@ if (!defaultPronunciationAssessmentService) {
       : !defaultTranscriptionConfig.azureSpeechRegion ? "missing_region" : "unavailable";
   console.info(JSON.stringify({ event: "azure_assessment_configuration", enabled: false, reason: unavailableReason }));
 }
+const cartesiaRequested = defaultTranscriptionConfig.transcriptionProvider === "cartesia";
+const cartesiaApiKey = defaultTranscriptionConfig.cartesiaApiKey;
+if (cartesiaRequested && !cartesiaApiKey) {
+  console.info(JSON.stringify({ event: "transcription_provider", provider: "whisper", reason: "missing_cartesia_key" }));
+}
 attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunciationAssessmentService, {
   maxDurationMs: defaultTranscriptionConfig.streamMaxDurationMs,
   maxBytes: defaultTranscriptionConfig.streamMaxBytes,
@@ -28,7 +33,9 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
   },
   hedgeAfterMs: defaultTranscriptionConfig.hedgeAfterMs,
   finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
-});
+}, cartesiaRequested && cartesiaApiKey
+  ? { apiKey: cartesiaApiKey, answerGraceMs: defaultTranscriptionConfig.cartesiaAnswerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.cartesiaIncompleteGraceMs, turnEndTimeoutMs: defaultTranscriptionConfig.cartesiaTurnEndTimeoutMs }
+  : null);
 
 server.listen(port, () => {
   console.info(`Backend listening on port ${port}`);

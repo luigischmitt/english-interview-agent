@@ -7,10 +7,11 @@ import { TranscriptionUnavailableError } from "./errors.js";
 import type { TranscriptionResult, TranscriptionService } from "./types.js";
 import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type SlotReservation, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
 import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
+import { CartesiaInkSession, sanitizeKeyterms } from "./cartesia-ink-session.js";
 import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
-  | { type: "start"; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number }
+  | { type: "start"; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; keyterms?: unknown }
   | { type: "level"; value: number }
   | { type: "finalize"; reason: "manual" | "silence" }
   | { type: "cancel" };
@@ -139,6 +140,33 @@ function logStreamDiagnostic(details: Record<string, string | number | boolean>)
   console.info(JSON.stringify({ event: "transcription_stream", ...details }));
 }
 
+const trailingConnectors = new Set(["a", "about", "also", "an", "and", "as", "because", "but", "for", "from", "hmm", "i", "if", "in", "into", "is", "like", "my", "of", "on", "or", "our", "so", "that", "the", "then", "this", "to", "uh", "um", "was", "we", "when", "which", "while", "with"]);
+
+/** Ink-2 closes a turn at most sentence boundaries; a turn that looks unfinished gets a longer answer grace so a thinking pause is not cut. */
+export function looksUnfinished(transcript: string): boolean {
+  const text = transcript.trim();
+  if (!/[.?!]["')\]]*$/u.test(text)) return true;
+  const lastWord = text.toLocaleLowerCase().match(/[\p{L}']+(?=[^\p{L}']*$)/u)?.[0] ?? "";
+  return trailingConnectors.has(lastWord);
+}
+
+/** Server-side Cartesia Ink-2 settings; the API key never leaves the backend and is never logged. */
+export type CartesiaStreamingOptions = {
+  apiKey: string;
+  /** Grace after an Ink-2 turn that ends like a complete sentence. */
+  answerGraceMs: number;
+  /** Grace after a turn that looks unfinished (no final punctuation or a trailing connector); defaults to answerGraceMs. */
+  incompleteGraceMs?: number;
+  turnEndTimeoutMs?: number | null;
+  /** Upper bound for flushing Ink-2 at the end of an answer. */
+  flushTimeoutMs?: number;
+  /** Test hook. */
+  endpoint?: string;
+  openTimeoutMs?: number;
+};
+
+type AnswerEndReason = "cartesia_turn_end" | "vad_silence" | "fallback_whisper";
+
 type SpeculationOutcome = "reused" | "discarded" | "skipped_no_slot" | "failed" | "none";
 
 /** A Whisper call started at silence detection on an in-memory snapshot, holding a final-transcription slot. */
@@ -156,6 +184,7 @@ export function attachTranscriptionWebSocket(
   transcriptionService: TranscriptionService,
   assessmentService: PronunciationAssessmentService | null = null,
   limits: StreamingLimits = defaultStreamingLimits,
+  cartesia: CartesiaStreamingOptions | null = null,
 ): void {
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, perMessageDeflate: false });
   const sessions = new StreamingTranscriptionSessions(transcriptionService, undefined, undefined, limits);
@@ -181,6 +210,17 @@ export function attachTranscriptionWebSocket(
     let silenceDetected = false;
     let silenceGraceTimer: ReturnType<typeof setTimeout> | null = null;
     let requestAbortController: AbortController | null = null;
+    let inkSession: CartesiaInkSession | null = null;
+    let inkGraceTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearInkGrace = () => {
+      if (inkGraceTimer !== null) clearTimeout(inkGraceTimer);
+      inkGraceTimer = null;
+    };
+    const closeInk = () => {
+      clearInkGrace();
+      inkSession?.close();
+      inkSession = null;
+    };
     let speculation: Speculation | null = null;
     let speculationOutcome: SpeculationOutcome = "none";
     // Hedge outcome of the call whose result (or failure) is being reported.
@@ -207,7 +247,7 @@ export function attachTranscriptionWebSocket(
 
     // Silence path only: ambient_activity is ambiguous mid-band noise that only strong speech can cancel, so it is not speculated.
     const startSpeculation = (id: string, session: StreamingSession) => {
-      if (speculation || finalRequested || finishing) return;
+      if (speculation || finalRequested || finishing || (inkSession && !inkSession.failed)) return;
       if (session.vad.finalizationReason !== "silence" || session.bytes === 0 || !session.vad.hasSpeech
         || session.vad.speechDurationMs < session.config.minimumSpeechMs) return;
       const reservation = finalQueue.reserve();
@@ -229,6 +269,147 @@ export function attachTranscriptionWebSocket(
       speculation = { controller, reservation, snapshot, promise, hedge, startedAt: Date.now() };
     };
 
+    /**
+     * Runs the optional Azure assessment after `complete`. `getTiming` supplies the Whisper result whose words/segments and
+     * transcript build the blocks and reference text (in Cartesia mode it is a background Whisper call; null = no capacity).
+     */
+    const startAssessment = (context: {
+      session: StreamingSession;
+      audio: Buffer;
+      durationMs: number;
+      transcriptionDurationMs: number;
+      abortController: AbortController;
+      release: () => void;
+      getTiming: () => Promise<TranscriptionResult | null>;
+    }) => {
+      const { session, audio, durationMs, transcriptionDurationMs, abortController, release, getTiming } = context;
+      const service = assessmentService;
+      if (!service) {
+        release();
+        return;
+      }
+      void (async () => {
+        const assessmentStartedAt = Date.now();
+        let timingSource = "missing";
+        let timingRetryOutcome = "not_needed";
+        let blocks: AzureAudioBlock[] = [];
+        try {
+          const timing = await getTiming();
+          if (!timing) {
+            const totalDurationMs = Date.now() - assessmentStartedAt;
+            logAzureAssessment({ status: "unavailable", reason: "timing_recovery_capacity", timingSource, timingRetryOutcome: "queue_full", blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs });
+            send(socket, { type: "assessment", status: "unavailable", reason: "timing_recovery_capacity", blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs } });
+            return;
+          }
+          const candidates = [
+            { source: "word", timings: timing.words },
+            { source: "segment", timings: timing.segments },
+          ] as const;
+          for (const candidate of candidates) {
+            if (!candidate.timings?.length) continue;
+            const aligned = alignSegmentTimingToTranscript(candidate.timings, timing.transcript);
+            const candidateBlocks = aligned?.length ? createAzureAlignedBlocks(audio, aligned) : [];
+            if (candidateBlocks.length) {
+              timingSource = candidate.source;
+              blocks = candidateBlocks;
+              break;
+            }
+          }
+
+          if (!blocks.length && transcriptionService.retrySegmentTimestamps) {
+            timingRetryOutcome = "requested";
+            const retryStartedAt = Date.now();
+            let releaseTimingSlot: (() => void) | null = null;
+            try {
+              releaseTimingSlot = await acquireTimingRecoverySlot(abortController.signal);
+              if (!releaseTimingSlot) {
+                timingRetryOutcome = "queue_full";
+              } else {
+                const retry = await transcriptionService.retrySegmentTimestamps(audio, timing.provider, "wav", abortController.signal);
+                if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
+                const retryTiming = retry.segments ? alignSegmentTimingToTranscript(retry.segments, timing.transcript) : undefined;
+                const retryBlocks = retryTiming?.length ? createAzureAlignedBlocks(audio, retryTiming) : [];
+                if (retryBlocks.length) {
+                  blocks = retryBlocks;
+                  timingSource = "segment_retry";
+                  timingRetryOutcome = "success";
+                } else {
+                  timingRetryOutcome = retry.segments?.length ? "transcript_mismatch_or_invalid" : "missing";
+                }
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "";
+              timingRetryOutcome = /timeout|timed out/i.test(message) ? "timeout" : abortController.signal.aborted ? "cancelled" : "failed";
+            } finally {
+              releaseTimingSlot?.();
+            }
+            logAzureAssessment({ status: "timing_retry", outcome: timingRetryOutcome, durationMs: Date.now() - retryStartedAt });
+          }
+
+          const timingDetails = timing.timingDiagnostics ?? {
+            wordFieldPresent: Boolean(timing.words?.length), wordEntryCount: timing.words?.length ?? 0, wordAcceptedCount: timing.words?.length ?? 0,
+            segmentFieldPresent: Boolean(timing.segments?.length), segmentEntryCount: timing.segments?.length ?? 0, segmentAcceptedCount: timing.segments?.length ?? 0,
+          };
+          if (!blocks.length) {
+            const providerOmittedTiming = !timingDetails.wordFieldPresent && !timingDetails.segmentFieldPresent;
+            const unavailableReason = timingRetryOutcome === "queue_full"
+              ? "timing_recovery_capacity"
+              : providerOmittedTiming ? "provider_omitted_timing" : "timing_rejected_or_unaligned";
+            logAzureAssessment({ status: "unavailable", reason: unavailableReason, timingSource, timingRetryOutcome, ...timingDetails, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs: Date.now() - assessmentStartedAt });
+            send(socket, { type: "assessment", status: "unavailable", reason: unavailableReason, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs: Date.now() - assessmentStartedAt } });
+            return;
+          }
+
+          logAzureAssessment({ status: "timing_selected", timingSource, timingRetryOutcome, ...timingDetails, blockCount: blocks.length, audioDurationMs: Math.round(durationMs) });
+          const assessments = await assessBlocks(audio, blocks, service, abortController.signal);
+          if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
+          const assessed = assessments.filter(({ assessment }) => assessment !== null).length;
+          const queueWaitMs = assessments.reduce((sum, item) => sum + item.queueWaitMs, 0);
+          const serviceDurationMs = assessments.reduce((sum, item) => sum + item.serviceDurationMs, 0);
+          const totalDurationMs = Date.now() - assessmentStartedAt;
+          const failureCategory = mostCommonFailure(assessments);
+          const scores = { accuracy: null as number | null, fluency: null as number | null, prosody: null as number | null };
+          for (const dimension of Object.keys(scores) as (keyof typeof scores)[]) {
+            const available = assessments.flatMap(({ assessment, durationMs: assessedDuration }) => {
+              const score = assessment?.scores[dimension];
+              return score === null || score === undefined ? [] : [{ score, durationMs: assessedDuration }];
+            });
+            if (available.length) scores[dimension] = available.reduce((sum, item) => sum + item.score * item.durationMs, 0)
+              / available.reduce((sum, item) => sum + item.durationMs, 0);
+          }
+          const assessedDurationMs = assessments.reduce((sum, item) => sum + (item.assessment ? item.durationMs : 0), 0);
+          const diagnostics = { transcriptionDurationMs, azureQueueWaitMs: queueWaitMs, azureServiceDurationMs: serviceDurationMs, totalDurationMs };
+          if (Object.values(scores).some((score) => score !== null)) {
+            logAzureAssessment({ status: "available", timingSource, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, audioDurationMs: Math.round(durationMs), assessedDurationMs, ...diagnostics });
+            send(socket, { type: "assessment", status: "available", provider: "azure", locale: "en-US", mode: "scripted", scores, durationMs: assessedDurationMs, segmented: true, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, diagnostics });
+          } else {
+            logAzureAssessment({ status: "unavailable", reason: failureCategory, timingSource, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, audioDurationMs: Math.round(durationMs), ...diagnostics });
+            send(socket, { type: "assessment", status: "unavailable", reason: failureCategory, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, durationMs: 0, diagnostics });
+          }
+        } catch {
+          if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
+            const totalDurationMs = Date.now() - assessmentStartedAt;
+            logAzureAssessment({ status: "unavailable", reason: "assessment_failed", timingSource, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs });
+            send(socket, { type: "assessment", status: "unavailable", reason: "assessment_failed", blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs } });
+          }
+        } finally {
+          release();
+        }
+      })();
+    };
+
+    // Frees the session's audio and closes the socket once the answer (and any assessment) is done.
+    const makeRelease = (id: string, getAudio: () => Buffer | null) => () => {
+      getAudio()?.fill(0);
+      sessions.finish(id);
+      if (sessionId === id) sessionId = null;
+      retainedSession = null;
+      requestAbortController = null;
+      finishing = true;
+      clearTimeout(timer);
+      if (socket.readyState === WebSocket.OPEN) socket.close(1000, "Transcription complete");
+    };
+
     const fail = (code: string, message: string, closeCode = 1011, failureDetails: Record<string, string | number> = {}) => {
       if (finishing) return;
       logStreamDiagnostic({ status: "failed", code, ...failureDetails, durationMs: retainedSession?.bytes ? Math.round(retainedSession.bytes / (pcmSampleRate * 2) * 1_000) : 0 });
@@ -236,6 +417,7 @@ export function attachTranscriptionWebSocket(
       if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
       silenceGraceTimer = null;
       clearTimeout(timer);
+      closeInk();
       requestAbortController?.abort();
       discardSpeculation();
       if (sessionId) {
@@ -248,7 +430,66 @@ export function attachTranscriptionWebSocket(
       if (socket.readyState === WebSocket.OPEN) socket.close(closeCode, "Transcription failed");
     };
 
-    const finalize = (reason: "manual" | "silence") => {
+    // Cartesia path: the canonical transcript is Ink-2's accumulated turns; Whisper only runs as a fallback or, in the
+    // background after `complete`, to give Azure the word timings Ink-2 does not provide.
+    const finalizeWithInk = (
+      id: string,
+      session: StreamingSession,
+      reason: "manual" | "silence",
+      answerEndReason: AnswerEndReason,
+      runWhisperFinalization: (answerEndReason: AnswerEndReason) => void,
+    ) => {
+      const ink = inkSession!;
+      const abortController = new AbortController();
+      requestAbortController = abortController;
+      abortController.signal.addEventListener("abort", () => ink.close(), { once: true });
+      let audio: Buffer | null = null;
+      let handedOff = false;
+      const release = makeRelease(id, () => audio);
+      send(socket, { type: "transcription-started" });
+      void (async () => {
+        const flushStartedAt = Date.now();
+        try {
+          const transcript = await ink.flush(cartesia?.flushTimeoutMs ?? 1_500);
+          if (session.cancelled || finishing || socket.readyState !== WebSocket.OPEN) return;
+          if (!transcript) {
+            handedOff = true;
+            runWhisperFinalization("fallback_whisper");
+            return;
+          }
+          const transcriptionDurationMs = Date.now() - flushStartedAt;
+          const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
+          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "cartesia", cartesiaTurns: ink.turnCount, answerEndReason, speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
+          send(socket, { type: "complete", status: "complete", provider: "cartesia-ink-2", durationMs, transcript });
+          clearTimeout(timer);
+
+          if (!assessmentService) return;
+          audio = sessions.toWav(id);
+          handedOff = true;
+          const assessmentAudio = audio;
+          startAssessment({
+            session, audio: assessmentAudio, durationMs, transcriptionDurationMs, abortController, release,
+            getTiming: async () => {
+              const timingSlot = await acquireTimingRecoverySlot(abortController.signal);
+              if (!timingSlot) return null;
+              try {
+                return await transcriptionService.transcribe(assessmentAudio, "whisper-large-v3-turbo", "wav", abortController.signal);
+              } finally {
+                timingSlot();
+              }
+            },
+          });
+        } catch (error) {
+          if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
+            fail(safeTranscriptionErrorCode(error), "We couldn't transcribe that answer. Please try again or skip/end the practice.");
+          }
+        } finally {
+          if (!handedOff) release();
+        }
+      })();
+    };
+
+    const finalize = (reason: "manual" | "silence", triggeredBy: "vad" | "cartesia" = "vad") => {
       if (!sessionId || finalRequested || finishing) return;
       const id = sessionId;
       const session = sessions.get(id);
@@ -256,6 +497,7 @@ export function attachTranscriptionWebSocket(
       finalRequested = true;
       if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
       silenceGraceTimer = null;
+      clearInkGrace();
       if (reason === "manual") discardSpeculation();
       const speechEndToFinalizationMs = Math.round(session.vad.speechEndToFinalizationAt(Date.now()));
       logStreamDiagnostic({ status: "finalizing", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(session.bytes / (pcmSampleRate * 2) * 1_000), speechDurationMs: Math.round(session.vad.speechDurationMs), speechEndToFinalizationMs });
@@ -270,187 +512,86 @@ export function attachTranscriptionWebSocket(
         return fail("SPEECH_TOO_SHORT", "That answer was too short to transcribe. Please try again or skip/end the practice.");
       }
 
-      const reusable = speculation as Speculation | null;
-      speculation = null;
-      try {
-        const abortController = new AbortController();
-        requestAbortController = abortController;
-        // Cancel, failure, timeout and close abort the request controller; the speculative call follows it.
-        if (reusable) abortController.signal.addEventListener("abort", () => reusable.controller.abort(), { once: true });
-        finalQueue.enqueue(id, async () => {
-          let audio: Buffer | null = null;
-          let assessmentOwnsAudio = false;
-          const release = () => {
-            audio?.fill(0);
-            sessions.finish(id);
-            if (sessionId === id) sessionId = null;
-            retainedSession = null;
-            requestAbortController = null;
-            finishing = true;
-            clearTimeout(timer);
-            if (socket.readyState === WebSocket.OPEN) socket.close(1000, "Transcription complete");
-          };
-          try {
-            audio = sessions.toWav(id);
-            const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
-            send(socket, { type: "transcription-started" });
-            let transcriptionStartedAt = Date.now();
-            let result: TranscriptionResult;
-            if (reusable) {
-              // The snapshot only lacks trailing silence: its transcript and timings remain valid for the full audio.
-              transcriptionStartedAt = reusable.startedAt;
-              activeHedge = reusable.hedge;
-              try {
-                result = await reusable.promise;
-                speculationOutcome = "reused";
-              } catch (error) {
-                if (session.cancelled || abortController.signal.aborted || socket.readyState !== WebSocket.OPEN) throw error;
-                speculationOutcome = "failed";
-                transcriptionStartedAt = Date.now();
+      const runWhisperFinalization = (answerEndReason: AnswerEndReason) => {
+        const reusable = speculation as Speculation | null;
+        speculation = null;
+        try {
+          const abortController = new AbortController();
+          requestAbortController = abortController;
+          // Cancel, failure, timeout and close abort the request controller; the speculative call follows it.
+          if (reusable) abortController.signal.addEventListener("abort", () => reusable.controller.abort(), { once: true });
+          finalQueue.enqueue(id, async () => {
+            let audio: Buffer | null = null;
+            let assessmentOwnsAudio = false;
+            const release = makeRelease(id, () => audio);
+            try {
+              audio = sessions.toWav(id);
+              const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
+              send(socket, { type: "transcription-started" });
+              let transcriptionStartedAt = Date.now();
+              let result: TranscriptionResult;
+              if (reusable) {
+                // The snapshot only lacks trailing silence: its transcript and timings remain valid for the full audio.
+                transcriptionStartedAt = reusable.startedAt;
+                activeHedge = reusable.hedge;
+                try {
+                  result = await reusable.promise;
+                  speculationOutcome = "reused";
+                } catch (error) {
+                  if (session.cancelled || abortController.signal.aborted || socket.readyState !== WebSocket.OPEN) throw error;
+                  speculationOutcome = "failed";
+                  transcriptionStartedAt = Date.now();
+                  activeHedge = { outcome: "not_needed" };
+                  result = await hedged(audio, abortController.signal, activeHedge);
+                }
+              } else {
                 activeHedge = { outcome: "not_needed" };
                 result = await hedged(audio, abortController.signal, activeHedge);
               }
-            } else {
-              activeHedge = { outcome: "not_needed" };
-              result = await hedged(audio, abortController.signal, activeHedge);
-            }
-            const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
-            if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
-            if (!result.transcript.trim()) {
-              fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
-              return;
-            }
-            logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
-            send(socket, {
-              type: "complete",
-              status: "complete",
-              provider: result.provider,
-              durationMs,
-              transcript: result.transcript,
-            });
-            clearTimeout(timer);
-
-            if (!assessmentService) return;
-            assessmentOwnsAudio = true;
-            void (async () => {
-              const assessmentStartedAt = Date.now();
-              let timingSource = "missing";
-              let timingRetryOutcome = "not_needed";
-              let blocks: AzureAudioBlock[] = [];
-              try {
-                const candidates = [
-                  { source: "word", timings: result.words },
-                  { source: "segment", timings: result.segments },
-                ] as const;
-                for (const candidate of candidates) {
-                  if (!candidate.timings?.length) continue;
-                  const aligned = alignSegmentTimingToTranscript(candidate.timings, result.transcript);
-                  const candidateBlocks = aligned?.length ? createAzureAlignedBlocks(audio!, aligned) : [];
-                  if (candidateBlocks.length) {
-                    timingSource = candidate.source;
-                    blocks = candidateBlocks;
-                    break;
-                  }
-                }
-
-                if (!blocks.length && transcriptionService.retrySegmentTimestamps) {
-                  timingRetryOutcome = "requested";
-                  const retryStartedAt = Date.now();
-                  let releaseTimingSlot: (() => void) | null = null;
-                  try {
-                    releaseTimingSlot = await acquireTimingRecoverySlot(abortController.signal);
-                    if (!releaseTimingSlot) {
-                      timingRetryOutcome = "queue_full";
-                    } else {
-                      const retry = await transcriptionService.retrySegmentTimestamps(audio!, result.provider, "wav", abortController.signal);
-                      if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
-                      const retryTiming = retry.segments ? alignSegmentTimingToTranscript(retry.segments, result.transcript) : undefined;
-                      const retryBlocks = retryTiming?.length ? createAzureAlignedBlocks(audio!, retryTiming) : [];
-                      if (retryBlocks.length) {
-                        blocks = retryBlocks;
-                        timingSource = "segment_retry";
-                        timingRetryOutcome = "success";
-                      } else {
-                        timingRetryOutcome = retry.segments?.length ? "transcript_mismatch_or_invalid" : "missing";
-                      }
-                    }
-                  } catch (error) {
-                    const message = error instanceof Error ? error.message : "";
-                    timingRetryOutcome = /timeout|timed out/i.test(message) ? "timeout" : abortController.signal.aborted ? "cancelled" : "failed";
-                  } finally {
-                    releaseTimingSlot?.();
-                  }
-                  logAzureAssessment({ status: "timing_retry", outcome: timingRetryOutcome, durationMs: Date.now() - retryStartedAt });
-                }
-
-                const timingDetails = result.timingDiagnostics ?? {
-                  wordFieldPresent: Boolean(result.words?.length), wordEntryCount: result.words?.length ?? 0, wordAcceptedCount: result.words?.length ?? 0,
-                  segmentFieldPresent: Boolean(result.segments?.length), segmentEntryCount: result.segments?.length ?? 0, segmentAcceptedCount: result.segments?.length ?? 0,
-                };
-                if (!blocks.length) {
-                  const providerOmittedTiming = !timingDetails.wordFieldPresent && !timingDetails.segmentFieldPresent;
-                  const unavailableReason = timingRetryOutcome === "queue_full"
-                    ? "timing_recovery_capacity"
-                    : providerOmittedTiming ? "provider_omitted_timing" : "timing_rejected_or_unaligned";
-                  logAzureAssessment({ status: "unavailable", reason: unavailableReason, timingSource, timingRetryOutcome, ...timingDetails, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs: Date.now() - assessmentStartedAt });
-                  send(socket, { type: "assessment", status: "unavailable", reason: unavailableReason, blockCount: 0, assessedBlockCount: 0, failedBlockCount: 0, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs: Date.now() - assessmentStartedAt } });
-                  return;
-                }
-
-                logAzureAssessment({ status: "timing_selected", timingSource, timingRetryOutcome, ...timingDetails, blockCount: blocks.length, audioDurationMs: Math.round(durationMs) });
-                const assessments = await assessBlocks(audio!, blocks, assessmentService, abortController.signal);
-                if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
-                const assessed = assessments.filter(({ assessment }) => assessment !== null).length;
-                const queueWaitMs = assessments.reduce((sum, item) => sum + item.queueWaitMs, 0);
-                const serviceDurationMs = assessments.reduce((sum, item) => sum + item.serviceDurationMs, 0);
-                const totalDurationMs = Date.now() - assessmentStartedAt;
-                const failureCategory = mostCommonFailure(assessments);
-                const scores = { accuracy: null as number | null, fluency: null as number | null, prosody: null as number | null };
-                for (const dimension of Object.keys(scores) as (keyof typeof scores)[]) {
-                  const available = assessments.flatMap(({ assessment, durationMs: assessedDuration }) => {
-                    const score = assessment?.scores[dimension];
-                    return score === null || score === undefined ? [] : [{ score, durationMs: assessedDuration }];
-                  });
-                  if (available.length) scores[dimension] = available.reduce((sum, item) => sum + item.score * item.durationMs, 0)
-                    / available.reduce((sum, item) => sum + item.durationMs, 0);
-                }
-                const assessedDurationMs = assessments.reduce((sum, item) => sum + (item.assessment ? item.durationMs : 0), 0);
-                const diagnostics = { transcriptionDurationMs, azureQueueWaitMs: queueWaitMs, azureServiceDurationMs: serviceDurationMs, totalDurationMs };
-                if (Object.values(scores).some((score) => score !== null)) {
-                  logAzureAssessment({ status: "available", timingSource, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, audioDurationMs: Math.round(durationMs), assessedDurationMs, ...diagnostics });
-                  send(socket, { type: "assessment", status: "available", provider: "azure", locale: "en-US", mode: "scripted", scores, durationMs: assessedDurationMs, segmented: true, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, diagnostics });
-                } else {
-                  logAzureAssessment({ status: "unavailable", reason: failureCategory, timingSource, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, audioDurationMs: Math.round(durationMs), ...diagnostics });
-                  send(socket, { type: "assessment", status: "unavailable", reason: failureCategory, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, durationMs: 0, diagnostics });
-                }
-              } catch {
-                if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
-                  const totalDurationMs = Date.now() - assessmentStartedAt;
-                  logAzureAssessment({ status: "unavailable", reason: "assessment_failed", timingSource, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, audioDurationMs: Math.round(durationMs), transcriptionDurationMs, totalDurationMs });
-                  send(socket, { type: "assessment", status: "unavailable", reason: "assessment_failed", blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, durationMs: 0, diagnostics: { transcriptionDurationMs, azureQueueWaitMs: 0, azureServiceDurationMs: 0, totalDurationMs } });
-                }
-              } finally {
-                release();
+              const transcriptionDurationMs = Date.now() - transcriptionStartedAt;
+              if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
+              if (!result.transcript.trim()) {
+                fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
+                return;
               }
-            })();
-          } catch (error) {
-            if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
-              fail(safeTranscriptionErrorCode(error), "We couldn't transcribe that answer. Please try again or skip/end the practice.", 1011, { ...safeFailureDetails(error), hedge: activeHedge.outcome });
+              logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "whisper", answerEndReason, ...(cartesia ? { cartesiaTurns: inkSession?.turnCount ?? 0 } : {}), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
+              send(socket, {
+                type: "complete",
+                status: "complete",
+                provider: result.provider,
+                durationMs,
+                transcript: result.transcript,
+              });
+              clearTimeout(timer);
+
+              if (!assessmentService) return;
+              assessmentOwnsAudio = true;
+              startAssessment({ session, audio, durationMs, transcriptionDurationMs, abortController, release, getTiming: async () => result });
+            } catch (error) {
+              if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
+                fail(safeTranscriptionErrorCode(error), "We couldn't transcribe that answer. Please try again or skip/end the practice.", 1011, { ...safeFailureDetails(error), hedge: activeHedge.outcome });
+              }
+            } finally {
+              if (!assessmentOwnsAudio) release();
             }
-          } finally {
-            if (!assessmentOwnsAudio) release();
-          }
-        }, () => {
-          const position = finalQueue.queuedCount;
-          send(socket, { type: "transcription-queued", position, message: "Your answer is waiting to be transcribed." });
-        }, () => abortController.abort(), reusable?.reservation);
-      } catch (error) {
-        discardSpeculation(reusable);
-        const code = error instanceof Error ? error.message : "TRANSCRIPTION_CAPACITY_REACHED";
-        fail(code, code === "TRANSCRIPTION_CAPACITY_REACHED"
-          ? "Transcription is busy right now. Please try recording again in a moment or skip/end the practice."
-          : "We couldn't start transcription. Please try again or skip/end the practice.");
+          }, () => {
+            const position = finalQueue.queuedCount;
+            send(socket, { type: "transcription-queued", position, message: "Your answer is waiting to be transcribed." });
+          }, () => abortController.abort(), reusable?.reservation);
+        } catch (error) {
+          discardSpeculation(reusable);
+          const code = error instanceof Error ? error.message : "TRANSCRIPTION_CAPACITY_REACHED";
+          fail(code, code === "TRANSCRIPTION_CAPACITY_REACHED"
+            ? "Transcription is busy right now. Please try recording again in a moment or skip/end the practice."
+            : "We couldn't start transcription. Please try again or skip/end the practice.");
+        }
+      };
+
+      if (inkSession && !inkSession.failed) {
+        finalizeWithInk(id, session, reason, triggeredBy === "cartesia" ? "cartesia_turn_end" : "vad_silence", runWhisperFinalization);
+        return;
       }
+      runWhisperFinalization(cartesia ? "fallback_whisper" : "vad_silence");
     };
 
     timer = setTimeout(() => {
@@ -467,6 +608,7 @@ export function attachTranscriptionWebSocket(
         }
         try {
           sessions.append(sessionId, nextSequence++, data);
+          inkSession?.sendAudio(data);
         } catch (error) {
           const code = error instanceof Error ? error.message : "STREAM_SIZE_LIMIT";
           fail(code, code === "STREAM_SIZE_LIMIT" || code === "STREAM_DURATION_LIMIT"
@@ -495,6 +637,34 @@ export function attachTranscriptionWebSocket(
           retainedSession = session;
           started = true;
           logStreamDiagnostic({ status: "started", speechThresholdBand: session.vad.speechThresholdBand });
+          if (cartesia) {
+            // Invalid keyterm lists are ignored entirely (and never logged); the answer simply gets no biasing.
+            const keyterms = message.keyterms === undefined ? [] : sanitizeKeyterms(message.keyterms);
+            if (keyterms === null) logStreamDiagnostic({ status: "invalid_message", field: "start.keyterms" });
+            inkSession = new CartesiaInkSession({
+              apiKey: cartesia.apiKey,
+              keyterms: keyterms ?? [],
+              turnEndTimeoutMs: cartesia.turnEndTimeoutMs,
+              endpoint: cartesia.endpoint,
+              openTimeoutMs: cartesia.openTimeoutMs,
+              onTurnStart: () => clearInkGrace(),
+              onTurnEnd: (turnTranscript) => {
+                if (finalRequested || finishing || !turnTranscript) return;
+                clearInkGrace();
+                inkGraceTimer = setTimeout(() => {
+                  inkGraceTimer = null;
+                  const current = sessionId ? sessions.get(sessionId) : undefined;
+                  // Noise before the first words can end an empty turn; only a real answer may be closed by Ink-2.
+                  if (current?.vad.hasSpeech) finalize("silence", "cartesia");
+                }, looksUnfinished(turnTranscript) ? (cartesia.incompleteGraceMs ?? cartesia.answerGraceMs) : cartesia.answerGraceMs);
+              },
+              onFailure: (failure) => {
+                clearInkGrace();
+                logStreamDiagnostic({ status: "cartesia_unavailable", reason: failure });
+              },
+            });
+            inkSession.open();
+          }
           send(socket, {
             type: "ready",
             protocol: 2,
@@ -518,6 +688,7 @@ export function attachTranscriptionWebSocket(
         if (update.speechStarted) send(socket, { type: "speech-started" });
         if (update.speechResumed) {
           silenceDetected = false;
+          clearInkGrace();
           discardSpeculation();
           if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
           silenceGraceTimer = null;
@@ -551,6 +722,7 @@ export function attachTranscriptionWebSocket(
         if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
         silenceGraceTimer = null;
         clearTimeout(timer);
+        closeInk();
         requestAbortController?.abort();
         discardSpeculation();
         if (sessionId) {
@@ -568,6 +740,7 @@ export function attachTranscriptionWebSocket(
       if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
       silenceGraceTimer = null;
       clearTimeout(timer);
+      closeInk();
       requestAbortController?.abort();
       discardSpeculation();
       if (sessionId) {

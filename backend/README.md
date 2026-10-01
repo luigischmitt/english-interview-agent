@@ -57,6 +57,11 @@ performed by the authenticated frontend client. The speech service accepts:
 | `TRANSCRIPTION_VAD_TRAILING_SILENCE_MS` | `3500` | Silence duration before automatic finalization after speech; maximum `10000`. |
 | `TRANSCRIPTION_VAD_FINALIZATION_GRACE_MS` | `1500` | Reversible server-side grace after a silence decision; confirmed resumed activity cancels it; maximum `5000`. |
 | `TRANSCRIPTION_VAD_AMBIENT_HOLD_MS` | `8000` | Maximum grace period for ambiguous mid-band activity (quiet speech or room noise); maximum `30000`. |
+| `TRANSCRIPTION_PROVIDER` | `whisper` | `whisper` (default, behavior unchanged) or `cartesia`. With `cartesia`, Cartesia Ink-2 streaming STT is the canonical transcript and end-of-answer signal; Whisper remains the fallback. Without `CARTESIA_API_KEY` the backend logs `missing_cartesia_key` and uses Whisper. |
+| `CARTESIA_API_KEY` | — | Cartesia key, server-side only (set it in the ignored `backend/.env`). Never sent to the browser, never logged. |
+| `TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS` | `3500` | After an Ink-2 `turn.end` whose text ends like a complete sentence, wait this long for another turn or resumed local speech before ending the answer; `500` to `10000`. |
+| `TRANSCRIPTION_CARTESIA_INCOMPLETE_GRACE_MS` | `6000` | Grace after a turn that looks unfinished (no final punctuation or a trailing connector such as "because", "and", "the"), so a thinking pause is not cut; `500` to `15000`. |
+| `CARTESIA_TURN_END_TIMEOUT_MS` | — | Optional Ink-2 `turn_end_timeout_ms`, `640` to `11200`. |
 | `INTERVIEW_REASONING_MODEL` | `mistralai/mistral-small-3.2-24b-instruct` | OpenRouter model for interview reasoning and next-turn orchestration. Keep this configuration server-side. |
 | `INTERVIEW_REASONING_TIMEOUT_MS` | `15000` | Positive timeout in milliseconds for interview reasoning requests. |
 | `INTERVIEW_ORCHESTRATION_TIMEOUT_MS` | `6000` | Positive overall deadline in milliseconds for one next-turn decision, shared by every provider call (retry and hedge included). |
@@ -315,6 +320,12 @@ npm run test:audio-e2e -- --case acronyms --timeout-ms 120000
 npm run test:audio-e2e -- --suite --timeout-ms 120000
 ```
 
+To compare providers the way the browser behaves, add `--server-finalize` (or
+`AUDIO_E2E_SERVER_FINALIZE=true`): the client does not send `finalize` on
+`silence-detected`; it keeps streaming 100 ms silence frames (up to 15 s) until
+the server sends `finalizing`/`complete`, and reports `speechEndToCompleteMs`
+(end of the synthetic speech to `complete`). Output stays content-free.
+
 To wait for the post-completion Azure assessment and require an available
 segmented result, add `--require-assessment` or set
 `AUDIO_E2E_REQUIRE_ASSESSMENT=true`. The wait is bounded to 30 seconds (or
@@ -420,3 +431,9 @@ curl -X POST http://localhost:3001/api/v1/speech \
 ```
 
 The client supplies only `text` and optional `speed` (`0.25` through `4`). The server owns the voice selection and always passes `af_bella+af_heart` to Kokoro.
+
+### Optional Cartesia Ink-2 transcription
+
+With `TRANSCRIPTION_PROVIDER=cartesia` and `CARTESIA_API_KEY`, every PCM frame is also forwarded to Cartesia Ink-2 (`wss://api.cartesia.ai/stt/turns/websocket`, `pcm_s16le`, 16 kHz). Ink-2 ends a turn at most sentence boundaries, so one answer is several turns; the answer transcript is the ordered concatenation of all `turn.end` transcripts. After a `turn.end`, a grace timer starts (`TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS` for a complete-looking sentence, `TRANSCRIPTION_CARTESIA_INCOMPLETE_GRACE_MS` for an unfinished-looking one); Ink-2 `turn.start` or confirmed local VAD speech cancels it. When it fires, the backend sends `finalizing`, flushes Ink-2 (bounded at about 1.5 s) and sends `complete` without calling Whisper. The local VAD silence path remains as a safety net and also flushes Ink-2. If Ink-2 cannot connect, errors, or returns an empty transcript, that answer uses the Whisper path (including speculation and hedging). No partial transcripts reach the browser and the browser protocol is unchanged (`complete.provider` is `cartesia-ink-2`). When Azure assessment is enabled, Whisper runs in the background after `complete` only to supply word timings and the reference text; it never delays `complete`. The start message may include `keyterms` (at most 30 terms of at most 40 characters; invalid lists are ignored) to bias recognition; they are never logged. The `complete` diagnostic adds `provider`, `cartesiaTurns`, `answerEndReason` (`cartesia_turn_end`, `vad_silence`, `fallback_whisper`) and `speechEndToCompleteMs`, never text.
+
+Privacy: audio is sent to Cartesia, which offers zero data retention only on Enterprise plans; confirm the plan before enabling for real candidate audio. The key stays on the backend. Ink-2 normalizes some forms (for example numbers as digits, "choosed" as "choose"), which can hide a few learner errors in the canonical transcript.

@@ -379,3 +379,51 @@ describe("real-time audio E2E harness utilities", () => {
     expect(() => parseArgs(["--unexpected", "value"], {})).toThrow(/Unknown option/);
   });
 });
+
+describe("server-side finalization mode", () => {
+  it("parses --server-finalize and AUDIO_E2E_SERVER_FINALIZE", () => {
+    expect(parseArgs([], {}).serverFinalize).toBe(false);
+    expect(parseArgs(["--server-finalize"], {}).serverFinalize).toBe(true);
+    expect(parseArgs(["--server-finalize=false"], {}).serverFinalize).toBe(false);
+    expect(parseArgs([], { AUDIO_E2E_SERVER_FINALIZE: "true" }).serverFinalize).toBe(true);
+    expect(() => parseArgs(["--server-finalize=yes"], {})).toThrow(/boolean flag/);
+  });
+
+  it("keeps streaming silence after silence-detected until the server finalizes", async () => {
+    const server = createServer();
+    const websocketServer = new WebSocketServer({ server });
+    const received: string[] = [];
+    let frames = 0;
+    websocketServer.on("connection", (socket) => {
+      socket.on("message", (data, isBinary) => {
+        if (isBinary) {
+          frames += 1;
+          if (frames === 2) socket.send(JSON.stringify({ type: "silence-detected" }));
+          if (frames === 5) {
+            socket.send(JSON.stringify({ type: "finalizing", reason: "silence" }));
+            socket.send(JSON.stringify({ type: "complete", status: "complete", transcript: "A short answer." }));
+          }
+          return;
+        }
+        const message = JSON.parse(data.toString()) as { type?: string };
+        received.push(message.type ?? "");
+        if (message.type === "start") socket.send(JSON.stringify({ type: "ready", protocol: 2 }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Test WebSocket server did not bind to a TCP port.");
+    try {
+      const options = parseArgs(["--backend-url", `http://127.0.0.1:${address.port}`, "--text", "A short answer.", "--server-finalize"], {});
+      const metrics = await exerciseStream(options, Buffer.alloc(3_200), 0, 0);
+      expect(received).not.toContain("finalize");
+      expect(frames).toBeGreaterThanOrEqual(5);
+      expect(metrics.completionStatus).toBe("complete");
+      expect(metrics.speechEndToCompleteMs).not.toBeNull();
+      expect(metrics.missingEvents).not.toContain("silence-detected");
+    } finally {
+      await new Promise<void>((resolve) => websocketServer.close(() => resolve()));
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});

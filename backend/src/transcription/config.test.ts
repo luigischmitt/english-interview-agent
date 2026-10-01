@@ -58,3 +58,27 @@ describe("optional Azure assessment configuration", () => {
     expect(() => loadTranscriptionConfig({ TRANSCRIPTION_VAD_FINALIZATION_GRACE_MS: "6000" })).toThrow("no greater than 5000");
   });
 });
+
+describe("optional Cartesia Ink-2 configuration", () => {
+  it("defaults to Whisper with a 2 second answer grace", () => {
+    const config = loadTranscriptionConfig({});
+    expect(config.transcriptionProvider).toBe("whisper");
+    expect(config.cartesiaApiKey).toBeNull();
+    expect(config.cartesiaAnswerGraceMs).toBe(3_500);
+    expect(config.cartesiaIncompleteGraceMs).toBe(6_000);
+    expect(config.cartesiaTurnEndTimeoutMs).toBeNull();
+  });
+
+  it("parses the provider, key and bounded timings", () => {
+    const config = loadTranscriptionConfig({
+      TRANSCRIPTION_PROVIDER: "Cartesia", CARTESIA_API_KEY: " sentinel ",
+      TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS: "500", CARTESIA_TURN_END_TIMEOUT_MS: "11200",
+    });
+    expect(config).toMatchObject({ transcriptionProvider: "cartesia", cartesiaApiKey: "sentinel", cartesiaAnswerGraceMs: 500, cartesiaTurnEndTimeoutMs: 11_200 });
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_PROVIDER: "other" })).toThrow("whisper or cartesia");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS: "499" })).toThrow("500 to 10000");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS: "10001" })).toThrow("500 to 10000");
+    expect(() => loadTranscriptionConfig({ CARTESIA_TURN_END_TIMEOUT_MS: "639" })).toThrow("640 to 11200");
+    expect(() => loadTranscriptionConfig({ CARTESIA_TURN_END_TIMEOUT_MS: "11201" })).toThrow("640 to 11200");
+  });
+});
