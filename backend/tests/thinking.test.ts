@@ -62,6 +62,7 @@ describe("thinking configuration", () => {
       timeoutMs: defaultThinkingTimeoutMs,
       orchestrationTimeoutMs: defaultOrchestrationTimeoutMs,
       orchestrationHedgeAfterMs: 2_500,
+      bridgeTimeoutMs: 1_800,
       reportTimeoutMs: defaultInterviewReportTimeoutMs,
       diagnosticsEnabled: false,
     });
@@ -82,9 +83,19 @@ describe("thinking configuration", () => {
       timeoutMs: 4_500,
       orchestrationTimeoutMs: 6_000,
       orchestrationHedgeAfterMs: 2_500,
+      bridgeTimeoutMs: 1_800,
       reportTimeoutMs: 45_000,
       diagnosticsEnabled: true,
     });
+  });
+
+  it("clamps the bridge timeout to 300-5000 ms and ignores invalid values", () => {
+    const load = (value: string) => loadThinkingConfig({ INTERVIEW_BRIDGE_TIMEOUT_MS: value } as NodeJS.ProcessEnv).bridgeTimeoutMs;
+    expect(load("2500")).toBe(2_500);
+    expect(load("50")).toBe(300);
+    expect(load("90000")).toBe(5_000);
+    expect(load("abc")).toBe(1_800);
+    expect(loadThinkingConfig({} as NodeJS.ProcessEnv).bridgeTimeoutMs).toBe(1_800);
   });
 
   it("uses a trimmed report model override and otherwise falls back to the reasoning model", () => {

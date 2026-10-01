@@ -16,8 +16,10 @@ prática da resposta em inglês da análise futura de áudio.
 - A abertura menciona cargo, senioridade, foco e duração configurados sem
   instruções genéricas como “Take your time”. Após cada resposta final, o
   entrevistador procura primeiro um follow-up útil, mas só o faz quando há um
-  ponto seguro e relacionado para aprofundar. Reconhecimentos são opcionais e
-  não repetem literalmente a transcrição. Perguntas já feitas e contextos
+  ponto seguro e relacionado para aprofundar. O entrevistador pode introduzir a
+  pergunta com uma ponte curta (até 220 caracteres, escrita por uma segunda
+  chamada do backend) baseada na resposta, ou com uma transição neutra (também no fallback local), sem
+  elogios e sem repetir as últimas pontes. Perguntas já feitas e contextos
   equivalentes são enviados como histórico para evitar repetição; a sequência
   fixa continua como fallback, pulando perguntas que repetem contexto já
   coberto. Ao concluir, o entrevistador se despede em voz

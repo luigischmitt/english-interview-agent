@@ -1,6 +1,8 @@
 export type FollowUpEvalCase = {
   id: string;
   expected: "follow_up" | "next";
+  /** When true the case is a NEXT turn after the follow-up was spent. */
+  followUpUsed?: boolean;
   currentQuestion: string;
   transcript: string;
   askedQuestions: string[];
@@ -147,6 +149,51 @@ export const followUpEvalCases: FollowUpEvalCase[] = [
     currentQuestion: fixedQuestions.conflict,
     transcript: "Sorry, I do not know. I do not remember this.",
     askedQuestions: [fixedQuestions.intro, fixedQuestions.conflict],
+    roleContext: role,
+  },
+  {
+    id: "next-migration",
+    expected: "next",
+    followUpUsed: true,
+    currentQuestion: fixedQuestions.decision,
+    transcript: "We moved the billing service from a monolith to separate services because deploys were slow. I led the plan and we did it service by service over four months. Deploy time went from one hour to ten minutes.",
+    askedQuestions: [fixedQuestions.intro],
+    roleContext: role,
+  },
+  {
+    id: "next-incident",
+    expected: "next",
+    followUpUsed: true,
+    currentQuestion: fixedQuestions.incident,
+    transcript: "Last winter our API went down because a cache node ran out of memory. I found the problem in the logs and restarted the node, then I added memory alerts. After that we had no more outages like this.",
+    askedQuestions: [fixedQuestions.intro],
+    roleContext: role,
+  },
+  {
+    id: "next-teamwork",
+    expected: "next",
+    followUpUsed: true,
+    currentQuestion: fixedQuestions.conflict,
+    transcript: "I disagreed with a teammate about using GraphQL. I made a small prototype and we compared it with REST together. In the end we kept REST because the team already knew it.",
+    askedQuestions: [fixedQuestions.intro],
+    roleContext: role,
+  },
+  {
+    id: "next-testing",
+    expected: "next",
+    followUpUsed: true,
+    currentQuestion: fixedQuestions.reliability,
+    transcript: "We had many flaky tests in our CI pipeline. I added retries only for network calls and I moved slow tests to a nightly job. The pipeline became more stable and faster.",
+    askedQuestions: [fixedQuestions.intro],
+    roleContext: role,
+  },
+  {
+    id: "next-low-info",
+    expected: "next",
+    followUpUsed: true,
+    currentQuestion: fixedQuestions.conflict,
+    transcript: "Um, yeah, I do not know. Maybe.",
+    askedQuestions: [fixedQuestions.intro],
     roleContext: role,
   },
 ];

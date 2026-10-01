@@ -17,7 +17,7 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
   if (body.askedQuestions !== undefined && (!Array.isArray(body.askedQuestions) || body.askedQuestions.length > 30
     || body.askedQuestions.some((question) => !validText(question, 500)))) return null;
   if (body.recentAcknowledgements !== undefined && (!Array.isArray(body.recentAcknowledgements) || body.recentAcknowledgements.length > 5
-    || body.recentAcknowledgements.some((acknowledgement) => !validText(acknowledgement, 120)))) return null;
+    || body.recentAcknowledgements.some((acknowledgement) => !validText(acknowledgement, 220)))) return null;
   if (body.previousAnswers !== undefined && (!Array.isArray(body.previousAnswers) || body.previousAnswers.length > 2
     || body.previousAnswers.some((pair) => !isRecord(pair) || !validText(pair.question, 500) || !validText(pair.answer, 500)))) return null;
   if (body.remainingFixedQuestions !== undefined && (!Array.isArray(body.remainingFixedQuestions) || body.remainingFixedQuestions.length > 30
