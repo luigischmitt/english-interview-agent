@@ -1,0 +1,8 @@
+# Keeps secrets and local artifacts out of the Cloud Build upload.
+.env
+.env.*
+node_modules
+dist
+coverage
+tests
+evals
