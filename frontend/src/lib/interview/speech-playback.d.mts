@@ -29,7 +29,7 @@ export type SpeechPlaybackOptions = {
   onSynthesisStarted?: () => void;
   onSynthesisCompleted?: () => void;
   onPlaybackStarted?: () => void;
-  /** Caption excerpts from one utterance, advanced against the single audio track duration. */
+  /** Caption excerpts from one utterance, advanced against the single audio track duration (synthesizeInterviewerQuestion only; playInterviewerSegments derives them per chunk). */
   captionSegments?: string[];
 };
 
@@ -49,6 +49,10 @@ export function resolveInterviewerCaption(input: {
   questionPrompt: string;
 }): string;
 export function synthesizeInterviewerQuestion(text: string, options: SpeechPlaybackOptions): SpeechPlayback;
+export const minimumChunkCharacters: number;
+export const maxConcurrentChunkRequests: number;
+/** Groups sentences into synthesis chunks; sentences under ~40 characters merge with the next, none is ever split. */
+export function groupInterviewerSentences(segments: string[]): { text: string; sentences: string[] }[];
 export function playInterviewerSegments(segments: string[], options: SpeechPlaybackOptions): SpeechPlayback;
 export function prewarmInterviewerSpeech(segments: string[], options: SpeechPlaybackOptions): { promise: Promise<boolean>; cancel: () => void };
 export function clearRetainedSpeechBlobs(): void;

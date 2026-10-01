@@ -21,6 +21,8 @@ import {
 import { SessionExpiredNotice } from "@/components/auth/session-expired-notice";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Button } from "@/components/ui/button";
+import { getFixedInterviewQuestions } from "@/lib/interview/questions";
+import { composeContextualOpening } from "@/lib/interview/speech-playback.mjs";
 import type { InterviewConfig } from "@/lib/interview/types";
 
 import "aos/dist/aos.css";
@@ -38,6 +40,7 @@ const navigationItems = [...primaryNavigationItems, settingsNavigationItem];
 
 import { InterviewRoom } from "./components/interview-room";
 import { InterviewSetup } from "./components/interview-setup";
+import { prewarmInterviewerUtterance } from "./hooks/use-speech-playback";
 import { ProgressView } from "./components/progress-view";
 import { PageIntro, SectionHeading } from "./components/shared";
 import { defaultInterviewConfig } from "./interview-config";
@@ -390,6 +393,10 @@ export default function App() {
             <InterviewSetup
               onBack={() => navigate("home")}
               onStart={(config) => {
+                // The opening is fully known here: synthesize it while the room mounts; the room's playback reuses it.
+                if (config.playInterviewerAudio) {
+                  prewarmInterviewerUtterance(composeContextualOpening(config, getFixedInterviewQuestions(config)[0].prompt));
+                }
                 setInterviewConfig(config);
                 navigate("interview");
               }}

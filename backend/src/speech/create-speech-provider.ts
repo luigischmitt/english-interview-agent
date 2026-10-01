@@ -19,6 +19,7 @@ export function createSpeechProvider(config: SpeechConfig): SpeechProvider {
       url: config.openRouter.url,
       model: config.openRouter.model,
       timeoutMs: config.kokoroTimeoutMs,
+      hedgeAfterMs: config.openRouter.hedgeAfterMs,
     });
   }
 

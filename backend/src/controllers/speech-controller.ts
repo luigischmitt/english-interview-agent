@@ -2,7 +2,7 @@ import type { RequestHandler } from "express";
 
 import { SpeechProviderUnavailableError } from "../speech/errors.js";
 import type { SpeechConfig } from "../speech/config.js";
-import type { SpeechProvider } from "../speech/types.js";
+import type { HedgeOutcome, SpeechProvider } from "../speech/types.js";
 
 const maxTextLength = 2_000;
 
@@ -20,8 +20,8 @@ function invalidSpeechRequest(responseMessage: string, response: Parameters<Requ
   });
 }
 
-function logSpeechTiming(status: "ok" | "error" | "aborted", provider: string, start: number, textLength: number): void {
-  console.info(JSON.stringify({ event: "speech_synthesis_timing", status, provider, durationMs: Math.max(0, Math.round(Date.now() - start)), textLength }));
+function logSpeechTiming(status: "ok" | "error" | "aborted", provider: string, start: number, textLength: number, hedge?: HedgeOutcome): void {
+  console.info(JSON.stringify({ event: "speech_synthesis_timing", status, provider, durationMs: Math.max(0, Math.round(Date.now() - start)), textLength, ...(hedge ? { hedge } : {}) }));
 }
 
 export function createSpeechController(provider: SpeechProvider, config: SpeechConfig) {
@@ -72,10 +72,10 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
 
     const start = Date.now();
     let timingLogged = false;
-    const logTiming = (status: "ok" | "error" | "aborted") => {
+    const logTiming = (status: "ok" | "error" | "aborted", hedge?: HedgeOutcome) => {
       if (timingLogged) return;
       timingLogged = true;
-      logSpeechTiming(status, provider.name, start, text.length);
+      logSpeechTiming(status, provider.name, start, text.length, hedge);
     };
 
     try {
@@ -89,7 +89,7 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
 
       if (abortController.signal.aborted || response.destroyed || response.writableEnded) {
         clearAudio();
-        logTiming("aborted");
+        logTiming("aborted", speech.diagnostics?.hedge);
         return;
       }
 
@@ -97,7 +97,7 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
       responseOwnsAudio = true;
       try {
         response.status(200).contentType(speech.contentType).send(audio);
-        logTiming("ok");
+        logTiming("ok", speech.diagnostics?.hedge);
       } catch (error) {
         clearOnFinish();
         throw error;
@@ -107,7 +107,7 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
         logTiming("aborted");
         return;
       }
-      logTiming("error");
+      logTiming("error", error instanceof SpeechProviderUnavailableError ? error.diagnostics?.hedge : undefined);
       if (error instanceof SpeechProviderUnavailableError) {
         response.status(503).json({
           error: {

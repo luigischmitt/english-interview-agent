@@ -184,6 +184,18 @@ iniciar uma nova entrevista. O console registra uma única linha
 até o início da reprodução. A medição fica desabilitada por padrão; remova a
 chave da sessão para desabilitá-la.
 
+### Voz do entrevistador por frase
+
+A fala do entrevistador é sintetizada em blocos de frases (`groupInterviewerSentences`):
+frases com menos de 40 caracteres se juntam à seguinte e nenhuma frase é dividida.
+Todos os blocos são pedidos de imediato (no máximo 3 em paralelo); o primeiro toca
+assim que chega e os seguintes tocam em ordem, com o próximo `Audio` já carregado
+para evitar pausas. Se um bloco falhar, a reprodução termina como indisponível e o
+texto continua visível; cancelar aborta os pedidos pendentes. O pré-aquecimento
+(`prewarmInterviewerSpeech`) usa os mesmos blocos e corpos de requisição, então a
+reprodução reaproveita os blobs. A abertura é pré-sintetizada ao confirmar a
+configuração (antes de a sala montar).
+
 ### Preparação antecipada da próxima pergunta (Cartesia)
 
 Com `TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS` ativo no backend, depois de um

@@ -7,9 +7,15 @@ export type SpeechSynthesisRequest = {
   format: AudioFormat;
 };
 
+export type HedgeOutcome = "not_needed" | "primary_won" | "hedge_won" | "both_failed";
+
+// Content-free details a provider may report for logging.
+export type SpeechDiagnostics = { hedge?: HedgeOutcome };
+
 export type SynthesizedSpeech = {
   audio: Buffer;
   contentType: string;
+  diagnostics?: SpeechDiagnostics;
 };
 
 export type SpeechProviderHealth = {
