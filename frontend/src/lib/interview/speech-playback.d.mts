@@ -1,5 +1,7 @@
+import type { BrowserVoiceOptions } from "./browser-voice.mjs";
+
 export type SpeechPlaybackResult =
-  | { status: "completed" }
+  | { status: "completed"; /** Which voice spoke; "browser" means the Web Speech fallback was used. */ voice?: "network" | "browser" }
   | { status: "unavailable"; message: string }
   | { status: "cancelled" };
 
@@ -12,7 +14,13 @@ export type SpeechPlaybackOptions = {
   endpoint: string;
   /** JSON request fields that affect synthesis; text is used when omitted. */
   requestBody?: Record<string, unknown>;
-  /** Deadline for the speech request and complete audio response body. */
+  /** How long the first audio may take before the browser voice speaks instead (default FIRST_AUDIO_FALLBACK_MS = 4000). Also the longest wait for a later chunk. */
+  firstAudioFallbackMs?: number;
+  /** Injectable Web Speech API pieces for the browser fallback voice. */
+  browserVoice?: BrowserVoiceOptions & { voice?: SpeechSynthesisVoice | null };
+  /** Fired when the browser voice starts speaking in place of (or after) the network audio. */
+  onBrowserVoiceStarted?: () => void;
+  /** prewarmInterviewerSpeech only: deadline for the speech request and complete audio response body. */
   timeoutMs?: number;
   /** Maximum time to wait for play() and the media ended event. Defaults to a text-length estimate. */
   playbackTimeoutMs?: number;
@@ -52,6 +60,8 @@ export function resolveInterviewerCaption(input: {
   questionPrompt: string;
 }): string;
 export function synthesizeInterviewerQuestion(text: string, options: SpeechPlaybackOptions): SpeechPlayback;
+export const FIRST_AUDIO_FALLBACK_MS: number;
+export const speechUnavailableMessage: string;
 export const minimumChunkCharacters: number;
 export const finalChunkLeadMs: number;
 export const maxConcurrentChunkRequests: number;
