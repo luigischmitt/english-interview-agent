@@ -2,28 +2,13 @@
 
 import { useEffect } from "react";
 import AOS from "aos";
-import { DM_Sans, Instrument_Serif } from "next/font/google";
 import Image from "next/image";
 import Link from "next/link";
 
 import { ReportDemo } from "@/components/landing/report-demo";
+import { dmSans, instrumentSerif } from "@/lib/landing-fonts";
 
 import "aos/dist/aos.css";
-
-// Fonts are scoped to this component tree only — the rest of the app keeps
-// its own Geist/daisyUI theme.
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-landing-sans",
-});
-
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
-  variable: "--font-landing-serif",
-});
 
 const STEPS = [
   {

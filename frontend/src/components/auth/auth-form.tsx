@@ -1,11 +1,29 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { sanitizeNextPath } from "@/lib/auth/redirect";
+import { dmSans, instrumentSerif } from "@/lib/landing-fonts";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+
+const pillButton =
+  "rounded-full bg-[#1f6b45] px-[26px] py-3.5 text-base font-medium text-[#f3f4ee] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#0e2a1f] hover:shadow-[0_14px_28px_-14px_rgba(14,42,31,0.55)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:bg-[#1f6b45] disabled:hover:shadow-none";
+
+const authLink =
+  "relative pb-0.5 font-medium text-[#1f6b45] after:absolute after:inset-x-0 after:-bottom-0.5 after:h-px after:origin-left after:scale-x-0 after:bg-[#1f6b45] after:transition-transform after:duration-300 hover:text-[#0e2a1f] hover:after:scale-x-100";
+
+const fieldInput =
+  "w-full rounded-lg border border-[#d9e3dc] bg-white px-4 py-2.5 text-[15px] text-[#0e2a1f] placeholder:text-[#8a9c92] outline-none transition-colors duration-200 focus:border-[#1f6b45]";
+
+const alertBase = "rounded-lg border px-4 py-3 text-sm leading-5";
+const alertVariants = {
+  warning: `${alertBase} border-[#e3c67a] bg-[#fbf3dc] text-[#6b5417]`,
+  error: `${alertBase} border-[#d99a85] bg-[#fbe9e3] text-[#8a3a21]`,
+  success: `${alertBase} border-[#9fc4ac] bg-[#e9f3ed] text-[#1f6b45]`,
+};
 
 type AuthMode = "login" | "signup" | "forgot-password" | "update-password";
 
@@ -125,52 +143,66 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
   };
 
   return (
-    <main className="grid min-h-dvh place-items-center bg-base-100 px-4 py-10 text-base-content sm:px-6">
+    <main
+      className={`${dmSans.variable} ${instrumentSerif.variable} grid min-h-dvh place-items-center bg-[#f3f4ee] px-4 py-10 font-[family-name:var(--font-landing-sans)] text-[#0e2a1f] antialiased sm:px-6`}
+    >
       <section className="w-full max-w-md">
-        <Link href="/login" className="mb-8 inline-flex items-center gap-2 text-sm font-semibold tracking-tight">
-          <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-content">EA</span>
-          English Interview Agent
+        <Link href="/" className="group mb-8 inline-flex items-center gap-2.5 text-[#0e2a1f]">
+          <Image
+            src="/landing/tucano.png"
+            alt=""
+            width={30}
+            height={34}
+            className="h-[30px] w-auto transition-transform duration-300 ease-out group-hover:-rotate-6 group-hover:scale-110"
+            priority
+          />
+          <span className="text-base font-semibold tracking-[-0.01em]">English Interview Agent</span>
         </Link>
-        <div className="card card-border bg-base-100 shadow-sm">
-          <div className="card-body gap-6 p-6 sm:p-8">
+        <div className="border border-[#d9e3dc] bg-white px-6 py-7 sm:px-8 sm:py-9">
+          <div className="flex flex-col gap-6">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{details.eyebrow}</p>
-              <h1 className="card-title mt-3 text-3xl leading-tight tracking-[-0.03em]">{details.title}</h1>
-              <p className="mt-3 text-sm leading-6 text-base-content/65">{details.description}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1f6b45]">{details.eyebrow}</p>
+              <h1 className="mt-3 font-[family-name:var(--font-landing-serif)] text-3xl leading-tight tracking-[-0.02em]">
+                {details.title}
+              </h1>
+              <p className="mt-3 text-sm leading-6 text-[#3d5a4c]">{details.description}</p>
             </div>
 
             {expired && (
-              <div role="alert" className="alert alert-warning text-sm">
+              <div role="alert" className={alertVariants.warning}>
                 Sua sessão terminou. Entre novamente para manter seu espaço de prática seguro.
               </div>
             )}
             {reason === "config" && (
-              <div role="alert" className="alert alert-warning text-sm">
+              <div role="alert" className={alertVariants.warning}>
                 A autenticação ainda não está configurada neste ambiente.
               </div>
             )}
             {reason === "auth_callback" && (
-              <div role="alert" className="alert alert-error text-sm">
+              <div role="alert" className={alertVariants.error}>
                 Este link de autenticação é inválido ou expirou. Tente novamente.
               </div>
             )}
             {error && (
-              <div role="alert" className="alert alert-error text-sm">
+              <div role="alert" className={alertVariants.error}>
                 {error}
               </div>
             )}
             {message && (
-              <div role="status" className="alert alert-success text-sm">
+              <div role="status" className={alertVariants.success}>
                 {message}
               </div>
             )}
 
             <form className="space-y-4" onSubmit={handleSubmit}>
               {mode === "signup" && (
-                <fieldset className="fieldset">
-                  <legend className="fieldset-legend">Nome</legend>
+                <div className="space-y-1.5">
+                  <label htmlFor="name" className="text-xs font-semibold uppercase tracking-[0.08em] text-[#2b4a3c]">
+                    Nome
+                  </label>
                   <input
-                    className="input w-full"
+                    id="name"
+                    className={fieldInput}
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     name="name"
@@ -178,14 +210,17 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     placeholder="Seu nome"
                     required
                   />
-                </fieldset>
+                </div>
               )}
 
               {mode !== "update-password" && (
-                <fieldset className="fieldset">
-                  <legend className="fieldset-legend">E-mail</legend>
+                <div className="space-y-1.5">
+                  <label htmlFor="email" className="text-xs font-semibold uppercase tracking-[0.08em] text-[#2b4a3c]">
+                    E-mail
+                  </label>
                   <input
-                    className="input w-full"
+                    id="email"
+                    className={fieldInput}
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     name="email"
@@ -194,14 +229,17 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     placeholder="you@example.com"
                     required
                   />
-                </fieldset>
+                </div>
               )}
 
               {(mode === "login" || mode === "signup" || mode === "update-password") && (
-                <fieldset className="fieldset">
-                  <legend className="fieldset-legend">{mode === "update-password" ? "Nova senha" : "Senha"}</legend>
+                <div className="space-y-1.5">
+                  <label htmlFor="password" className="text-xs font-semibold uppercase tracking-[0.08em] text-[#2b4a3c]">
+                    {mode === "update-password" ? "Nova senha" : "Senha"}
+                  </label>
                   <input
-                    className="input w-full"
+                    id="password"
+                    className={fieldInput}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     name="password"
@@ -210,14 +248,20 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     placeholder="Pelo menos 8 caracteres"
                     required
                   />
-                </fieldset>
+                </div>
               )}
 
               {mode === "signup" && (
-                <fieldset className="fieldset">
-                  <legend className="fieldset-legend">Confirmar senha</legend>
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="password-confirmation"
+                    className="text-xs font-semibold uppercase tracking-[0.08em] text-[#2b4a3c]"
+                  >
+                    Confirmar senha
+                  </label>
                   <input
-                    className="input w-full"
+                    id="password-confirmation"
+                    className={fieldInput}
                     value={passwordConfirmation}
                     onChange={(event) => setPasswordConfirmation(event.target.value)}
                     name="password-confirmation"
@@ -226,29 +270,31 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     placeholder="Repita sua senha"
                     required
                   />
-                </fieldset>
+                </div>
               )}
 
-              <button className="btn btn-primary w-full" type="submit" disabled={isPending}>
-                {isPending && <span className="loading loading-spinner loading-sm" />}
+              <button className={`${pillButton} w-full`} type="submit" disabled={isPending}>
+                {isPending && (
+                  <span className="inline-block size-4 animate-spin rounded-full border-2 border-[#f3f4ee] border-t-transparent" />
+                )}
                 {details.submit}
               </button>
             </form>
 
-            <div className="text-center text-sm text-base-content/65">
+            <div className="text-center text-sm text-[#3d5a4c]">
               {mode === "login" && (
                 <>
-                  <Link href="/forgot-password" className="link link-hover font-medium text-primary">Esqueceu sua senha?</Link>
-                  <p className="mt-4">Ainda não tem conta? <Link href="/signup" className="link link-hover font-medium text-primary">Criar uma conta</Link></p>
+                  <Link href="/forgot-password" className={authLink}>Esqueceu sua senha?</Link>
+                  <p className="mt-4">Ainda não tem conta? <Link href="/signup" className={authLink}>Criar uma conta</Link></p>
                 </>
               )}
-              {mode === "signup" && <p>Já tem uma conta? <Link href="/login" className="link link-hover font-medium text-primary">Entrar</Link></p>}
-              {mode === "forgot-password" && <p>Lembrou? <Link href="/login" className="link link-hover font-medium text-primary">Voltar para entrar</Link></p>}
-              {mode === "update-password" && <p>Precisa recomeçar? <Link href="/login" className="link link-hover font-medium text-primary">Voltar para entrar</Link></p>}
+              {mode === "signup" && <p>Já tem uma conta? <Link href="/login" className={authLink}>Entrar</Link></p>}
+              {mode === "forgot-password" && <p>Lembrou? <Link href="/login" className={authLink}>Voltar para entrar</Link></p>}
+              {mode === "update-password" && <p>Precisa recomeçar? <Link href="/login" className={authLink}>Voltar para entrar</Link></p>}
             </div>
           </div>
         </div>
-        <p className="mt-6 text-center text-xs leading-5 text-base-content/50">Suas sessões ficam privadas na sua conta.</p>
+        <p className="mt-6 text-center text-xs leading-5 text-[#5c7a6a]">Suas sessões ficam privadas na sua conta.</p>
       </section>
     </main>
   );
