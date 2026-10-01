@@ -15,6 +15,11 @@ export type TranscriptionConfig = {
   vadFinalizationGraceMs: number;
   vadAmbientActivityHoldMs: number;
   hedgeAfterMs: number;
+  transcriptionProvider: "whisper" | "cartesia";
+  cartesiaApiKey: string | null;
+  cartesiaAnswerGraceMs: number;
+  cartesiaIncompleteGraceMs: number;
+  cartesiaTurnEndTimeoutMs: number | null;
 };
 
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
@@ -41,6 +46,20 @@ function parseNonNegativeInteger(value: string | undefined, fallback: number, ma
   return parsed;
 }
 
+function parseIntegerInRange(value: string | undefined, fallback: number, minimum: number, maximum: number, label: string): number {
+  if (value === undefined || value.trim() === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) throw new Error(`${label} must be an integer from ${minimum} to ${maximum}.`);
+  return parsed;
+}
+
+function parseTranscriptionProvider(value: string | undefined): "whisper" | "cartesia" {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return "whisper";
+  if (normalized !== "whisper" && normalized !== "cartesia") throw new Error("TRANSCRIPTION_PROVIDER must be whisper or cartesia.");
+  return normalized;
+}
+
 export function loadTranscriptionConfig(environment = process.env): TranscriptionConfig {
   return {
     azureSpeechKey: environment.AZURE_SPEECH_KEY?.trim() || null,
@@ -59,5 +78,12 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     vadFinalizationGraceMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_FINALIZATION_GRACE_MS, 1_500, 5_000),
     vadAmbientActivityHoldMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_AMBIENT_HOLD_MS, 8_000, 30_000),
     hedgeAfterMs: parseNonNegativeInteger(environment.TRANSCRIPTION_HEDGE_AFTER_MS, 4_000, 30_000),
+    transcriptionProvider: parseTranscriptionProvider(environment.TRANSCRIPTION_PROVIDER),
+    cartesiaApiKey: environment.CARTESIA_API_KEY?.trim() || null,
+    cartesiaAnswerGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS, 3_500, 500, 10_000, "Cartesia answer grace"),
+    cartesiaIncompleteGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_INCOMPLETE_GRACE_MS, 6_000, 500, 15_000, "Cartesia incomplete-turn grace"),
+    cartesiaTurnEndTimeoutMs: environment.CARTESIA_TURN_END_TIMEOUT_MS?.trim()
+      ? parseIntegerInRange(environment.CARTESIA_TURN_END_TIMEOUT_MS, 640, 640, 11_200, "Cartesia turn end timeout")
+      : null,
   };
 }

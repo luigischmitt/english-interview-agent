@@ -14,6 +14,8 @@ const frameDurationMs = 100;
 const samplesPerFrame = sampleRate * frameDurationMs / 1_000;
 const bytesPerFrame = samplesPerFrame * bytesPerSample;
 const trailingSilenceMs = 4_000;
+/** With --server-finalize the client keeps streaming silence until the server decides the answer ended. */
+const serverFinalizeSilenceMs = 15_000;
 const minimumTranscriptSimilarity = 0.75;
 const assessmentWaitMs = 30_000;
 const defaultText = "In my last role, I improved a slow reporting service that our support team used every day. First, I reviewed the database queries and added indexes where the data showed they would help. Then I worked with the frontend team to remove a request that was repeated on every page. The response time went from about four seconds to under one second. We checked the change with realistic data, watched the service after release, and documented what we learned. I also shared the measurements with the team so we could use them when planning the next improvements.";
@@ -30,6 +32,8 @@ export type AudioE2EOptions = {
   evaluationProfile: string | null;
   suite: boolean;
   evaluationThresholdExplicit: boolean;
+  /** Do not send `finalize` on `silence-detected`; keep streaming silence until the server finalizes (like the browser). */
+  serverFinalize?: boolean;
 };
 
 type Options = AudioE2EOptions;
@@ -54,6 +58,8 @@ export type AudioE2EMetrics = {
   firstSpeechMs: number | null;
   transcriptionMs: number | null;
   finalizationToCompleteMs: number | null;
+  /** Time from the end of the synthetic speech audio to `complete`. */
+  speechEndToCompleteMs?: number | null;
   queueWaitMs: number | null;
   silenceDetectedMs: number | null;
   completeMs: number | null;
@@ -208,6 +214,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   let thresholdExplicit = env.AUDIO_E2E_SPEECH_THRESHOLD !== undefined;
   let requireAssessment = env.AUDIO_E2E_REQUIRE_ASSESSMENT === "true";
   let suite = env.AUDIO_E2E_SUITE === "true";
+  let serverFinalize = env.AUDIO_E2E_SERVER_FINALIZE === "true";
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (!argument.startsWith("--")) throw new Error("Arguments must use --option value syntax.");
@@ -218,6 +225,12 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
       if (inlineValue === undefined) requireAssessment = true;
       else if (inlineValue === "true" || inlineValue === "false") requireAssessment = inlineValue === "true";
       else throw new Error("--require-assessment must be a boolean flag.");
+      continue;
+    }
+    if (name === "server-finalize") {
+      if (inlineValue === undefined) serverFinalize = true;
+      else if (inlineValue === "true" || inlineValue === "false") serverFinalize = inlineValue === "true";
+      else throw new Error("--server-finalize must be a boolean flag.");
       continue;
     }
     if (name === "suite") {
@@ -257,7 +270,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   const speechThreshold = thresholdExplicit || evaluationCase?.speechThreshold === undefined
     ? configuredSpeechThreshold
     : evaluationCase.speechThreshold;
-  return { backendUrl, text, speed, speechThreshold, timeoutMs, ffmpeg: values.ffmpeg, maxDurationMs, requireAssessment, evaluationProfile: evaluationCase?.profile ?? null, suite, evaluationThresholdExplicit: thresholdExplicit };
+  return { backendUrl, text, speed, speechThreshold, timeoutMs, ffmpeg: values.ffmpeg, maxDurationMs, requireAssessment, evaluationProfile: evaluationCase?.profile ?? null, suite, evaluationThresholdExplicit: thresholdExplicit, serverFinalize };
 }
 
 function parseBoundedNumber(value: string, name: string, minimum: number, maximum: number): number {
@@ -387,7 +400,7 @@ async function generateAndConvert(options: Options, directory: string): Promise<
   const pcm = applyEvaluationAudioProfile(await readFile(pcmPath), options.evaluationProfile);
   if (pcm.length === 0 || pcm.length % bytesPerSample !== 0) throw new Error("ffmpeg produced invalid 16-bit PCM audio.");
   const durationMs = pcm.length / (sampleRate * bytesPerSample) * 1_000;
-  if (durationMs + trailingSilenceMs > options.maxDurationMs) {
+  if (durationMs + (options.serverFinalize ? serverFinalizeSilenceMs : trailingSilenceMs) > options.maxDurationMs) {
     throw new Error("Generated audio exceeds --max-duration-seconds; use a shorter --text value.");
   }
   return { pcm, speechGenerationMs };
@@ -418,6 +431,7 @@ export async function exerciseStream(
     firstSpeechMs: null,
     transcriptionMs: null,
     finalizationToCompleteMs: null,
+    speechEndToCompleteMs: null,
     queueWaitMs: null,
     silenceDetectedMs: null,
     completeMs: null,
@@ -435,7 +449,8 @@ export async function exerciseStream(
     assessedDurationMs: null,
     assessmentScoresAvailable: null,
   };
-  const frames = framePcm(pcm, trailingSilenceDurationMs);
+  const frames = framePcm(pcm, options.serverFinalize ? Math.max(trailingSilenceDurationMs, serverFinalizeSilenceMs) : trailingSilenceDurationMs);
+  const speechAudioMs = pcm.length / (sampleRate * bytesPerSample) * 1_000;
   let openedAt = 0;
   let streamStartedAt = 0;
   let ready = false;
@@ -491,8 +506,15 @@ export async function exerciseStream(
       if (queuedAt !== null) metrics.queueWaitMs = Math.max(0, Math.round(now - queuedAt));
       return;
     }
+    if (message.type === "finalizing" && options.serverFinalize) {
+      // The server decided the answer ended (Cartesia turn end or VAD): stop streaming like the browser does.
+      finalizedAt ??= now;
+      shouldStopSending = true;
+      return;
+    }
     if (message.type === "silence-detected") {
       metrics.silenceDetectedMs ??= Math.round(now - streamStartedAt);
+      if (options.serverFinalize) return;
       shouldStopSending = true;
       void finalize("silence").catch((error: Error) => rejectComplete?.(error));
       return;
@@ -503,6 +525,8 @@ export async function exerciseStream(
       if (finalizedAt !== null) metrics.finalizationToCompleteMs = Math.round(now - finalizedAt);
       metrics.completionStatus = message.status ?? "unknown";
       metrics.completeMs = Math.round(now - streamStartedAt);
+      metrics.speechEndToCompleteMs = Math.round(now - (streamStartedAt + speechAudioMs));
+      shouldStopSending = true;
       metrics.transcriptionMs = transcriptionStartedAt === null ? null : Math.round(now - transcriptionStartedAt);
       if (typeof message.transcript === "string") mergedTranscript = message.transcript;
       metrics.transcriptCharacters = mergedTranscript.length;
@@ -587,7 +611,8 @@ export async function exerciseStream(
   if (rejected) throw rejected;
   if (!ready) metrics.missingEvents.push("ready");
   if (metrics.firstSpeechMs === null) metrics.missingEvents.push("speech-started");
-  if (metrics.silenceDetectedMs === null) metrics.missingEvents.push("silence-detected");
+  // With server-side finalization (e.g. Cartesia turn end) the local VAD need not report silence first.
+  if (metrics.silenceDetectedMs === null && !options.serverFinalize) metrics.missingEvents.push("silence-detected");
   if (metrics.completeMs === null) metrics.missingEvents.push("complete");
   if (options.requireAssessment && metrics.assessmentStatus === null) metrics.missingEvents.push("assessment");
   return metrics;
