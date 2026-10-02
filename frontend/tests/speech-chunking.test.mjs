@@ -7,9 +7,10 @@ beforeEach(() => { resetNetworkVoiceHealth(); resetSpeechFlights(); });
 
 const texts = (segments) => groupInterviewerSentences(segments).map((chunk) => chunk.text);
 
-test("short sentences merge with the next one and a sentence is never split", () => {
+test("the first sentence is its own chunk, later short sentences merge with the next one, a sentence is never split", () => {
   const redis = "Why did you choose Redis for the session cache in that system?";
-  assert.deepEqual(texts(["Thanks.", redis, "How did it scale to many more users at peak?"]), [`Thanks. ${redis}`, "How did it scale to many more users at peak?"]);
+  assert.deepEqual(texts(["Thanks.", redis, "How did it scale to many more users at peak?"]), ["Thanks.", redis, "How did it scale to many more users at peak?"]);
+  assert.deepEqual(texts([redis, "Thanks.", "How did it scale to many more users at peak?"]), [redis, "Thanks. How did it scale to many more users at peak?"]);
   assert.deepEqual(texts(["Hi.", "Yes."]), ["Hi. Yes."]);
   assert.deepEqual(texts([]), []);
   assert.deepEqual(texts(["  ", ""]), []);
@@ -20,7 +21,9 @@ test("a long first sentence without a clause boundary stays whole; a short trail
   assert.deepEqual(texts([long]), [long]);
   const second = "Next one is surely long enough to stand alone.";
   assert.deepEqual(texts([long, second]), [long, second]);
-  assert.deepEqual(texts([second, "Tell me about a hard bug.", "Ok?"]), [`${second} Tell me about a hard bug. Ok?`]);
+  assert.deepEqual(texts([second, "Tell me about a hard bug.", "Ok?"]), [second, "Tell me about a hard bug. Ok?"]);
+  // A whole utterance of at most 70 characters stays a single request.
+  assert.deepEqual(texts(["Got it.", "Why Redis?"]), ["Got it. Why Redis?"]);
   const grouped = groupInterviewerSentences([second, "Next one is also long enough to stand alone."]);
   assert.equal(grouped.length, 2);
   assert.deepEqual(grouped[0].sentences, [second]);

@@ -216,7 +216,9 @@ gcloud run services add-iam-policy-binding english-interview-kokoro --region $RE
 ```
 
 Then deploy the backend with `SPEECH_PROVIDER=kokoro-openrouter`,
-`KOKORO_URL=<english-interview-kokoro url>` and `KOKORO_AUTH=gcp-id-token`.
+`KOKORO_URL=<english-interview-kokoro url>`, `KOKORO_AUTH=gcp-id-token` and
+`INTERVIEWER_VOICE=af_heart` (the same single voice the OpenRouter hedge uses, so
+a hedge win does not change the interviewer's voice mid-interview).
 The backend fetches an identity token from the metadata server (audience = the
 Kokoro URL origin) and sends it as `Authorization: Bearer`. Without it Kokoro
 answers 403.
