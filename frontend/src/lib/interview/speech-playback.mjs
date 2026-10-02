@@ -55,6 +55,7 @@ export function resolveInterviewerCaption({ audioEnabled, isSpeaking, playbackFa
 }
 
 const speechFlights = new Map();
+let flightEpoch = 0;
 // Finished blobs of prepared (pre-synthesized) utterances, reusable by an identical request for a short time.
 const retainedSpeechBlobs = new Map();
 
@@ -70,6 +71,13 @@ function retainSpeechBlob(key, blob, retainMs) {
 export function clearRetainedSpeechBlobs() {
   for (const entry of retainedSpeechBlobs.values()) clearTimeout(entry.timer);
   retainedSpeechBlobs.clear();
+}
+
+/** Test hook: aborts and forgets every in-flight speech request (e.g. ones left running in the background). */
+export function resetSpeechFlights() {
+  flightEpoch += 1;
+  for (const flight of speechFlights.values()) flight.controller.abort();
+  speechFlights.clear();
 }
 
 function speechRequestFor(options, text) {
@@ -141,21 +149,25 @@ function acquireSpeechBlob(options, text) {
   };
 }
 
-/** Advances caption segments against the playback progress of one audio track (estimated by word count). */
-function createCaptionUpdater(captionSegments, getAudio, isCancelled, onSegment) {
+/**
+ * Advances captions against the playback progress of one audio track (estimated by word count). Units are
+ * `{ caption, text }`: `text` is what is spoken (its words weigh the progress), `caption` is what is shown, so a
+ * sentence split into two audio parts keeps showing the whole sentence.
+ */
+function createCaptionUpdater(units, getAudio, isCancelled, onSegment) {
   const wordCount = (segment) => segment.split(/\s+/u).filter(Boolean).length;
-  const totalWords = captionSegments.reduce((total, segment) => total + wordCount(segment), 0);
+  const totalWords = units.reduce((total, unit) => total + wordCount(unit.text), 0);
   return () => {
     const audio = getAudio();
-    if (!captionSegments.length || !Number.isFinite(audio?.duration) || audio.duration <= 0 || totalWords === 0) return;
+    if (!units.length || !Number.isFinite(audio?.duration) || audio.duration <= 0 || totalWords === 0) return;
     const playedWords = Math.min(1, audio.currentTime / audio.duration) * totalWords;
     let boundary = 0;
-    let segmentIndex = captionSegments.length - 1;
-    for (let index = 0; index < captionSegments.length; index += 1) {
-      boundary += wordCount(captionSegments[index]);
+    let segmentIndex = units.length - 1;
+    for (let index = 0; index < units.length; index += 1) {
+      boundary += wordCount(units[index].text);
       if (playedWords < boundary) { segmentIndex = index; break; }
     }
-    if (!isCancelled()) onSegment?.(captionSegments[segmentIndex]);
+    if (!isCancelled()) onSegment?.(units[segmentIndex].caption);
   };
 }
 
@@ -260,7 +272,8 @@ export function synthesizeInterviewerQuestion(text, options) {
         const onError = () => reject(new Error("Audio playback failed."));
         const onPlaying = () => options.onPlaybackStarted?.();
         const captionSegments = options.captionSegments?.filter(Boolean) ?? [];
-        const onTimeUpdate = createCaptionUpdater(captionSegments, () => audio, () => cancelled, options.onSegment);
+        const captionUnits = captionSegments.map((segment) => ({ caption: segment, text: segment }));
+        const onTimeUpdate = createCaptionUpdater(captionUnits, () => audio, () => cancelled, options.onSegment);
         if (captionSegments.length && !cancelled) options.onSegment?.(captionSegments[0]);
         audio.addEventListener("ended", onEnded, { once: true });
         audio.addEventListener("error", onError, { once: true });
@@ -326,39 +339,95 @@ export function synthesizeInterviewerQuestion(text, options) {
   return { promise, cancel };
 }
 
-// Sentences shorter than this are merged with the next one so no request is tiny; a sentence is never split.
+// Sentences shorter than this are merged with the next one so no request is tiny; a sentence is never split
+// (except the first one, see `firstChunkSplitThreshold`).
 export const minimumChunkCharacters = 40;
+// A group never grows past this by merging; a single sentence longer than it still stays whole.
+export const maximumChunkCharacters = 140;
+// The first sentence of an utterance longer than this is split at its first clause boundary so first audio arrives fast.
+export const firstChunkSplitThreshold = 70;
+export const firstChunkPartMinimum = 20;
 // The final chunk reports it is ending once at most this much of it remains (or at its start when it is shorter).
 export const finalChunkLeadMs = 3_000;
-// At most this many chunk requests are in flight at once.
-export const maxConcurrentChunkRequests = 3;
+// Chunk N+1 is requested only once chunk N's audio has arrived: one network synthesis in flight per utterance.
+export const maxConcurrentChunkRequests = 1;
+// How long a request that missed the fallback deadline may keep running in the background to learn the outcome.
+export const BACKGROUND_REQUEST_TIMEOUT_MS = 20_000;
 
-/** Groups sentences into synthesis chunks: each chunk is at least `minimumChunkCharacters` long, except a lone short utterance. */
+const clauseBoundaries = [", ", "; ", " \u2014 ", ": "];
+
+/** Splits a long first sentence at its first clause boundary leaving a first part of 20-70 characters, or returns null. */
+function splitFirstSentence(sentence) {
+  if (sentence.length <= firstChunkSplitThreshold) return null;
+  let best = null;
+  for (const boundary of clauseBoundaries) {
+    let from = 0;
+    for (;;) {
+      const at = sentence.indexOf(boundary, from);
+      if (at === -1) break;
+      from = at + 1;
+      const head = (boundary === " \u2014 " ? sentence.slice(0, at) : sentence.slice(0, at + boundary.trimEnd().length)).trim();
+      const tail = sentence.slice(at + boundary.length).trim();
+      if (head.length > firstChunkSplitThreshold) break;
+      if (head.length < firstChunkPartMinimum || !tail) continue;
+      if (!best || at < best.at) best = { at, head, tail };
+      break;
+    }
+  }
+  return best && { head: best.head, tail: best.tail };
+}
+
+/**
+ * Groups sentences into synthesis chunks: `text` is what is sent to the voice; `sentences` are the caption sentences
+ * (always whole); `units` pair each spoken piece with its caption. Each chunk is at least `minimumChunkCharacters`
+ * long (except a lone short utterance, a short first part or a group that merging would push past
+ * `maximumChunkCharacters`). A first sentence over 70 characters becomes its own short first chunk plus a remainder.
+ */
 export function groupInterviewerSentences(segments) {
   const sentences = segments.map((segment) => segment.trim()).filter(Boolean);
   const chunks = [];
   let pending = [];
-  for (const sentence of sentences) {
-    pending.push(sentence);
-    if (pending.join(" ").length >= minimumChunkCharacters) {
-      chunks.push(pending);
-      pending = [];
+  let locked = false;
+  const lengthOf = (units) => units.map((unit) => unit.text).join(" ").length;
+  const flush = () => { chunks.push({ units: pending, locked }); pending = []; locked = false; };
+
+  sentences.forEach((sentence, index) => {
+    let units = [{ text: sentence, caption: sentence }];
+    const split = index === 0 ? splitFirstSentence(sentence) : null;
+    if (split) {
+      chunks.push({ units: [{ text: split.head, caption: sentence }], locked: true });
+      units = [{ text: split.tail, caption: sentence }];
     }
-  }
+    for (const unit of units) {
+      if (pending.length && lengthOf([...pending, unit]) > maximumChunkCharacters) flush();
+      pending.push(unit);
+      if (lengthOf(pending) >= minimumChunkCharacters) flush();
+    }
+  });
   if (pending.length) {
-    if (chunks.length) chunks[chunks.length - 1].push(...pending);
-    else chunks.push(pending);
+    const previous = chunks[chunks.length - 1];
+    if (previous && !previous.locked && lengthOf([...previous.units, ...pending]) <= maximumChunkCharacters) previous.units.push(...pending);
+    else chunks.push({ units: pending, locked: false });
   }
-  return chunks.map((group) => ({ text: group.join(" "), sentences: group }));
+  return chunks.map(({ units }) => ({
+    text: units.map((unit) => unit.text).join(" "),
+    sentences: units.map((unit) => unit.caption).filter((caption, index, all) => index === 0 || caption !== all[index - 1]),
+    units,
+  }));
 }
 
-/** Requests every chunk (at most `maxConcurrentChunkRequests` at a time, in order); leases dedupe against prewarmed blobs. */
+/**
+ * Requests the chunks one at a time, in order: chunk N+1 starts as soon as chunk N's audio has arrived (not when it
+ * finishes playing). Leases dedupe against prewarmed blobs. `detach` stops further requests but lets the in-flight
+ * one finish in the background, only to report whether the voice is healthy.
+ */
 function requestChunks(chunks, options) {
   let active = 0;
   let next = 0;
   let stopped = false;
+  let detached = false;
   const entries = chunks.map((chunk) => {
-    const entry = { chunk, lease: null };
+    const entry = { chunk, lease: null, settled: false };
     entry.promise = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
     entry.promise.catch(() => {});
     return entry;
@@ -368,7 +437,7 @@ function requestChunks(chunks, options) {
       const entry = entries[next++];
       active += 1;
       entry.lease = acquireSpeechBlob(options, entry.chunk.text);
-      entry.lease.promise.then(entry.resolve, entry.reject).then(() => { active -= 1; pump(); });
+      entry.lease.promise.then(entry.resolve, (error) => { stopped = true; entry.reject(error); }).then(() => { entry.settled = true; active -= 1; pump(); });
       if (next === 1) options.onSynthesisStarted?.();
     }
   };
@@ -376,8 +445,32 @@ function requestChunks(chunks, options) {
   return {
     entries,
     stop() {
+      if (detached) return;
       stopped = true;
       for (const entry of entries) entry.lease?.release(false);
+    },
+    detach(onOutcome) {
+      if (detached) return;
+      detached = true;
+      stopped = true;
+      const epoch = flightEpoch;
+      const schedule = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
+      const unschedule = options.clearTimeout ?? ((id) => clearTimeout(id));
+      for (const entry of entries) {
+        if (!entry.lease) continue;
+        if (entry.settled) { entry.lease.release(false); continue; }
+        const lease = entry.lease;
+        let done = false;
+        const finish = (healthy, error) => {
+          if (done) return;
+          done = true;
+          unschedule(timerId);
+          lease.release(false);
+          if (epoch === flightEpoch && (healthy || !isAuthError(error))) onOutcome(healthy);
+        };
+        const timerId = schedule(() => finish(false), options.backgroundRequestTimeoutMs ?? BACKGROUND_REQUEST_TIMEOUT_MS);
+        lease.promise.then(() => finish(true), (error) => finish(false, error));
+      }
     },
   };
 }
@@ -389,8 +482,9 @@ const unavailableMessages = {
 };
 
 /**
- * Plays an utterance chunk by chunk (see `groupInterviewerSentences`). Every chunk is requested right away, so chunk 1
- * starts as soon as it arrives and later chunks are decoded ahead (preloaded Audio) to avoid audible gaps. A failed
+ * Plays an utterance chunk by chunk (see `groupInterviewerSentences`). Chunk 1 is requested right away and each
+ * later chunk once the previous one has arrived (one request in flight), so chunk 1 starts as soon as it arrives and
+ * the next chunk is decoded ahead (preloaded Audio) to avoid audible gaps. A failed
  * chunk ends playback as "unavailable" and the caller keeps the text visible; cancelling aborts pending requests.
  */
 export function playInterviewerSegments(segments, options) {
@@ -449,7 +543,7 @@ export function playInterviewerSegments(segments, options) {
     const audio = item.audio;
     const words = chunk.text.split(/\s+/u).length;
     const playbackTimeoutMs = options.playbackTimeoutMs ?? Math.min(45_000, Math.max(12_000, words * 800));
-    const updateCaption = createCaptionUpdater(chunk.sentences, () => audio, () => cancelled, options.onSegment);
+    const updateCaption = createCaptionUpdater(chunk.units, () => audio, () => cancelled, options.onSegment);
     let playingStarted = false;
     // Zero-wait handoff: tells the caller the utterance is about to end (final chunk, <= handoffLeadMs left) once.
     const announceFinalChunk = () => {
@@ -489,12 +583,16 @@ export function playInterviewerSegments(segments, options) {
   });
 
   // Network speech is stalled or failed: speak the remaining sentences with the browser voice.
-  const speakRemainingInBrowser = async (fromChunk) => {
+  const speakRemainingInBrowser = async (fromChunk, { slowIndex = null } = {}) => {
     fellBack = true;
-    requests?.stop();
+    if (slowIndex !== null && requests) {
+      // Slow but not failed: let the request finish in the background only to learn the outcome; its audio is never played.
+      requests.detach((healthy) => { if (healthy) markNetworkVoiceHealthy(); else markNetworkVoiceFailed(clockNow(options)); });
+    } else requests?.stop();
     if (cancelled) return { status: "cancelled" };
     if (!isBrowserVoiceAvailable(browserVoiceOptions(options))) return { status: "unavailable", message: speechUnavailableMessage };
-    const sentences = chunks.slice(fromChunk).flatMap((chunk) => chunk.sentences);
+    const units = chunks.slice(fromChunk).flatMap((chunk) => chunk.units);
+    const sentences = units.map((unit) => unit.text);
     const voice = speakWithBrowserVoice(sentences, browserVoiceOptions(options, {
       onStart: () => {
         if (!playbackStartedFired) { playbackStartedFired = true; options.onPlaybackStarted?.(); }
@@ -502,7 +600,7 @@ export function playInterviewerSegments(segments, options) {
       },
       onSegment: (sentence, sentenceIndex) => {
         if (cancelled) return;
-        options.onSegment?.(sentence);
+        options.onSegment?.(units[sentenceIndex]?.caption ?? sentence);
         if (sentenceIndex === sentences.length - 1 && !finalChunkAnnounced) {
           finalChunkAnnounced = true;
           options.onFinalChunkStarted?.();
@@ -536,6 +634,7 @@ export function playInterviewerSegments(segments, options) {
       } catch (error) {
         if (cancelled || error?.isCancelled) return { status: "cancelled" };
         if (isAuthError(error)) throw error;
+        if (error?.isSpeechTimeout) return speakRemainingInBrowser(index, { slowIndex: index });
         markNetworkVoiceFailed(clockNow(options));
         return speakRemainingInBrowser(index);
       }

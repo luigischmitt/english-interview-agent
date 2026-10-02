@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test, { beforeEach } from "node:test";
 import {
-  FIRST_AUDIO_FALLBACK_MS, NETWORK_VOICE_COOLDOWN_MS, clearRetainedSpeechBlobs, markNetworkVoiceFailed, markNetworkVoiceHealthy,
+  FIRST_AUDIO_FALLBACK_MS, NETWORK_VOICE_COOLDOWN_MS, resetSpeechFlights, clearRetainedSpeechBlobs, markNetworkVoiceFailed, markNetworkVoiceHealthy,
   playInterviewerSegments, prewarmInterviewerSpeech, resetNetworkVoiceHealth, shouldSkipNetworkVoice, synthesizeInterviewerQuestion,
 } from "../src/lib/interview/speech-playback.mjs";
 
-beforeEach(() => { resetNetworkVoiceHealth(); clearRetainedSpeechBlobs(); });
+beforeEach(() => { resetNetworkVoiceHealth(); clearRetainedSpeechBlobs(); resetSpeechFlights(); });
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const chunkA = "Thanks for that detailed answer about caching.";
@@ -58,10 +58,11 @@ function harness({ browser = true } = {}) {
   return { requests, pending, audios, timers, clock, synthesis, options, fireDeadline };
 }
 
+// A real failure (HTTP 500 before the deadline) arms the cooldown; a merely slow request does not (see the slow tests below).
 async function failOnce(h) {
   const playback = playInterviewerSegments([chunkA, chunkB], h.options);
   await flush();
-  h.fireDeadline();
+  h.pending.get(chunkA).status(500);
   await flush();
   h.synthesis.spoken[0].onstart();
   h.synthesis.spoken[0].onend();
@@ -126,7 +127,7 @@ test("a failure after the cooldown re-arms it", async () => {
   h.synthesis.spoken.length = 0;
   const playback = playInterviewerSegments([chunkA], h.options);
   await flush();
-  h.fireDeadline();
+  h.pending.get(chunkA).status(500);
   await flush();
   h.synthesis.spoken[0].onstart();
   h.synthesis.spoken[0].onend();
@@ -154,6 +155,68 @@ test("an already prepared utterance is still played from the network during the 
   h.audios[0].emit("ended");
   assert.deepEqual(await playback.promise, { status: "completed", voice: "network" });
   assert.equal(h.synthesis.spoken.length, 0);
+});
+
+test("a request that misses the 4 s deadline but later succeeds does not arm the cooldown and its audio is never played", async () => {
+  const h = harness();
+  const playback = playInterviewerSegments([chunkA, chunkB], h.options);
+  await flush();
+  h.fireDeadline();
+  await flush();
+  assert.equal(h.requests.length, 1, "the slow request is not aborted and no further chunk is requested");
+  h.synthesis.spoken[0].onstart();
+  h.pending.get(chunkA).ok();
+  await flush();
+  assert.equal(shouldSkipNetworkVoice(h.clock.value), false, "healthy: no cooldown");
+  assert.equal(h.audios.length, 0, "late audio is discarded, never played");
+  h.synthesis.spoken[0].onend();
+  h.synthesis.spoken[1].onstart();
+  h.synthesis.spoken[1].onend();
+  assert.deepEqual(await playback.promise, { status: "completed", voice: "browser" });
+  assert.equal(h.audios.length, 0);
+  assert.equal(h.requests.length, 1);
+});
+
+test("a request that misses the deadline and then fails arms the cooldown", async () => {
+  const h = harness();
+  const playback = playInterviewerSegments([chunkA], h.options);
+  await flush();
+  h.fireDeadline();
+  await flush();
+  assert.equal(shouldSkipNetworkVoice(h.clock.value), false, "still unknown while the request is in flight");
+  h.pending.get(chunkA).status(500);
+  await flush();
+  assert.equal(shouldSkipNetworkVoice(h.clock.value), true);
+  h.synthesis.spoken[0].onstart();
+  h.synthesis.spoken[0].onend();
+  assert.deepEqual(await playback.promise, { status: "completed", voice: "browser" });
+});
+
+test("a background request that never answers is bounded by its own timeout and arms the cooldown", async () => {
+  const h = harness();
+  const playback = playInterviewerSegments([chunkA], { ...h.options, backgroundRequestTimeoutMs: 7_000 });
+  await flush();
+  h.fireDeadline();
+  await flush();
+  const [id, timer] = [...h.timers].find(([, entry]) => entry.delay === 7_000);
+  h.timers.delete(id);
+  timer.callback();
+  await flush();
+  assert.equal(shouldSkipNetworkVoice(h.clock.value), true);
+  playback.cancel();
+});
+
+test("a slow success learned in the background clears an earlier cooldown", async () => {
+  const h = harness();
+  const playback = playInterviewerSegments([chunkA], h.options);
+  await flush();
+  h.fireDeadline();
+  await flush();
+  markNetworkVoiceFailed(h.clock.value);
+  h.pending.get(chunkA).ok();
+  await flush();
+  assert.equal(shouldSkipNetworkVoice(h.clock.value), false);
+  playback.cancel();
 });
 
 test("a 401 does not arm the cooldown", async () => {
