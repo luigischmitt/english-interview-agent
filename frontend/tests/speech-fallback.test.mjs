@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
+import { resetNetworkVoiceHealth } from "../src/lib/interview/speech-playback.mjs";
 import { FIRST_AUDIO_FALLBACK_MS, clearRetainedSpeechBlobs, playInterviewerSegments, prewarmInterviewerSpeech, speechUnavailableMessage, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+
+beforeEach(() => resetNetworkVoiceHealth());
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const chunkA = "Thanks for that detailed answer about caching.";
@@ -170,6 +173,7 @@ test("the setup audio test speaks the phrase with the browser voice when synthes
   synthesis.spoken[0].onend();
   assert.deepEqual(await playback.promise, { status: "completed", voice: "browser" });
   assert.ok(log.includes("browser-voice"));
+  resetNetworkVoiceHealth(); // the stall above armed the cooldown; this case exercises the 4 s path again
   const cancelled = synthesizeInterviewerQuestion("Another phrase to say.", options);
   await flush();
   fireDeadline();

@@ -260,6 +260,8 @@ Sem `speechSynthesis`, a reprodução fica indisponível em 4 s com mensagem em
 português e o texto da pergunta continua na tela. O teste de áudio da
 configuração usa o mesmo fallback e tem o botão "Ouvir voz do navegador".
 
+Depois de uma falha ou timeout da rede, a voz do navegador fica "pegajosa" por 2 min (`NETWORK_VOICE_COOLDOWN_MS`): as falas seguintes (e o teste de áudio) usam o navegador na hora, sem esperar 4 s nem chamar `/speech`, e o pré-aquecimento fica desligado; depois do cooldown a rede é tentada de novo, e um sucesso limpa o estado (401/403 não contam como falha de voz).
+
 ### Preparação antecipada da próxima pergunta (Cartesia)
 
 Com `TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS` ativo no backend, depois de um

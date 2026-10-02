@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 import { createNextTurnPreparationRegistry } from "../src/lib/interview/next-turn-preparation.mjs";
+import { resetNetworkVoiceHealth } from "../src/lib/interview/speech-playback.mjs";
 import { clearRetainedSpeechBlobs, playInterviewerSegments, prewarmInterviewerSpeech } from "../src/lib/interview/speech-playback.mjs";
+
+beforeEach(() => resetNetworkVoiceHealth());
 
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 
