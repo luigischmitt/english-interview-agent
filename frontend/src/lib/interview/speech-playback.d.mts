@@ -77,3 +77,5 @@ export function markNetworkVoiceFailed(now?: number): void;
 export function markNetworkVoiceHealthy(): void;
 export function shouldSkipNetworkVoice(now?: number): boolean;
 export function resetNetworkVoiceHealth(): void;
+
+export function warmUpInterviewerSpeech(endpoint: string, fetcher: (input: string, init?: RequestInit) => Promise<unknown>): void;

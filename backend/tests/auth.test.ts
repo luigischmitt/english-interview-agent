@@ -155,6 +155,7 @@ describe("authenticated HTTP routes", () => {
 
   it.each([
     ["post", "/api/v1/speech"],
+    ["post", "/api/v1/speech/warmup"],
     ["get", "/api/v1/speech/voices"],
     ["post", "/api/v1/thinking"],
     ["post", "/api/v1/thinking/next-turn"],

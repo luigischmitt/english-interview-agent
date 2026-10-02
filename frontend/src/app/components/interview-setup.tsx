@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
+import { useSpeechWarmup } from "../hooks/use-speech-playback";
 import { synthesizeInterviewerQuestion } from "@/lib/interview/speech-playback.mjs";
 import { isBrowserVoiceAvailable, speakWithBrowserVoice } from "@/lib/interview/browser-voice.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
@@ -41,6 +42,7 @@ export function InterviewSetup({
   onBack: () => void;
   onStart: (config: InterviewConfig) => void;
 }) {
+  useSpeechWarmup();
   const [config, setConfig] = useState<InterviewConfig>(defaultInterviewConfig);
   const [showErrors, setShowErrors] = useState(false);
   const [audioTestStatus, setAudioTestStatus] = useState<{ kind: "idle" | "loading" | "success" | "error"; message?: string }>({ kind: "idle" });

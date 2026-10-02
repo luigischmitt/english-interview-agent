@@ -30,7 +30,12 @@ backend refuses to start without it while `BACKEND_AUTH_REQUIRED` is unset or
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; enables the remote token check for non-ES256 signing
 keys), `ALLOWED_ORIGIN=https://englishinterview.vercel.app,https://english-interview-agent.vercel.app` (no trailing slash).
 
-Do not set `KOKORO_BASE_URL` (unused with `openrouter`) or
+To use the self-hosted Kokoro service below as the primary interviewer voice
+(OpenRouter becomes the hedge), set `SPEECH_PROVIDER=kokoro-openrouter`,
+`KOKORO_URL=<kokoro service url>` and `KOKORO_AUTH=gcp-id-token` instead of
+`SPEECH_PROVIDER=openrouter`. `OPENROUTER_API_KEY` stays required.
+
+Do not set `KOKORO_BASE_URL` or
 `INTERVIEW_REASONING_DIAGNOSTICS`. Cloud Run injects `PORT=8080`. Every other
 variable keeps its default; see the table in `backend/README.md`.
 
@@ -186,3 +191,40 @@ production image build and `/health` check with Docker. First production deploy
 production origin and refused (503) from other origins, Vercel production
 deploy on `englishinterview.vercel.app`. Supabase URL configuration is done in
 the Supabase dashboard.
+
+## Kokoro voice service (private)
+
+A self-hosted Kokoro runs as a private Cloud Run service and is the primary
+interviewer voice when the backend uses `SPEECH_PROVIDER=kokoro-openrouter`.
+
+```bash
+# Mirror the public image once (Cloud Run cannot pull from ghcr.io directly).
+docker pull --platform linux/amd64 ghcr.io/remsky/kokoro-fastapi-cpu:v0.6.0
+docker tag ghcr.io/remsky/kokoro-fastapi-cpu:v0.6.0 $REGION-docker.pkg.dev/$PROJECT/english-interview/kokoro:v0.6.0
+docker push $REGION-docker.pkg.dev/$PROJECT/english-interview/kokoro:v0.6.0
+
+gcloud run deploy english-interview-kokoro \
+  --image $REGION-docker.pkg.dev/$PROJECT/english-interview/kokoro:v0.6.0 --region $REGION \
+  --no-allow-unauthenticated \
+  --cpu 4 --memory 8Gi --cpu-boost \
+  --min-instances 0 --max-instances 1 --concurrency 4 \
+  --set-env-vars "OMP_NUM_THREADS=4,MKL_NUM_THREADS=4,TORCH_NUM_THREADS=4"
+
+# Only the backend's service account may call it (default compute SA unless changed).
+gcloud run services add-iam-policy-binding english-interview-kokoro --region $REGION \
+  --member "serviceAccount:<backend-service-account>" --role roles/run.invoker
+```
+
+Then deploy the backend with `SPEECH_PROVIDER=kokoro-openrouter`,
+`KOKORO_URL=<english-interview-kokoro url>` and `KOKORO_AUTH=gcp-id-token`.
+The backend fetches an identity token from the metadata server (audience = the
+Kokoro URL origin) and sends it as `Authorization: Bearer`. Without it Kokoro
+answers 403.
+
+Measured warm latency on 4 vCPU: about 1.2-1.5 s for 24 characters, 1.7-1.8 s
+for 50, 4.3 s for 106. With min instances 0 the first request after idle pays a
+cold start, so the frontend calls `POST /api/v1/speech/warmup` when the setup
+screen and the interview room open; the backend then pings Kokoro `/health`
+(at most once per 60 s). If Kokoro has not produced audio after
+`HYBRID_SPEECH_HEDGE_AFTER_MS` (2500 ms) or fails, OpenRouter races it and the
+first audio wins.

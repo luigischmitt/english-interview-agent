@@ -11,6 +11,7 @@ export function createSpeechRouter(provider: SpeechProvider, config: SpeechConfi
   speechRouter.get("/health", controller.health);
   speechRouter.get("/voices", controller.voices);
   speechRouter.post("/", controller.synthesize);
+  speechRouter.post("/warmup", controller.warmup);
 
   return speechRouter;
 }

@@ -42,9 +42,13 @@ performed by the authenticated frontend client. The speech service accepts:
 | `SUPABASE_URL` | — | Public Supabase project URL (same value as the frontend's `NEXT_PUBLIC_SUPABASE_URL`). Required while `BACKEND_AUTH_REQUIRED` is `true`; must be `https` (or `http` for `localhost`/`127.0.0.1`). The backend fails at startup without it. |
 | `SUPABASE_PUBLISHABLE_KEY` | — | Optional public key (same value as the frontend's `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; recommended). Enables the remote token check described under Authentication; without it, only ES256 tokens with a known `kid` are accepted. |
 | `BACKEND_AUTH_REQUIRED` | `true` | `false` disables access-token checks (local development only; a content-free `auth_disabled` warning is logged at startup). Any value other than `true`/`false` fails at startup. |
-| `SPEECH_PROVIDER` | `fake` | `fake` returns deterministic test audio; `kokoro` calls a Kokoro server; `openrouter` calls Kokoro through OpenRouter. |
-| `KOKORO_BASE_URL` | `http://localhost:8880` | Kokoro HTTP base URL. |
-| `KOKORO_TIMEOUT_MS` | `15000` | Positive request timeout in milliseconds (also used by `openrouter`). |
+| `SPEECH_PROVIDER` | `fake` | `fake` returns deterministic test audio; `kokoro` calls a Kokoro server; `openrouter` calls Kokoro through OpenRouter; `kokoro-openrouter` (hybrid) uses self-hosted Kokoro first with OpenRouter as the hedge. |
+| `KOKORO_URL` | — | Kokoro HTTP base URL, e.g. the private Cloud Run service. Required with `kokoro-openrouter`; with `kokoro` it takes precedence over `KOKORO_BASE_URL`. |
+| `KOKORO_BASE_URL` | `http://localhost:8880` | Kokoro HTTP base URL when `KOKORO_URL` is unset (local Docker). |
+| `KOKORO_AUTH` | `none` | `gcp-id-token` sends `Authorization: Bearer <Google identity token>` (audience = the Kokoro URL origin, from the metadata server) on every Kokoro request, health included. |
+| `HYBRID_SPEECH_HEDGE_AFTER_MS` | `2500` | Integer 0-30000. With `kokoro-openrouter`, OpenRouter starts if Kokoro has produced no audio after this delay; a fast Kokoro failure starts it immediately. `0` disables the timed hedge (failures still fall back). |
+| `OPENROUTER_SPEECH_VOICE` | `af_heart` | Single voice sent to OpenRouter with `kokoro-openrouter` (blends are rejected). Kokoro uses `INTERVIEWER_VOICE`. |
+| `KOKORO_TIMEOUT_MS` | `15000` | Positive request timeout in milliseconds (also used by `openrouter` and as the overall deadline of `kokoro-openrouter`). |
 | `INTERVIEWER_VOICE` | `af_bella+af_heart` (`af_heart` with `openrouter`) | Voice passed to the provider. Blends containing `+` are rejected at startup with `openrouter`. |
 | `OPENROUTER_SPEECH_MODEL` | `hexgrad/kokoro-82m` | Speech model when `SPEECH_PROVIDER=openrouter`. Requires `OPENROUTER_API_KEY`, otherwise the backend fails at startup. |
 | `OPENROUTER_SPEECH_HEDGE_AFTER_MS` | `1500` | Integer 0-10000. With `openrouter`, synthesis goes to DeepInfra first; if it has not answered after this delay (or fails sooner), a second request routed to Together starts and the first successful response wins. `0` disables hedging. |
@@ -107,6 +111,26 @@ The `speech_synthesis_timing` log gains a content-free `hedge` field:
 `not_needed`, `primary_won`, `hedge_won` or `both_failed`.
 When synthesis fails, the API returns `503 SPEECH_PROVIDER_UNAVAILABLE` and the
 frontend keeps showing the question as text with an audio-unavailable message.
+
+## Interviewer voice: self-hosted Kokoro with OpenRouter hedge
+
+`SPEECH_PROVIDER=kokoro-openrouter` starts Kokoro (`KOKORO_URL`, optionally
+`KOKORO_AUTH=gcp-id-token` for a private Cloud Run service, voice
+`INTERVIEWER_VOICE`, default blend `af_bella+af_heart`) and, when it has not
+returned audio within `HYBRID_SPEECH_HEDGE_AFTER_MS` or fails, also starts
+`OpenRouterSpeechProvider` (voice `OPENROUTER_SPEECH_VOICE`, its own DeepInfra to
+Together hedge). The first non-empty audio wins and the other request is
+aborted; if both fail the API returns `503 SPEECH_PROVIDER_UNAVAILABLE`.
+Startup requires `KOKORO_URL` and `OPENROUTER_API_KEY`. `speech_synthesis_timing`
+logs `provider: "hybrid"`, `voiceSource` (`kokoro` or `openrouter`) and `hedge`
+(`not_needed`, `primary_won`, `hedge_won`, `both_failed`), never text or tokens.
+`GET /api/v1/speech/health` reports `ready` without calling either upstream, so it
+does not wake Kokoro.
+
+`POST /api/v1/speech/warmup` (authenticated) wakes a scale-to-zero Kokoro: in hybrid
+mode it fires an authenticated `GET {KOKORO_URL}/health` in the background (one in
+flight, at most once per 60 s) and returns `202`; other modes return `204`.
+See `docs/deploy.md` for the Cloud Run service.
 
 ## Run Kokoro with a local backend
 

@@ -19,7 +19,7 @@ import { analyzeTurnWithRetry, resolveReportAtEnd, settleTurnAnalyses, turnAnaly
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
-import { prewarmInterviewerUtterance, useSpeechPlayback, type SpeechTimingEvent } from "../hooks/use-speech-playback";
+import { prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { useMicEngine } from "../hooks/use-mic-engine";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTimingEnabled } from "@/lib/interview/handoff-timing.mjs";
@@ -85,6 +85,7 @@ function CapturedAnswers({ turns }: { turns: ReturnType<typeof pairInterviewTurn
 }
 
 export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; onLeave: () => void }) {
+  useSpeechWarmup();
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
   const { autoCaptureVoice, showCandidateCaptions } = resolveCandidateVoicePreferences(config);
   const [candidateCaption, setCandidateCaption] = useState<CandidateCaption>(emptyCaption);

@@ -536,3 +536,12 @@ test("cancelling an utterance stops its single continuous audio track", async ()
   assert.equal(audio.paused, true);
   assert.equal(revoked, true);
 });
+
+test("warming up posts to the speech warmup endpoint once and ignores failures", async () => {
+  const { warmUpInterviewerSpeech } = await import("../src/lib/interview/speech-playback.mjs");
+  const calls = [];
+  warmUpInterviewerSpeech("https://api.test/api/v1/speech", async (url, init) => { calls.push([url, init.method]); throw new Error("offline"); });
+  warmUpInterviewerSpeech("https://api.test/api/v1/speech", () => { throw new Error("sync failure"); });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, [["https://api.test/api/v1/speech/warmup", "POST"]]);
+});
