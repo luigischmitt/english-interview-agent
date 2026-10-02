@@ -47,7 +47,9 @@ type BridgeLog = {
   transitionDropped?: boolean;
 };
 
-function logOrchestrationDecision(decision: "FOLLOW_UP" | "NEXT", requestedDecision: "FOLLOW_UP" | "NEXT" | null, outcome: "accepted" | "fallback", reason: OrchestrationFallbackReason | "model_decision", followUpUsed: boolean, latencyMs: number, attempts: number, hedge: HedgeOutcome, corrective: CorrectiveOutcome = "not_needed", recoveredFrom?: OrchestrationFallbackReason, bridge: BridgeLog = { bridge: "none" }): void {
+type AnchorCheck = "window" | "transcript";
+
+function logOrchestrationDecision(decision: "FOLLOW_UP" | "NEXT", requestedDecision: "FOLLOW_UP" | "NEXT" | null, outcome: "accepted" | "fallback", reason: OrchestrationFallbackReason | "model_decision", followUpUsed: boolean, latencyMs: number, attempts: number, hedge: HedgeOutcome, corrective: CorrectiveOutcome = "not_needed", recoveredFrom?: OrchestrationFallbackReason, bridge: BridgeLog = { bridge: "none" }, anchorCheck?: AnchorCheck): void {
   console.info(JSON.stringify({
     event: "interview_orchestration_decision",
     decision,
@@ -59,6 +61,7 @@ function logOrchestrationDecision(decision: "FOLLOW_UP" | "NEXT", requestedDecis
     attempts,
     hedge,
     corrective,
+    ...(anchorCheck ? { anchorCheck } : {}),
     ...(recoveredFrom ? { recoveredFrom } : {}),
     bridge: bridge.bridge,
     ...(bridge.outcome ? { bridgeOutcome: bridge.outcome } : {}),
@@ -135,7 +138,7 @@ const anchorWindowWords = 8;
  * (within its sentence). A single-word anchor copied into the question is not enough by itself, so an unrelated
  * question cannot ride on a pasted anchor; it counts only when the question adds no content words of its own.
  */
-function referencesAnchorContext(question: string, anchor: string, transcript: string): boolean {
+function anchorGrounding(question: string, anchor: string, transcript: string): "window" | "transcript" | null {
   const questionWords = contentWords(question);
   const anchorWords = contentWords(anchor);
   const needle = normalizedWords(anchor);
@@ -156,9 +159,13 @@ function referencesAnchorContext(question: string, anchor: string, transcript: s
   }
   const windowWords = contentWords(windows.join(" "));
   const sharesWindowWord = [...questionWords].some((word) => windowWords.has(word) && !anchorWords.has(word));
-  if (sharesWindowWord) return true;
+  if (sharesWindowWord) return "window";
   const sharesAnchorWord = [...questionWords].some((word) => anchorWords.has(word));
-  if (anchorWords.size > 1) return sharesAnchorWord;
+  if (anchorWords.size > 1 && sharesAnchorWord) return "window";
+  const transcriptWords = contentWords(transcript);
+  // Relaxed check for long, run-on real speech: a substantive word (never the anchor itself) shared with the whole transcript.
+  if ([...questionWords].some((word) => transcriptWords.has(word) && !anchorWords.has(word))) return "transcript";
+  if (anchorWords.size > 1) return null;
   const questionTokens = normalizedWords(question);
   const remaining: string[] = [];
   for (let index = 0; index < questionTokens.length;) {
@@ -166,7 +173,7 @@ function referencesAnchorContext(question: string, anchor: string, transcript: s
     else remaining.push(questionTokens[index++]);
   }
   const addsNoNewWords = [...contentWords(remaining.join(" "))].every((word) => windowWords.has(word) || anchorWords.has(word));
-  return (sharesAnchorWord || hasExactAnchorMention(question, anchor)) && addsNoNewWords;
+  return (sharesAnchorWord || hasExactAnchorMention(question, anchor)) && addsNoNewWords ? "window" : null;
 }
 
 function namesTranscriptDetail(text: string, transcript: string): boolean {
@@ -246,7 +253,7 @@ function hasValidAnchorWordCount(anchor: string, minimum: number, maximum: numbe
   return token.length >= 3 && !lowInformationWords.has(token) && !followUpStopWords.has(token) && !nonTechnicalSingleWords.has(token);
 }
 
-function parseDecision(content: unknown, input: InterviewOrchestrationInput, onInvalid: (reason: OrchestrationFallbackReason, requestedDecision: "FOLLOW_UP" | "NEXT" | null) => void): Pick<InterviewOrchestrationResult, "decision" | "followUpQuestion" | "nextQuestion" | "acknowledgement"> | null {
+function parseDecision(content: unknown, input: InterviewOrchestrationInput, onInvalid: (reason: OrchestrationFallbackReason, requestedDecision: "FOLLOW_UP" | "NEXT" | null) => void): (Pick<InterviewOrchestrationResult, "decision" | "followUpQuestion" | "nextQuestion" | "acknowledgement"> & { anchorCheck?: "window" | "transcript" }) | null {
   let value: unknown;
   const reject = (reason: OrchestrationFallbackReason): null => {
     const requestedDecision = isRecord(value) && (value.decision === "FOLLOW_UP" || value.decision === "NEXT") ? value.decision : null;
@@ -279,12 +286,13 @@ function parseDecision(content: unknown, input: InterviewOrchestrationInput, onI
   const question = value.followUpQuestion.trim();
   if (anchor.length > maxAnchorLength || containsNoiseToken(anchor) || containsNoiseToken(question) || !hasValidAnchorWordCount(anchor, 1, maxAnchorWords)) return reject("invalid_anchor");
   if (!hasExactAnchorMention(input.transcript, anchor)) return reject("anchor_not_in_transcript");
-  if (!referencesAnchorContext(question, anchor, input.transcript)) return reject("anchor_not_referenced");
+  const anchorCheck = anchorGrounding(question, anchor, input.transcript);
+  if (!anchorCheck) return reject("anchor_not_referenced");
   const wordCount = question.split(/\s+/).filter(Boolean).length;
   if (question.length < 8 || question.length > 180 || wordCount < 5 || wordCount > 24 || !question.endsWith("?") || (question.match(/\?/g) ?? []).length !== 1 || /[\r\n]/.test(question)) return reject("invalid_follow_up_question");
   const previouslyCoveredQuestions = (input.askedQuestions ?? []).filter((asked) => asked !== input.currentQuestion);
   if (repeatsAskedQuestion(question, previouslyCoveredQuestions)) return reject("repeated_follow_up_context");
-  return { decision: "FOLLOW_UP", followUpQuestion: question, nextQuestion: null, acknowledgement };
+  return { decision: "FOLLOW_UP", followUpQuestion: question, nextQuestion: null, acknowledgement, anchorCheck };
 }
 
 export class OpenRouterOrchestrationService implements InterviewOrchestrationService {
@@ -456,8 +464,9 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
     const hedge: HedgeOutcome = corrective === "recovered" ? firstRoundHedge : final.role === "retry" ? "retried" : hedged ? (final.role === "secondary" ? "secondary_won" : "primary_won") : "not_needed";
     const costUsd = typeof body.usage?.cost === "number" && Number.isFinite(body.usage.cost) ? body.usage.cost : null;
     const decisionLatencyMs = Date.now() - start;
-    const bridged = await this.applyBridge(input, parsed, deadlineAt);
-    logOrchestrationDecision(parsed.decision, parsed.decision, "accepted", "model_decision", input.followUpUsed, decisionLatencyMs, attempts, hedge, corrective, corrective === "recovered" && firstRejection ? firstRejection : undefined, bridged.log);
+    const { anchorCheck, ...decision } = parsed;
+    const bridged = await this.applyBridge(input, decision, deadlineAt);
+    logOrchestrationDecision(parsed.decision, parsed.decision, "accepted", "model_decision", input.followUpUsed, decisionLatencyMs, attempts, hedge, corrective, corrective === "recovered" && firstRejection ? firstRejection : undefined, bridged.log, anchorCheck);
     const totalCostUsd = costUsd === null && bridged.costUsd === null ? null : (costUsd ?? 0) + (bridged.costUsd ?? 0);
     return {
       ...bridged.result,
