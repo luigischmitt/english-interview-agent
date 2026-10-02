@@ -252,6 +252,83 @@ describe("hybrid warmup", () => {
   });
 });
 
+describe("hybrid voice status", () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const make = (warmupRequest: () => Promise<unknown>, now: () => number) =>
+    new HybridSpeechProvider({ ...hybrid().provider["options"], warmupRequest, now });
+
+  it("goes warming -> ready after a successful probe and stays ready for 60 s", async () => {
+    let now = 0;
+    const warmupRequest = vi.fn(async () => ({ status: "ready" }));
+    const provider = make(warmupRequest, () => now);
+    expect(provider.voiceStatus()).toBe("warming");
+    await Promise.resolve();
+    expect(warmupRequest).toHaveBeenCalledTimes(1);
+    await flush();
+    now = 59_000;
+    expect(provider.voiceStatus()).toBe("ready");
+    expect(warmupRequest).toHaveBeenCalledTimes(1);
+    now = 61_000;
+    expect(provider.voiceStatus()).toBe("warming");
+    await Promise.resolve();
+    expect(warmupRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it("dedupes in flight and probes at most every 5 s while warming", async () => {
+    let now = 0;
+    let release!: (value: unknown) => void;
+    const warmupRequest = vi.fn(() => new Promise((resolve) => { release = resolve; }));
+    const provider = make(warmupRequest, () => now);
+    provider.voiceStatus(); now = 6_000; provider.voiceStatus();
+    await Promise.resolve();
+    expect(warmupRequest).toHaveBeenCalledTimes(1);
+    release({ status: "ready" }); await flush();
+    expect(provider.voiceStatus()).toBe("ready");
+  });
+
+  it("reports unavailable for 60 s after a failed probe, retries every 5 s, and recovers", async () => {
+    let now = 0;
+    let fail = true;
+    const warmupRequest = vi.fn(async () => { if (fail) throw new Error("down"); return { status: "ready" }; });
+    const provider = make(warmupRequest, () => now);
+    provider.voiceStatus(); await flush();
+    now = 2_000;
+    expect(provider.voiceStatus()).toBe("unavailable");
+    expect(warmupRequest).toHaveBeenCalledTimes(1);
+    now = 10_000; fail = false;
+    provider.voiceStatus(); await flush();
+    expect(provider.voiceStatus()).toBe("ready");
+    now = 200_000; fail = true;
+    expect(provider.voiceStatus()).toBe("warming");
+  });
+
+  it("treats non-ok health and a cut-short cold start differently", async () => {
+    let now = 0;
+    const results: unknown[] = [{ status: "unavailable" }, { status: "warming" }];
+    const provider = make(async () => results.shift(), () => now);
+    provider.voiceStatus(); await flush();
+    expect(provider.voiceStatus()).toBe("unavailable");
+    now = 61_000; // failure window elapsed; probe says still warming
+    provider.voiceStatus(); await flush();
+    expect(provider.voiceStatus()).toBe("warming");
+  });
+
+  it("marks ready after a Kokoro synthesis but not after an OpenRouter-only one", async () => {
+    const warmupRequest = vi.fn(async () => { throw new Error("down"); });
+    const ok = { audio: Buffer.from("a"), contentType: "audio/mpeg" };
+    const primary: SpeechProvider = { name: "p", health: async () => ({ status: "ready" }), synthesize: async () => ok };
+    const slow: SpeechProvider = { name: "s", health: async () => ({ status: "ready" }), synthesize: async () => ok };
+    const base = hybrid().provider["options"];
+    const viaKokoro = new HybridSpeechProvider({ ...base, primary, secondary: slow, hedgeAfterMs: 0, warmupRequest });
+    await viaKokoro.synthesize(req);
+    expect(viaKokoro.voiceStatus()).toBe("ready");
+    const failing: SpeechProvider = { ...primary, synthesize: async () => { throw new SpeechProviderUnavailableError("x"); } };
+    const viaOpenRouter = new HybridSpeechProvider({ ...base, primary: failing, secondary: slow, hedgeAfterMs: 0, warmupRequest });
+    await viaOpenRouter.synthesize(req);
+    expect(viaOpenRouter.voiceStatus()).toBe("warming");
+  });
+});
+
 describe("hybrid config and factory", () => {
   const env = { SPEECH_PROVIDER: "kokoro-openrouter", KOKORO_URL: "https://k.run.app", OPENROUTER_API_KEY: "key" };
 
@@ -299,6 +376,19 @@ describe("warmup route and logging", () => {
     const plain = { ...provider }; delete plain.warmup;
     const app2 = createApp({ speechConfig, speechProvider: plain, accessTokenVerifier: null, thinkingService: null, reportService: null });
     expect((await request(app2).post("/api/v1/speech/warmup")).status).toBe(204);
+  });
+
+  it("serves warmup-status: provider status, ready when unsupported, no-store", async () => {
+    const voiceStatus = vi.fn(() => "warming" as const);
+    const provider: SpeechProvider = { name: "hybrid", health: async () => ({ status: "ready" }), synthesize: async () => audio(), voiceStatus };
+    const app = createApp({ speechConfig, speechProvider: provider, accessTokenVerifier: null, thinkingService: null, reportService: null });
+    const response = await request(app).get("/api/v1/speech/warmup-status");
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ voice: "warming" });
+    expect(response.headers["cache-control"]).toBe("no-store");
+    const plain = { ...provider }; delete plain.voiceStatus;
+    const app2 = createApp({ speechConfig, speechProvider: plain, accessTokenVerifier: null, thinkingService: null, reportService: null });
+    expect((await request(app2).get("/api/v1/speech/warmup-status")).body).toEqual({ voice: "ready" });
   });
 
   it("logs hybrid provider, voiceSource and hedge without content", async () => {

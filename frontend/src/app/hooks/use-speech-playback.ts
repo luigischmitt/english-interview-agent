@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { fetchVoiceStatus, startVoiceReadinessPolling, type VoiceReadinessState } from "@/lib/interview/voice-readiness.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech, warmUpInterviewerSpeech, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
 
@@ -16,6 +17,19 @@ export function useSpeechWarmup() {
   useEffect(() => {
     warmUpInterviewerSpeech(speechEndpoint, authorizedFetch);
   }, []);
+}
+
+/** Polls the backend for the interviewer voice readiness while `enabled`; stops when ready, on unmount or after 2 min. */
+export function useVoiceReadiness(enabled: boolean): VoiceReadinessState {
+  const [state, setState] = useState<VoiceReadinessState>("warming");
+  useEffect(() => {
+    if (!enabled) return;
+    return startVoiceReadinessPolling({
+      fetchStatus: () => fetchVoiceStatus(speechEndpoint, authorizedFetch),
+      onState: setState,
+    });
+  }, [enabled]);
+  return state;
 }
 
 /** Starts synthesizing the next interviewer utterance early; the later playback of the same utterance reuses it. */

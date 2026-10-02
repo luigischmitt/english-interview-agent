@@ -2,7 +2,7 @@ import type { RequestHandler } from "express";
 
 import { SpeechProviderUnavailableError } from "../speech/errors.js";
 import type { SpeechConfig } from "../speech/config.js";
-import type { SpeechDiagnostics, SpeechProvider } from "../speech/types.js";
+import type { SpeechDiagnostics, SpeechProvider, VoiceStatus } from "../speech/types.js";
 
 const maxTextLength = 2_000;
 
@@ -156,6 +156,16 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
     response.status(202).end();
   };
 
+  // Cached readiness of the interviewer voice; never blocks on the provider.
+  const warmupStatus: RequestHandler = (_request, response) => {
+    let voice: VoiceStatus = "ready";
+    if (provider.voiceStatus) {
+      try { voice = provider.voiceStatus(); } catch { voice = "unavailable"; }
+    }
+    response.setHeader("Cache-Control", "no-store");
+    response.status(200).json({ voice });
+  };
+
   const voices: RequestHandler = (_request, response) => {
     response.status(200).json({
       voices: [
@@ -168,5 +178,5 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
     });
   };
 
-  return { synthesize, health, voices, warmup };
+  return { synthesize, health, voices, warmup, warmupStatus };
 }

@@ -4,10 +4,11 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
-import { useSpeechWarmup } from "../hooks/use-speech-playback";
+import { useSpeechWarmup, useVoiceReadiness } from "../hooks/use-speech-playback";
 import { synthesizeInterviewerQuestion } from "@/lib/interview/speech-playback.mjs";
 import { isBrowserVoiceAvailable, speakWithBrowserVoice } from "@/lib/interview/browser-voice.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
+import { voiceReadinessCopy } from "@/lib/interview/voice-readiness.mjs";
 import { PageIntro } from "./shared";
 import { defaultInterviewConfig } from "../interview-config";
 import { interviewDurationOptions } from "@/lib/interview/session-policy.mjs";
@@ -48,6 +49,7 @@ export function InterviewSetup({
   const [audioTestStatus, setAudioTestStatus] = useState<{ kind: "idle" | "loading" | "success" | "error"; message?: string }>({ kind: "idle" });
   const audioTestRef = useRef<{ cancel: () => void } | null>(null);
   const [browserVoiceTesting, setBrowserVoiceTesting] = useState(false);
+  const voiceState = useVoiceReadiness(config.playInterviewerAudio);
 
   const cancelAudioTest = () => {
     audioTestRef.current?.cancel();
@@ -267,6 +269,13 @@ export function InterviewSetup({
                   </span>
                 </label>
               </fieldset>
+
+              {config.playInterviewerAudio && (
+                <p role="status" aria-live="polite" data-voice-state={voiceState} className={`mt-4 flex items-start gap-2 text-sm leading-6 ${voiceState === "ready" ? "text-[#1f6b45]" : "text-muted-foreground"}`}>
+                  <span aria-hidden="true" className={`mt-2 size-2 shrink-0 rounded-full ${voiceState === "ready" ? "bg-[#1f6b45]" : voiceState === "warming" ? "bg-[#9fc4ac] motion-safe:animate-pulse" : "bg-[#8a9c92]"}`} />
+                  <span>{voiceReadinessCopy[voiceState]}</span>
+                </p>
+              )}
 
               {config.playInterviewerAudio && (
                 <div className="mt-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center">

@@ -31,7 +31,12 @@ export function createSpeechProvider(config: SpeechConfig): SpeechProvider {
       secondaryVoice: config.hybrid.openRouterVoice,
       timeoutMs: config.kokoroTimeoutMs,
       hedgeAfterMs: config.hybrid.hedgeAfterMs,
-      warmupRequest: () => kokoro.health(),
+      warmupRequest: () => kokoro.health().catch((error: unknown) => {
+        // A cold start outlasts the request timeout: still warming, not failed.
+        const cause = (error as { cause?: unknown } | undefined)?.cause;
+        if (cause instanceof Error && /timed out/i.test(cause.message)) return { status: "warming" as const };
+        throw error;
+      }),
     });
   }
 

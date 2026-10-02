@@ -130,7 +130,14 @@ does not wake Kokoro.
 `POST /api/v1/speech/warmup` (authenticated) wakes a scale-to-zero Kokoro: in hybrid
 mode it fires an authenticated `GET {KOKORO_URL}/health` in the background (one in
 flight, at most once per 60 s) and returns `202`; other modes return `204`.
-See `docs/deploy.md` for the Cloud Run service.
+
+`GET /api/v1/speech/warmup-status` (authenticated, never blocks) returns
+`{"voice":"ready"|"warming"|"unavailable"}` from cached knowledge in hybrid mode: `ready`
+if a Kokoro `/health` or a Kokoro synthesis succeeded in the last 60 s; otherwise it
+triggers the same deduped probe (at most one in flight, at most every 5 s from status
+polls) and returns `warming`, or `unavailable` for 60 s after a failed probe (non-2xx,
+token error, network). A probe cut short by the request timeout counts as still warming.
+Other modes always return `ready`. See `docs/deploy.md` for the Cloud Run service.
 
 ## Run Kokoro with a local backend
 
