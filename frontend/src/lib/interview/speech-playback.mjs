@@ -390,6 +390,7 @@ export function groupInterviewerSentences(segments) {
   let locked = false;
   const lengthOf = (units) => units.map((unit) => unit.text).join(" ").length;
   const flush = () => { chunks.push({ units: pending, locked }); pending = []; locked = false; };
+  const totalLength = sentences.join(" ").length;
 
   sentences.forEach((sentence, index) => {
     let units = [{ text: sentence, caption: sentence }];
@@ -397,6 +398,10 @@ export function groupInterviewerSentences(segments) {
     if (split) {
       chunks.push({ units: [{ text: split.head, caption: sentence }], locked: true });
       units = [{ text: split.tail, caption: sentence }];
+    } else if (index === 0 && totalLength > firstChunkSplitThreshold) {
+      // The first sentence (often a short bridge) is synthesized alone so the first audio arrives fast.
+      chunks.push({ units, locked: true });
+      return;
     }
     for (const unit of units) {
       if (pending.length && lengthOf([...pending, unit]) > maximumChunkCharacters) flush();
