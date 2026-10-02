@@ -155,10 +155,8 @@ describe("OpenRouter next-turn orchestration", () => {
     { anchor: "Redis", transcript: "We used Redis on the project.", reason: "anchor_not_referenced" },
   ])("reports a safe, distinct anchor validation reason ($reason)", async ({ anchor, transcript, reason }) => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const followUpQuestion = transcript.includes("user interviews")
-      ? "You mentioned Redis; how did the user interviews change the onboarding copy?"
-      : transcript.includes("researched onboarding")
-        ? "You mentioned Redis; how did the onboarding research change your copy?"
+    const followUpQuestion = transcript.includes("user interviews") || transcript.includes("researched onboarding")
+      ? "You mentioned Redis; how do you plan quarterly budgets?"
       : transcript.includes("on the project")
         ? "How did Redis help with your project?"
         : "How did you improve customer onboarding?";
@@ -177,14 +175,56 @@ describe("OpenRouter next-turn orchestration", () => {
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
   });
 
-  it("rejects a single-word anchor whose question only reuses words from elsewhere in the transcript", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("accepts, via the transcript check, a single-word anchor whose question reuses another word from elsewhere in the transcript (ENG-106)", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
     const answer = { ...input, transcript: "I used Redis to cache profiles. Later the marketing team ran user interviews about onboarding.", askedQuestions: [input.currentQuestion] };
     const raw = { decision: "FOLLOW_UP", followUpQuestion: "Redis was mentioned; how did the user interviews change onboarding?", nextQuestion: null, anchor: "Redis", acknowledgement: null };
+    try {
+      await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP" });
+      expect(JSON.parse(String(info.mock.calls.at(-1)?.[0]))).toMatchObject({ outcome: "accepted", anchorCheck: "transcript" });
+    } finally { info.mockRestore(); }
+  });
+
+  it("still rejects a single-word anchor whose question adds unrelated words not in the transcript", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const answer = { ...input, transcript: "I used Redis to cache profiles. Later the marketing team ran user interviews about onboarding.", askedQuestions: [input.currentQuestion] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "Redis was mentioned; how do you plan quarterly budgets?", nextQuestion: null, anchor: "Redis", acknowledgement: null };
     try {
       await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "NEXT" });
       expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: "interview_orchestration_fallback", reason: "anchor_not_referenced" }));
     } finally { warn.mockRestore(); }
+  });
+
+  const longRunOn = "So basically at my last company we had this big payments platform and um we were dealing with a lot of traffic during black friday and the database was getting really slow, so we introduced a read replica and also moved the session data into Redis, and after that the latency dropped a lot and the team was much happier with the on-call rotation.";
+
+  it("accepts a follow-up on a long run-on answer when the related words are in another sentence (anchor check: transcript)", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const answer = { ...input, transcript: `${longRunOn} Then we also wrote runbooks. We used Redis with a short expiry.`, askedQuestions: [input.currentQuestion] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "How did you prepare for the black friday traffic?", nextQuestion: null, anchor: "Redis", acknowledgement: null };
+    try {
+      await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
+      expect(JSON.parse(String(info.mock.calls.at(-1)?.[0]))).toMatchObject({ anchorCheck: "transcript" });
+    } finally { info.mockRestore(); }
+  });
+
+  it("rejects an unrelated question with a valid multi-word anchor even on a long answer", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const answer = { ...input, transcript: longRunOn, askedQuestions: [input.currentQuestion] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "How do you plan quarterly budgets for hiring?", nextQuestion: null, anchor: "read replica", acknowledgement: null };
+    try {
+      await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "NEXT" });
+      expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: "interview_orchestration_fallback", reason: "anchor_not_referenced" }));
+    } finally { warn.mockRestore(); }
+  });
+
+  it("logs anchorCheck window when the anchor window already grounds the question", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const answer = { ...input, transcript: "I put retry with exponential backoff in the client, and I use a circuit breaker when the payment provider is down.", askedQuestions: [input.currentQuestion] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "How did you decide when the breaker should open?", nextQuestion: null, anchor: "circuit breaker", acknowledgement: null };
+    try {
+      await service(async () => providerResponse(JSON.stringify(raw))).decide(answer);
+      expect(JSON.parse(String(info.mock.calls.at(-1)?.[0]))).toMatchObject({ anchorCheck: "window" });
+    } finally { info.mockRestore(); }
   });
 
   it("sends at most the supplied previous answers as prior context and keeps the prompt anchored to the current transcript", async () => {
@@ -271,7 +311,7 @@ describe("OpenRouter next-turn orchestration", () => {
       expect(acceptedLog).toMatchObject({
         event: "interview_orchestration_decision", decision: "FOLLOW_UP", requestedDecision: "FOLLOW_UP", outcome: "accepted", reason: "model_decision", followUpUsed: false,
       });
-      expect(Object.keys(acceptedLog).sort()).toEqual(["attempts", "bridge", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
+      expect(Object.keys(acceptedLog).sort()).toEqual(["anchorCheck", "attempts", "bridge", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
       expect(JSON.stringify(acceptedLog)).not.toContain(input.transcript);
       expect(JSON.stringify(acceptedLog)).not.toContain(followUp);
       expect(JSON.stringify(acceptedLog)).not.toContain(anchor);
@@ -402,7 +442,7 @@ describe("OpenRouter next-turn orchestration", () => {
       const logs = info.mock.calls.map((call) => JSON.parse(String(call[0])));
       expect(logs.map((entry) => entry.reason)).toEqual(["model_decision", "invalid_json", "low_information", "credentials_missing"]);
       for (const entry of logs) {
-        expect(Object.keys(entry).sort()).toEqual(["attempts", "bridge", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
+        expect(Object.keys(entry).sort()).toEqual(entry.decision === "FOLLOW_UP" ? ["anchorCheck", "attempts", "bridge", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"] : ["attempts", "bridge", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
         expect(entry.event).toBe("interview_orchestration_decision");
       }
       expect(warn).not.toHaveBeenCalled();
@@ -690,7 +730,7 @@ describe("OpenRouter next-turn anchor tolerance (ENG-104)", () => {
   });
 
   it("rejects an unrelated question riding on a lowercase single-word anchor", async () => {
-    const { result } = ask("We use kafka for events. Onboarding copy was researched too.", "kafka", "Kafka is great; how did the user interviews change onboarding?");
+    const { result } = ask("We use kafka for events. Onboarding copy was researched too.", "kafka", "Kafka is great; how do you plan quarterly budgets?");
     await expect(result).resolves.toEqual(fallback);
   });
 });

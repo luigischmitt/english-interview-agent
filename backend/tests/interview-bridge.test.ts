@@ -42,7 +42,7 @@ describe("interview bridge call", () => {
     expect(body.response_format.json_schema.strict).toBe(true);
     expect(body.response_format.json_schema.schema.required).toEqual(["bridge"]);
     expect(body.messages[0].content).toBe(bridgeSystemPrompt);
-    expect(bridgeSystemPrompt.length).toBeLessThanOrEqual(1800);
+    expect(bridgeSystemPrompt.length).toBeLessThanOrEqual(2100);
     expect(JSON.parse(body.messages[1].content)).toMatchObject({ decision: "FOLLOW_UP", question: followUpQuestion, transcript, bridgeLeadIn: assignBridgeLeadIn(["I see."]), recentAcknowledgements: ["I see."] });
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer server-test-key");
   });
@@ -60,6 +60,38 @@ describe("interview bridge call", () => {
     const result = await bridgeService(async () => chat({ bridge })).write(bridgeInput({ decision: "NEXT", question: nextQuestion }));
     expect(result).toMatchObject({ bridge, outcome: "generated", leadInFollowed: true });
     expect(result.transitionDropped).toBeUndefined();
+  });
+
+  it("accepts a topical NEXT transition that shares a word with the upcoming question and opens like a transition", async () => {
+    const question = "How do you approach testing for the services you maintain?";
+    const bridge = "So you moved the billing service to separate services because deploys were slow. Now I'd like to hear how you approach testing.";
+    const result = await bridgeService(async () => chat({ bridge })).write(bridgeInput({ decision: "NEXT", question }));
+    expect(result).toMatchObject({ bridge, outcome: "generated" });
+    expect(result.transitionDropped).toBeUndefined();
+    const switching = "So you moved the billing service to separate services because deploys were slow. Let's switch to how you handle testing.";
+    await expect(bridgeService(async () => chat({ bridge: switching })).write(bridgeInput({ decision: "NEXT", question }))).resolves.toMatchObject({ bridge: switching });
+  });
+
+  it.each([
+    ["does not open like a transition", "So you moved the billing service because deploys were slow. Testing matters for the services you maintain."],
+    ["shares no word with the upcoming question", "So you moved the billing service because deploys were slow. I want to hear about your hobbies outside work."],
+    ["is longer than 14 words", "So you moved the billing service because deploys were slow. Now I'd like to hear how you approach testing for all of the services you maintain."],
+    ["names a different topic than the upcoming question", "So you moved the billing service because deploys were slow. Now I'd like to hear about your approach to monitoring."],
+    ["names a topic that is also a restating verb", "So you moved the billing service because deploys were slow. Now I'd like to hear how you approach releases."],
+  ])("drops only a NEXT transition that %s and keeps the restating sentence", async (_name, bridge) => {
+    const result = await bridgeService(async () => chat({ bridge })).write(bridgeInput({ decision: "NEXT", question: "How do you approach testing for the services you maintain?" }));
+    expect(result).toMatchObject({ bridge: "So you moved the billing service because deploys were slow.", outcome: "generated", transitionDropped: true });
+  });
+
+  it("keeps a generic NEXT transition that names no topic", async () => {
+    const bridge = "So you moved the billing service because deploys were slow. Let me ask about something different.";
+    await expect(bridgeService(async () => chat({ bridge })).write(bridgeInput({ decision: "NEXT", question: "How do you approach testing for the services you maintain?" }))).resolves.toMatchObject({ bridge });
+  });
+
+  it("drops a NEXT bridge whose transition repeats the upcoming question verbatim", async () => {
+    const bridge = "So you moved the billing service because deploys were slow. Now how do you approach testing for services.";
+    const result = await bridgeService(async () => chat({ bridge })).write(bridgeInput({ decision: "NEXT", question: "How do you approach testing for services?" }));
+    expect(result).toMatchObject({ bridge: null, outcome: "dropped" });
   });
 
   it.each([
