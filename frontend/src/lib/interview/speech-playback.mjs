@@ -604,3 +604,12 @@ export function prewarmInterviewerSpeech(segments, options) {
     },
   };
 }
+
+/** Best-effort wake-up of a scale-to-zero voice backend (POST <speech endpoint>/warmup); errors are ignored. */
+export function warmUpInterviewerSpeech(endpoint, fetcher) {
+  try {
+    Promise.resolve(fetcher(`${endpoint}/warmup`, { method: "POST" })).catch(() => undefined);
+  } catch {
+    // Warm-up must never affect the interview.
+  }
+}

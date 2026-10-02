@@ -1,4 +1,5 @@
 import { SpeechProviderUnavailableError } from "./errors.js";
+import type { IdTokenProvider } from "./gcp-identity-token.js";
 import { readAudioBody, requestSpeechProvider } from "./provider-request.js";
 import type {
   SpeechProvider,
@@ -11,6 +12,8 @@ type KokoroSpeechProviderOptions = {
   baseUrl: string;
   timeoutMs: number;
   fetchImplementation?: typeof fetch;
+  /** When set, every request (health included) carries `Authorization: Bearer <token>`. */
+  idTokenProvider?: IdTokenProvider;
 };
 
 export class KokoroSpeechProvider implements SpeechProvider {
@@ -19,11 +22,13 @@ export class KokoroSpeechProvider implements SpeechProvider {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly fetchImplementation: typeof fetch;
+  private readonly idTokenProvider?: IdTokenProvider;
 
-  constructor({ baseUrl, timeoutMs, fetchImplementation = fetch }: KokoroSpeechProviderOptions) {
+  constructor({ baseUrl, timeoutMs, fetchImplementation = fetch, idTokenProvider }: KokoroSpeechProviderOptions) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.timeoutMs = timeoutMs;
     this.fetchImplementation = fetchImplementation;
+    this.idTokenProvider = idTokenProvider;
   }
 
   async synthesize(request: SpeechSynthesisRequest, signal?: AbortSignal): Promise<SynthesizedSpeech> {
@@ -55,11 +60,16 @@ export class KokoroSpeechProvider implements SpeechProvider {
     }));
   }
 
-  private request<T>(path: string, init: RequestInit, parentSignal: AbortSignal | undefined, readResponse: (response: Response, signal: AbortSignal) => Promise<T>): Promise<T> {
+  private async request<T>(path: string, init: RequestInit, parentSignal: AbortSignal | undefined, readResponse: (response: Response, signal: AbortSignal) => Promise<T>): Promise<T> {
+    let authorizedInit = init;
+    if (this.idTokenProvider) {
+      const token = await this.idTokenProvider.getToken();
+      authorizedInit = { ...init, headers: { ...(init.headers as Record<string, string> | undefined), authorization: `Bearer ${token}` } };
+    }
     return requestSpeechProvider({
       label: "Kokoro",
       url: `${this.baseUrl}${path}`,
-      init,
+      init: authorizedInit,
       timeoutMs: this.timeoutMs,
       fetchImplementation: this.fetchImplementation,
       parentSignal,

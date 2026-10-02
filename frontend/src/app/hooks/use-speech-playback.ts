@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { authorizedFetch } from "@/lib/auth/backend-auth";
-import { playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
+import { playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech, warmUpInterviewerSpeech, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
 
 export type SpeechTimingEvent = "synthesis-started" | "synthesis-completed" | "playback-started";
 
@@ -10,6 +10,13 @@ const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:
 export const browserVoiceNotice = "O áudio do entrevistador está instável, então usamos a voz do navegador.";
 
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
+
+/** Wakes the voice service once when the component mounts (fire-and-forget). */
+export function useSpeechWarmup() {
+  useEffect(() => {
+    warmUpInterviewerSpeech(speechEndpoint, authorizedFetch);
+  }, []);
+}
 
 /** Starts synthesizing the next interviewer utterance early; the later playback of the same utterance reuses it. */
 export function prewarmInterviewerUtterance(utterance: string) {

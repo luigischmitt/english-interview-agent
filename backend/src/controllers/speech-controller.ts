@@ -2,7 +2,7 @@ import type { RequestHandler } from "express";
 
 import { SpeechProviderUnavailableError } from "../speech/errors.js";
 import type { SpeechConfig } from "../speech/config.js";
-import type { HedgeOutcome, SpeechProvider } from "../speech/types.js";
+import type { SpeechDiagnostics, SpeechProvider } from "../speech/types.js";
 
 const maxTextLength = 2_000;
 
@@ -20,8 +20,8 @@ function invalidSpeechRequest(responseMessage: string, response: Parameters<Requ
   });
 }
 
-function logSpeechTiming(status: "ok" | "error" | "aborted", provider: string, start: number, textLength: number, hedge?: HedgeOutcome): void {
-  console.info(JSON.stringify({ event: "speech_synthesis_timing", status, provider, durationMs: Math.max(0, Math.round(Date.now() - start)), textLength, ...(hedge ? { hedge } : {}) }));
+function logSpeechTiming(status: "ok" | "error" | "aborted", provider: string, start: number, textLength: number, diagnostics?: SpeechDiagnostics): void {
+  console.info(JSON.stringify({ event: "speech_synthesis_timing", status, provider, durationMs: Math.max(0, Math.round(Date.now() - start)), textLength, ...(diagnostics?.hedge ? { hedge: diagnostics.hedge } : {}), ...(diagnostics?.voiceSource ? { voiceSource: diagnostics.voiceSource } : {}) }));
 }
 
 export function createSpeechController(provider: SpeechProvider, config: SpeechConfig) {
@@ -72,10 +72,10 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
 
     const start = Date.now();
     let timingLogged = false;
-    const logTiming = (status: "ok" | "error" | "aborted", hedge?: HedgeOutcome) => {
+    const logTiming = (status: "ok" | "error" | "aborted", diagnostics?: SpeechDiagnostics) => {
       if (timingLogged) return;
       timingLogged = true;
-      logSpeechTiming(status, provider.name, start, text.length, hedge);
+      logSpeechTiming(status, provider.name, start, text.length, diagnostics);
     };
 
     try {
@@ -89,7 +89,7 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
 
       if (abortController.signal.aborted || response.destroyed || response.writableEnded) {
         clearAudio();
-        logTiming("aborted", speech.diagnostics?.hedge);
+        logTiming("aborted", speech.diagnostics);
         return;
       }
 
@@ -97,7 +97,7 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
       responseOwnsAudio = true;
       try {
         response.status(200).contentType(speech.contentType).send(audio);
-        logTiming("ok", speech.diagnostics?.hedge);
+        logTiming("ok", speech.diagnostics);
       } catch (error) {
         clearOnFinish();
         throw error;
@@ -107,7 +107,7 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
         logTiming("aborted");
         return;
       }
-      logTiming("error", error instanceof SpeechProviderUnavailableError ? error.diagnostics?.hedge : undefined);
+      logTiming("error", error instanceof SpeechProviderUnavailableError ? error.diagnostics : undefined);
       if (error instanceof SpeechProviderUnavailableError) {
         response.status(503).json({
           error: {
@@ -146,6 +146,16 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
     }
   };
 
+  // Wakes a scale-to-zero provider; providers without warmup answer 204.
+  const warmup: RequestHandler = (_request, response) => {
+    if (!provider.warmup) {
+      response.status(204).end();
+      return;
+    }
+    try { provider.warmup(); } catch { /* Warm-up is best effort. */ }
+    response.status(202).end();
+  };
+
   const voices: RequestHandler = (_request, response) => {
     response.status(200).json({
       voices: [
@@ -158,5 +168,5 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
     });
   };
 
-  return { synthesize, health, voices };
+  return { synthesize, health, voices, warmup };
 }
