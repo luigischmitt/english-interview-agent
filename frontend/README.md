@@ -235,14 +235,24 @@ chave da sessão para desabilitá-la.
 
 ### Voz do entrevistador por frase
 
-A fala do entrevistador é sintetizada em blocos de frases (`groupInterviewerSentences`):
-frases com menos de 40 caracteres se juntam à seguinte e nenhuma frase é dividida.
-Todos os blocos são pedidos de imediato (no máximo 3 em paralelo); o primeiro toca
-assim que chega e os seguintes tocam em ordem, com o próximo `Audio` já carregado
-para evitar pausas. Se um bloco falhar, a reprodução termina como indisponível e o
-texto continua visível; cancelar aborta os pedidos pendentes. O pré-aquecimento
-(`prewarmInterviewerSpeech`) usa os mesmos blocos e corpos de requisição, então a
-reprodução reaproveita os blobs. A abertura é pré-sintetizada ao confirmar a
+A fala do entrevistador é sintetizada em blocos (`groupInterviewerSentences`),
+ajustados ao Kokoro auto-hospedado (~1,5 s para 25 caracteres, ~4 s para 100; pedidos
+paralelos disputam a mesma CPU e todos ficam lentos):
+
+- o primeiro bloco é curto: uma primeira frase com mais de 70 caracteres é dividida na
+  primeira fronteira de oração (`, ` `; ` ` — ` `: `) que deixe 20 a 70 caracteres na
+  primeira parte; sem fronteira, a frase fica inteira. As legendas continuam mostrando
+  a frase inteira durante as duas partes;
+- os demais blocos juntam frases até 40 caracteres, sem dividir frases e sem passar de
+  ~140 caracteres;
+- um pedido por vez: o bloco 1 é pedido na hora e o bloco N+1 só quando o áudio do
+  bloco N chegou (não quando termina de tocar). O pré-aquecimento
+  (`prewarmInterviewerSpeech`) usa a mesma ordem, os mesmos blocos e corpos, então a
+  reprodução reaproveita blobs e pedidos em andamento.
+
+Cada bloco toca em ordem com o próximo `Audio` já carregado para evitar pausas. Se um
+bloco falhar, a reprodução termina como indisponível e o texto continua visível;
+cancelar aborta o pedido pendente. A abertura é pré-sintetizada ao confirmar a
 configuração (antes de a sala montar).
 
 ### Voz do navegador como alternativa
@@ -260,7 +270,13 @@ Sem `speechSynthesis`, a reprodução fica indisponível em 4 s com mensagem em
 português e o texto da pergunta continua na tela. O teste de áudio da
 configuração usa o mesmo fallback e tem o botão "Ouvir voz do navegador".
 
-Depois de uma falha ou timeout da rede, a voz do navegador fica "pegajosa" por 2 min (`NETWORK_VOICE_COOLDOWN_MS`): as falas seguintes (e o teste de áudio) usam o navegador na hora, sem esperar 4 s nem chamar `/speech`, e o pré-aquecimento fica desligado; depois do cooldown a rede é tentada de novo, e um sucesso limpa o estado (401/403 não contam como falha de voz).
+O cooldown só vale para falha real. Quando o prazo de 4 s estoura, o pedido em andamento
+não é abortado: termina em segundo plano (limite de 20 s, `BACKGROUND_REQUEST_TIMEOUT_MS`)
+só para revelar o resultado. Se chegar com sucesso, a rede é marcada saudável (sem
+cooldown) e o áudio atrasado é descartado, nunca tocado; se falhar ou estourar o limite,
+o cooldown é armado. Erros HTTP antes do prazo armam o cooldown na hora.
+
+Depois de uma falha real da rede, a voz do navegador fica "pegajosa" por 2 min (`NETWORK_VOICE_COOLDOWN_MS`): as falas seguintes (e o teste de áudio) usam o navegador na hora, sem esperar 4 s nem chamar `/speech`, e o pré-aquecimento fica desligado; depois do cooldown a rede é tentada de novo, e um sucesso limpa o estado (401/403 não contam como falha de voz).
 
 ### Preparação antecipada da próxima pergunta (Cartesia)
 

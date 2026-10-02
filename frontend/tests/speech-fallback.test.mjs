@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test, { beforeEach } from "node:test";
-import { resetNetworkVoiceHealth } from "../src/lib/interview/speech-playback.mjs";
+import { resetNetworkVoiceHealth, resetSpeechFlights } from "../src/lib/interview/speech-playback.mjs";
 import { FIRST_AUDIO_FALLBACK_MS, clearRetainedSpeechBlobs, playInterviewerSegments, prewarmInterviewerSpeech, speechUnavailableMessage, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
 
-beforeEach(() => resetNetworkVoiceHealth());
+beforeEach(() => { resetNetworkVoiceHealth(); resetSpeechFlights(); });
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const chunkA = "Thanks for that detailed answer about caching.";

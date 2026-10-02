@@ -36,6 +36,8 @@ export type SpeechPlaybackOptions = {
   setTimeout?: (callback: () => void, delay: number) => number;
   clearTimeout?: (id: number) => void;
   onSegment?: (segment: string) => void;
+  /** playInterviewerSegments only: how long a request that missed the fallback deadline may keep running to learn the voice health (default BACKGROUND_REQUEST_TIMEOUT_MS). */
+  backgroundRequestTimeoutMs?: number;
   onSynthesisStarted?: () => void;
   onSynthesisCompleted?: () => void;
   onPlaybackStarted?: () => void;
@@ -67,11 +69,20 @@ export const speechUnavailableMessage: string;
 export const minimumChunkCharacters: number;
 export const finalChunkLeadMs: number;
 export const maxConcurrentChunkRequests: number;
-/** Groups sentences into synthesis chunks; sentences under ~40 characters merge with the next, none is ever split. */
-export function groupInterviewerSentences(segments: string[]): { text: string; sentences: string[] }[];
+export const maximumChunkCharacters: number;
+export const firstChunkSplitThreshold: number;
+export const firstChunkPartMinimum: number;
+export const BACKGROUND_REQUEST_TIMEOUT_MS: number;
+/**
+ * Groups sentences into synthesis chunks; sentences under ~40 characters merge with the next (never past ~140 characters).
+ * Only the first sentence may be split (over 70 characters, at its first clause boundary). `text` is what is synthesized,
+ * `sentences` are the whole caption sentences, `units` pair each spoken piece with its caption.
+ */
+export function groupInterviewerSentences(segments: string[]): { text: string; sentences: string[]; units: { text: string; caption: string }[] }[];
 export function playInterviewerSegments(segments: string[], options: SpeechPlaybackOptions): SpeechPlayback;
 export function prewarmInterviewerSpeech(segments: string[], options: SpeechPlaybackOptions): { promise: Promise<boolean>; cancel: () => void };
 export function clearRetainedSpeechBlobs(): void;
+export function resetSpeechFlights(): void;
 export const NETWORK_VOICE_COOLDOWN_MS: number;
 export function markNetworkVoiceFailed(now?: number): void;
 export function markNetworkVoiceHealthy(): void;
