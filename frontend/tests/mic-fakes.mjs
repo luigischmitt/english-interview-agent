@@ -49,7 +49,7 @@ export class FakeWorklet {
 
 /** Builds engine dependencies that record every acquisition. */
 export function createFakeMicDeps({ autoFlush = true, rejectWith = null } = {}) {
-  const log = { getUserMedia: 0, contexts: [], tracks: [], worklets: [], timers: [] };
+  const log = { getUserMedia: 0, contexts: [], tracks: [], worklets: [], timers: [], recovered: [] };
   let nextTimer = 0;
   const deps = {
     log,
@@ -62,11 +62,22 @@ export function createFakeMicDeps({ autoFlush = true, rejectWith = null } = {}) 
       return { track, getTracks: () => [track], getAudioTracks: () => [track] };
     },
     createAudioContext: () => {
+      const listeners = new Set();
       const context = {
         state: "running",
         destination: {},
+        resumeCalls: 0,
+        /** "ok": resume() reaches running; "never": it stays pending/stopped (a stuck interrupted session). */
+        resumeBehavior: "ok",
         audioWorklet: { addModule: async () => {} },
-        resume: async () => { context.state = "running"; },
+        addEventListener: (type, listener) => { if (type === "statechange") listeners.add(listener); },
+        removeEventListener: (type, listener) => { if (type === "statechange") listeners.delete(listener); },
+        /** Moves the context to `next` and fires `statechange`, like the browser does. */
+        setState: (next) => { context.state = next; for (const listener of [...listeners]) listener(); },
+        resume: async () => {
+          context.resumeCalls += 1;
+          if (context.resumeBehavior === "ok" && context.state !== "closed") context.setState("running");
+        },
         createMediaStreamSource: () => ({ connect() {}, disconnect() {} }),
         createGain: () => ({ gain: { value: 1 }, connect() {}, disconnect() {} }),
         close: async () => { context.state = "closed"; },
@@ -83,6 +94,7 @@ export function createFakeMicDeps({ autoFlush = true, rejectWith = null } = {}) 
     stopTracks: (stream) => stream?.getTracks().forEach((track) => track.stop()),
     setTimeout: (callback) => { const id = ++nextTimer; log.timers.push({ id, callback }); return id; },
     clearTimeout: (id) => { log.timers = log.timers.filter((timer) => timer.id !== id); },
+    onRecovered: (reason) => log.recovered.push(reason),
     rejectWith,
   };
   return deps;
@@ -110,3 +122,11 @@ export class FakeSocket {
 }
 
 export const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+/** Fires every pending fake timer once (they are manual) and returns how many ran. */
+export function runTimers(deps) {
+  const pending = [...deps.log.timers];
+  deps.log.timers = [];
+  for (const timer of pending) timer.callback();
+  return pending.length;
+}

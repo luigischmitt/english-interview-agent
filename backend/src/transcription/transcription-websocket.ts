@@ -249,6 +249,10 @@ export function attachTranscriptionWebSocket(
     let retainedSession: StreamingSession | null = null;
     let nextSequence = 0;
     let started = false;
+    // Content-free input counters, logged only when an answer closes before it was finalized (diagnoses silent capture).
+    let audioFrames = 0;
+    let levelMessages = 0;
+    let maxLevel = 0;
     let finalRequested = false;
     let finishing = false;
     let silenceDetected = false;
@@ -768,6 +772,7 @@ export function attachTranscriptionWebSocket(
           send(socket, { type: "error", code: "STREAM_NOT_STARTED", message: "Start a recording before sending audio." });
           return;
         }
+        audioFrames += 1;
         try {
           sessions.append(sessionId, nextSequence++, data);
           inkSession?.sendAudio(data);
@@ -875,6 +880,8 @@ export function attachTranscriptionWebSocket(
       if (message.type === "level" && sessionId) {
         const session = sessions.get(sessionId);
         if (!session) return;
+        levelMessages += 1;
+        if (Number.isFinite(message.value) && message.value > maxLevel) maxLevel = message.value;
         inkTurns?.recordLevel(message.value);
         const update = session.vad.update(message.value, Date.now());
         if (update.speechStarted) send(socket, { type: "speech-started" });
@@ -933,6 +940,11 @@ export function attachTranscriptionWebSocket(
     };
 
     socket.on("close", () => {
+      if (started && !finalRequested && !finishing) {
+        const band = maxLevel === 0 ? "zero" : maxLevel < 0.005 ? "below_0.005" : maxLevel < 0.015 ? "below_0.015" : maxLevel < 0.05 ? "below_0.05" : "above_0.05";
+        const current = sessionId ? sessions.get(sessionId) : undefined;
+        logStreamDiagnostic({ status: "closed_before_finalize", audioFrames, levelMessages, maxLevelBand: band, speechDetected: Boolean(current?.vad.hasSpeech) });
+      }
       if (authTimer !== null) clearTimeout(authTimer);
       authTimer = null;
       if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);

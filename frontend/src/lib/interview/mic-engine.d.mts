@@ -11,6 +11,8 @@ export type MicEngineDeps = {
   stopTracks: (stream: MediaStream | null | undefined) => void;
   setTimeout: (callback: () => void, delay: number) => unknown;
   clearTimeout: (id: unknown) => void;
+  /** Content-free recovery diagnostics (reason only). */
+  onRecovered?: (reason: string) => void;
 };
 
 export type MicEngine = {
@@ -22,6 +24,8 @@ export type MicEngine = {
   readonly capturing: boolean;
   acquire(): Promise<void>;
   isHealthy(): boolean;
+  /** Resumes a suspended/interrupted AudioContext (rebuilding the graph if it will not run). No wait when running. */
+  ensureRunning(): Promise<boolean>;
   ensureHealthy(options?: { force?: boolean }): Promise<boolean>;
   calibrate(options?: { keepFrames?: boolean; frames?: number; timeoutMs?: number }): Promise<number | null>;
   beginInterviewerSpeech(): void;
