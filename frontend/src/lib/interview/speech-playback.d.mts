@@ -1,5 +1,7 @@
+import type { BrowserVoiceOptions } from "./browser-voice.mjs";
+
 export type SpeechPlaybackResult =
-  | { status: "completed" }
+  | { status: "completed"; /** Which voice spoke; "browser" means the Web Speech fallback was used. */ voice?: "network" | "browser" }
   | { status: "unavailable"; message: string }
   | { status: "cancelled" };
 
@@ -12,7 +14,15 @@ export type SpeechPlaybackOptions = {
   endpoint: string;
   /** JSON request fields that affect synthesis; text is used when omitted. */
   requestBody?: Record<string, unknown>;
-  /** Deadline for the speech request and complete audio response body. */
+  /** How long the first audio may take before the browser voice speaks instead (default FIRST_AUDIO_FALLBACK_MS = 4000). Also the longest wait for a later chunk. */
+  firstAudioFallbackMs?: number;
+  /** Injectable clock (ms) for the network voice cooldown; defaults to Date.now. */
+  now?: () => number;
+  /** Injectable Web Speech API pieces for the browser fallback voice. */
+  browserVoice?: BrowserVoiceOptions & { voice?: SpeechSynthesisVoice | null };
+  /** Fired when the browser voice starts speaking in place of (or after) the network audio. */
+  onBrowserVoiceStarted?: () => void;
+  /** prewarmInterviewerSpeech only: deadline for the speech request and complete audio response body. */
   timeoutMs?: number;
   /** Maximum time to wait for play() and the media ended event. Defaults to a text-length estimate. */
   playbackTimeoutMs?: number;
@@ -52,6 +62,8 @@ export function resolveInterviewerCaption(input: {
   questionPrompt: string;
 }): string;
 export function synthesizeInterviewerQuestion(text: string, options: SpeechPlaybackOptions): SpeechPlayback;
+export const FIRST_AUDIO_FALLBACK_MS: number;
+export const speechUnavailableMessage: string;
 export const minimumChunkCharacters: number;
 export const finalChunkLeadMs: number;
 export const maxConcurrentChunkRequests: number;
@@ -60,3 +72,8 @@ export function groupInterviewerSentences(segments: string[]): { text: string; s
 export function playInterviewerSegments(segments: string[], options: SpeechPlaybackOptions): SpeechPlayback;
 export function prewarmInterviewerSpeech(segments: string[], options: SpeechPlaybackOptions): { promise: Promise<boolean>; cancel: () => void };
 export function clearRetainedSpeechBlobs(): void;
+export const NETWORK_VOICE_COOLDOWN_MS: number;
+export function markNetworkVoiceFailed(now?: number): void;
+export function markNetworkVoiceHealthy(): void;
+export function shouldSkipNetworkVoice(now?: number): boolean;
+export function resetNetworkVoiceHealth(): void;

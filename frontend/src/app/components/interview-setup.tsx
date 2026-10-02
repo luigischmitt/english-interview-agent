@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
-import { synthesizeInterviewerQuestion, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
+import { synthesizeInterviewerQuestion } from "@/lib/interview/speech-playback.mjs";
+import { isBrowserVoiceAvailable, speakWithBrowserVoice } from "@/lib/interview/browser-voice.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
 import { defaultInterviewConfig } from "../interview-config";
@@ -43,11 +44,13 @@ export function InterviewSetup({
   const [config, setConfig] = useState<InterviewConfig>(defaultInterviewConfig);
   const [showErrors, setShowErrors] = useState(false);
   const [audioTestStatus, setAudioTestStatus] = useState<{ kind: "idle" | "loading" | "success" | "error"; message?: string }>({ kind: "idle" });
-  const audioTestRef = useRef<SpeechPlayback | null>(null);
+  const audioTestRef = useRef<{ cancel: () => void } | null>(null);
+  const [browserVoiceTesting, setBrowserVoiceTesting] = useState(false);
 
   const cancelAudioTest = () => {
     audioTestRef.current?.cancel();
     audioTestRef.current = null;
+    setBrowserVoiceTesting(false);
   };
 
   useEffect(() => () => {
@@ -93,7 +96,12 @@ export function InterviewSetup({
     audioTestRef.current = null;
 
     if (result.status === "completed") {
-      setAudioTestStatus({ kind: "success", message: "A reprodução terminou neste dispositivo." });
+      setAudioTestStatus({
+        kind: "success",
+        message: result.voice === "browser"
+          ? "Usamos a voz do navegador porque o áudio do entrevistador está instável."
+          : "A reprodução terminou neste dispositivo.",
+      });
     } else if (result.status === "unavailable") {
       setAudioTestStatus({
         kind: "error",
@@ -102,6 +110,31 @@ export function InterviewSetup({
     } else {
       setAudioTestStatus({ kind: "idle" });
     }
+  };
+
+  const testBrowserVoice = async () => {
+    if (!config.playInterviewerAudio) return;
+    if (audioTestRef.current) {
+      cancelAudioTest();
+      setAudioTestStatus({ kind: "idle" });
+      return;
+    }
+    if (!isBrowserVoiceAvailable()) {
+      setAudioTestStatus({ kind: "error", message: "Este navegador não oferece voz sintetizada." });
+      return;
+    }
+
+    setAudioTestStatus({ kind: "loading", message: "Reproduzindo a voz do navegador…" });
+    const speech = speakWithBrowserVoice([audioTestPhrase]);
+    audioTestRef.current = speech;
+    setBrowserVoiceTesting(true);
+    const result = await speech.promise;
+    if (audioTestRef.current !== speech) return;
+    audioTestRef.current = null;
+    setBrowserVoiceTesting(false);
+    if (result.status === "completed") setAudioTestStatus({ kind: "success", message: "A voz do navegador terminou de falar. Compare com o áudio do entrevistador." });
+    else if (result.status === "unavailable") setAudioTestStatus({ kind: "error", message: "Não foi possível reproduzir a voz do navegador neste dispositivo." });
+    else setAudioTestStatus({ kind: "idle" });
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -236,7 +269,10 @@ export function InterviewSetup({
               {config.playInterviewerAudio && (
                 <div className="mt-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                   <button type="button" className="btn btn-outline min-h-11 rounded-full" onClick={() => void testAudio()}>
-                    {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
+                    {audioTestStatus.kind === "loading" && !browserVoiceTesting ? "Cancelar teste" : "Testar áudio"}
+                  </button>
+                  <button type="button" className="btn btn-ghost min-h-11 rounded-full" onClick={() => void testBrowserVoice()} disabled={audioTestStatus.kind === "loading" && !browserVoiceTesting}>
+                    {browserVoiceTesting ? "Parar voz do navegador" : "Ouvir voz do navegador"}
                   </button>
                   <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "text-error" : audioTestStatus.kind === "success" ? "text-success" : "text-muted-foreground"}`}>
                     {audioTestStatus.message ?? "Clique para gerar e ouvir uma frase curta antes de começar."}

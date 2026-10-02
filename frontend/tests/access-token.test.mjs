@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 import { buildStreamStartMessage, createAccessTokenReader, createAuthorizedFetch, onSessionExpired, sessionExpiredEvent, sessionExpiredMessage, UnauthenticatedError } from "../src/lib/auth/access-token.mjs";
+import { resetNetworkVoiceHealth } from "../src/lib/interview/speech-playback.mjs";
 import { synthesizeInterviewerQuestion, clearRetainedSpeechBlobs } from "../src/lib/interview/speech-playback.mjs";
+
+beforeEach(() => resetNetworkVoiceHealth());
 import { transcriptionFailureMessage } from "../src/lib/interview/transcription-state.mjs";
 
 test("reads the access token from the current session", async () => {

@@ -245,6 +245,23 @@ texto continua visível; cancelar aborta os pedidos pendentes. O pré-aqueciment
 reprodução reaproveita os blobs. A abertura é pré-sintetizada ao confirmar a
 configuração (antes de a sala montar).
 
+### Voz do navegador como alternativa
+
+O TTS do OpenRouter às vezes trava. Se o áudio do primeiro bloco não chegar em
+4 s (`FIRST_AUDIO_FALLBACK_MS`) ou o pedido falhar, `playInterviewerSegments`
+descarta o áudio de rede e fala a fala inteira com a Web Speech API
+(`src/lib/interview/browser-voice.mjs`, en-US, voz natural escolhida por
+heurística e em cache, uma frase por `SpeechSynthesisUtterance`). Se um bloco
+posterior falhar ou passar de 4 s, só as frases restantes usam a voz do
+navegador. As legendas (`onSegment`), `onPlaybackStarted` e
+`onFinalChunkStarted` (pré-conexão do microfone, ENG-106) continuam disparando e o
+resultado traz `voice: "browser"`; a sala mostra um aviso uma vez por entrevista.
+Sem `speechSynthesis`, a reprodução fica indisponível em 4 s com mensagem em
+português e o texto da pergunta continua na tela. O teste de áudio da
+configuração usa o mesmo fallback e tem o botão "Ouvir voz do navegador".
+
+Depois de uma falha ou timeout da rede, a voz do navegador fica "pegajosa" por 2 min (`NETWORK_VOICE_COOLDOWN_MS`): as falas seguintes (e o teste de áudio) usam o navegador na hora, sem esperar 4 s nem chamar `/speech`, e o pré-aquecimento fica desligado; depois do cooldown a rede é tentada de novo, e um sucesso limpa o estado (401/403 não contam como falha de voz).
+
 ### Preparação antecipada da próxima pergunta (Cartesia)
 
 Com `TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS` ativo no backend, depois de um

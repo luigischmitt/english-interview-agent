@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { calibrationFrameCount, createMicEngine, defaultSpeechThreshold } from "../src/lib/interview/mic-engine.mjs";
 import { getSpeechThreshold } from "../src/lib/interview/vad-threshold.mjs";
-import { createFakeMicDeps } from "./mic-fakes.mjs";
+import { createFakeMicDeps, runTimers, tick } from "./mic-fakes.mjs";
 
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} !~ ${expected}`);
 
@@ -10,6 +10,7 @@ async function readyEngine(options) {
   const deps = createFakeMicDeps(options);
   const engine = createMicEngine(deps);
   await engine.acquire();
+  deps.log.contexts[0].resumeCalls = 0; // acquisition's own resume() does not count
   return { deps, engine, worklet: deps.log.worklets[0], track: deps.log.tracks[0] };
 }
 
@@ -181,4 +182,142 @@ test("releasing during acquisition stops the late stream and a released engine d
   assert.equal(await engine.ensureHealthy(), false);
   await engine.acquire(); // StrictMode style re-acquire is allowed
   assert.equal(engine.state, "ready");
+});
+
+// --- Browser voice (speechSynthesis) interrupts the page's audio session on macOS ---
+
+test("an interrupted context is resumed before the answer and frames flow", async () => {
+  const { deps, engine, worklet } = await readyEngine();
+  const context = deps.log.contexts[0];
+  context.setState("interrupted");
+  assert.equal(engine.isHealthy(), true);
+  assert.equal(await engine.ensureHealthy(), true);
+  assert.equal(context.state, "running");
+  assert.equal(context.resumeCalls, 1);
+  assert.equal(deps.log.getUserMedia, 1);
+  const frames = [];
+  engine.startCapture((frame) => frames.push(frame));
+  worklet.frame(0.1);
+  assert.equal(frames.length, 1);
+});
+
+test("a running context takes the no-op fast path: no resume call, no timer, no rebuild", async () => {
+  const { deps, engine } = await readyEngine();
+  const timersBefore = deps.log.timers.length;
+  assert.equal(await engine.ensureRunning(), true);
+  assert.equal(await engine.ensureHealthy(), true);
+  assert.equal(deps.log.contexts[0].resumeCalls, 0);
+  assert.equal(deps.log.timers.length, timersBefore);
+  assert.equal(deps.log.contexts.length, 1);
+});
+
+test("a context that never reaches running is rebuilt on the same MediaStream", async () => {
+  const { deps, engine, track } = await readyEngine();
+  const stuck = deps.log.contexts[0];
+  stuck.resumeBehavior = "never";
+  stuck.setState("interrupted");
+  const pending = engine.ensureRunning();
+  await tick();
+  runTimers(deps); // the 600 ms resume wait elapses
+  assert.equal(await pending, true);
+  assert.equal(deps.log.getUserMedia, 1, "same stream, no new getUserMedia");
+  assert.equal(deps.log.contexts.length, 2);
+  assert.equal(stuck.state, "closed");
+  assert.equal(track.stopped, false);
+  assert.deepEqual(deps.log.recovered, ["resume_timeout"]);
+  const frames = [];
+  engine.startCapture((frame) => frames.push(frame));
+  deps.log.worklets[1].frame(0.1);
+  deps.log.worklets[0].frame(0.1); // the old worklet is detached
+  assert.equal(frames.length, 1);
+});
+
+test("a dead track makes the rebuild a full reacquire", async () => {
+  const { deps, engine, track } = await readyEngine();
+  const stuck = deps.log.contexts[0];
+  stuck.resumeBehavior = "never";
+  stuck.setState("interrupted");
+  track.readyState = "ended";
+  const pending = engine.ensureRunning();
+  await tick();
+  runTimers(deps);
+  assert.equal(await pending, true);
+  assert.equal(deps.log.getUserMedia, 2);
+});
+
+test("statechange resumes: immediately while capturing, after a short delay while idle", async () => {
+  const { deps, engine } = await readyEngine();
+  const context = deps.log.contexts[0];
+  context.setState("interrupted");
+  assert.equal(context.resumeCalls, 0);
+  assert.equal(runTimers(deps), 1);
+  await tick();
+  assert.equal(context.state, "running");
+  assert.equal(context.resumeCalls, 1);
+
+  engine.startCapture(() => {});
+  context.setState("suspended");
+  await tick();
+  assert.equal(context.resumeCalls, 2);
+  assert.equal(context.state, "running");
+});
+
+test("the frame watchdog calls ensureRunning, then rebuilds the graph once per answer", async () => {
+  const { deps, engine } = await readyEngine();
+  const context = deps.log.contexts[0];
+  context.resumeBehavior = "never";
+  const frames = [];
+  engine.startCapture((frame) => frames.push(frame));
+  context.state = "suspended"; // silently stuck: no statechange, no frames
+  assert.equal(runTimers(deps), 1 + 1); // stale-flush timer + watchdog tick 1
+  await tick();
+  assert.ok(context.resumeCalls >= 1, "first stall: ensureRunning resumes");
+  assert.equal(deps.log.contexts.length, 1);
+  runTimers(deps); // resume wait elapses -> rebuild, and/or watchdog tick 2
+  await tick(); await tick();
+  assert.equal(deps.log.contexts.length, 2, "rebuilt");
+  assert.equal(deps.log.getUserMedia, 1);
+  deps.log.worklets[1].frame(0.1);
+  assert.equal(frames.length, 1);
+  for (let index = 0; index < 4; index += 1) { runTimers(deps); await tick(); }
+  assert.equal(deps.log.contexts.length, 2, "no second rebuild for the same answer");
+  engine.stopCapture();
+  assert.equal(deps.log.timers.length, 0, "watchdog cancelled with the answer");
+});
+
+test("the watchdog stays quiet while frames arrive and is cancelled when the answer ends", async () => {
+  const { deps, engine, worklet } = await readyEngine();
+  engine.startCapture(() => {});
+  worklet.frame(0.1);
+  runTimers(deps);
+  await tick();
+  assert.equal(deps.log.contexts[0].resumeCalls, 0);
+  engine.stopCapture();
+  assert.equal(deps.log.timers.length, 0, "no timers left after the answer");
+});
+
+test("privacy: a rebuilt or resumed graph still drops every frame outside an answer window", async () => {
+  const { deps, engine } = await readyEngine();
+  const stuck = deps.log.contexts[0];
+  stuck.resumeBehavior = "never";
+  stuck.setState("interrupted");
+  const pending = engine.ensureRunning();
+  await tick();
+  runTimers(deps);
+  await pending;
+  const received = [];
+  deps.log.worklets[1].frame(0.4); // idle
+  engine.startCapture((frame) => received.push(frame.level.toFixed(1)));
+  deps.log.worklets[1].frame(0.1);
+  engine.stopCapture();
+  deps.log.worklets[1].frame(0.5);
+  engine.beginInterviewerSpeech();
+  deps.log.worklets[1].frame(0.6);
+  assert.deepEqual(received, ["0.1"]);
+});
+
+test("force still performs a full reacquire (silent-mic retry)", async () => {
+  const { deps, engine } = await readyEngine();
+  assert.equal(await engine.ensureHealthy({ force: true }), true);
+  assert.equal(deps.log.getUserMedia, 2);
 });

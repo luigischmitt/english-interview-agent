@@ -1,5 +1,6 @@
 import { getSpeechThreshold } from "./vad-threshold.mjs";
 import { stopMediaStreamTracks } from "./session-policy.mjs";
+import { isHandoffTimingEnabled } from "./handoff-timing.mjs";
 
 export const calibrationFrameCount = 5;
 export const defaultSpeechThreshold = 0.015;
@@ -7,6 +8,12 @@ export const defaultSpeechThreshold = 0.015;
 const maximumHeldFrames = 100;
 const staleFrameFlushTimeoutMs = 300;
 const flushTimeoutMs = 500;
+/** How long a resume() may take to reach "running" before the audio graph is rebuilt. */
+const resumeTimeoutMs = 600;
+/** A capture with no worklet frame for this long is stalled (the audio session was interrupted). */
+const frameWatchdogMs = 1_000;
+/** A stopped context is resumed this long after its statechange when no answer is being captured. */
+const idleResumeDelayMs = 250;
 /** A refresh from an answer's first frames is accepted only when it is not contaminated by speech. */
 const contaminatedNoiseLevel = 0.025;
 
@@ -34,6 +41,8 @@ export function createBrowserMicDeps() {
     stopTracks: stopMediaStreamTracks,
     setTimeout: (callback, delay) => globalThis.setTimeout(callback, delay),
     clearTimeout: (id) => globalThis.clearTimeout(id),
+    /** Content-free diagnostics, only when the handoff-timing sessionStorage flag is on. */
+    onRecovered: (reason) => { if (isHandoffTimingEnabled()) console.info(JSON.stringify({ event: "mic_engine_recovered", reason })); },
   };
 }
 
@@ -64,6 +73,12 @@ export function createMicEngine(deps) {
   let refreshLevels = null;
   let autoRecoveries = 0;
   let lastError = null;
+  let frameCount = 0;
+  let watchdogTimer = null;
+  let stalledTicks = 0;
+  let rebuiltThisAnswer = false;
+  let rebuilding = null;
+  let idleResumeTimer = null;
   const flushWaiters = new Set();
   const listeners = { state: new Set(), lost: new Set() };
 
@@ -80,6 +95,7 @@ export function createMicEngine(deps) {
     if (!current) return;
     current.track?.removeEventListener?.("ended", current.onEnded);
     current.track?.removeEventListener?.("mute", current.onMute);
+    current.context?.removeEventListener?.("statechange", current.onContextState);
     if (current.worklet) current.worklet.port.onmessage = null;
     for (const node of [current.worklet, current.source, current.mute]) { try { node?.disconnect(); } catch { /* Already disconnected. */ } }
     deps.stopTracks(current.stream);
@@ -126,6 +142,7 @@ export function createMicEngine(deps) {
       flushWaiters.clear();
       return;
     }
+    frameCount += 1; // A bare counter (no audio kept): lets the watchdog tell a stalled worklet from a quiet one.
     // Privacy: outside an answer window frames are dropped here, before any allocation or reference is kept.
     if (mode === "discard" || staleUntilFlushed || !data?.samples) return;
     const samples = new Float32Array(data.samples);
@@ -147,6 +164,33 @@ export function createMicEngine(deps) {
     }
   }
 
+  /** Builds context + worklet graph around `stream`. `onContext` reports the context early so failures can close it. */
+  async function buildGraph(stream, myEpoch, onContext, reuseTrackListeners = null) {
+    const context = deps.createAudioContext();
+    onContext(context);
+    await context.audioWorklet.addModule(deps.workletUrl);
+    await context.resume();
+    if (myEpoch !== epoch) throw cancelledError();
+    const source = context.createMediaStreamSource(stream);
+    const worklet = deps.createWorkletNode(context);
+    const mute = context.createGain();
+    mute.gain.value = 0;
+    source.connect(worklet);
+    worklet.connect(mute);
+    mute.connect(context.destination);
+    const track = stream.getAudioTracks?.()[0] ?? null;
+    const onEnded = reuseTrackListeners?.onEnded ?? (() => { if (graph?.track === track) trackLost("ended"); });
+    const onMute = reuseTrackListeners?.onMute ?? (() => { if (graph?.track === track) trackLost("muted"); });
+    if (!reuseTrackListeners) {
+      track?.addEventListener?.("ended", onEnded);
+      track?.addEventListener?.("mute", onMute);
+    }
+    const onContextState = () => onContextStateChange(context);
+    context.addEventListener?.("statechange", onContextState);
+    worklet.port.onmessage = onWorkletMessage;
+    return { stream, context, source, worklet, mute, track, onEnded, onMute, onContextState };
+  }
+
   function acquire() {
     released = false;
     if (state === "ready") return Promise.resolve();
@@ -160,24 +204,7 @@ export function createMicEngine(deps) {
         if (!deps.isSupported()) throw new Error("unsupported");
         stream = await deps.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
         if (myEpoch !== epoch) throw cancelledError();
-        context = deps.createAudioContext();
-        await context.audioWorklet.addModule(deps.workletUrl);
-        await context.resume();
-        if (myEpoch !== epoch) throw cancelledError();
-        const source = context.createMediaStreamSource(stream);
-        const worklet = deps.createWorkletNode(context);
-        const mute = context.createGain();
-        mute.gain.value = 0;
-        source.connect(worklet);
-        worklet.connect(mute);
-        mute.connect(context.destination);
-        const track = stream.getAudioTracks?.()[0] ?? null;
-        const onEnded = () => { if (graph?.track === track) trackLost("ended"); };
-        const onMute = () => { if (graph?.track === track) trackLost("muted"); };
-        track?.addEventListener?.("ended", onEnded);
-        track?.addEventListener?.("mute", onMute);
-        worklet.port.onmessage = onWorkletMessage;
-        graph = { stream, context, source, worklet, mute, track, onEnded, onMute };
+        graph = await buildGraph(stream, myEpoch, (created) => { context = created; });
         lastError = null;
         setState("ready");
       } catch (error) {
@@ -195,16 +222,117 @@ export function createMicEngine(deps) {
     return attempt;
   }
 
+  const isRunning = (context) => context.state === "running";
+
+  /** Resolves true once `context` is running, false after `ms` (or never-running resume). */
+  function waitRunning(context, ms) {
+    if (isRunning(context)) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      let timer = null;
+      const finish = (ok) => { context.removeEventListener?.("statechange", onChange); if (timer !== null) deps.clearTimeout(timer); resolve(ok); };
+      const onChange = () => { if (isRunning(context)) finish(true); };
+      context.addEventListener?.("statechange", onChange);
+      timer = deps.setTimeout(() => { timer = null; finish(isRunning(context)); }, ms);
+    });
+  }
+
+  function resumeContext(context) {
+    try { void Promise.resolve(context.resume()).catch(() => {}); } catch { /* Best effort. */ }
+  }
+
+  function onContextStateChange(context) {
+    if (graph?.context !== context || released || context.state === "running" || context.state === "closed") return;
+    if (mode === "capture") { resumeContext(context); return; }
+    if (idleResumeTimer !== null) return;
+    idleResumeTimer = deps.setTimeout(() => {
+      idleResumeTimer = null;
+      if (graph?.context === context && !released && context.state !== "running" && context.state !== "closed") resumeContext(context);
+    }, idleResumeDelayMs);
+  }
+
+  /** Rebuilds the audio graph on the same MediaStream when its track is live, otherwise reacquires the microphone. */
+  function rebuildGraph(reason) {
+    if (rebuilding) return rebuilding;
+    const old = graph;
+    if (!old) return Promise.resolve(false);
+    deps.onRecovered?.(reason);
+    if (old.track?.readyState !== "live" || old.track?.muted === true) return reacquire();
+    const myEpoch = epoch;
+    const attempt = (async () => {
+      let context = null;
+      try {
+        old.context.removeEventListener?.("statechange", old.onContextState);
+        if (old.worklet) old.worklet.port.onmessage = null;
+        for (const node of [old.worklet, old.source, old.mute]) { try { node?.disconnect(); } catch { /* Already disconnected. */ } }
+        if (old.context.state !== "closed") void Promise.resolve(old.context.close()).catch(() => {});
+        for (const waiter of flushWaiters) waiter();
+        flushWaiters.clear();
+        staleUntilFlushed = false;
+        graph = null;
+        const next = await buildGraph(old.stream, myEpoch, (created) => { context = created; }, { onEnded: old.onEnded, onMute: old.onMute });
+        graph = next;
+        await waitRunning(next.context, resumeTimeoutMs);
+        return isRunning(next.context);
+      } catch {
+        if (context && context.state !== "closed") void Promise.resolve(context.close()).catch(() => {});
+        if (myEpoch !== epoch) return false;
+        return reacquire();
+      }
+    })();
+    rebuilding = attempt;
+    const clear = () => { if (rebuilding === attempt) rebuilding = null; };
+    attempt.then(clear, clear);
+    return attempt;
+  }
+
+  /**
+   * Resolves true when the context is running. A "suspended"/"interrupted" context (macOS speechSynthesis takes the
+   * audio session) is resumed; if it does not reach "running" within ~600 ms the graph is rebuilt. No wait when running.
+   */
+  async function ensureRunning() {
+    if (rebuilding) { try { await rebuilding; } catch { /* Handled inside. */ } }
+    const current = graph;
+    if (!current || released) return false;
+    const context = current.context;
+    if (isRunning(context)) return true;
+    if (context.state === "closed") return rebuildGraph("closed");
+    resumeContext(context);
+    if (await waitRunning(context, resumeTimeoutMs)) return true;
+    if (graph?.context !== context || released) return graph ? isRunning(graph.context) : false;
+    return rebuildGraph("resume_timeout");
+  }
+
+  function clearWatchdog() {
+    if (watchdogTimer !== null) { deps.clearTimeout(watchdogTimer); watchdogTimer = null; }
+  }
+
+  function armWatchdog() {
+    clearWatchdog();
+    const seen = frameCount;
+    watchdogTimer = deps.setTimeout(() => {
+      watchdogTimer = null;
+      if (mode !== "capture") return;
+      if (frameCount !== seen) stalledTicks = 0;
+      else {
+        stalledTicks += 1;
+        if (stalledTicks === 1) void ensureRunning();
+        else if (!rebuiltThisAnswer) { rebuiltThisAnswer = true; void rebuildGraph("no_frames"); }
+      }
+      armWatchdog();
+    }, frameWatchdogMs);
+  }
+
   function reacquire() {
     epoch += 1;
     acquiring = null;
+    rebuilding = null;
     disposeGraph();
     state = "idle";
     return acquire().then(() => true, () => false);
   }
 
   function isHealthy() {
-    return state === "ready" && Boolean(graph) && graph.track?.readyState !== "ended" && graph.track?.muted !== true && graph.context.state !== "closed";
+    return state === "ready" && Boolean(graph) && graph.track?.readyState !== "ended" && graph.track?.muted !== true && graph.context.state !== "closed" && (isRunning(graph.context) || graph.context.state === "suspended" || graph.context.state === "interrupted");
   }
 
   return {
@@ -215,13 +343,13 @@ export function createMicEngine(deps) {
     get capturing() { return mode === "capture"; },
     acquire,
     isHealthy,
+    ensureRunning,
     /** Resolves true when frames can flow: reuses a healthy mic, reacquires (once) an ended/muted/forced one. */
     async ensureHealthy({ force = false } = {}) {
       if (state === "acquiring" && acquiring) { try { await acquiring; } catch { return false; } }
       if (released) return false;
       if (state === "ready" && !force && isHealthy()) {
-        if (graph.context.state === "suspended") { try { await graph.context.resume(); } catch { /* Best effort. */ } }
-        return true;
+        return (await ensureRunning()) || (state === "ready" && Boolean(graph));
       }
       if (state === "idle" || state === "failed") return acquire().then(() => true, () => false);
       return reacquire();
@@ -240,6 +368,7 @@ export function createMicEngine(deps) {
       interviewerSpeaking = true;
       finishCalibration(false);
       mode = "discard";
+      clearWatchdog();
       sink = null;
       refreshLevels = null;
       held = [];
@@ -254,6 +383,9 @@ export function createMicEngine(deps) {
       autoRecoveries = 0;
       if (calibration) finishCalibration(false);
       sink = frameSink;
+      stalledTicks = 0;
+      rebuiltThisAnswer = false;
+      armWatchdog();
       refreshLevels = [];
       const replay = replayHeld && mode === "hold" ? held : [];
       held = [];
@@ -269,6 +401,7 @@ export function createMicEngine(deps) {
     /** Closes the answer window; frames are discarded again. */
     stopCapture() {
       if (mode === "capture" || mode === "hold") mode = "discard";
+      clearWatchdog();
       sink = null;
       refreshLevels = null;
       held = [];
@@ -296,6 +429,9 @@ export function createMicEngine(deps) {
       acquiring = null;
       finishCalibration(false);
       mode = "discard";
+      clearWatchdog();
+      if (idleResumeTimer !== null) { deps.clearTimeout(idleResumeTimer); idleResumeTimer = null; }
+      rebuilding = null;
       sink = null;
       refreshLevels = null;
       held = [];

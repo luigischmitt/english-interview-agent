@@ -1,3 +1,5 @@
+import { isBrowserVoiceAvailable, speakWithBrowserVoice } from "./browser-voice.mjs";
+
 export function composeOpeningUtterance(introduction, firstQuestion) {
   return [introduction.trim(), firstQuestion.trim()].filter(Boolean).join(" ");
 }
@@ -70,13 +72,21 @@ export function clearRetainedSpeechBlobs() {
   retainedSpeechBlobs.clear();
 }
 
-function acquireSpeechBlob(options, text) {
+function speechRequestFor(options, text) {
   const request = {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(options.requestBody ?? { text }),
   };
-  const key = JSON.stringify([options.endpoint, request.method, request.headers, request.body]);
+  return { request, key: JSON.stringify([options.endpoint, request.method, request.headers, request.body]) };
+}
+
+function hasRetainedSpeechBlob(options, text) {
+  return retainedSpeechBlobs.has(speechRequestFor(options, text).key);
+}
+
+function acquireSpeechBlob(options, text) {
+  const { request, key } = speechRequestFor(options, text);
   const retained = retainedSpeechBlobs.get(key);
   if (retained) return { promise: Promise.resolve(retained.blob), release() {} };
   let flight = speechFlights.get(key);
@@ -93,6 +103,7 @@ function acquireSpeechBlob(options, text) {
           const data = await response.json().catch(() => null);
           const error = new Error(data?.error?.message ?? "O áudio não está disponível agora. Você pode continuar sem ele.");
           error.isSpeechResponseError = true;
+          error.status = response.status;
           throw error;
         }
         const blob = await response.blob();
@@ -148,8 +159,33 @@ function createCaptionUpdater(captionSegments, getAudio, isCancelled, onSegment)
   };
 }
 
+// If the network audio has not arrived this fast (or the request fails), the browser voice takes over.
+export const FIRST_AUDIO_FALLBACK_MS = 4_000;
+export const speechUnavailableMessage = "O áudio do entrevistador não está disponível agora. O texto da pergunta continua na tela.";
+
+// After a network voice failure/timeout the browser voice is used right away for this long, instead of waiting
+// FIRST_AUDIO_FALLBACK_MS on every utterance while the provider is down.
+export const NETWORK_VOICE_COOLDOWN_MS = 120_000;
+let networkVoiceFailedAt = null;
+const clockNow = (options) => (options?.now ?? Date.now)();
+
+export function markNetworkVoiceFailed(now = Date.now()) { networkVoiceFailedAt = now; }
+export function markNetworkVoiceHealthy() { networkVoiceFailedAt = null; }
+export function shouldSkipNetworkVoice(now = Date.now()) {
+  return networkVoiceFailedAt !== null && now - networkVoiceFailedAt < NETWORK_VOICE_COOLDOWN_MS;
+}
+/** Test hook: forgets the network voice health state. */
+export function resetNetworkVoiceHealth() { networkVoiceFailedAt = null; }
+
+// A rejected session is not a provider problem: the (Portuguese) session message is shown instead of switching voices.
+const isAuthError = (error) => Boolean(error?.isUnauthenticated || (error?.isSpeechResponseError && (error.status === 401 || error.status === 403)));
+
+function browserVoiceOptions(options, extra) {
+  return { setTimeout: options.setTimeout, clearTimeout: options.clearTimeout, ...options.browserVoice, ...extra };
+}
+
 export function synthesizeInterviewerQuestion(text, options) {
-  const timeoutMs = options.timeoutMs ?? 20_000;
+  const fallbackMs = options.firstAudioFallbackMs ?? FIRST_AUDIO_FALLBACK_MS;
   const playbackTimeoutMs = options.playbackTimeoutMs
     ?? Math.min(45_000, Math.max(12_000, text.trim().split(/\s+/).length * 800));
   const makeAudio = options.makeAudio ?? ((url) => new Audio(url));
@@ -164,18 +200,19 @@ export function synthesizeInterviewerQuestion(text, options) {
   let timedOut = false;
   let timeoutId = null;
   let removeAudioListeners = null;
+  let browserVoice = null;
   let resolveTimeout;
   let resolveCancellation;
 
   const timeoutResult = new Promise((resolve) => { resolveTimeout = resolve; });
   const cancellationResult = new Promise((resolve) => { resolveCancellation = resolve; });
 
-  const scheduleTimeout = (delay, message) => {
+  const scheduleTimeout = (delay, message, result = { status: "unavailable", message }) => {
     if (timeoutId !== null) unschedule(timeoutId);
     timeoutId = schedule(() => {
       timedOut = true;
       flightLease?.release(false);
-      resolveTimeout({ status: "unavailable", message });
+      resolveTimeout(result);
     }, delay);
   };
 
@@ -199,21 +236,20 @@ export function synthesizeInterviewerQuestion(text, options) {
   const cancel = () => {
     if (cancelled) return;
     cancelled = true;
+    browserVoice?.cancel();
     resolveCancellation({ status: "cancelled" });
     cleanup();
   };
 
   const playbackWork = async () => {
     try {
-      scheduleTimeout(timeoutMs, "O áudio demorou demais para responder. Você pode continuar sem ele.");
+      scheduleTimeout(fallbackMs, unavailableMessages.network, { status: "fallback" });
       options.onSynthesisStarted?.();
       flightLease = acquireSpeechBlob(options, text);
       const blob = await flightLease.promise;
       options.onSynthesisCompleted?.();
       if (cancelled) return { status: "cancelled" };
-      if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
-      if (cancelled) return { status: "cancelled" };
-      if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
+      if (timedOut) return { status: "fallback" };
       if (timeoutId !== null) unschedule(timeoutId);
       timeoutId = null;
       objectUrl = createObjectUrl(blob);
@@ -252,7 +288,7 @@ export function synthesizeInterviewerQuestion(text, options) {
       return { status: "completed" };
     } catch (error) {
       if (cancelled) return { status: "cancelled" };
-      if (timedOut) return { status: "unavailable", message: "O áudio demorou demais para responder. Você pode continuar sem ele." };
+      if (timedOut || (!audio && !isAuthError(error))) return { status: "fallback" };
       return {
         status: "unavailable",
         message: (error?.isSpeechResponseError || error?.isUnauthenticated) && error.message
@@ -264,7 +300,28 @@ export function synthesizeInterviewerQuestion(text, options) {
     }
   };
 
-  const promise = Promise.race([playbackWork(), timeoutResult, cancellationResult]).finally(cleanup);
+  const speakInBrowser = async () => {
+    if (cancelled) return { status: "cancelled" };
+    if (!isBrowserVoiceAvailable(browserVoiceOptions(options))) return { status: "unavailable", message: speechUnavailableMessage };
+    browserVoice = speakWithBrowserVoice(options.captionSegments?.filter(Boolean).length ? options.captionSegments : [text], browserVoiceOptions(options, {
+      onStart: options.onPlaybackStarted,
+      onSegment: (segment) => { if (!cancelled) options.onSegment?.(segment); },
+    }));
+    options.onBrowserVoiceStarted?.();
+    const outcome = await browserVoice.promise;
+    if (cancelled || outcome.status === "cancelled") return { status: "cancelled" };
+    if (outcome.status === "unavailable") return { status: "unavailable", message: speechUnavailableMessage };
+    return { status: "completed", voice: "browser" };
+  };
+
+  const skipNetwork = shouldSkipNetworkVoice(clockNow(options)) && isBrowserVoiceAvailable(browserVoiceOptions(options));
+  const promise = (skipNetwork ? speakInBrowser() : Promise.race([playbackWork(), timeoutResult, cancellationResult])
+    .finally(cleanup)
+    .then((result) => {
+      if (result.status === "fallback") { markNetworkVoiceFailed(clockNow(options)); return speakInBrowser(); }
+      if (result.status === "completed") markNetworkVoiceHealthy();
+      return result;
+    }));
 
   return { promise, cancel };
 }
@@ -327,7 +384,7 @@ function requestChunks(chunks, options) {
 
 const unavailableMessages = {
   default: "O áudio não está disponível agora. Você pode continuar sem ele.",
-  network: "O áudio demorou demais para responder. Você pode continuar sem ele.",
+  network: speechUnavailableMessage,
   playback: "A reprodução do áudio demorou demais. Você pode continuar sem ele.",
 };
 
@@ -343,8 +400,10 @@ export function playInterviewerSegments(segments, options) {
   const revokeObjectUrl = options.revokeObjectUrl ?? ((url) => URL.revokeObjectURL(url));
   const schedule = options.setTimeout ?? ((callback, delay) => window.setTimeout(callback, delay));
   const unschedule = options.clearTimeout ?? ((id) => window.clearTimeout(id));
-  const timeoutMs = options.timeoutMs ?? 20_000;
+  const fallbackMs = options.firstAudioFallbackMs ?? FIRST_AUDIO_FALLBACK_MS;
   let cancelled = false;
+  let fellBack = false;
+  let playbackStartedFired = false;
   let requests = null;
   let stopPlaying = null;
   const prepared = [];
@@ -361,9 +420,10 @@ export function playInterviewerSegments(segments, options) {
 
   // Waits for a chunk's blob and builds its Audio element so the browser can buffer it before it is needed.
   const prepare = async (index) => {
-    const blob = await withDeadline(requests.entries[index].promise, timeoutMs, unavailableMessages.network);
+    const blob = await requests.entries[index].promise;
     if (index === 0) options.onSynthesisCompleted?.();
-    if (cancelled) throw Object.assign(new Error("cancelled"), { isCancelled: true });
+    // Network audio that arrives after the browser voice took over is ignored.
+    if (cancelled || fellBack) throw Object.assign(new Error("cancelled"), { isCancelled: true });
     const item = { url: createObjectUrl(blob), audio: null };
     prepared.push(item);
     item.audio = makeAudio(item.url);
@@ -404,7 +464,7 @@ export function playInterviewerSegments(segments, options) {
     const onError = () => finish(reject, new Error("Audio playback failed."));
     const onPlaying = () => {
       playingStarted = true;
-      if (isFirst) options.onPlaybackStarted?.();
+      if (isFirst) { playbackStartedFired = true; options.onPlaybackStarted?.(); }
       announceFinalChunk();
     };
     const timer = schedule(() => finish(reject, Object.assign(new Error("playback timeout"), { isPlaybackTimeout: true })), playbackTimeoutMs);
@@ -428,22 +488,68 @@ export function playInterviewerSegments(segments, options) {
     Promise.resolve(audio.play()).catch((error) => finish(reject, error));
   });
 
+  // Network speech is stalled or failed: speak the remaining sentences with the browser voice.
+  const speakRemainingInBrowser = async (fromChunk) => {
+    fellBack = true;
+    requests?.stop();
+    if (cancelled) return { status: "cancelled" };
+    if (!isBrowserVoiceAvailable(browserVoiceOptions(options))) return { status: "unavailable", message: speechUnavailableMessage };
+    const sentences = chunks.slice(fromChunk).flatMap((chunk) => chunk.sentences);
+    const voice = speakWithBrowserVoice(sentences, browserVoiceOptions(options, {
+      onStart: () => {
+        if (!playbackStartedFired) { playbackStartedFired = true; options.onPlaybackStarted?.(); }
+        options.onBrowserVoiceStarted?.();
+      },
+      onSegment: (sentence, sentenceIndex) => {
+        if (cancelled) return;
+        options.onSegment?.(sentence);
+        if (sentenceIndex === sentences.length - 1 && !finalChunkAnnounced) {
+          finalChunkAnnounced = true;
+          options.onFinalChunkStarted?.();
+        }
+      },
+    }));
+    stopPlaying = () => voice.cancel();
+    const outcome = await voice.promise;
+    stopPlaying = null;
+    if (cancelled || outcome.status === "cancelled") return { status: "cancelled" };
+    if (outcome.status === "unavailable") return { status: "unavailable", message: speechUnavailableMessage };
+    return { status: "completed", voice: "browser" };
+  };
+
   const run = async () => {
     if (!chunks.length) return { status: "completed" };
+    // Network voice is known to be down: skip the wait (unless the whole utterance was already prepared).
+    const allPrepared = chunks.every((chunk) => hasRetainedSpeechBlob(options, chunk.text));
+    if (!allPrepared && shouldSkipNetworkVoice(clockNow(options)) && isBrowserVoiceAvailable(browserVoiceOptions(options))) {
+      return speakRemainingInBrowser(0);
+    }
     requests = requestChunks(chunks, options);
     let upcoming = prepare(0);
     upcoming.catch(() => {});
+    let networkPlayed = false;
     for (let index = 0; index < chunks.length; index += 1) {
-      const item = await upcoming;
+      // Wait at most fallbackMs for this chunk; a late or failed chunk hands the rest over to the browser voice.
+      let item;
+      try {
+        item = await withDeadline(upcoming, fallbackMs, unavailableMessages.network);
+      } catch (error) {
+        if (cancelled || error?.isCancelled) return { status: "cancelled" };
+        if (isAuthError(error)) throw error;
+        markNetworkVoiceFailed(clockNow(options));
+        return speakRemainingInBrowser(index);
+      }
       if (cancelled) return { status: "cancelled" };
+      markNetworkVoiceHealthy();
       // Start buffering the following chunk while this one plays.
       upcoming = index + 1 < chunks.length ? prepare(index + 1) : null;
       upcoming?.catch(() => {});
       const outcome = await playChunk(item, chunks[index], index === 0, index === chunks.length - 1);
+      networkPlayed = true;
       release(item);
       if (cancelled || outcome === "cancelled") return { status: "cancelled" };
     }
-    return { status: "completed" };
+    return networkPlayed ? { status: "completed", voice: "network" } : { status: "completed" };
   };
 
   const promise = Promise.race([run(), cancellationResult]).catch((error) => {
@@ -481,7 +587,7 @@ export function playInterviewerSegments(segments, options) {
  */
 export function prewarmInterviewerSpeech(segments, options) {
   const chunks = groupInterviewerSentences(segments);
-  if (!chunks.length) return { promise: Promise.resolve(false), cancel() {} };
+  if (!chunks.length || shouldSkipNetworkVoice(clockNow(options))) return { promise: Promise.resolve(false), cancel() {} };
   const schedule = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
   const unschedule = options.clearTimeout ?? ((id) => clearTimeout(id));
   const requests = requestChunks(chunks, { ...options, retainMs: options.retainMs ?? 30_000, onSynthesisStarted: undefined });

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
+import { resetNetworkVoiceHealth } from "../src/lib/interview/speech-playback.mjs";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+
+beforeEach(() => resetNetworkVoiceHealth());
 import { createOpeningSpeechTiming, isOpeningTimingEnabled, openingTimingStorageKey } from "../src/lib/interview/opening-timing.mjs";
 
 test("the first interviewer playback combines the introduction and the first question", () => {
@@ -314,6 +317,7 @@ test("a timed out flight is aborted and removed so a fresh request can retry", a
   const options = {
     endpoint: "http://speech.test/api/v1/speech",
     timeoutMs: 10_000,
+    firstAudioFallbackMs: 10_000,
     fetcher: async (_endpoint, init) => {
       fetchCount += 1;
       if (fetchCount === 1) return new Promise((_resolve, reject) => {
@@ -351,6 +355,7 @@ test("the interview network deadline exceeds six seconds and completes a slower 
   };
   const playback = synthesizeInterviewerQuestion("Slow question.", {
     endpoint: "http://speech.test/api/v1/speech",
+    firstAudioFallbackMs: 20_000,
     fetcher: () => new Promise((resolve) => { finishFetch = resolve; }),
     makeAudio: () => { const audio = new FakeAudio(); audio.play = () => { audio.emit("ended"); return Promise.resolve(); }; return audio; },
     createObjectUrl: () => "blob:slow",
@@ -385,7 +390,6 @@ test("a slow speech response times out and returns a text-fallback result", asyn
   let onTimeout;
   const playback = synthesizeInterviewerQuestion("Hello.", {
     endpoint: "http://speech.test/api/v1/speech",
-    timeoutMs: 25,
     fetcher: (_endpoint, init) => new Promise((resolve, reject) => {
       init.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
     }),
@@ -396,7 +400,7 @@ test("a slow speech response times out and returns a text-fallback result", asyn
   onTimeout();
   assert.deepEqual(await playback.promise, {
     status: "unavailable",
-    message: "O áudio demorou demais para responder. Você pode continuar sem ele.",
+    message: "O áudio do entrevistador não está disponível agora. O texto da pergunta continua na tela.",
   });
 });
 
@@ -468,7 +472,7 @@ test("one utterance is synthesized once while sentence captions remain chunked",
     onSegment: (segment) => events.push(`caption:${segment}`),
   });
 
-  assert.deepEqual(await playback.promise, { status: "completed" });
+  assert.deepEqual(await playback.promise, { status: "completed", voice: "network" });
   assert.deepEqual(events.filter((event) => typeof event === "string"), [
     "fetch:First thought. Second thought.",
     "caption:First thought.",
@@ -501,7 +505,7 @@ test("caption chunks advance against one continuous audio track", async () => {
   audio.emit("timeupdate");
   assert.deepEqual(captions, ["First thought.", "Second thought here."]);
   audio.emit("ended");
-  assert.deepEqual(await playback.promise, { status: "completed" });
+  assert.deepEqual(await playback.promise, { status: "completed", voice: "network" });
 });
 
 test("cancelling an utterance stops its single continuous audio track", async () => {

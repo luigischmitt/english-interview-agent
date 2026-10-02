@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
+import { resetNetworkVoiceHealth } from "../src/lib/interview/speech-playback.mjs";
 import { clearRetainedSpeechBlobs, groupInterviewerSentences, playInterviewerSegments, prewarmInterviewerSpeech } from "../src/lib/interview/speech-playback.mjs";
+
+beforeEach(() => resetNetworkVoiceHealth());
 
 const texts = (segments) => groupInterviewerSentences(segments).map((chunk) => chunk.text);
 
@@ -81,7 +84,7 @@ test("all chunks are requested immediately, chunk 1 plays on arrival and the res
   audios[1].emit("ended");
   await flush();
   audios[2].emit("ended");
-  assert.deepEqual(await playback.promise, { status: "completed" });
+  assert.deepEqual(await playback.promise, { status: "completed", voice: "network" });
   assert.deepEqual(log.filter((entry) => entry.startsWith("play:")), [chunkA, chunkB, chunkC].map((text) => `play:blob:${text.length}`));
 });
 

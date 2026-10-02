@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 import { createNextTurnPreparationRegistry } from "../src/lib/interview/next-turn-preparation.mjs";
+import { resetNetworkVoiceHealth } from "../src/lib/interview/speech-playback.mjs";
 import { clearRetainedSpeechBlobs, playInterviewerSegments, prewarmInterviewerSpeech } from "../src/lib/interview/speech-playback.mjs";
+
+beforeEach(() => resetNetworkVoiceHealth());
 
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 
@@ -102,7 +105,7 @@ test("pre-synthesized speech is reused by an identical playback without a second
   const prewarm = prewarmInterviewerSpeech(["Thanks.", "Why Redis?"], { endpoint: "/speech", fetcher, retainMs: 5_000 });
   assert.equal(await prewarm.promise, true);
   const playback = playInterviewerSegments(["Thanks.", "Why Redis?"], { endpoint: "/speech", fetcher, makeAudio: () => new FakeAudio(), createObjectUrl: () => "blob:x", revokeObjectUrl() {}, ...stubTimers });
-  assert.deepEqual(await playback.promise, { status: "completed" });
+  assert.deepEqual(await playback.promise, { status: "completed", voice: "network" });
   assert.equal(calls.length, 1);
   clearRetainedSpeechBlobs();
 });
