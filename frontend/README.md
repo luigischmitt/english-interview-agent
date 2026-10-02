@@ -278,6 +278,10 @@ o cooldown é armado. Erros HTTP antes do prazo armam o cooldown na hora.
 
 Depois de uma falha real da rede, a voz do navegador fica "pegajosa" por 2 min (`NETWORK_VOICE_COOLDOWN_MS`): as falas seguintes (e o teste de áudio) usam o navegador na hora, sem esperar 4 s nem chamar `/speech`, e o pré-aquecimento fica desligado; depois do cooldown a rede é tentada de novo, e um sucesso limpa o estado (401/403 não contam como falha de voz).
 
+### Prontidão da voz do entrevistador
+
+O dashboard, a configuração e a sala chamam `POST /api/v1/speech/warmup` (sem bloquear nada). Na configuração, com áudio ligado, uma linha `role="status"` consulta `GET /api/v1/speech/warmup-status` a cada 3 s (para quando a voz fica pronta, ao desmontar ou após 2 min) e mostra "Preparando…", "Voz do entrevistador pronta" ou o aviso de voz do navegador; nunca impede de iniciar. Lógica pura em `src/lib/interview/voice-readiness.mjs`.
+
 ### Preparação antecipada da próxima pergunta (Cartesia)
 
 Com `TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS` ativo no backend, depois de um

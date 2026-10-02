@@ -22,10 +22,14 @@ export type SpeechProviderHealth = {
   status: "ready" | "unavailable";
 };
 
+export type VoiceStatus = "ready" | "warming" | "unavailable";
+
 export interface SpeechProvider {
   readonly name: string;
   synthesize(request: SpeechSynthesisRequest, signal?: AbortSignal): Promise<SynthesizedSpeech>;
   health(): Promise<SpeechProviderHealth>;
   /** Optional fire-and-forget wake-up of a scale-to-zero backend; never throws. */
   warmup?(): void;
+  /** Optional cached readiness of a scale-to-zero voice; may trigger a throttled background probe. */
+  voiceStatus?(): VoiceStatus;
 }

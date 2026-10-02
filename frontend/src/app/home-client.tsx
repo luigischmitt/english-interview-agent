@@ -38,7 +38,7 @@ const navigationItems = [...primaryNavigationItems, settingsNavigationItem];
 
 import { InterviewRoom } from "./components/interview-room";
 import { InterviewSetup } from "./components/interview-setup";
-import { prewarmInterviewerUtterance } from "./hooks/use-speech-playback";
+import { prewarmInterviewerUtterance, useSpeechWarmup } from "./hooks/use-speech-playback";
 import { ProgressView } from "./components/progress-view";
 import { PageIntro, SectionHeading } from "./components/shared";
 import { defaultInterviewConfig } from "./interview-config";
@@ -297,6 +297,7 @@ function SettingsView() {
 }
 
 export default function App() {
+  useSpeechWarmup(); // Wake the interviewer voice as soon as the signed-in user lands here.
   const [view, setView] = useState<View>("home");
   const [interviewConfig, setInterviewConfig] = useState<InterviewConfig>(defaultInterviewConfig);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
