@@ -1,11 +1,14 @@
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 
-import HomeClient from "../home-client";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabasePublicConfigOrNull } from "@/lib/supabase/config";
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
-  const { view } = await searchParams;
+import InterviewClient from "./interview-client";
+
+// Same guard as /dashboard: the interview has no app shell but is just as private.
+export default async function Page() {
+  await connection(); // Always evaluated per request: the auth check must never be baked in at build time.
   if (!getSupabasePublicConfigOrNull()) redirect("/login?reason=config");
 
   let isAuthenticated = false;
@@ -19,5 +22,5 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ v
 
   if (!isAuthenticated) redirect("/login?next=%2Fdashboard");
 
-  return <HomeClient initialView={view === "interview-setup" ? "interview-setup" : "home"} />;
+  return <InterviewClient />;
 }

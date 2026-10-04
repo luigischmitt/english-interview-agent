@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Clock3, Mic, PhoneOff, Video, VideoOff, Volume2 } from "lucide-react";
-import { MicrophoneCapture, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
+import { ArrowLeft, Check, CloudOff, LoaderCircle, Mic } from "lucide-react";
+import { MicrophoneCapture, type MicControls, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { buildPreviousAnswers, decideNextTurn, type TurnDecision } from "@/lib/interview/orchestration";
 import { createNextTurnPreparationRegistry } from "@/lib/interview/next-turn-preparation.mjs";
@@ -18,8 +18,9 @@ import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-regi
 import { analyzeTurnWithRetry, resolveReportAtEnd, settleTurnAnalyses, turnAnalysisWaitMs } from "@/lib/interview/report-incremental.mjs";
 import { InterviewReport, type ReportState } from "./interview-report";
 import "./interview-room.css";
+import { CallDock, CandidateTile, InterviewerTile, Toast, useCandidateCamera, useMicLevelMeter } from "./call-stage";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
-import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
+import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { useMicEngine } from "../hooks/use-mic-engine";
@@ -525,6 +526,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     });
   }, [currentAzureSummary, phase, reportState, sessionId]);
 
+
   const isAdvancing = phase === "advancing";
   const persistenceLabel = persistenceState === "saved" ? "sessão salva na conta" : persistenceState === "local" ? "salva apenas no estado local da sessão; sincronização pendente" : "salvando na conta…";
   const reportCaption = reportState.status === "pending" ? "Montando seu relatório final…" : reportState.status === "unavailable" ? "O relatório detalhado não ficou disponível para esta sessão." : "Relatório da prática";
@@ -541,248 +543,232 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     fallbackText: interviewerFallbackText,
     questionPrompt: stableQuestionCaption,
   });
-  const showInterviewerCaption = phase === "closing" || config.showQuestionCaptions || !config.playInterviewerAudio || Boolean(speechMessage);
+  // Captions are a toggle, except where they are the only way to follow the interviewer.
+  const [captionsPreference, setCaptionsPreference] = useState(config.showQuestionCaptions);
+  const captionsForced = phase === "closing" || !config.playInterviewerAudio || Boolean(speechMessage);
+  const showInterviewerCaption = captionsForced || captionsPreference;
+
+  const camera = useCandidateCamera(config.candidateCameraEnabled, phase !== "ending");
+  const meter = useMicLevelMeter(phase === "answering");
+  const [endOpen, setEndOpen] = useState(false);
+  const canSkip = phase === "answering" && !isAdvancing && canSkipVoiceQuestion(voiceCaptureState, voiceTranscription.status);
+
+  // Browser back / reload must not silently kill a running interview: back opens the leave confirmation.
+  const guardActive = phase !== "ending";
+  useEffect(() => {
+    if (!guardActive) return;
+    window.history.pushState(window.history.state, "");
+    const onPopState = () => {
+      window.history.pushState(window.history.state, "");
+      setEndOpen(true);
+    };
+    const onBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [guardActive]);
 
   const speakingLabel = phase === "introducing" ? "Apresentando a primeira pergunta" : phase === "closing" ? "Encerrando a entrevista" : phase === "speaking" ? "Fazendo a pergunta" : isAdvancing ? "Preparando a próxima pergunta" : "Aguardando sua resposta";
   const answerHint = isAdvancing ? "Preparando a próxima etapa…" : voiceCaptureState === "requesting" ? "Preparando microfone…" : voiceCaptureState === "listening" || voiceCaptureState === "detected" ? "Pode falar. A resposta será concluída automaticamente após uma pausa." : voiceCaptureState === "finalizing" || voiceTranscription.status === "pending" ? "Processando sua resposta…" : voiceTranscription.status === "failed" ? "Não foi possível concluir. Tente gravar novamente, pule a pergunta ou encerre a prática." : voiceTranscription.status === "available" ? "Resposta concluída." : "Inicie a gravação e responda em inglês.";
 
+  const micDisabled = isInterviewerSpeaking || isAdvancing || phase === "ending";
+  const capturing = voiceCaptureState === "listening" || voiceCaptureState === "detected";
+  const candidateCaptionVisible = showCandidateCaptions && phase === "answering" && shouldShowCandidateCaption({ enabled: true, captureState: voiceCaptureState, caption: candidateCaption });
+  const SaveIcon = persistenceState === "saved" ? Check : persistenceState === "local" ? CloudOff : LoaderCircle;
+  const saveText = persistenceState === "saved" ? "Salva" : persistenceState === "local" ? "Só local" : "Salvando…";
+
+  const renderDock = (mic: MicControls) => {
+    const micState = mic.isRecording ? "recording" : mic.isPending ? "pending" : mic.errorMessage ? "error" : micDisabled ? "off" : "ready";
+    const micLabel = mic.isRecording
+      ? "Concluir resposta"
+      : mic.isPending ? "Processando sua resposta"
+        : mic.hasAnswer ? "Gravar novamente"
+          : mic.errorMessage ? "Tentar gravar novamente" : micDisabled ? "Microfone aguardando sua vez" : "Iniciar gravação";
+    return (
+      <CallDock
+        toasts={<>
+          {mic.errorMessage && (
+            <Toast tone="error" role="alert" actions={<>
+              <button type="button" className="mt-toast-btn" onClick={mic.start} disabled={micDisabled || !mic.canStart}>Tentar novamente</button>
+              <button type="button" className="mt-toast-btn" onClick={skipQuestion} disabled={!canSkip}>Pular</button>
+            </>}>{mic.errorMessage}</Toast>
+          )}
+          {mic.micNotice && (
+            <Toast tone="warn" actions={<button type="button" className="mt-toast-btn" onClick={mic.retry}>Tentar de novo</button>}>
+              <strong>{mic.micNotice === "silent" ? "Não estamos recebendo áudio do seu microfone." : "Ainda não ouvimos sua voz."}</strong>{" "}
+              {mic.micNotice === "silent" ? "Confira se o microfone certo está selecionado e se não está mudo. Fones Bluetooth às vezes levam alguns segundos para ativar o microfone." : "Fale normalmente perto do microfone ou tente de novo."}
+            </Toast>
+          )}
+          {speechMessage && (
+            // Replaying would be picked up by an open microphone, so the retry is offered only while it is idle.
+            <Toast tone="warn" actions={phase === "answering" && voiceCaptureState === "idle" ? <button type="button" className="mt-toast-btn" onClick={retrySpeech}>Tentar de novo</button> : undefined}>{speechMessage}</Toast>
+          )}
+          {answerError && <Toast tone="error" role="alert" onDismiss={() => setAnswerError(null)}>{answerError}</Toast>}
+          {camera.cameraError && <Toast tone="warn" onDismiss={camera.dismissError}>{camera.cameraError}</Toast>}
+          {timeLimitReached && <Toast>O tempo chegou ao fim. Você pode concluir esta resposta; uma nova pergunta não será iniciada.</Toast>}
+          {persistenceMessage && <Toast>{persistenceMessage}</Toast>}
+        </>}
+        micState={micState}
+        micLabel={micLabel}
+        micDisabled={mic.isPending || (!mic.isRecording && (micDisabled || !mic.canStart))}
+        recording={mic.isRecording}
+        pending={mic.isPending}
+        recordingTime={mic.formattedDuration}
+        onMic={mic.isRecording ? mic.stop : mic.start}
+        onDiscard={mic.discard}
+        captionsOn={showInterviewerCaption}
+        captionsForced={captionsForced}
+        onCaptions={() => setCaptionsPreference((value) => !value)}
+        cameraOn={camera.enabled}
+        cameraState={camera.cameraState}
+        cameraDisabled={phase === "ending"}
+        onCamera={camera.toggle}
+        skipDisabled={!canSkip}
+        onSkip={skipQuestion}
+        onEnd={() => setEndOpen(true)}
+      />
+    );
+  };
+
   return (
-    <main id="main-content" className="rm-root mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-7xl flex-col px-4 py-4 sm:px-8 sm:py-6 lg:px-12">
+    <main id="main-content" className="rm-root mx-auto min-h-dvh w-full max-w-7xl px-4 py-5 sm:px-8 sm:py-8">
       {phase === "ending" && (
-        <InterviewReport
-          config={config}
-          elapsed={elapsed}
-          totalClock={formatClock(durationMinutes * 60)}
-          answerCount={Object.keys(answers).length}
-          persistenceLabel={persistenceLabel}
-          persistenceMessage={persistenceMessage}
-          feedbackSyncMessage={feedbackSyncMessage}
-          reportState={reportState}
-          reportCaption={reportCaption}
-          turns={capturedReportTurns}
-          azureSummary={currentAzureSummary}
-          coverage={coverage}
-          onLeave={onLeave}
-        />
+        <>
+          <button type="button" className="ds-btn ds-btn-quiet -ml-3 mb-4 min-h-10 gap-2 px-3 text-sm" onClick={onLeave}>
+            <ArrowLeft className="size-4" aria-hidden="true" /> Voltar ao dashboard
+          </button>
+          <InterviewReport
+            config={config}
+            elapsed={elapsed}
+            totalClock={formatClock(durationMinutes * 60)}
+            answerCount={Object.keys(answers).length}
+            persistenceLabel={persistenceLabel}
+            persistenceMessage={persistenceMessage}
+            feedbackSyncMessage={feedbackSyncMessage}
+            reportState={reportState}
+            reportCaption={reportCaption}
+            turns={capturedReportTurns}
+            azureSummary={currentAzureSummary}
+            coverage={coverage}
+            onLeave={onLeave}
+          />
+        </>
       )}
 
-      <div hidden={phase === "ending"} aria-hidden={phase === "ending"} className="flex flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 pb-3">
-          <div className="min-w-0">
-            <h1 className="text-balance text-lg font-semibold tracking-[-0.018em] sm:text-xl">Entrevista em andamento</h1>
-            <p className="ds-small mt-0.5 max-w-[65ch] break-words [overflow-wrap:anywhere]">{config.role} · {config.seniority.replace("-", " ")} · {config.focus.replaceAll("-", " ")}</p>
+      <div className="mt-call" hidden={phase === "ending"} aria-hidden={phase === "ending"} data-over={timeLimitReached ? "true" : undefined}>
+        <header className="mt-top">
+          <div className="mt-top-title">
+            <h1 className="mt-title"><span className="sr-only">Entrevista em andamento: </span>{config.role}</h1>
+            <p className="mt-sub">{config.seniority.replace("-", " ")} · {config.focus.replaceAll("-", " ")}</p>
           </div>
-          <div className="rm-timer" data-over={timeLimitReached ? "true" : undefined}>
-            <Clock3 className="size-4" aria-hidden="true" />
-            <strong aria-label={`Tempo decorrido ${elapsed}`}>{elapsed}</strong>
-            <span aria-hidden="true">·</span>
-            <span aria-label={`Tempo restante ${remaining}`}>{timeLimitReached ? `+${formatClock(seconds - durationMinutes * 60)}` : remaining} restantes</span>
+          <div className="mt-top-meta">
+            <p className="mt-save" role="status" aria-live="polite" title={persistenceLabel}>
+              <SaveIcon className={`size-3.5 ${persistenceState !== "saved" && persistenceState !== "local" ? "motion-safe:animate-spin" : ""}`} aria-hidden="true" />
+              <span aria-hidden="true" className="mt-save-text">{saveText}</span>
+              <span className="sr-only">{persistenceLabel}</span>
+            </p>
+            {micEngineState === "ready" && (
+              <span className="mt-mic-live" data-testid="mic-held-note" title="Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.">
+                <Mic className="size-3.5" aria-hidden="true" />
+                <span className="sr-only">Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.</span>
+              </span>
+            )}
+            <div className="mt-timer" data-over={timeLimitReached ? "true" : undefined}>
+              <strong aria-label={`Tempo decorrido ${elapsed}`}>{elapsed}</strong>
+              <span aria-hidden="true">·</span>
+              <span aria-label={`Tempo restante ${remaining}`}>{timeLimitReached ? `+${formatClock(seconds - durationMinutes * 60)}` : remaining} <span className="mt-timer-rest">restantes</span></span>
+            </div>
           </div>
+          <progress className="mt-progress" value={progress} max="100" aria-label={`${progress}% do tempo planejado`} />
         </header>
 
-        <progress className="rm-progress mb-4" value={progress} max="100" aria-label={`${progress}% do tempo planejado`} />
+        <p className="sr-only" role="status" aria-live="polite">{speakingLabel}</p>
+        <p className="sr-only" aria-live="polite">{answerHint}</p>
 
-        <section className="rm-stage" aria-label="Participantes da sala">
-          <section className="rm-interviewer" data-speaking={isInterviewerSpeaking ? "true" : undefined} data-advancing={isAdvancing ? "true" : undefined} aria-label="Entrevistador">
-            <div className="rm-who">
-              <div className="flex items-center gap-3">
-                <span className="rm-avatar"><AudioLines className="size-5" aria-hidden="true" /></span>
-                <h2 className="rm-name">Entrevistador</h2>
-              </div>
-              <p className="rm-chip" role="status" aria-live="polite">
-                <span className="rm-eq" data-active={isInterviewerSpeaking ? "true" : undefined} aria-hidden="true"><i /><i /><i /><i /></span>
-                {speakingLabel}
-                {isInterviewerSpeaking && <Volume2 className="size-4" aria-hidden="true" />}
-              </p>
-            </div>
-            {showInterviewerCaption ? (
-              <div className="rm-caption-wrap">
-                <p className="rm-caption-label">Entrevistador</p>
-                <p key={interviewerCaption} className="rm-caption" lang="en" aria-live="polite">{interviewerCaption}</p>
-              </div>
-            ) : (
-              <div className="rm-idle"><span className="rm-eq rm-eq-lg" data-active={isInterviewerSpeaking ? "true" : undefined} aria-hidden="true"><i /><i /><i /><i /></span></div>
-            )}
-            {speechMessage && (
-              <div role="status" className="rm-notice">
-                <Volume2 className="size-4 shrink-0" aria-hidden="true" />
-                <span>{speechMessage}</span>
-                {/* Replaying would be picked up by an open microphone, so the retry is offered only while it is idle. */}
-                {phase === "answering" && voiceCaptureState === "idle" && <button type="button" className="ds-btn" onClick={retrySpeech}>Tentar de novo</button>}
-              </div>
-            )}
-          </section>
-          <CandidateCamera initialEnabled={config.candidateCameraEnabled} active={phase !== "ending"} yourTurn={phase === "answering"} captureState={voiceCaptureState} caption={candidateCaption} captionsEnabled={showCandidateCaptions && phase === "answering"} />
+        <section className="mt-stage" aria-label="Participantes da sala">
+          <InterviewerTile speaking={isInterviewerSpeaking} advancing={isAdvancing} caption={showInterviewerCaption ? interviewerCaption : null} />
+          <CandidateTile
+            tileRef={meter.tileRef}
+            stream={camera.enabled ? camera.stream : null}
+            cameraRequesting={camera.cameraState === "requesting"}
+            capturing={capturing}
+            detected={voiceCaptureState === "detected"}
+            caption={candidateCaptionVisible ? candidateCaption : null}
+          />
         </section>
 
-        {timeLimitReached && <p className="rm-notice mt-4" data-tone="info" role="status"><span>O tempo chegou ao fim. Você pode concluir esta resposta; uma nova pergunta não será iniciada.</span></p>}
-        {persistenceMessage && <div role="status" className="rm-notice mt-4" data-tone="info"><span>{persistenceMessage}</span></div>}
+        <MicrophoneCapture
+          key={question.id}
+          disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"}
+          assessmentSockets={assessmentSockets}
+          assessmentContext={{ questionLabel: question.prompt, sequenceNumber: questionSequenceNumber }}
+          onLevel={meter.push}
+          render={renderDock}
+          onTranscriptionChange={(transcription) => {
+            setVoiceTranscription(transcription);
+            if (transcription.status === "idle" || transcription.status === "failed") abortPreparation("capture_ended");
+            if (transcription.status === "idle" || transcription.status === "available") setAnswerError(null);
+            const expectedQuestionId = question.id;
+            if (canAutoSubmitVoiceTranscript({
+              transcription,
+              phase: phaseRef.current,
+              expectedQuestionId,
+              currentQuestionId: currentQuestionIdRef.current,
+              submitting: submitInFlightRef.current,
+              left: leftRef.current,
+            })) void submitAnswer(transcription, false, expectedQuestionId);
+          }}
+          onCaptureStateChange={setVoiceCaptureState}
+          captionsEnabled={showCandidateCaptions}
+          transcriptionEngine={transcriptionEngine}
+          onCaptionChange={(caption) => {
+            if (caption.partial) abortPreparation("new_speech");
+            updateCandidateCaption(caption);
+          }}
+          onProvisionalAnswer={prepareFromProvisionalAnswer}
+          onSpeechResumed={() => abortPreparation("speech_resumed")}
+          onHandoffTimingEvent={onHandoffTimingEvent}
+          autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
+          micEngine={micEngine}
+          preconnectSignal={autoCaptureVoice && preconnectQuestionId === question.id ? question.id : null}
+          onAssessmentChange={(attemptId, assessment, context) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { ...context, state: assessment } }))}
+        />
 
-        <section className="rm-dock" aria-labelledby="answer-title">
-          <div className="rm-dock-grid">
-            <div className="min-w-0" aria-labelledby="answer-title">
-              <h2 id="answer-title" className="ds-label">Sua resposta por voz</h2>
-              <p className="ds-small mt-1">{answerHint}</p>
-              {answerError && <p id="answer-error" className="rm-error" role="alert">{answerError}</p>}
-            </div>
-            <div className="rm-actions">
-              <button type="button" className="ds-btn ds-btn-quiet" onClick={skipQuestion} disabled={phase !== "answering" || isAdvancing || !canSkipVoiceQuestion(voiceCaptureState, voiceTranscription.status)}>Pular sem enviar</button>
-              <button type="button" className="ds-btn ds-btn-soft" onClick={finishNow} disabled={phase !== "answering" || isAdvancing}>Encerrar prática</button>
-            </div>
-          </div>
-          <div className="mt-3">
-            <MicrophoneCapture
-              key={question.id}
-              disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"}
-              assessmentSockets={assessmentSockets}
-              assessmentContext={{ questionLabel: question.prompt, sequenceNumber: questionSequenceNumber }}
-              onTranscriptionChange={(transcription) => {
-                setVoiceTranscription(transcription);
-                if (transcription.status === "idle" || transcription.status === "failed") abortPreparation("capture_ended");
-                if (transcription.status === "idle" || transcription.status === "available") setAnswerError(null);
-                const expectedQuestionId = question.id;
-                if (canAutoSubmitVoiceTranscript({
-                  transcription,
-                  phase: phaseRef.current,
-                  expectedQuestionId,
-                  currentQuestionId: currentQuestionIdRef.current,
-                  submitting: submitInFlightRef.current,
-                  left: leftRef.current,
-                })) void submitAnswer(transcription, false, expectedQuestionId);
-              }}
-              onCaptureStateChange={setVoiceCaptureState}
-              captionsEnabled={showCandidateCaptions}
-              transcriptionEngine={transcriptionEngine}
-              onCaptionChange={(caption) => {
-                if (caption.partial) abortPreparation("new_speech");
-                updateCandidateCaption(caption);
-              }}
-              onProvisionalAnswer={prepareFromProvisionalAnswer}
-              onSpeechResumed={() => abortPreparation("speech_resumed")}
-              onHandoffTimingEvent={onHandoffTimingEvent}
-              autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
-              micEngine={micEngine}
-              preconnectSignal={autoCaptureVoice && preconnectQuestionId === question.id ? question.id : null}
-              onAssessmentChange={(attemptId, assessment, context) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { ...context, state: assessment } }))}
-            />
-          </div>
-          {micEngineState === "ready" && (
-            <p className="ds-hint mt-3 flex items-start gap-2 text-text-2" data-testid="mic-held-note">
-              <Mic className="mt-0.5 size-3.5 shrink-0 text-green" aria-hidden="true" />
-              <span>Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.</span>
-            </p>
-          )}
-        </section>
-
-        <div className="rm-meta">
-          <p className="ds-hint text-text-2" role="status" aria-live="polite">{persistenceLabel}</p>
-          <button type="button" className="ds-btn ds-btn-quiet rm-leave" onClick={leaveInterview}><PhoneOff className="size-4" aria-hidden="true" /> Sair sem concluir</button>
-        </div>
+        <EndCallDialog
+          open={endOpen}
+          canFinish={phase === "answering" && !isAdvancing}
+          onClose={() => setEndOpen(false)}
+          onFinish={() => { setEndOpen(false); finishNow(); }}
+          onLeave={() => { setEndOpen(false); leaveInterview(); }}
+        />
       </div>
     </main>
   );
 }
 
-function CandidateCaptionBlock({ caption }: { caption: CandidateCaption }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+/** End-call flow: finish with a report, leave without concluding, or go back to the call. */
+function EndCallDialog({ open, canFinish, onClose, onFinish, onLeave }: { open: boolean; canFinish: boolean; onClose: () => void; onFinish: () => void; onLeave: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    const element = scrollRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [caption]);
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
   return (
-    <div className="rm-you-caption">
-      <p className="rm-caption-label">Você</p>
-      {/* Display-only and updated several times per second, so it is deliberately not announced to screen readers. */}
-      <div ref={scrollRef} lang="en" aria-live="off" data-testid="candidate-caption">
-        <span>{caption.committed}</span>
-        {caption.committed && caption.partial ? " " : null}
-        <span className="text-text-2">{caption.partial}</span>
+    <dialog ref={dialogRef} className="mt-dialog" aria-labelledby="end-call-title" onClose={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="mt-dialog-body">
+        <h2 id="end-call-title" className="mt-dialog-title">Encerrar a entrevista?</h2>
+        <button type="button" className="mt-dialog-btn mt-dialog-primary" onClick={onFinish} disabled={!canFinish} autoFocus={canFinish}>
+          Encerrar e ver relatório
+          {!canFinish && <small>Disponível na sua vez de responder.</small>}
+        </button>
+        <button type="button" className="mt-dialog-btn mt-dialog-danger" onClick={onLeave}>Sair sem concluir</button>
+        <button type="button" className="mt-dialog-btn" onClick={onClose} autoFocus={!canFinish}>Continuar na entrevista</button>
       </div>
-    </div>
-  );
-}
-
-function CandidateCamera({ initialEnabled, active, yourTurn, captureState, caption, captionsEnabled }: { initialEnabled: boolean; active: boolean; yourTurn: boolean; captureState: VoiceCaptureState; caption: CandidateCaption; captionsEnabled: boolean }) {
-  const [cameraEnabled, setCameraEnabled] = useState(false);
-  const [cameraState, setCameraState] = useState<"off" | "requesting" | "on" | "error">("off");
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const generationRef = useRef(0);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  const turnCameraOn = useCallback(async () => {
-    if (cameraState === "requesting" || cameraState === "on") return;
-    const generation = ++generationRef.current;
-    setCameraState("requesting");
-    setCameraError(null);
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error("unsupported");
-      const nextStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      if (generationRef.current !== generation) {
-        stopMediaStreamTracks(nextStream);
-        return;
-      }
-      streamRef.current = nextStream;
-      setStream(nextStream);
-      setCameraEnabled(true);
-      setCameraState("on");
-    } catch {
-      if (generationRef.current !== generation) return;
-      setCameraEnabled(false);
-      setCameraState("error");
-      setCameraError("A câmera não pôde ser iniciada. Você ainda pode praticar sem vídeo.");
-    }
-  }, [cameraState]);
-
-  const turnCameraOff = useCallback(() => {
-    generationRef.current += 1;
-    stopMediaStreamTracks(streamRef.current);
-    streamRef.current = null;
-    setStream(null);
-    setCameraEnabled(false);
-    setCameraState("off");
-    setCameraError(null);
-  }, []);
-
-  useEffect(() => {
-    if (initialEnabled) queueMicrotask(() => { void turnCameraOn(); });
-  // The setup choice is only applied when the room mounts.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!active) queueMicrotask(() => turnCameraOff());
-  }, [active, turnCameraOff]);
-
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.srcObject = stream;
-  }, [stream]);
-
-  useEffect(() => () => {
-    generationRef.current += 1;
-    stopMediaStreamTracks(streamRef.current);
-  }, []);
-
-  const youLive = captureState === "listening" || captureState === "detected" || captureState === "finalizing";
-  const youState = captureState === "detected" || captureState === "listening" ? "Você está falando" : captureState === "finalizing" ? "Processando sua resposta" : "Sua vez de responder";
-  return (
-    <section className="rm-you" data-speaking={youLive ? "true" : undefined} aria-label="Você">
-      <div className="rm-you-body">
-        {cameraEnabled && stream ? <video ref={videoRef} autoPlay muted playsInline aria-label="Prévia local da sua câmera" /> : <VideoOff className="rm-you-icon size-8" aria-hidden="true" />}
-        {cameraEnabled && stream && <span className="rm-cam-label">Você · câmera local</span>}
-        {cameraState === "requesting" && <span className="loading loading-spinner loading-sm absolute right-4 top-4" aria-label="Iniciando câmera" />}
-        <div className={cameraEnabled && stream ? "absolute inset-x-0 bottom-3 flex justify-center" : "flex flex-col items-center gap-2"}>
-          {!(cameraEnabled && stream) && <p className="text-lg font-semibold tracking-[-0.015em]">Você</p>}
-          <p className="rm-chip" data-tone={youLive ? "live" : yourTurn ? "turn" : undefined}>{youLive && <span className="rm-dot" aria-hidden="true" />}{youState}</p>
-        </div>
-      </div>
-      {shouldShowCandidateCaption({ enabled: captionsEnabled, captureState, caption }) && <CandidateCaptionBlock caption={caption} />}
-      <div className="rm-you-foot">
-        <p className="ds-hint text-text-2">A câmera é uma prévia local e não é enviada nem salva.</p>
-        <button type="button" className="ds-btn ds-btn-soft rm-btn-sm" onClick={() => cameraEnabled || cameraState === "requesting" ? turnCameraOff() : void turnCameraOn()} aria-pressed={cameraEnabled} disabled={!active}><Video className="size-4" aria-hidden="true" />{cameraEnabled ? "Desligar câmera" : cameraState === "requesting" ? "Cancelar câmera" : cameraState === "error" ? "Tentar câmera" : "Ligar câmera"}</button>
-      </div>
-      {cameraError && <p className="px-4 pb-3 text-sm text-[var(--ds-warning)]" role="status">{cameraError}</p>}
-    </section>
+    </dialog>
   );
 }

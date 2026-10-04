@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useState, type CSSProperties } from "react";
 import {
   ArrowUpRight,
@@ -21,11 +22,11 @@ import { SessionExpiredNotice } from "@/components/auth/session-expired-notice";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { composeContextualOpening } from "@/lib/interview/speech-playback.mjs";
-import type { InterviewConfig } from "@/lib/interview/types";
+import { storeRoomHandoff } from "@/lib/interview/room-handoff.mjs";
 
 import "./components/shell.css";
 
-type View = "home" | "interview-setup" | "interview" | "progress" | "settings";
+type View = "home" | "interview-setup" | "progress" | "settings";
 
 const primaryNavigationItems = [
   { id: "home" as const, label: "Início", icon: Home },
@@ -36,22 +37,19 @@ const primaryNavigationItems = [
 const settingsNavigationItem = { id: "settings" as const, label: "Configurações", icon: SlidersHorizontal };
 const navigationItems = [...primaryNavigationItems, settingsNavigationItem];
 
-import { InterviewRoom } from "./components/interview-room";
 import { InterviewSetup } from "./components/interview-setup";
 import { prewarmInterviewerUtterance, useSpeechWarmup } from "./hooks/use-speech-playback";
 import { ProgressView } from "./components/progress-view";
 import { PageIntro } from "./components/shared";
-import { defaultInterviewConfig } from "./interview-config";
 
 function isNavigationItemActive(view: View, item: View) {
-  return view === item || (item === "interview-setup" && view === "interview");
+  return view === item;
 }
 
 // Wayfinding: [section, page?]. The section matches a navigation label; the page names the step inside it.
 const viewTrail: Record<View, readonly [string, string?]> = {
   home: ["Início"],
   "interview-setup": ["Entrevista", "Preparar entrevista"],
-  interview: ["Entrevista", "Sala de entrevista"],
   progress: ["Progresso"],
   settings: ["Configurações"],
 };
@@ -321,11 +319,12 @@ function SettingsView() {
   );
 }
 
-export default function App() {
+export default function App({ initialView = "home" }: { initialView?: View }) {
+  const router = useRouter();
   useSpeechWarmup(); // Wake the interviewer voice as soon as the signed-in user lands here.
-  const [view, setView] = useState<View>("home");
-  const [interviewConfig, setInterviewConfig] = useState<InterviewConfig>(defaultInterviewConfig);
+  const [view, setView] = useState<View>(initialView);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [startError, setStartError] = useState(false);
 
   const navigate = (nextView: View) => {
     setView(nextView);
@@ -351,6 +350,9 @@ export default function App() {
               onProgress={() => navigate("progress")}
             />
           )}
+          {startError && view === "interview-setup" && (
+            <p role="alert" className="alert alert-warning mx-4 mt-4 text-sm sm:mx-8">Não foi possível abrir a sala de entrevista neste navegador. Libere o armazenamento do site e tente novamente.</p>
+          )}
           {view === "interview-setup" && (
             <InterviewSetup
               onBack={() => navigate("home")}
@@ -359,13 +361,11 @@ export default function App() {
                 if (config.playInterviewerAudio) {
                   prewarmInterviewerUtterance(composeContextualOpening(config, getFixedInterviewQuestions(config)[0].prompt));
                 }
-                setInterviewConfig(config);
-                navigate("interview");
+                // The interview lives on its own route; the configuration travels in a single-use sessionStorage hand-off.
+                if (storeRoomHandoff(window.sessionStorage, config)) router.push("/interview");
+                else setStartError(true);
               }}
             />
-          )}
-          {view === "interview" && (
-            <InterviewRoom config={interviewConfig} onLeave={() => navigate("home")} />
           )}
           {view === "progress" && <ProgressView onStart={() => navigate("interview-setup")} />}
           {view === "settings" && <SettingsView />}
