@@ -20,7 +20,8 @@ class FakeAudio {
   fire(type) { this.listeners[type]?.(); }
 }
 
-const longSentence = (word) => `${word} is a sentence that is comfortably longer than forty characters.`;
+// At most 60 characters, so it is a single chunk (a longer first sentence is split).
+const longSentence = (word) => `${word} is a sentence that is longer than forty characters.`;
 
 /** The room + MicrophoneCapture wiring in miniature: engine, stream, and the playback events that drive them. */
 async function scenario(segments) {

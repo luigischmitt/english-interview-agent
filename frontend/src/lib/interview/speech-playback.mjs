@@ -342,11 +342,21 @@ export function synthesizeInterviewerQuestion(text, options) {
 // Sentences shorter than this are merged with the next one so no request is tiny; a sentence is never split
 // (except the first one, see `firstChunkSplitThreshold`).
 export const minimumChunkCharacters = 40;
-// A group never grows past this by merging; a single sentence longer than it still stays whole.
-export const maximumChunkCharacters = 140;
-// The first sentence of an utterance longer than this is split at its first clause boundary so first audio arrives fast.
+// Every chunk after the first is at most this long: a longer sentence is split (see `splitSentence`) and a merged group never
+// grows past it. Kokoro synthesizes ~80 characters in ~2 s, so each chunk is ready before the previous one finishes playing.
+// Only a sentence with no usable space stays whole.
+export const maximumChunkCharacters = 80;
+// An opening of at most this many characters stays one request; a longer one makes its first sentence its own chunk.
 export const firstChunkSplitThreshold = 70;
+// The first chunk is at most this long whenever the first sentence is longer (Kokoro synthesis time grows with length).
+export const firstChunkMaximum = 60;
+/** How far a clause or conjunction split may exceed the chunk cap. */
+const naturalBoundarySlack = 10;
 export const firstChunkPartMinimum = 20;
+// A head cut before a conjunction or at a word boundary is at least this long.
+export const firstChunkWordPartMinimum = 25;
+// Later pieces of a split sentence are at least this long where possible.
+export const laterChunkPartMinimum = 25;
 // The final chunk reports it is ending once at most this much of it remains (or at its start when it is shorter).
 export const finalChunkLeadMs = 3_000;
 // Chunk N+1 is requested only once chunk N's audio has arrived: one network synthesis in flight per utterance.
@@ -356,9 +366,18 @@ export const BACKGROUND_REQUEST_TIMEOUT_MS = 20_000;
 
 const clauseBoundaries = [", ", "; ", " \u2014 ", ": "];
 
-/** Splits a long first sentence at its first clause boundary leaving a first part of 20-70 characters, or returns null. */
-function splitFirstSentence(sentence) {
-  if (sentence.length <= firstChunkSplitThreshold) return null;
+const conjunctionBoundaries = [" because ", " so ", " and ", " but ", " which ", " when ", " while ", " where ", " that ", " so that ", " to "];
+
+/**
+ * Splits a sentence longer than `cap` so the head is at most `cap` long, or returns null:
+ * 1. the first clause boundary leaving a head of `clauseMinimum`..cap characters; else
+ * 2. before the latest conjunction/relative word leaving a 25..cap character head; else
+ * 3. at the last space leaving a 25..cap character head.
+ */
+function splitSentence(sentence, cap, clauseMinimum) {
+  if (sentence.length <= cap) return null;
+  // A clause or conjunction boundary sounds natural, so it may overshoot the cap slightly; a bare word cut may not.
+  const naturalCap = cap + naturalBoundarySlack;
   let best = null;
   for (const boundary of clauseBoundaries) {
     let from = 0;
@@ -368,20 +387,40 @@ function splitFirstSentence(sentence) {
       from = at + 1;
       const head = (boundary === " \u2014 " ? sentence.slice(0, at) : sentence.slice(0, at + boundary.trimEnd().length)).trim();
       const tail = sentence.slice(at + boundary.length).trim();
-      if (head.length > firstChunkSplitThreshold) break;
-      if (head.length < firstChunkPartMinimum || !tail) continue;
+      if (head.length > naturalCap) break;
+      if (head.length < clauseMinimum || !tail) continue;
       if (!best || at < best.at) best = { at, head, tail };
       break;
     }
   }
-  return best && { head: best.head, tail: best.tail };
+  if (best) return { head: best.head, tail: best.tail };
+  const lower = sentence.toLowerCase();
+  let latest = -1;
+  for (const word of conjunctionBoundaries) {
+    for (let at = lower.indexOf(word); at !== -1; at = lower.indexOf(word, at + 1)) {
+      if (at > naturalCap) break;
+      if (at >= firstChunkWordPartMinimum && at > latest && sentence.slice(at + 1).trim()) latest = at;
+    }
+  }
+  if (latest === -1) {
+    const at = sentence.lastIndexOf(" ", cap);
+    if (at < firstChunkWordPartMinimum || !sentence.slice(at + 1).trim()) return null;
+    latest = at;
+  }
+  return { head: sentence.slice(0, latest).trim(), tail: sentence.slice(latest + 1).trim() };
+}
+
+/** Splits a sentence recursively into pieces of at most `cap` characters (a piece with no usable space stays whole). */
+function splitToFit(sentence, cap) {
+  const split = splitSentence(sentence, cap, laterChunkPartMinimum);
+  return split ? [split.head, ...splitToFit(split.tail, cap)] : [sentence];
 }
 
 /**
  * Groups sentences into synthesis chunks: `text` is what is sent to the voice; `sentences` are the caption sentences
  * (always whole); `units` pair each spoken piece with its caption. Each chunk is at least `minimumChunkCharacters`
  * long (except a lone short utterance, a short first part or a group that merging would push past
- * `maximumChunkCharacters`). A first sentence over 70 characters becomes its own short first chunk plus a remainder.
+ * `maximumChunkCharacters`). A first sentence over 60 characters becomes a first chunk of at most 60 characters plus a remainder.
  */
 export function groupInterviewerSentences(segments) {
   const sentences = segments.map((segment) => segment.trim()).filter(Boolean);
@@ -393,14 +432,14 @@ export function groupInterviewerSentences(segments) {
   const totalLength = sentences.join(" ").length;
 
   sentences.forEach((sentence, index) => {
-    let units = [{ text: sentence, caption: sentence }];
-    const split = index === 0 ? splitFirstSentence(sentence) : null;
+    let units = splitToFit(sentence, maximumChunkCharacters).map((text) => ({ text, caption: sentence }));
+    const split = index === 0 ? splitSentence(sentence, firstChunkMaximum, firstChunkPartMinimum) : null;
     if (split) {
       chunks.push({ units: [{ text: split.head, caption: sentence }], locked: true });
-      units = [{ text: split.tail, caption: sentence }];
+      units = splitToFit(split.tail, maximumChunkCharacters).map((text) => ({ text, caption: sentence }));
     } else if (index === 0 && totalLength > firstChunkSplitThreshold) {
       // The first sentence (often a short bridge) is synthesized alone so the first audio arrives fast.
-      chunks.push({ units, locked: true });
+      chunks.push({ units: [{ text: sentence, caption: sentence }], locked: true });
       return;
     }
     for (const unit of units) {

@@ -108,6 +108,31 @@ describe("interview bridge call", () => {
     expect(result).toMatchObject({ bridge: null, outcome: "dropped", dropReason });
   });
 
+  it("tolerates two paraphrased words when at least three substantive words come from the transcript", async () => {
+    const bridge = "So you migrated the billing service to separate infrastructure because deploys were slow.";
+    await expect(bridgeService(async () => chat({ bridge })).write(bridgeInput())).resolves.toMatchObject({ bridge, outcome: "generated" });
+  });
+
+  it("drops two missing words with only two overlapping ones, three missing words, and an invented proper noun", async () => {
+    for (const bridge of ["So you migrated the billing service onto infrastructure.", "So you migrated the billing service onto infrastructure with automation because deploys were slow."]) {
+      const result = await bridgeService(async () => chat({ bridge })).write(bridgeInput());
+      expect(result).toMatchObject({ bridge: null, dropReason: "invented_detail" });
+    }
+    const proper = await bridgeService(async () => chat({ bridge: "So you migrated the billing service to Kubernetes because deploys were slow." })).write(bridgeInput());
+    expect(proper).toMatchObject({ bridge: null, dropReason: "invented_detail" });
+  });
+
+  it("limits a FOLLOW_UP bridge to 16 words and a NEXT restating sentence to 18 words", async () => {
+    const seventeenPlus = "So you moved the billing service to separate services because deploys were slow and you led it.";
+    expect(seventeenPlus.split(" ").length).toBe(17);
+    await expect(bridgeService(async () => chat({ bridge: seventeenPlus })).write(bridgeInput())).resolves.toMatchObject({ bridge: null, dropReason: "too_long" });
+    const ok = "So you moved the billing service to separate services because deploys were slow.";
+    expect(ok.split(" ").length).toBe(13);
+    await expect(bridgeService(async () => chat({ bridge: ok })).write(bridgeInput())).resolves.toMatchObject({ bridge: ok });
+    const longRestating = "So you moved the billing service from a monolith to separate services because deploys were slow and you led the plan. Let me ask about something different.";
+    await expect(bridgeService(async () => chat({ bridge: longRestating })).write(bridgeInput({ decision: "NEXT", question: nextQuestion }))).resolves.toMatchObject({ bridge: null, dropReason: "too_long" });
+  });
+
   it("capitalizes the first letter of a bridge", async () => {
     const result = await bridgeService(async () => chat({ bridge: "so you moved the billing service because deploys were slow" })).write(bridgeInput());
     expect(result.bridge).toBe("So you moved the billing service because deploys were slow.");

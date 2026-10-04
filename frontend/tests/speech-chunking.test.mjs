@@ -8,7 +8,8 @@ beforeEach(() => { resetNetworkVoiceHealth(); resetSpeechFlights(); });
 const texts = (segments) => groupInterviewerSentences(segments).map((chunk) => chunk.text);
 
 test("the first sentence is its own chunk, later short sentences merge with the next one, a sentence is never split", () => {
-  const redis = "Why did you choose Redis for the session cache in that system?";
+  // 55 characters: a first sentence of at most 60 characters is never split.
+  const redis = "Why did you choose Redis for the session cache at scale?";
   assert.deepEqual(texts(["Thanks.", redis, "How did it scale to many more users at peak?"]), ["Thanks.", redis, "How did it scale to many more users at peak?"]);
   assert.deepEqual(texts([redis, "Thanks.", "How did it scale to many more users at peak?"]), [redis, "Thanks. How did it scale to many more users at peak?"]);
   assert.deepEqual(texts(["Hi.", "Yes."]), ["Hi. Yes."]);
@@ -16,11 +17,12 @@ test("the first sentence is its own chunk, later short sentences merge with the 
   assert.deepEqual(texts(["  ", ""]), []);
 });
 
-test("a long first sentence without a clause boundary stays whole; a short trailing sentence joins the previous chunk", () => {
+test("a short first sentence stays whole; a short trailing sentence joins the previous chunk", () => {
   const long = "Could you walk me through how you designed the retry policy for the payment webhooks in production?";
-  assert.deepEqual(texts([long]), [long]);
   const second = "Next one is surely long enough to stand alone.";
-  assert.deepEqual(texts([long, second]), [long, second]);
+  // The long first sentence now splits at a word boundary (see below); its 39-character remainder plus the second sentence
+  // would be 86 characters, over the 80 cap, so they stay separate chunks.
+  assert.deepEqual(texts([long, second]), ["Could you walk me through how you designed the retry policy", "for the payment webhooks in production?", second]);
   assert.deepEqual(texts([second, "Tell me about a hard bug.", "Ok?"]), [second, "Tell me about a hard bug. Ok?"]);
   // A whole utterance of at most 70 characters stays a single request.
   assert.deepEqual(texts(["Got it.", "Why Redis?"]), ["Got it. Why Redis?"]);
@@ -31,21 +33,21 @@ test("a long first sentence without a clause boundary stays whole; a short trail
 
 const opening = "We have about 5 minutes for your senior backend role, focusing on technical depth.";
 
-test("a first sentence over 70 characters is split at the first clause boundary leaving 20-70 characters", () => {
+test("a first sentence over 60 characters is split at the first clause boundary leaving 20-60 characters", () => {
   const grouped = groupInterviewerSentences([opening, "Tell me about a hard bug you fixed recently."]);
   assert.deepEqual(grouped.map((chunk) => chunk.text), [
     "We have about 5 minutes for your senior backend role,",
     "focusing on technical depth. Tell me about a hard bug you fixed recently.",
   ]);
-  assert.ok(grouped[0].text.length >= 20 && grouped[0].text.length <= 70);
+  assert.ok(grouped[0].text.length >= 20 && grouped[0].text.length <= 60);
   // The remainder is not merged back into the first chunk, even when nothing follows it.
   assert.deepEqual(texts([opening]), ["We have about 5 minutes for your senior backend role,", "focusing on technical depth."]);
 });
 
 test("the split honours ; \u2014 and : and skips boundaries that leave a part under 20 characters", () => {
-  // "Thanks for joining," is 19 characters, so the semicolon is the first boundary that leaves 20-70.
-  assert.deepEqual(texts(["Thanks for joining, we will start with your recent work on payments; then move to design."]), [
-    "Thanks for joining, we will start with your recent work on payments;", "then move to design.",
+  // "Thanks for joining," is 19 characters, so the semicolon is the first boundary that leaves 20-60.
+  assert.deepEqual(texts(["Thanks for joining, we start with recent work on it; then move to design."]), [
+    "Thanks for joining, we start with recent work on it;", "then move to design.",
   ]);
   assert.deepEqual(texts(["Let us begin with your background \u2014 especially the systems you owned end to end at work."]), [
     "Let us begin with your background", "especially the systems you owned end to end at work.",
@@ -53,12 +55,41 @@ test("the split honours ; \u2014 and : and skips boundaries that leave a part un
   assert.deepEqual(texts(["Here is the plan for today: we start with a short warm up and then go deeper on design."]), [
     "Here is the plan for today:", "we start with a short warm up and then go deeper on design.",
   ]);
-  // The only comma leaves a first part over 70 characters: the sentence stays whole.
+  // A clause boundary that leaves a head over 60 characters is not used: the sentence splits before a conjunction instead.
   const lateComma = "Hi, thanks for joining me today and for taking the time to talk about your work, ok?";
-  assert.deepEqual(texts([lateComma]), [lateComma]);
-  // Only the first sentence is ever split.
+  assert.deepEqual(texts([lateComma]), ["Hi, thanks for joining me today and for taking the time", "to talk about your work, ok?"]);
+  // A later sentence is split only when it is over 80 characters (this one is 84, so it splits at its comma).
   const later = ["Hello there and welcome to the interview.", "We have about 5 minutes for your senior backend role, focusing on technical depth."];
-  assert.deepEqual(texts(later), later);
+  assert.deepEqual(texts(later), ["Hello there and welcome to the interview.", "We have about 5 minutes for your senior backend role,", "focusing on technical depth."]);
+  const mid = ["Hello there and welcome to the interview.", "We have five minutes for your backend role, focusing on depth."];
+  assert.deepEqual(texts(mid), mid, "a later sentence of at most 80 characters is never split");
+});
+
+const bridge119 = "So you moved the billing service into a separate cluster for the payment team after deploys kept failing under heavy load.";
+
+test("a long first sentence without a clause boundary splits before the latest conjunction leaving at most 60 characters", () => {
+  assert.ok(bridge119.length >= 115);
+  const [head, tail] = texts([bridge119]);
+  // No clause boundary; " to " does not occur, " into " is not a boundary, so the word-boundary fallback applies.
+  assert.equal(head, "So you moved the billing service into a separate cluster for");
+  assert.ok(head.length >= 25 && head.length <= 60);
+  assert.equal(`${head} ${tail}`, bridge119);
+  assert.deepEqual(texts(["We rebuilt the cache layer last quarter because deploys kept failing under load."]), ["We rebuilt the cache layer last quarter", "because deploys kept failing under load."]);
+});
+
+test("without a clause or conjunction boundary the first sentence splits at the last space before 60 characters", () => {
+  const long = "Could you walk me through how you designed the retry policy for the payment webhooks in production?";
+  assert.deepEqual(texts([long]), ["Could you walk me through how you designed the retry policy", "for the payment webhooks in production?"]);
+  assert.ok(texts([long])[0].length <= 60);
+  // A single very long word run with no usable space stays whole.
+  const blob = "x".repeat(90);
+  assert.deepEqual(texts([blob]), [blob]);
+});
+
+test("a first sentence of at most 60 characters is untouched", () => {
+  const exact = "Tell me about the hardest production incident you handled.";
+  assert.ok(exact.length <= 60);
+  assert.deepEqual(texts([exact, "Take your time and answer as you would in a real interview."]), [exact, "Take your time and answer as you would in a real interview."]);
 });
 
 test("captions stay whole sentences while the two parts of a split sentence play", () => {
@@ -67,15 +98,49 @@ test("captions stay whole sentences while the two parts of a split sentence play
   assert.deepEqual(grouped[1].sentences, [opening, "Tell me about a hard bug you fixed recently."]);
 });
 
-test("a group never merges past about 140 characters", () => {
+test("a group never merges past 80 characters", () => {
   const words = (n) => `${"word ".repeat(n).trim()}.`; // 5 * n characters
-  const longSentence = words(30); // 150 characters: never split, never merged
-  assert.deepEqual(texts(["Okay.", longSentence]), ["Okay.", longSentence], "a short sentence is not merged into one that would exceed the cap");
-  const veryLong = words(33);
-  assert.deepEqual(texts([words(8), veryLong, "Ok?"]), [words(8), veryLong, "Ok?"], "a short trailing sentence does not join a chunk that would exceed the cap");
-  const [first, second] = [words(12), words(12)];
+  assert.deepEqual(texts(["Okay.", words(16)]), ["Okay.", words(16)], "a short sentence is not merged into one that would exceed the cap");
+  assert.deepEqual(texts([words(8), words(16), "Ok?"]), [words(8), words(16), "Ok?"], "a short trailing sentence does not join a chunk that would exceed the cap");
+  const [first, second] = [words(8), words(12)];
   assert.deepEqual(texts([first, second, "Hm."]), [first, `${second} Hm.`], "merging below the cap still happens");
-  assert.ok(texts([first, second, "Hm."]).every((text) => text.length <= 140));
+  assert.ok(texts([words(10), words(10), words(10), "Hm."]).every((text) => text.length <= 80));
+});
+
+const twoHundred = "We migrated the billing service to a new cluster last year because deploys were slow and risky, so the team agreed to move it gradually while keeping the old path running and then we measured the results every week.";
+
+test("a long later sentence is split into pieces of about 80 characters (up to 90 at clause and conjunction boundaries)", () => {
+  assert.ok(twoHundred.length >= 200);
+  const chunks = texts(["Thanks for that answer.", twoHundred]);
+  assert.equal(chunks[0], "Thanks for that answer.");
+  const pieces = chunks.slice(1);
+  assert.ok(pieces.length >= 3);
+  assert.ok(pieces.every((piece) => piece.length <= 90), JSON.stringify(pieces)); // natural boundaries may overshoot the 80 cap by up to 10
+  assert.equal(pieces.join(" "), twoHundred);
+  assert.ok(pieces.slice(1).every((piece) => /^(because|so|and|but|which|when|while|where|that|to)\b/.test(piece) || /[,;:]$/.test(pieces[pieces.indexOf(piece) - 1])), "cuts fall on clause or conjunction boundaries");
+});
+
+test("a long sentence with no boundary splits at the last space before 80 characters, recursively", () => {
+  const words = `${"word ".repeat(45).trim()}.`; // 225 characters
+  const pieces = texts(["Hello there."].concat(words)).slice(1);
+  assert.ok(pieces.length >= 3);
+  assert.ok(pieces.every((piece) => piece.length <= 80 && piece.length >= 25));
+  assert.equal(pieces.join(" "), words);
+  const blob = "x".repeat(120);
+  assert.deepEqual(texts(["Hello there.", blob]), ["Hello there.", blob], "no usable space: stays whole");
+});
+
+test("every piece of a split sentence is captioned with the whole sentence, and prewarm requests the same pieces", async () => {
+  const segments = ["Thanks for that answer.", twoHundred];
+  const grouped = groupInterviewerSentences(segments);
+  assert.deepEqual(grouped[0].sentences, ["Thanks for that answer."]);
+  for (const chunk of grouped.slice(1)) assert.deepEqual(chunk.sentences, [twoHundred]);
+  clearRetainedSpeechBlobs();
+  const calls = [];
+  const fetcher = async (_endpoint, init) => { calls.push(JSON.parse(init.body).text); return { ok: true, blob: async () => new Blob([init.body]) }; };
+  assert.equal(await prewarmInterviewerSpeech(segments, { endpoint: "/speech", fetcher, retainMs: 5_000 }).promise, true);
+  assert.deepEqual(calls, grouped.map((chunk) => chunk.text));
+  clearRetainedSpeechBlobs();
 });
 
 class FakeAudio {
