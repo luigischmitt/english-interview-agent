@@ -105,7 +105,7 @@ export function RoleCombobox({
         autoCapitalize="words"
         spellCheck={false}
         required
-        className="isu-field pr-11"
+        className="ds-field pr-11"
         value={value}
         placeholder={placeholder}
         onChange={(event) => {
@@ -140,10 +140,10 @@ export function RoleCombobox({
           }
         }}
       >
-        <ChevronDown className="isu-chevron size-4" style={{ transform: expanded ? "rotate(180deg)" : undefined }} aria-hidden="true" />
+        <ChevronDown className="ds-chevron size-4" style={{ transform: expanded ? "rotate(180deg)" : undefined }} aria-hidden="true" />
       </button>
       {expanded && (
-        <ul id={listId} role="listbox" aria-label="Cargos sugeridos" className="isu-combo-list">
+        <ul id={listId} role="listbox" aria-label="Cargos sugeridos" className="ds-combo-list">
           {options.map((role, index) => (
             <li
               key={role}
@@ -151,7 +151,7 @@ export function RoleCombobox({
               role="option"
               aria-selected={role === value}
               data-active={index === activeIndex}
-              className="isu-combo-option"
+              className="ds-combo-option"
               onMouseDown={(event) => event.preventDefault()}
               onMouseMove={() => setActiveIndex(index)}
               onClick={() => choose(role)}

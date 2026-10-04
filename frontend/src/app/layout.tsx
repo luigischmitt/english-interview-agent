@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist_Mono } from "next/font/google";
 
 import { AuthSessionGuard } from "@/components/auth/auth-session-guard";
-import { dmSans, instrumentSerif } from "@/lib/landing-fonts";
+import { instrumentSans, instrumentSerif } from "@/lib/fonts";
 
 import "./globals.css";
 
@@ -21,7 +21,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="pt-BR"
       data-theme="interview-light"
-      className={`${dmSans.variable} ${instrumentSerif.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${instrumentSans.variable} ${instrumentSerif.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <AuthSessionGuard />

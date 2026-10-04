@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { sanitizeNextPath } from "@/lib/auth/redirect";
-import { dmSans, instrumentSerif } from "@/lib/landing-fonts";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const pillButton =
@@ -144,7 +143,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
 
   return (
     <main
-      className={`${dmSans.variable} ${instrumentSerif.variable} grid min-h-dvh place-items-center bg-[#f3f4ee] px-4 py-10 font-[family-name:var(--font-landing-sans)] text-[#0e2a1f] antialiased sm:px-6`}
+      className={`grid min-h-dvh place-items-center bg-[#f3f4ee] px-4 py-10 text-[#0e2a1f] antialiased sm:px-6`}
     >
       <section className="w-full max-w-md">
         <Link href="/" className="group mb-8 inline-flex items-center gap-2.5 text-[#0e2a1f]">
@@ -162,7 +161,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
           <div className="flex flex-col gap-6">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1f6b45]">{details.eyebrow}</p>
-              <h1 className="mt-3 font-[family-name:var(--font-landing-serif)] text-3xl leading-tight tracking-[-0.02em]">
+              <h1 className="mt-3 font-[family-name:var(--font-display)] text-3xl leading-tight tracking-[-0.02em]">
                 {details.title}
               </h1>
               <p className="mt-3 text-sm leading-6 text-[#3d5a4c]">{details.description}</p>

@@ -6,7 +6,6 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { ReportDemo } from "@/components/landing/report-demo";
-import { dmSans, instrumentSerif } from "@/lib/landing-fonts";
 
 import "aos/dist/aos.css";
 
@@ -50,7 +49,7 @@ export function PublicLanding() {
 
   return (
     <div
-      className={`${dmSans.variable} ${instrumentSerif.variable} min-h-dvh overflow-x-clip bg-[#f3f4ee] font-[family-name:var(--font-landing-sans)] text-[#0e2a1f] antialiased`}
+      className={`min-h-dvh overflow-x-clip bg-[#f3f4ee] text-[#0e2a1f] antialiased`}
     >
       <a href="#main-content" className="skip-link">
         Pular para o conteúdo
@@ -82,7 +81,7 @@ export function PublicLanding() {
 
       <main id="main-content">
         <section className="mx-auto max-w-[1180px] px-6 pt-[72px] text-center">
-          <h1 className="mx-auto max-w-[960px] animate-[eia-rise_0.8s_ease-out_0.1s_both] text-balance font-[family-name:var(--font-landing-serif)] text-[clamp(46px,6.6vw,88px)] leading-[1.02] tracking-[-0.02em]">
+          <h1 className="mx-auto max-w-[960px] animate-[eia-rise_0.8s_ease-out_0.1s_both] text-balance font-[family-name:var(--font-display)] text-[clamp(46px,6.6vw,88px)] leading-[1.02] tracking-[-0.02em]">
             Você sabe a resposta.
             <br />
             Em inglês, sob pressão, ela trava.
@@ -119,7 +118,7 @@ export function PublicLanding() {
         <section className="mx-auto max-w-[1180px] px-6 pt-32 text-center">
           <h2
             data-aos="fade-up"
-            className="mx-auto max-w-[860px] text-balance font-[family-name:var(--font-landing-serif)] text-[clamp(36px,4.8vw,64px)] leading-[1.05] tracking-[-0.02em]"
+            className="mx-auto max-w-[860px] text-balance font-[family-name:var(--font-display)] text-[clamp(36px,4.8vw,64px)] leading-[1.05] tracking-[-0.02em]"
           >
             Você não perde a vaga por conteúdo.
             <br />
@@ -153,7 +152,7 @@ export function PublicLanding() {
         <section id="como-funciona" className="mx-auto max-w-[1180px] px-6 pt-32">
           <h2
             data-aos="fade-up"
-            className="text-center font-[family-name:var(--font-landing-serif)] text-[clamp(36px,4.8vw,64px)] leading-[1.05] tracking-[-0.02em]"
+            className="text-center font-[family-name:var(--font-display)] text-[clamp(36px,4.8vw,64px)] leading-[1.05] tracking-[-0.02em]"
           >
             Como funciona
           </h2>
@@ -165,7 +164,7 @@ export function PublicLanding() {
                 data-aos-delay={step.delayMs}
                 className="group flex min-h-[220px] flex-col gap-[18px] bg-[#f3f4ee] px-8 py-9 transition-colors duration-300 hover:bg-white"
               >
-                <span className="font-[family-name:var(--font-landing-serif)] text-[44px] leading-none text-[#1f6b45] transition-colors duration-300 group-hover:text-[#0e2a1f]">
+                <span className="font-[family-name:var(--font-display)] text-[44px] leading-none text-[#1f6b45] transition-colors duration-300 group-hover:text-[#0e2a1f]">
                   {step.n}
                 </span>
                 <h3 className="mt-auto text-xl font-semibold tracking-[-0.01em]">{step.title}</h3>
@@ -178,7 +177,7 @@ export function PublicLanding() {
         <section className="mx-auto max-w-[1180px] px-6 pb-16 pt-32 text-center">
           <h2
             data-aos="fade-up"
-            className="text-balance font-[family-name:var(--font-landing-serif)] text-[clamp(40px,5.6vw,76px)] leading-[1.02] tracking-[-0.02em]"
+            className="text-balance font-[family-name:var(--font-display)] text-[clamp(40px,5.6vw,76px)] leading-[1.02] tracking-[-0.02em]"
           >
             Descubra como seu inglês soa
             <br />
