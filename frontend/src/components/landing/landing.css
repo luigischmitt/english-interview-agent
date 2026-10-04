@@ -66,11 +66,7 @@
 
 /* ---- Report stage: forest backdrop that dissolves into the cream page ---- */
 .lp-stage { position: relative; isolation: isolate; margin-top: clamp(3rem, 2rem + 4vw, 5.5rem); overflow: hidden; padding-block: clamp(2.5rem, 2rem + 3vw, 5.5rem); }
-.lp-stage-img { position: absolute; inset-inline: 0; bottom: -6%; z-index: -2; height: 112%; width: 100%; object-fit: cover; object-position: bottom; opacity: 0.9; pointer-events: none; animation: lp-drift 9s var(--ease-in-out) infinite alternate; }
-.lp-stage::before, .lp-stage::after { content: ""; position: absolute; inset-inline: 0; z-index: -1; pointer-events: none; }
-.lp-stage::before { top: 0; height: 40%; background: linear-gradient(var(--ds-cream), rgba(243, 244, 238, 0)); }
-.lp-stage::after { bottom: 0; height: 22%; background: linear-gradient(rgba(243, 244, 238, 0), var(--ds-cream)); }
-@keyframes lp-drift { from { transform: translateY(0); } to { transform: translateY(-14px); } }
+.lp-stage-img { position: absolute; inset-inline: 0; bottom: -6%; z-index: -2; height: 112%; width: 100%; object-fit: cover; object-position: bottom; opacity: 0.9; pointer-events: none; }
 
 /* ---- Problem / compare ---- */
 .lp-compare { margin: clamp(2rem, 1.5rem + 2vw, 3.5rem) auto 0; max-width: 46rem; overflow: hidden; border-radius: var(--ds-r-card); background: var(--ds-surface); text-align: left; box-shadow: var(--ds-shadow-card); transition: box-shadow var(--ds-dur-slow) var(--ease-out); }
@@ -140,7 +136,6 @@
 .lp-radar-tip { pointer-events: none; position: absolute; left: 50%; top: 0; transform: translateX(-50%); white-space: nowrap; border-radius: var(--ds-r-pill); background: var(--ds-ink); padding: 0.25rem 0.625rem; font-size: 0.75rem; font-weight: 600; color: var(--ds-tint); transition: opacity var(--ds-dur-base) ease; }
 
 @media (prefers-reduced-motion: reduce) {
-  .lp-stage-img { animation: none; }
   [data-reveal="pending"] { opacity: 1; transform: none; }
   .lp-link:active, .lp-step:hover { transform: none; }
   .lp-brand:hover img { transform: none; }
