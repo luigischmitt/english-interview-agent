@@ -533,35 +533,35 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const canStart = !isRecording && status !== "requesting" && status !== "finalizing" && transcription.status !== "pending";
 
   return (
-    <section className="rounded-lg border border-base-300 bg-base-200/60 p-4" aria-label="Resposta por voz">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Mic className="size-4 text-primary" aria-hidden="true" />
-          <div>
-            <p className="text-sm font-medium">Responda em voz alta</p>
-            <p className="text-xs text-muted-foreground" aria-live="polite">
+    <section className="rm-mic" aria-label="Resposta por voz">
+      <div className="rm-mic-row">
+        <div className="rm-mic-state">
+          <span className="rm-mic-icon" data-recording={isRecording ? "true" : undefined}><Mic className="size-5" aria-hidden="true" /></span>
+          <div className="min-w-0">
+            <p className="ds-label">Responda em voz alta</p>
+            <p className="ds-small" aria-live="polite">
               {isRecording ? "Gravando" : status === "requesting" ? "Preparando microfone…" : isPending ? "Processando sua resposta…" : transcription.status === "available" ? "Resposta concluída." : status === "error" ? "Não foi possível concluir. Você pode tentar novamente." : "Inicie a gravação para responder em voz alta."}
             </p>
           </div>
         </div>
-        {isRecording && <time className="text-sm tabular-nums text-muted-foreground" aria-label={`Tempo de gravação ${formattedDuration}`}>{formattedDuration}</time>}
-        <div className="flex flex-wrap gap-2">
-          {canStart && <button type="button" className="btn btn-sm btn-outline gap-2" onClick={() => void startRecording()} disabled={disabled}><Mic className="size-4" aria-hidden="true" />{transcription.status === "available" ? "Gravar novamente" : status === "error" || transcription.status === "failed" ? "Tentar novamente" : "Iniciar gravação"}</button>}
-          {isRecording && <button type="button" className="btn btn-sm btn-ghost gap-2" onClick={cancelRecording}><X className="size-4" aria-hidden="true" />Descartar gravação</button>}
-          {isPending && <LoaderCircle className="size-5 motion-safe:animate-spin self-center text-muted-foreground" aria-hidden="true" />}
+        {isRecording && <time className="rm-mic-time" aria-label={`Tempo de gravação ${formattedDuration}`}>{formattedDuration}</time>}
+        <div className="flex flex-wrap items-center gap-2">
+          {canStart && <button type="button" className="ds-btn rm-btn-sm rm-btn-primary" onClick={() => void startRecording()} disabled={disabled}><Mic className="size-4" aria-hidden="true" />{transcription.status === "available" ? "Gravar novamente" : status === "error" || transcription.status === "failed" ? "Tentar novamente" : "Iniciar gravação"}</button>}
+          {isRecording && <button type="button" className="ds-btn ds-btn-soft rm-btn-sm" onClick={cancelRecording}><X className="size-4" aria-hidden="true" />Descartar gravação</button>}
+          {isPending && <LoaderCircle className="size-5 motion-safe:animate-spin self-center text-[var(--ds-text-2)]" aria-hidden="true" />}
         </div>
       </div>
       {isRecording && micNotice && (
-        <div role="status" className="alert alert-warning alert-soft mt-3 flex-wrap text-sm">
+        <div role="status" className="rm-notice">
           <div className="min-w-0 flex-1">
-            <p className="font-medium">{micNotice === "silent" ? "Não estamos recebendo áudio do seu microfone." : "Ainda não ouvimos sua voz."}</p>
+            <p className="font-semibold">{micNotice === "silent" ? "Não estamos recebendo áudio do seu microfone." : "Ainda não ouvimos sua voz."}</p>
             <p className="mt-1">{micNotice === "silent" ? "Confira se o microfone certo está selecionado e se não está mudo. Fones Bluetooth às vezes levam alguns segundos para ativar o microfone." : "Fale normalmente perto do microfone ou tente de novo."}</p>
           </div>
-          <button type="button" className="btn btn-sm btn-outline min-h-11 gap-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" onClick={retryCapture}>Tentar de novo</button>
+          <button type="button" className="ds-btn" onClick={retryCapture}>Tentar de novo</button>
         </div>
       )}
-      {error && transcription.status !== "failed" && <p className="mt-3 text-sm text-error" role="alert">{error}</p>}
-      {transcription.status === "failed" && <p className="mt-3 text-sm text-error" role="alert">{transcription.message}</p>}
+      {error && transcription.status !== "failed" && <p className="rm-error" role="alert">{error}</p>}
+      {transcription.status === "failed" && <p className="rm-error" role="alert">{transcription.message}</p>}
     </section>
   );
 }

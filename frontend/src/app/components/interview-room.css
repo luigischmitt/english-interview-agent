@@ -1,0 +1,209 @@
+/*
+ * Interview room: only what is specific to this screen (prefix rm-). Generic primitives live in
+ * src/app/design-system.css (ds-*), tokens in src/app/globals.css (--ds-*).
+ * Motion here is limited to state changes: speaking indicator, caption swap, card emphasis, press.
+ */
+.rm-root { color: var(--ds-ink); }
+
+/* ---- Header: title left, calm timer right, hairline progress below. ---- */
+.rm-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--ds-r-pill);
+  background: var(--ds-surface);
+  box-shadow: var(--ds-shadow-card);
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-text-2);
+}
+.rm-timer strong { color: var(--ds-ink); font-weight: 600; }
+.rm-timer[data-over="true"] { background: var(--ds-warning-tint); color: var(--ds-warning); }
+.rm-timer[data-over="true"] strong { color: var(--ds-warning); }
+.rm-progress {
+  display: block;
+  width: 100%;
+  height: 0.25rem;
+  appearance: none;
+  border: 0;
+  border-radius: var(--ds-r-pill);
+  background: var(--ds-track);
+  overflow: hidden;
+}
+.rm-progress::-webkit-progress-bar { background: var(--ds-track); }
+.rm-progress::-webkit-progress-value { background: var(--ds-green); border-radius: var(--ds-r-pill); transition: width 600ms var(--ease-out); }
+.rm-progress::-moz-progress-bar { background: var(--ds-green); border-radius: var(--ds-r-pill); }
+
+/* ---- Stage: interviewer is the dominant surface. ---- */
+.rm-stage { display: grid; gap: 1rem; }
+@media (min-width: 1024px) { .rm-stage { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 1.25rem; align-items: stretch; } }
+
+.rm-interviewer {
+  position: relative;
+  display: flex;
+  min-height: 15rem;
+  flex-direction: column;
+  border-radius: var(--ds-r-panel);
+  background: var(--ds-ink);
+  color: var(--ds-cream);
+  box-shadow: var(--ds-shadow-panel);
+  padding: 1.25rem;
+  transition: box-shadow var(--ds-dur-slow) ease;
+}
+.rm-interviewer[data-speaking="true"] { box-shadow: var(--ds-shadow-panel), 0 0 0 3px rgba(243, 244, 238, 0.18); }
+@media (min-width: 640px) { .rm-interviewer { padding: 1.75rem; min-height: min(46vh, 26rem); } }
+
+.rm-who { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.rm-avatar {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ds-r-pill);
+  background: rgba(243, 244, 238, 0.12);
+  color: var(--ds-cream);
+}
+.rm-name { font-size: 0.9375rem; font-weight: 600; letter-spacing: 0; }
+.rm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--ds-r-pill);
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25;
+  background: var(--ds-field);
+  color: var(--ds-text-2);
+  transition: background-color var(--ds-dur-slow) ease, color var(--ds-dur-slow) ease;
+}
+.rm-interviewer .rm-chip { background: rgba(243, 244, 238, 0.1); color: rgba(243, 244, 238, 0.82); }
+.rm-interviewer[data-speaking="true"] .rm-chip { background: var(--ds-cream); color: var(--ds-ink); }
+.rm-interviewer[data-advancing="true"] .rm-chip { background: var(--ds-warning-tint); color: var(--ds-warning); }
+
+/* Speaking indicator: four bars, animated only while the interviewer is audible. */
+.rm-eq { display: inline-flex; height: 0.875rem; align-items: center; gap: 2px; }
+.rm-eq i { display: block; width: 3px; height: 100%; border-radius: 2px; background: currentColor; transform: scaleY(0.3); transform-origin: center; }
+.rm-eq[data-active="true"] i { animation: rm-eq 900ms var(--ease-in-out) infinite alternate; }
+.rm-eq[data-active="true"] i:nth-child(2) { animation-delay: -300ms; }
+.rm-eq[data-active="true"] i:nth-child(3) { animation-delay: -600ms; animation-duration: 760ms; }
+.rm-eq[data-active="true"] i:nth-child(4) { animation-delay: -150ms; animation-duration: 1100ms; }
+@keyframes rm-eq { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+.rm-eq-lg { height: 3rem; gap: 5px; }
+.rm-eq-lg i { width: 6px; border-radius: 3px; }
+
+.rm-caption-wrap { display: flex; flex: 1; flex-direction: column; justify-content: center; padding-block: 1.5rem 0.5rem; }
+.rm-caption-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(243, 244, 238, 0.7); }
+.rm-caption {
+  margin-top: 0.5rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  font-size: clamp(1.25rem, 1.05rem + 1vw, 1.75rem);
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+  font-weight: 500;
+  text-wrap: pretty;
+  animation: ds-rise var(--ds-dur-slow) var(--ease-out) backwards;
+}
+.rm-idle { display: flex; flex: 1; align-items: center; justify-content: center; color: rgba(243, 244, 238, 0.8); padding-block: 1.5rem; }
+
+/* Speech playback problem: sits inside the interviewer panel, next to what it affects. */
+.rm-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 1rem;
+  border-radius: var(--ds-r-lg);
+  background: var(--ds-warning-tint);
+  color: var(--ds-warning);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  animation: ds-fade var(--ds-dur-base) ease backwards;
+}
+.rm-notice[data-tone="info"] { background: var(--ds-tint); color: var(--ds-green-deep); }
+.rm-notice[data-tone="error"] { background: var(--ds-error-tint); color: var(--ds-error); }
+.rm-notice > span { min-width: 0; flex: 1 1 14rem; }
+.rm-notice .ds-btn { min-height: 2.75rem; background: rgba(90, 69, 18, 0.12); color: var(--ds-warning); }
+@media (hover: hover) and (pointer: fine) { .rm-notice .ds-btn:hover { background: rgba(90, 69, 18, 0.2); } }
+
+/* ---- Candidate card. ---- */
+.rm-you {
+  position: relative;
+  display: flex;
+  min-height: 12rem;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--ds-r-panel);
+  background: var(--ds-surface);
+  box-shadow: var(--ds-shadow-card);
+  transition: box-shadow var(--ds-dur-slow) ease;
+}
+.rm-you[data-speaking="true"] { box-shadow: var(--ds-shadow-card), 0 0 0 2px var(--ds-green); }
+.rm-you-body { position: relative; display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; overflow: hidden; padding: 1.5rem 1.25rem; text-align: center; min-height: 9rem; }
+.rm-you-body video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.rm-you-icon { color: var(--ds-text-2); }
+.rm-you .rm-chip[data-tone="turn"] { background: var(--ds-tint); color: var(--ds-green-deep); }
+.rm-you .rm-chip[data-tone="live"] { background: var(--ds-green); color: var(--ds-cream); }
+.rm-dot { width: 0.5rem; height: 0.5rem; border-radius: var(--ds-r-pill); background: currentColor; flex: none; }
+.rm-cam-label { position: absolute; left: 0.75rem; top: 0.75rem; border-radius: var(--ds-r-pill); background: rgba(251, 251, 247, 0.9); padding: 0.25rem 0.75rem; font-size: 0.8125rem; font-weight: 600; }
+.rm-you-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; padding: 0.75rem 1rem 1rem; }
+.rm-you-foot p { max-width: 36ch; }
+.rm-you-caption { background: var(--ds-field); padding: 0.875rem 1.25rem; animation: ds-fade var(--ds-dur-base) ease backwards; }
+.rm-you-caption p.rm-caption-label { color: var(--ds-text-2); }
+.rm-you-caption [data-testid="candidate-caption"] { margin-top: 0.25rem; height: 4.5rem; overflow-y: auto; font-size: 1rem; line-height: 1.5; }
+
+/* ---- Control dock: answer state + record + skip/finish, grouped and predictable. ---- */
+.rm-dock {
+  position: sticky;
+  /* On mobile the shell's bottom nav is fixed below the content; keep the dock above it. */
+  bottom: calc(var(--shl-bottom-nav-h, 0px) + 0.75rem);
+  z-index: 10;
+  margin-top: 1rem;
+  border-radius: var(--ds-r-panel);
+  background: rgba(251, 251, 247, 0.86);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: var(--ds-shadow-pop), 0 0 0 1px var(--ds-line);
+  padding: 1rem;
+}
+@media (min-width: 640px) { .rm-dock { padding: 1.25rem; } }
+@media (prefers-reduced-transparency: reduce) { .rm-dock { background: var(--ds-surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+.rm-dock-grid { display: grid; gap: 0.875rem; }
+@media (min-width: 1024px) { .rm-dock-grid { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1.5rem; } }
+.rm-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.rm-actions .ds-btn { flex: 1 1 auto; }
+@media (min-width: 640px) { .rm-actions .ds-btn { flex: 0 0 auto; } }
+.rm-error { margin-top: 0.5rem; border-radius: var(--ds-r-field); background: var(--ds-error-tint); color: var(--ds-error); padding: 0.625rem 0.875rem; font-size: 0.875rem; line-height: 1.45; animation: ds-fade var(--ds-dur-base) ease backwards; }
+.rm-meta { margin-top: 0.875rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+.rm-leave { color: var(--ds-error); min-height: 2.75rem; }
+.rm-leave.ds-btn-quiet { color: var(--ds-error); }
+@media (hover: hover) and (pointer: fine) { .rm-leave.ds-btn-quiet:hover:not(:disabled) { background: var(--ds-error-tint); } }
+
+/* Buttons inside the room that are not in design-system.css yet. */
+.rm-btn-primary { background: var(--ds-green); color: var(--ds-cream); }
+@media (hover: hover) and (pointer: fine) { .rm-btn-primary:hover:not(:disabled) { background: var(--ds-green-deep); } }
+.rm-btn-sm { min-height: 2.75rem; padding: 0 1rem; font-size: 0.875rem; }
+
+/* ---- Microphone block (rendered by MicrophoneCapture). ---- */
+.rm-mic-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.rm-mic-state { display: flex; min-width: 0; align-items: center; gap: 0.75rem; }
+.rm-mic-icon { display: inline-flex; width: 2.5rem; height: 2.5rem; flex: none; align-items: center; justify-content: center; border-radius: var(--ds-r-pill); background: var(--ds-tint); color: var(--ds-green); transition: background-color var(--ds-dur-slow) ease, color var(--ds-dur-slow) ease; }
+.rm-mic-icon[data-recording="true"] { background: var(--ds-green); color: var(--ds-cream); }
+.rm-mic-time { font-size: 0.9375rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ds-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rm-eq[data-active="true"] i { animation: ds-fade 1.6s ease-in-out infinite alternate; transform: scaleY(0.7); }
+  .rm-caption { animation: ds-fade var(--ds-dur-base) ease backwards; }
+  .rm-progress::-webkit-progress-value { transition: none; }
+}
+
+.rm-mic { border-radius: var(--ds-r-xl); background: var(--ds-field); padding: 0.875rem 1rem; }
+
+@media (min-width: 1024px) {
+  .rm-dock { bottom: 0.75rem; }
+}
