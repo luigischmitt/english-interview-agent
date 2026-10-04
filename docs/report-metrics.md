@@ -1,0 +1,32 @@
+# Métricas do relatório de entrevista (ENG-113)
+
+Auditoria de cada métrica exibida no relatório final. Idioma da UI: PT-BR. Regra de produto: sinais de voz não são nível geral de inglês, e um erro de transcrição nunca deve virar erro do candidato.
+
+Não existem hoje, no relatório, palavras por minuto, contagem de pausas/hesitações nem de muletas ("filler words"). Pausas medidas por VAD servem só para decidir o fim da resposta e não são exibidas. O prompt do LLM proíbe inferir pausas, fluência ou pronúncia a partir do texto.
+
+## Tabela
+
+| Nome na UI | O que mede | Fonte | Fórmula / código | Unidade / faixa | Limitações e quando NÃO confiar | Status |
+|---|---|---|---|---|---|---|
+| Precisão (voz) | Proximidade dos sons de cada palavra com a pronúncia esperada. Não mede vocabulário, gramática nem sotaque. | Azure Pronunciation Assessment (`AccuracyScore`), modo scripted | Por bloco: `azure-pronunciation-assessment.ts: assess` (descarta valores fora de 0-100). Por resposta: média por dimensão ponderada pela duração do bloco, `azure-aligned-blocks.ts: aggregateAzureBlockScores` (antes inline em `transcription-websocket.ts`). Por sessão: média ponderada pela duração avaliada de cada resposta, `report-metrics.mjs: summarizeAzureAssessments`. | 0-100, uma casa decimal | O texto de referência é a transcrição Whisper: se o Whisper errou a palavra, a nota cai sem erro do candidato. Blocos de até 25 s alinhados por timestamps; blocos que falham ficam fora (cobertura parcial não é sinalizada por resposta). Áudio ruidoso ou curto distorce. Menos de 5 s avaliados: número oculto. Menos de 20 s: marcado como estimativa. | CORRIGIDO + LIMITAÇÃO (a referência é a transcrição Whisper: um erro de reconhecimento pode reduzir a nota sem erro do candidato; ponderação com duração ausente, rótulo e confiabilidade corrigidos) |
+| Fluência (voz) | Ritmo da fala dentro dos blocos avaliados (pausas e quebras entre palavras). | Azure (`FluencyScore`) | Mesma agregação de Precisão. | 0-100 | Cada bloco é avaliado isoladamente: pausas entre blocos e o tempo até começar a responder não entram. Mesmas dependências da transcrição. Não é velocidade de fala. | CORRIGIDO + LIMITAÇÃO |
+| Prosódia (voz) | Entonação e acento de palavras, naturalidade. | Azure (`ProsodyScore`, `EnableProsodyAssessment`) | Mesma agregação. | 0-100 | A mais instável em áudio curto/ruidoso. Calibrada para inglês nativo (en-US); falantes de português tendem a pontuar mais baixo sem prejudicar a inteligibilidade. Nunca equivale a sotaque. | CORRIGIDO + LIMITAÇÃO |
+| "N respostas avaliadas" | Quantas respostas contribuíram para a média daquela dimensão. | Cálculo local | `summarizeAzureAssessments.sampleCount` (conta respostas com nota válida na dimensão). | inteiro | A UI dizia "segmentos avaliados", mas o valor conta respostas, não blocos de áudio. | CORRIGIDO (rótulo) |
+| Cobertura | Respostas com sinais disponíveis / total, e quantas ainda processam. | Cálculo local | `interview-room.tsx: coverage` (contagem por `status`). | x de y | Respostas `unavailable` (falha do Azure, timestamps inválidos) não entram nas médias. A sessão não espera avaliações pendentes além de 10 s (`assessment-report-wait.mjs`). | OK |
+| Clareza geral (CLEAR / MOSTLY_CLEAR / UNCLEAR) | Julgamento qualitativo de quão compreensíveis foram as respostas, só pelo texto. | LLM (OpenRouter), consolidação | `openrouter-interview-report-service.ts` (campo `clarity`, enum validado). | 3 categorias | Depende da transcrição: fragmentos incompletos ou ruins do Whisper podiam pesar. Agora o prompt proíbe baixar a clareza por fragmentos que podem ser erro de reconhecimento. Não é nível CEFR nem avalia pronúncia. | CORRIGIDO (guardrail de prompt) |
+| Padrões de inglês (GRAMMAR, WORD_CHOICE, FALSE_COGNATE, STRUCTURE) | Trechos literais com erros recorrentes de falantes de português. | LLM + validação local | Trecho precisa existir literalmente na resposta (`resolveCanonicalEvidence`); `likelyTranscriptionArtifact` rejeita ruído, sílabas repetidas, reticências e siglas isoladas; limite de 8; deduplicação. | lista | Heurística de artefatos é conservadora, não prova que a transcrição estava certa. Resposta curta tem pouca evidência (`evidenceStatus`). | OK (prompt reforçado) |
+| Conteúdo técnico (pontos fortes, lacunas, resumo) | O que a resposta disse, separado do inglês. | LLM + validação local | `validateTechnicalItems` (evidência literal obrigatória). | texto | Pode se apoiar em trecho mal transcrito; o prompt agora proíbe citar fragmento possivelmente errado como lacuna ou prioridade. Lacuna é falta de explicação, não prova de falta de conhecimento. | CORRIGIDO (guardrail de prompt) |
+| Prioridades | Até 3 próximos passos baseados em achados validados. | LLM + validação local | `validatePriorities`; na consolidação exige achado validado para a mesma resposta. | lista | Herda as limitações dos achados. | OK |
+| Contagens de revisão automática ("N itens recebidos, M omitidos") | Transparência sobre itens descartados pela validação. | Cálculo local | `evidenceReview` em `openrouter-interview-report-service.ts`, textos em `report-evidence-copy.mjs`. | inteiros | Relatórios antigos não têm esse dado (mensagem dedicada). | OK |
+
+## Bugs corrigidos
+
+1. `summarizeAzureAssessments`: uma resposta sem duração válida recebia peso 1 ms contra milhares de ms das outras, sendo contada em `sampleCount` mas praticamente ignorada na média. Agora, se qualquer resposta contribuinte não tem duração, todas pesam igual, e `totalDurationMs` fica `null`.
+2. A UI chamava `sampleCount` de "segmentos avaliados", mas ele conta respostas. Texto corrigido.
+3. Médias sustentadas por pouco áudio apareciam com a mesma precisão das demais. Novo `azureMetricReliability`: menos de 5 s oculta o número, menos de 20 s (ou duração desconhecida, como em relatórios salvos antes) marca como estimativa.
+4. A agregação bloco para resposta estava inline em `transcription-websocket.ts`, sem teste. Extraída sem mudar a fórmula para `aggregateAzureBlockScores` e coberta por testes.
+5. Prompt de consolidação (que define `clarity`) não tinha a regra de que transcrições Whisper podem ter erros; agora tem, mais a frase "um erro de transcrição nunca deve virar erro do candidato" também nos prompts de relatório completo.
+
+## Não verificável sem áudio real
+
+Calibração dos limites de 5 s e 20 s; comportamento real do Azure com português brasileiro; frequência com que blocos falham parcialmente; qualidade do `clarity` do LLM com transcrições ruins (só validado pelo texto do prompt).

@@ -14,5 +14,6 @@ export function expectPrecisionRules(prompt: string) {
   expect(prompt).toContain("FALSE_COGNATE: only when a word is used with the meaning of a similar Portuguese word");
   expect(prompt).toContain("never use it for grammar");
   expect(prompt).toContain("STRUCTURE: sentence or answer organization");
+  expect(prompt).toContain("a transcription error must never become the candidate's error");
   expect(prompt).not.toContain("up to eight total, even if it occurs only once");
 }

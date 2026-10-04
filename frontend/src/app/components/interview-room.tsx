@@ -13,10 +13,12 @@ import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voic
 import { resolveTranscriptionEngine } from "@/lib/interview/transcription-engine.mjs";
 import { emptyEnglishEvidenceMessage, emptyReportEvidenceMessage, partialEvidenceReviewNote } from "@/lib/interview/report-evidence-copy.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
-import { appendInterviewReportPair, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
+import { appendInterviewReportPair, type AzureAssessmentSample, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 import { analyzeTurnWithRetry, resolveReportAtEnd, settleTurnAnalyses, turnAnalysisWaitMs } from "@/lib/interview/report-incremental.mjs";
+import { AzureVoiceReport } from "./azure-voice-report";
+import { clarityHelp, englishPatternsHelp, technicalContentHelp } from "@/lib/interview/report-metric-copy.mjs";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
@@ -39,31 +41,6 @@ function assessmentSamples(entries: Record<string, AssessmentEntry>): AzureAsses
   return Object.values(entries).map(({ state }) => state.status === "available"
     ? { status: "available", durationMs: state.durationMs, scores: state.scores }
     : state.status === "pending" ? { status: "pending" } : { status: "unavailable" });
-}
-
-function Metric({ label, value, sampleCount }: { label: string; value: number | null; sampleCount: number }) {
-  return (
-    <div className="border-t border-base-300 pt-3">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-xl font-semibold tabular-nums">{value === null ? "—" : `${value.toFixed(1)} / 100`}</dd>
-      <p className="mt-1 text-xs text-muted-foreground">{sampleCount} {sampleCount === 1 ? "segmento avaliado" : "segmentos avaliados"}</p>
-    </div>
-  );
-}
-
-function AzureVoiceReport({ summary, coverage }: { summary: AzureMetricSummary; coverage: { available: number; pending: number; total: number } }) {
-  return (
-    <section className="border-t border-base-300 pt-6" aria-labelledby="voice-report-title">
-      <h2 id="voice-report-title" className="text-lg font-semibold">Sinais experimentais de voz</h2>
-      <p className="mt-2 max-w-[70ch] text-sm leading-6 text-muted-foreground">Médias Azure ponderadas pelo tempo avaliado. São sinais experimentais e podem refletir erros de transcrição; não representam nível geral de inglês nem avaliação de sotaque.</p>
-      <dl className="mt-4 grid gap-4 sm:grid-cols-3">
-        <Metric label="Precisão" value={summary.accuracy.mean} sampleCount={summary.accuracy.sampleCount} />
-        <Metric label="Fluência" value={summary.fluency.mean} sampleCount={summary.fluency.sampleCount} />
-        <Metric label="Prosódia" value={summary.prosody.mean} sampleCount={summary.prosody.sampleCount} />
-      </dl>
-      <p className="mt-4 text-xs text-muted-foreground">Cobertura: {coverage.available} de {coverage.total} respostas com sinais disponíveis.{coverage.pending ? ` ${coverage.pending} avaliação(ões) ainda em processamento; a conclusão da sessão não espera por elas.` : ""}</p>
-    </section>
-  );
 }
 
 function CapturedAnswers({ turns }: { turns: ReturnType<typeof pairInterviewTurns> }) {
@@ -617,6 +594,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
               <div className="space-y-8">
                 <section aria-labelledby="technical-report-title">
                   <h2 id="technical-report-title" className="text-lg font-semibold">Conteúdo técnico</h2>
+                  <p className="mt-1 max-w-[70ch] text-xs leading-5 text-muted-foreground">{technicalContentHelp}</p>
                   <p className="mt-2 max-w-[70ch] text-sm leading-6">{reportState.result.technicalContent.summary}</p>
                   <div className="mt-4 grid gap-6 sm:grid-cols-2">
                     <div><h3 className="text-sm font-medium">O que correspondeu à pergunta</h3>{reportState.result.technicalContent.strengths.length ? <ul className="mt-2 space-y-3 text-sm leading-6">{reportState.result.technicalContent.strengths.map((item, index) => <li key={`${item.sequenceNumber}-${index}`} className="border-t border-base-300 pt-2"><p className="text-muted-foreground">Resposta {answerOrdinalForSequence(capturedReportTurns, item.sequenceNumber) ?? "—"}: “{item.evidence}”</p><p className="mt-1">{item.explanation}</p></li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">{emptyReportEvidenceMessage(reportState.result.evidenceReview?.technicalStrengths)}</p>}<EvidenceCountNote counts={reportState.result.evidenceReview?.technicalStrengths} /></div>
@@ -626,7 +604,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
                 <section className="border-t border-base-300 pt-6" aria-labelledby="english-report-title">
                   <h2 id="english-report-title" className="text-lg font-semibold">Comunicação em inglês</h2>
+                  <p className="mt-1 max-w-[70ch] text-xs leading-5 text-muted-foreground">{englishPatternsHelp}</p>
                   <p className="mt-2 text-sm leading-6">Clareza geral: <span className="font-medium">{clarityLabel(reportState.result.englishCommunication.clarity)}</span></p>
+                  <p className="mt-1 max-w-[70ch] text-xs leading-5 text-muted-foreground">{clarityHelp}</p>
                   {reportState.result.englishCommunication.patterns.length ? <ul className="mt-4 space-y-4">{reportState.result.englishCommunication.patterns.map((pattern, index) => <li key={`${pattern.sequenceNumber}-${pattern.type}-${index}`} className="border-t border-base-300 pt-3 text-sm"><p className="font-medium">{patternLabel(pattern.type)} · resposta {answerOrdinalForSequence(capturedReportTurns, pattern.sequenceNumber) ?? "—"}</p><p className="mt-1 text-muted-foreground">Trecho: “{pattern.evidence}”</p><p className="mt-1">Sugestão: {pattern.suggestion}</p><p className="mt-2"><span className="font-medium">Exemplo:</span> <span lang="en">“{pattern.rephrasedExample}”</span></p></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">{emptyEnglishEvidenceMessage(reportState.result.englishCommunication.evidenceStatus, reportState.result.evidenceReview?.englishPatterns)}</p>}
                   <EvidenceCountNote counts={reportState.result.evidenceReview?.englishPatterns} />
                 </section>
