@@ -10,6 +10,7 @@ import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import { answerOrdinalForSequence, createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
 import { emptyCaption, reduceCaption, shouldShowCandidateCaption, type CandidateCaption } from "@/lib/interview/caption-state.mjs";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
+import { resolveTranscriptionEngine } from "@/lib/interview/transcription-engine.mjs";
 import { emptyEnglishEvidenceMessage, emptyReportEvidenceMessage, partialEvidenceReviewNote } from "@/lib/interview/report-evidence-copy.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import { appendInterviewReportPair, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
@@ -88,6 +89,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   useSpeechWarmup();
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
   const { autoCaptureVoice, showCandidateCaptions } = resolveCandidateVoicePreferences(config);
+  const transcriptionEngine = resolveTranscriptionEngine(config);
   const [candidateCaption, setCandidateCaption] = useState<CandidateCaption>(emptyCaption);
   const updateCandidateCaption = useCallback((next: CandidateCaption) => setCandidateCaption((current) => reduceCaption(current, next)), []);
   const questions = getFixedInterviewQuestions(config);
@@ -725,6 +727,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             }}
             onCaptureStateChange={setVoiceCaptureState}
             captionsEnabled={showCandidateCaptions}
+            transcriptionEngine={transcriptionEngine}
             onCaptionChange={(caption) => {
               if (caption.partial) abortPreparation("new_speech");
               updateCandidateCaption(caption);

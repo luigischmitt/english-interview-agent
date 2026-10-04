@@ -62,6 +62,8 @@ type MicrophoneCaptureProps = {
   /** Live, display-only caption of the answer in progress (Cartesia Ink-2 only). Cleared on new capture, finalize, cancel and unmount. */
   onCaptionChange?: (caption: CandidateCaption) => void;
   captionsEnabled?: boolean;
+  /** Per-interview transcription engine sent in every `start` message (also the pre-connected stream). */
+  transcriptionEngine?: "whisper" | "ink-2";
   /** Cartesia only: the backend expects the answer to end soon with this text (display-independent; never submitted). */
   onProvisionalAnswer?: (transcript: string, revision: number) => void;
   /** The speaker resumed after a pause, so any provisional answer is stale. */
@@ -124,7 +126,7 @@ function streamFailureMessage(reason: AnswerStreamFailure): string {
   return "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.";
 }
 
-export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onCaptionChange, captionsEnabled = false, onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onCaptionChange, captionsEnabled = false, transcriptionEngine = "whisper", onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -147,6 +149,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const onCaptureStateChangeRef = useRef(onCaptureStateChange);
   const onCaptionChangeRef = useRef(onCaptionChange);
   const captionsEnabledRef = useRef(captionsEnabled);
+  const transcriptionEngineRef = useRef(transcriptionEngine);
   const onProvisionalAnswerRef = useRef(onProvisionalAnswer);
   const onSpeechResumedRef = useRef(onSpeechResumed);
   const onHandoffTimingEventRef = useRef(onHandoffTimingEvent);
@@ -166,12 +169,13 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     onCaptureStateChangeRef.current = onCaptureStateChange;
     onCaptionChangeRef.current = onCaptionChange;
     captionsEnabledRef.current = captionsEnabled;
+    transcriptionEngineRef.current = transcriptionEngine;
     onProvisionalAnswerRef.current = onProvisionalAnswer;
     onSpeechResumedRef.current = onSpeechResumed;
     onHandoffTimingEventRef.current = onHandoffTimingEvent;
     assessmentContextRef.current = assessmentContext;
     micEngineRef.current = micEngine;
-  }, [assessmentContext, captionsEnabled, micEngine, onCaptionChange, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+  }, [assessmentContext, captionsEnabled, transcriptionEngine, micEngine, onCaptionChange, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
 
   const clearCaption = useCallback(() => onCaptionChangeRef.current?.(emptyCaption), []);
 
@@ -377,7 +381,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
         } catch {
           throw new StreamSetupError("UNAUTHENTICATED");
         }
-        return buildStreamStartMessage({ accessToken, speechThreshold, sampleRate: pcmSampleRate, captions: captionsEnabledRef.current, question: toStreamQuestion(attempt.context.questionLabel) });
+        return buildStreamStartMessage({ accessToken, speechThreshold, sampleRate: pcmSampleRate, captions: captionsEnabledRef.current, transcriptionEngine: transcriptionEngineRef.current, question: toStreamQuestion(attempt.context.questionLabel) });
       },
       encodeFrame: (samples) => toPcm16(samples).buffer as ArrayBuffer,
       onMessage: (message, socket) => handlersRef.current?.message(attempt, message as StreamMessage, socket),
