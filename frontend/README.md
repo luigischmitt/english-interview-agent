@@ -32,15 +32,9 @@ prática da resposta em inglês da análise futura de áudio.
   avatar ou câmera simulada.
 - Respostas somente por voz usando `AudioWorklet`. O microfone pode iniciar
   automaticamente após a pergunta ou manualmente; não há resposta digitada. A
-  fala aparece como legenda ("VOCÊ", trecho já fechado em tinta normal e trecho
-  em andamento em tom esmaecido): palavra a palavra com o motor Cartesia Ink-2 e
-  por trecho, a cada pausa, com o Whisper (padrão) abaixo do bloco "Você", opção "Legenda da sua fala" ligada por
-  padrão na configuração. A legenda é só de exibição: não é salva, enviada nem
-  usada no relatório. A configuração tem "Transcrição da sua resposta" por
-  entrevista: "Whisper (padrão)" (legenda por trecho, a cada pausa) ou
-  "Cartesia Ink-2" (palavra a palavra; usa créditos da Cartesia e cai para o
-  Whisper se acabarem). A escolha segue em `transcriptionEngine` na mensagem
-  `start` do WebSocket; configs sem o campo usam Whisper. O navegador envia PCM mono s16le a
+  fala é transcrita pelo Whisper incremental do backend (único motor; não há
+  escolha de motor na configuração e a fala do candidato não aparece como
+  legenda). O navegador envia PCM mono s16le a
   16 kHz em frames de aproximadamente 100 ms pelo WebSocket v2. Após detectar
   3,5 segundos de silêncio, o backend mantém uma janela automática e reversível
   de 1,5 segundo, continuando a receber áudio; se a fala recomeçar nesse
@@ -81,11 +75,8 @@ prática da resposta em inglês da análise futura de áudio.
 
 O estado da câmera e do microfone é temporário e os tracks são encerrados ao
 desligar, sair da sala ou desmontar o componente. As legendas visíveis durante
-a entrevista são as do entrevistador e, quando o backend usa Cartesia Ink-2 e a
-opção está ligada, a legenda ao vivo da sua fala (mensagem `caption` do
-WebSocket, `aria-live="off"`, sem animação de digitação, limpa ao finalizar,
-cancelar ou trocar de pergunta). O texto parcial nunca é persistido; o texto
-final reconhecido (`complete`) permanece a única fonte para envio, raciocínio da
+a entrevista são as do entrevistador. O texto final reconhecido (`complete`) é a
+única fonte para envio, raciocínio da
 entrevista e persistência autorizada. Uma transcrição final não vazia é submetida
 automaticamente quando o processamento termina.
 
@@ -203,7 +194,7 @@ um buffer limitado e são enviados em ordem; se a pré-conexão falhar, uma nova
 conexão é aberta uma vez. Pular, encerrar ou sair antes do fim da fala envia
 `cancel` e fecha o socket pré-aberto. Uma conexão ociosa não consome áudio
 cobrado; se o provedor fechar uma conexão ociosa, o backend usa Whisper (como em
-qualquer falha do Cartesia).
+qualquer falha do provedor).
 
 **Privacidade:** o navegador mantém o indicador de microfone ligado, mas nenhum
 quadro de áudio é guardado, enviado ou persistido fora de uma janela de resposta.
@@ -262,50 +253,28 @@ bloco falhar, a reprodução termina como indisponível e o texto continua visí
 cancelar aborta o pedido pendente. A abertura é pré-sintetizada ao confirmar a
 configuração (antes de a sala montar).
 
-### Voz do navegador como alternativa
+### Falha da voz de rede
 
-O TTS do OpenRouter às vezes trava. Se o áudio do primeiro bloco não chegar em
-4 s (`FIRST_AUDIO_FALLBACK_MS`) ou o pedido falhar, `playInterviewerSegments`
-descarta o áudio de rede e fala a fala inteira com a Web Speech API
-(`src/lib/interview/browser-voice.mjs`, en-US, voz natural escolhida por
-heurística e em cache, uma frase por `SpeechSynthesisUtterance`). Se um bloco
-posterior falhar ou passar de 4 s, só as frases restantes usam a voz do
-navegador. As legendas (`onSegment`), `onPlaybackStarted` e
-`onFinalChunkStarted` (pré-conexão do microfone, ENG-106) continuam disparando e o
-resultado traz `voice: "browser"`; a sala mostra um aviso uma vez por entrevista.
-Sem `speechSynthesis`, a reprodução fica indisponível em 4 s com mensagem em
-português e o texto da pergunta continua na tela. O teste de áudio da
-configuração usa o mesmo fallback e tem o botão "Ouvir voz do navegador".
-
-O cooldown só vale para falha real. Quando o prazo de 4 s estoura, o pedido em andamento
-não é abortado: termina em segundo plano (limite de 20 s, `BACKGROUND_REQUEST_TIMEOUT_MS`)
-só para revelar o resultado. Se chegar com sucesso, a rede é marcada saudável (sem
-cooldown) e o áudio atrasado é descartado, nunca tocado; se falhar ou estourar o limite,
-o cooldown é armado. Erros HTTP antes do prazo armam o cooldown na hora.
-
-Depois de uma falha real da rede, a voz do navegador fica "pegajosa" por 2 min (`NETWORK_VOICE_COOLDOWN_MS`): as falas seguintes (e o teste de áudio) usam o navegador na hora, sem esperar 4 s nem chamar `/speech`, e o pré-aquecimento fica desligado; depois do cooldown a rede é tentada de novo, e um sucesso limpa o estado (401/403 não contam como falha de voz).
+Se o áudio de rede de um bloco falhar, a reprodução fica indisponível (`status: "unavailable"`) com mensagem em português e o texto da pergunta continua na tela; não há voz alternativa do navegador (removida no ENG-109). A sala oferece "Tentar novamente" e, no iOS, "Ouvir" para liberar o áudio com um toque.
 
 ### Prontidão da voz do entrevistador
 
-O dashboard, a configuração e a sala chamam `POST /api/v1/speech/warmup` (sem bloquear nada). Na configuração, com áudio ligado, uma linha `role="status"` consulta `GET /api/v1/speech/warmup-status` a cada 3 s (para quando a voz fica pronta, ao desmontar ou após 2 min) e mostra "Preparando…", "Voz do entrevistador pronta" ou o aviso de voz do navegador; nunca impede de iniciar. Lógica pura em `src/lib/interview/voice-readiness.mjs`.
+O dashboard, a configuração e a sala chamam `POST /api/v1/speech/warmup` (sem bloquear nada). Na configuração, com áudio ligado, uma linha `role="status"` consulta `GET /api/v1/speech/warmup-status` a cada 3 s (para quando a voz fica pronta, ao desmontar ou após 2 min) e mostra "Preparando…", "Voz do entrevistador pronta" ou o aviso de voz indisponível. Lógica pura em `src/lib/interview/voice-readiness.mjs`.
 
-### Preparação antecipada da próxima pergunta (Cartesia)
+### Preparação antecipada da próxima pergunta
 
-Com `TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS` ativo no backend, depois de um
+Com a preparação ativa no backend (`TRANSCRIPTION_PREPARE_AFTER_MS`), depois de um
 fim de turno sem nova fala o backend envia `answer-provisional` com a
 transcrição provisória da resposta. O navegador chama `decideNextTurn` com as
 mesmas entradas que usaria ao enviar a resposta e, em seguida, pré-sintetiza o
 áudio da próxima fala (`prewarmInterviewerSpeech`; o blob pronto fica reutilizável
 por 30 s). Só a preparação mais recente é mantida: ela é abortada quando chega
-outra transcrição provisória, quando a fala é retomada (`speech-resumed` ou
-legenda parcial não vazia), ao pular, sair ou desmontar a sala. No `complete`, a
+outra transcrição provisória, quando a fala é retomada (`speech-resumed`), ao pular, sair ou desmontar a sala. No `complete`, a
 decisão preparada só é usada se a transcrição final for igual (após `trim`) à
 provisória e as entradas da decisão forem idênticas; caso contrário é descartada
 e o caminho normal roda. O console registra, sem conteúdo, o evento
 `interview_next_turn_preparation` com `prepared_used` ou `prepared_discarded` e
-as contagens acumuladas (`used`, `discarded`). Sem legendas, uma nova fala do
-Ink-2 sem pausa local só é percebida no `complete` (a preparação é descartada
-por transcrição diferente).
+as contagens acumuladas (`used`, `discarded`).
 
 ## Persistência e falhas
 
@@ -417,4 +386,4 @@ logs, commits ou ambientes de teste compartilhados.
 - AudioWorklet e WebSocket para captura PCM e transcrição final em lote
 - Backend Express + Kokoro para fala do entrevistador
 
-No modo Cartesia, a mensagem `start` do stream inclui `question` (a pergunta atual da entrevistadora, no máximo 400 caracteres) para o backend decidir semanticamente se a resposta já terminou.
+A mensagem `start` do stream inclui `question` (a pergunta atual da entrevistadora, no máximo 400 caracteres) para o backend decidir semanticamente se a resposta já terminou.

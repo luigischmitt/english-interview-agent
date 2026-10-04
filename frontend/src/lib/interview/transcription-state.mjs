@@ -25,7 +25,7 @@ export function transcriptionFailureMessage(code) {
 
 export function finalVoiceTranscription(message) {
   const transcript = typeof message?.transcript === "string" ? message.transcript.trim() : "";
-  const provider = ["azure", "whisper-large-v3", "whisper-large-v3-turbo", "cartesia-ink-2"].includes(message?.provider)
+  const provider = ["azure", "whisper-large-v3", "whisper-large-v3-turbo"].includes(message?.provider)
     ? message.provider
     : "whisper-large-v3-turbo";
   if (message?.status === "complete" && transcript) {

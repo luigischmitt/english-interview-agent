@@ -7,8 +7,7 @@ export const roomHandoffKey = "eia:interview-room-handoff";
 export const roomHandoffMaxAgeMs = 10 * 60 * 1000;
 
 const stringFields = ["role", "seniority", "focus", "duration"];
-const booleanFields = ["playInterviewerAudio", "showQuestionCaptions", "candidateCameraEnabled", "autoCaptureVoice", "showCandidateCaptions"];
-const engines = new Set(["whisper", "ink-2"]);
+const booleanFields = ["playInterviewerAudio", "showQuestionCaptions", "candidateCameraEnabled", "autoCaptureVoice"];
 
 export function serializeRoomHandoff(config, now = Date.now()) {
   return JSON.stringify({ version: 1, createdAt: now, config });
@@ -27,7 +26,6 @@ export function parseRoomHandoff(raw, now = Date.now()) {
   if (config.role.trim() === "") return null;
   for (const field of booleanFields) if (typeof config[field] !== "boolean") return null;
   if (config.questionCount !== null && typeof config.questionCount !== "string") return null;
-  if (!engines.has(config.transcriptionEngine)) return null;
   return {
     role: config.role,
     seniority: config.seniority,
@@ -38,8 +36,6 @@ export function parseRoomHandoff(raw, now = Date.now()) {
     showQuestionCaptions: config.showQuestionCaptions,
     candidateCameraEnabled: config.candidateCameraEnabled,
     autoCaptureVoice: config.autoCaptureVoice,
-    showCandidateCaptions: config.showCandidateCaptions,
-    transcriptionEngine: config.transcriptionEngine,
   };
 }
 

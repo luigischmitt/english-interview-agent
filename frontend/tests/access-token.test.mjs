@@ -63,19 +63,10 @@ test("speech synthesis sends the token through the supplied fetcher and surfaces
 });
 
 test("the transcription start message carries the access token", () => {
-  const message = buildStreamStartMessage({ accessToken: "ws-token", speechThreshold: 0.025, sampleRate: 16_000, captions: true, question: "Why?" });
-  assert.deepEqual(message, { type: "start", version: 2, sampleRate: 16_000, channels: 1, encoding: "s16le", speechThreshold: 0.025, accessToken: "ws-token", captions: true, question: "Why?" });
-  assert.equal("captions" in buildStreamStartMessage({ accessToken: "t", speechThreshold: 0.1, sampleRate: 16_000, captions: false }), false);
+  const message = buildStreamStartMessage({ accessToken: "ws-token", speechThreshold: 0.025, sampleRate: 16_000, question: "Why?" });
+  assert.deepEqual(message, { type: "start", version: 2, sampleRate: 16_000, channels: 1, encoding: "s16le", speechThreshold: 0.025, accessToken: "ws-token", question: "Why?" });
 });
 
 test("an UNAUTHENTICATED stream error maps to the session-expired message", () => {
   assert.match(transcriptionFailureMessage("UNAUTHENTICATED"), /sessão expirou/u);
-});
-
-test("buildStreamStartMessage carries a valid transcription engine and drops anything else", () => {
-  const base = { accessToken: "t", speechThreshold: 0.025, sampleRate: 16_000 };
-  assert.equal(buildStreamStartMessage({ ...base, transcriptionEngine: "whisper" }).transcriptionEngine, "whisper");
-  assert.equal(buildStreamStartMessage({ ...base, transcriptionEngine: "ink-2" }).transcriptionEngine, "ink-2");
-  assert.equal("transcriptionEngine" in buildStreamStartMessage(base), false);
-  assert.equal("transcriptionEngine" in buildStreamStartMessage({ ...base, transcriptionEngine: "other" }), false);
 });

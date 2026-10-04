@@ -199,14 +199,4 @@ export async function markInterviewFeedbackUnavailable(interviewId: string, azur
   }
 }
 
-export async function loadInterviewFeedback(interviewId: string): Promise<PersistenceResult<InterviewFeedback | null>> {
-  try {
-    const { data, error } = await getSupabaseBrowserClient().from("interview_feedback").select(columns).eq("interview_id", interviewId).maybeSingle();
-    if (error) return { ok: false, message: failureMessage, code: error.code };
-    return { ok: true, value: data ? toFeedback(data as FeedbackRow) : null };
-  } catch {
-    return { ok: false, message: failureMessage };
-  }
-}
-
 export { summarizeAzureAssessments };

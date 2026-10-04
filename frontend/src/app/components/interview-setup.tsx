@@ -12,7 +12,6 @@ import { RoleCombobox } from "@/components/ui/role-combobox";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import "./interview-setup.css";
 import { defaultInterviewConfig } from "../interview-config";
-import { defaultTranscriptionEngine } from "@/lib/interview/transcription-engine.mjs";
 import { interviewDurationOptions } from "@/lib/interview/session-policy.mjs";
 
 const seniorityLabels: Record<InterviewConfig["seniority"], string> = {
@@ -67,7 +66,7 @@ export function InterviewSetup({
     }
   };
 
-  const updateOption = (field: "playInterviewerAudio" | "showQuestionCaptions" | "candidateCameraEnabled" | "autoCaptureVoice" | "showCandidateCaptions", value: boolean) => {
+  const updateOption = (field: "playInterviewerAudio" | "showQuestionCaptions" | "candidateCameraEnabled" | "autoCaptureVoice", value: boolean) => {
     setConfig((current) => ({ ...current, [field]: value }));
   };
 
@@ -121,12 +120,10 @@ export function InterviewSetup({
     }
     if (voiceBlocked) return;
     cancelAudioTest();
-    // Whisper is the only engine and the candidate's own live captions are always off.
-    onStart({ ...config, role: config.role.trim(), transcriptionEngine: defaultTranscriptionEngine, showCandidateCaptions: false });
+    onStart({ ...config, role: config.role.trim() });
   };
 
-  const [cargoSummary, ...allSummary] = getInterviewSetupSummary(config, seniorityLabels, focusLabels);
-  const restSummary = allSummary.filter(({ label }) => label !== "Legenda da sua fala");
+  const [cargoSummary, ...restSummary] = getInterviewSetupSummary(config, seniorityLabels, focusLabels);
 
   const retryVoice = () => {
     warmUpInterviewerSpeech(`${backendBaseUrl}/api/v1/speech`, authorizedFetch);

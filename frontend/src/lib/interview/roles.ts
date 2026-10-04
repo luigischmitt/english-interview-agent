@@ -18,5 +18,3 @@ export const interviewRoles = [
   "Security Engineer",
   "Engineering Manager",
 ] as const;
-
-export type InterviewRole = (typeof interviewRoles)[number];

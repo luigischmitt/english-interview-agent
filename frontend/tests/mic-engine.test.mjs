@@ -184,7 +184,7 @@ test("releasing during acquisition stops the late stream and a released engine d
   assert.equal(engine.state, "ready");
 });
 
-// --- Browser voice (speechSynthesis) interrupts the page's audio session on macOS ---
+// --- An interrupted audio session (another app, the OS) suspends the context ---
 
 test("an interrupted context is resumed before the answer and frames flow", async () => {
   const { deps, engine, worklet } = await readyEngine();

@@ -286,7 +286,7 @@ export function createMicEngine(deps) {
   }
 
   /**
-   * Resolves true when the context is running. A "suspended"/"interrupted" context (macOS speechSynthesis takes the
+   * Resolves true when the context is running. A "suspended"/"interrupted" context (another app or the OS takes the
    * audio session) is resumed; if it does not reach "running" within ~600 ms the graph is rebuilt. No wait when running.
    */
   async function ensureRunning() {

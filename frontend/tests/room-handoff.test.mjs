@@ -6,7 +6,6 @@ import { levelToIntensity, smoothIntensity } from "../src/lib/interview/mic-leve
 const config = {
   role: "Backend Engineer", seniority: "mid-level", focus: "technical-depth", duration: "15", questionCount: null,
   playInterviewerAudio: true, showQuestionCaptions: false, candidateCameraEnabled: false, autoCaptureVoice: true,
-  showCandidateCaptions: false, transcriptionEngine: "whisper",
 };
 const memoryStorage = () => {
   const map = new Map();
@@ -25,11 +24,11 @@ test("rejects missing, malformed, stale, future and incomplete payloads", () => 
   assert.equal(parseRoomHandoff(serializeRoomHandoff(config, 10 * 60_000), 0), null);
   assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, role: "  " }, 1), 2), null);
   assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, autoCaptureVoice: "yes" }, 1), 2), null);
-  assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, transcriptionEngine: "x" }, 1), 2), null);
   assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, questionCount: 3 }, 1), 2), null);
 });
 
-test("drops unknown fields", () => {
+test("drops unknown fields, including retired ones from older configs", () => {
+  assert.deepEqual(parseRoomHandoff(serializeRoomHandoff({ ...config, showCandidateCaptions: false, transcriptionEngine: "ink-2" }, 1), 2), config);
   assert.deepEqual(parseRoomHandoff(serializeRoomHandoff({ ...config, extra: "x" }, 1), 2), config);
 });
 
