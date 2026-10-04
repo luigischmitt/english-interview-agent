@@ -15,7 +15,8 @@ export type TranscriptionConfig = {
   vadFinalizationGraceMs: number;
   vadAmbientActivityHoldMs: number;
   hedgeAfterMs: number;
-  transcriptionProvider: "whisper" | "cartesia";
+  transcriptionProvider: "whisper" | "cartesia" | "whisper-incremental";
+  transcriptionFallbackMode: "whisper-incremental" | "whisper";
   cartesiaApiKey: string | null;
   cartesiaModel: "ink-2" | "ink-whisper";
   cartesiaPauseMs: number;
@@ -60,10 +61,17 @@ function parseIntegerInRange(value: string | undefined, fallback: number, minimu
   return parsed;
 }
 
-function parseTranscriptionProvider(value: string | undefined): "whisper" | "cartesia" {
+function parseTranscriptionProvider(value: string | undefined): "whisper" | "cartesia" | "whisper-incremental" {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return "whisper";
-  if (normalized !== "whisper" && normalized !== "cartesia") throw new Error("TRANSCRIPTION_PROVIDER must be whisper or cartesia.");
+  if (normalized !== "whisper" && normalized !== "cartesia" && normalized !== "whisper-incremental") throw new Error("TRANSCRIPTION_PROVIDER must be whisper or cartesia (or whisper-incremental).");
+  return normalized;
+}
+
+function parseFallbackMode(value: string | undefined): "whisper-incremental" | "whisper" {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return "whisper-incremental";
+  if (normalized !== "whisper-incremental" && normalized !== "whisper") throw new Error("TRANSCRIPTION_FALLBACK_MODE must be whisper-incremental or whisper.");
   return normalized;
 }
 
@@ -93,6 +101,7 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     vadAmbientActivityHoldMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_AMBIENT_HOLD_MS, 8_000, 30_000),
     hedgeAfterMs: parseNonNegativeInteger(environment.TRANSCRIPTION_HEDGE_AFTER_MS, 4_000, 30_000),
     transcriptionProvider: parseTranscriptionProvider(environment.TRANSCRIPTION_PROVIDER),
+    transcriptionFallbackMode: parseFallbackMode(environment.TRANSCRIPTION_FALLBACK_MODE),
     cartesiaApiKey: environment.CARTESIA_API_KEY?.trim() || null,
     cartesiaModel: parseCartesiaModel(environment.CARTESIA_STT_MODEL),
     cartesiaPauseMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_PAUSE_MS, 800, 300, 3_000, "Cartesia pause"),

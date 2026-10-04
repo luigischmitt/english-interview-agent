@@ -32,14 +32,56 @@ export type CartesiaInkOptions = {
   openTimeoutMs?: number;
   onTurnStart?: () => void;
   /** Called after each `turn.end` (Ink-Whisper: after each local `endTurn`) with that turn's final transcript. */
-  onTurnEnd?: (transcript: string) => void;
+  onTurnEnd?: (transcript: string, info?: TurnEndInfo) => void;
   /** Called whenever the live caption text (finished turns or the current partial turn) may have changed. Display-only. */
   onCaptionChange?: () => void;
   /** Called once, with a fixed content-free reason, when the connection fails or the server reports an error. */
   onFailure?: (reason: CartesiaFailureReason) => void;
 };
 
-export type CartesiaFailureReason = "open_timeout" | "connection_error" | "connection_closed" | "provider_error";
+/** `silenceStartedAt` (epoch ms): when the local VAD pause was detected; lets the caller time grace and prepare from the pause, not from text arrival. */
+export type TurnEndInfo = { silenceStartedAt?: number };
+
+export type CartesiaFailureReason = "open_timeout" | "connection_error" | "connection_closed" | "provider_error" | "out_of_credits" | "segment_failed";
+
+/**
+ * The part of a streaming session the stream WebSocket uses. `CartesiaInkSession` (Ink-2 turns or Ink-Whisper with local turn
+ * ends) and `IncrementalWhisperSession` (OpenRouter Whisper on VAD-cut segments) both implement it, so one orchestration
+ * path (answer grace, answer-provisional, semantic end, captions) serves every mode.
+ */
+export interface StreamingTurnSession {
+  readonly failed: boolean;
+  readonly failureReason: CartesiaFailureReason | null;
+  readonly turnCount: number;
+  readonly turnActive: boolean;
+  setTurnObserver(observer: ((kind: "start" | "end", transcript: string) => void) | null): void;
+  open(): void;
+  sendAudio(frame: Buffer): void;
+  /** Level (RMS) of the 100 ms frame that was just received; only the incremental Whisper session uses it. */
+  recordLevel?(level: number): void;
+  markSpeech(): void;
+  endTurn(timeoutMs: number): Promise<void>;
+  transcript(): string;
+  committedText(): string;
+  partialText(): string;
+  flush(timeoutMs: number): Promise<string>;
+  close(): void;
+  /** Content-free counters for the `complete` diagnostic. */
+  diagnostics?(): Record<string, number>;
+}
+
+/**
+ * True when a Cartesia rejection means the account is out of credits or over its plan: HTTP 402, a quota/credit/billing
+ * word in the status text, error code or body, or a 429 whose text speaks about limits. A plain rate limit is not.
+ * Only the match result leaves this function; the text itself is never stored or logged.
+ */
+export function isCreditsExhausted(input: { status?: number; text?: string }): boolean {
+  if (input.status === 402) return true;
+  const text = (input.text ?? "").toLowerCase();
+  if (/credit|quota|insufficient|payment|billing/.test(text)) return true;
+  if (/rate.?limit|too many requests|concurren/.test(text)) return false;
+  return /(usage|plan|account|monthly)\s+limit|limit\s+(reached|exceeded)/.test(text) || (input.status === 429 && /limit/.test(text));
+}
 
 /** Keeps only plausible short terms; returns null when the whole list is unusable (not an array or too many terms). */
 export function sanitizeKeyterms(value: unknown): string[] | null {
@@ -71,7 +113,7 @@ export function buildCartesiaInkUrl(options: Pick<CartesiaInkOptions, "endpoint"
   return `${options.endpoint ?? cartesiaInkEndpoint}?${parts.join("&")}`;
 }
 
-export class CartesiaInkSession {
+export class CartesiaInkSession implements StreamingTurnSession {
   private socket: WebSocket | null = null;
   private connected = false;
   private closed = false;
@@ -126,6 +168,7 @@ export class CartesiaInkSession {
    */
   async endTurn(timeoutMs: number): Promise<void> {
     if (!this.inkWhisper || !this.alive || !this.connected || this.endTurnWaiter || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+    const silenceStartedAt = Date.now();
     this.speechDuringEndTurn = false;
     await new Promise<void>((resolve) => {
       const timer = setTimeout(done, timeoutMs);
@@ -145,7 +188,7 @@ export class CartesiaInkSession {
     this.lastTurnEndAt = Date.now();
     this.turnObserver?.("end", turnText);
     this.options.onCaptionChange?.();
-    this.options.onTurnEnd?.(turnText);
+    this.options.onTurnEnd?.(turnText, { silenceStartedAt });
   }
 
   /** Accumulated answer transcript: every finished turn in order, plus the latest unfinished turn if any. */
@@ -183,6 +226,28 @@ export class CartesiaInkSession {
       this.handleMessage(data.toString());
     });
     socket.on("error", () => this.fail("connection_error"));
+    // A rejected handshake (for example 402 when credits ran out): read a small bounded body only to classify it.
+    socket.on("unexpected-response", (request, response) => {
+      const status = response.statusCode ?? 0;
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(bodyTimer);
+        const text = Buffer.concat(chunks).toString("utf8");
+        chunks.length = 0;
+        request.destroy();
+        this.fail(isCreditsExhausted({ status, text }) ? "out_of_credits" : "connection_error");
+      };
+      const bodyTimer = setTimeout(finish, 1_000);
+      response.on("data", (chunk: Buffer) => {
+        if (size < 4_096) { chunks.push(chunk); size += chunk.length; }
+      });
+      response.on("end", finish);
+      response.on("error", finish);
+    });
     socket.on("close", () => {
       this.closed = true;
       if (!this.connected && !this.failed) this.fail("connection_closed");
@@ -304,7 +369,7 @@ export class CartesiaInkSession {
   }
 
   private handleMessage(raw: string): void {
-    let message: { type?: unknown; transcript?: unknown; text?: unknown; is_final?: unknown };
+    let message: { type?: unknown; transcript?: unknown; text?: unknown; is_final?: unknown; error_code?: unknown; code?: unknown; message?: unknown; error?: unknown };
     try {
       message = JSON.parse(raw) as typeof message;
     } catch {
@@ -354,9 +419,11 @@ export class CartesiaInkSession {
         this.options.onTurnEnd?.(finalText);
         break;
       }
-      case "error":
-        this.fail("provider_error");
+      case "error": {
+        const errorText = [message.error_code, message.code, message.message, message.error].filter((value): value is string => typeof value === "string").join(" ");
+        this.fail(isCreditsExhausted({ text: errorText }) ? "out_of_credits" : "provider_error");
         break;
+      }
       default:
         break;
     }
