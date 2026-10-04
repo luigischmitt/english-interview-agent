@@ -8,21 +8,26 @@ import { useState } from "react";
 import { sanitizeNextPath } from "@/lib/auth/redirect";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-const pillButton =
-  "rounded-full bg-[#1f6b45] px-[26px] py-3.5 text-base font-medium text-[#f3f4ee] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#0e2a1f] hover:shadow-[0_14px_28px_-14px_rgba(14,42,31,0.55)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:bg-[#1f6b45] disabled:hover:shadow-none";
+import "./auth.css";
 
-const authLink =
-  "relative pb-0.5 font-medium text-[#1f6b45] after:absolute after:inset-x-0 after:-bottom-0.5 after:h-px after:origin-left after:scale-x-0 after:bg-[#1f6b45] after:transition-transform after:duration-300 hover:text-[#0e2a1f] hover:after:scale-x-100";
+const alertIcon = {
+  warning: "M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z",
+  error: "M12 8v4m0 4h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z",
+  success: "m9 12 2 2 4-4m11 2a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z",
+} as const;
 
-const fieldInput =
-  "w-full rounded-lg border border-[#d9e3dc] bg-white px-4 py-2.5 text-[15px] text-[#0e2a1f] placeholder:text-[#8a9c92] outline-none transition-colors duration-200 focus:border-[#1f6b45]";
+function Alert({ tone, role, children }: { tone: keyof typeof alertIcon; role: "alert" | "status"; children: React.ReactNode }) {
+  return (
+    <div role={role} data-tone={tone} className="au-alert">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d={alertIcon[tone]} />
+      </svg>
+      <span>{children}</span>
+    </div>
+  );
+}
 
-const alertBase = "rounded-lg border px-4 py-3 text-sm leading-5";
-const alertVariants = {
-  warning: `${alertBase} border-[#e3c67a] bg-[#fbf3dc] text-[#6b5417]`,
-  error: `${alertBase} border-[#d99a85] bg-[#fbe9e3] text-[#8a3a21]`,
-  success: `${alertBase} border-[#9fc4ac] bg-[#e9f3ed] text-[#1f6b45]`,
-};
+const stagger = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
 type AuthMode = "login" | "signup" | "forgot-password" | "update-password";
 
@@ -142,66 +147,53 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
   };
 
   return (
-    <main
-      className={`grid min-h-dvh place-items-center bg-[#f3f4ee] px-4 py-10 text-[#0e2a1f] antialiased sm:px-6`}
-    >
-      <section className="w-full max-w-md">
-        <Link href="/" className="group mb-8 inline-flex items-center gap-2.5 text-[#0e2a1f]">
-          <Image
-            src="/landing/tucano.png"
-            alt=""
-            width={30}
-            height={34}
-            className="h-[30px] w-auto transition-transform duration-300 ease-out group-hover:-rotate-6 group-hover:scale-110"
-            priority
-          />
-          <span className="text-base font-semibold tracking-[-0.01em]">English Interview Agent</span>
+    <main className="au-page antialiased">
+      <section className="au-shell">
+        <Link href="/" className="au-brand ds-fade-in">
+          <Image src="/landing/tucano.png" alt="" width={30} height={34} priority />
+          <span>English Interview Agent</span>
         </Link>
-        <div className="border border-[#d9e3dc] bg-white px-6 py-7 sm:px-8 sm:py-9">
-          <div className="flex flex-col gap-6">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1f6b45]">{details.eyebrow}</p>
-              <h1 className="mt-3 font-[family-name:var(--font-display)] text-3xl leading-tight tracking-[-0.02em]">
-                {details.title}
-              </h1>
-              <p className="mt-3 text-sm leading-6 text-[#3d5a4c]">{details.description}</p>
+        <div className="au-card ds-card ds-enter">
+          <div className="au-stack">
+            <div className="ds-enter" style={stagger(1)}>
+              <p className="au-eyebrow">{details.eyebrow}</p>
+              <h1 className="au-title">{details.title}</h1>
+              <p className="au-desc">{details.description}</p>
             </div>
 
             {expired && (
-              <div role="alert" className={alertVariants.warning}>
+              <Alert tone="warning" role="alert">
                 Sua sessão terminou. Entre novamente para manter seu espaço de prática seguro.
-              </div>
+              </Alert>
             )}
             {reason === "config" && (
-              <div role="alert" className={alertVariants.warning}>
+              <Alert tone="warning" role="alert">
                 A autenticação ainda não está configurada neste ambiente.
-              </div>
+              </Alert>
             )}
             {reason === "auth_callback" && (
-              <div role="alert" className={alertVariants.error}>
+              <Alert tone="error" role="alert">
                 Este link de autenticação é inválido ou expirou. Tente novamente.
-              </div>
+              </Alert>
             )}
             {error && (
-              <div role="alert" className={alertVariants.error}>
+              <Alert tone="error" role="alert">
                 {error}
-              </div>
+              </Alert>
             )}
             {message && (
-              <div role="status" className={alertVariants.success}>
+              <Alert tone="success" role="status">
                 {message}
-              </div>
+              </Alert>
             )}
 
-            <form className="space-y-4" onSubmit={handleSubmit}>
+            <form className="au-form ds-enter" style={stagger(2)} onSubmit={handleSubmit}>
               {mode === "signup" && (
-                <div className="space-y-1.5">
-                  <label htmlFor="name" className="text-xs font-semibold uppercase tracking-[0.08em] text-[#2b4a3c]">
-                    Nome
-                  </label>
+                <div className="au-field">
+                  <label htmlFor="name" className="ds-label">Nome</label>
                   <input
                     id="name"
-                    className={fieldInput}
+                    className="ds-field"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     name="name"
@@ -213,13 +205,11 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
               )}
 
               {mode !== "update-password" && (
-                <div className="space-y-1.5">
-                  <label htmlFor="email" className="text-xs font-semibold uppercase tracking-[0.08em] text-[#2b4a3c]">
-                    E-mail
-                  </label>
+                <div className="au-field">
+                  <label htmlFor="email" className="ds-label">E-mail</label>
                   <input
                     id="email"
-                    className={fieldInput}
+                    className="ds-field"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     name="email"
@@ -232,13 +222,13 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
               )}
 
               {(mode === "login" || mode === "signup" || mode === "update-password") && (
-                <div className="space-y-1.5">
-                  <label htmlFor="password" className="text-xs font-semibold uppercase tracking-[0.08em] text-[#2b4a3c]">
+                <div className="au-field">
+                  <label htmlFor="password" className="ds-label">
                     {mode === "update-password" ? "Nova senha" : "Senha"}
                   </label>
                   <input
                     id="password"
-                    className={fieldInput}
+                    className="ds-field"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     name="password"
@@ -251,16 +241,11 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
               )}
 
               {mode === "signup" && (
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="password-confirmation"
-                    className="text-xs font-semibold uppercase tracking-[0.08em] text-[#2b4a3c]"
-                  >
-                    Confirmar senha
-                  </label>
+                <div className="au-field">
+                  <label htmlFor="password-confirmation" className="ds-label">Confirmar senha</label>
                   <input
                     id="password-confirmation"
-                    className={fieldInput}
+                    className="ds-field"
                     value={passwordConfirmation}
                     onChange={(event) => setPasswordConfirmation(event.target.value)}
                     name="password-confirmation"
@@ -272,28 +257,26 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                 </div>
               )}
 
-              <button className={`${pillButton} w-full`} type="submit" disabled={isPending}>
-                {isPending && (
-                  <span className="inline-block size-4 animate-spin rounded-full border-2 border-[#f3f4ee] border-t-transparent" />
-                )}
+              <button className="ds-btn ds-btn-cta-green au-submit" type="submit" disabled={isPending}>
+                {isPending && <span className="au-spinner" aria-hidden="true" />}
                 {details.submit}
               </button>
             </form>
 
-            <div className="text-center text-sm text-[#3d5a4c]">
+            <div className="au-links ds-enter" style={stagger(3)}>
               {mode === "login" && (
                 <>
-                  <Link href="/forgot-password" className={authLink}>Esqueceu sua senha?</Link>
-                  <p className="mt-4">Ainda não tem conta? <Link href="/signup" className={authLink}>Criar uma conta</Link></p>
+                  <Link href="/forgot-password" className="au-link">Esqueceu sua senha?</Link>
+                  <p>Ainda não tem conta? <Link href="/signup" className="au-link">Criar uma conta</Link></p>
                 </>
               )}
-              {mode === "signup" && <p>Já tem uma conta? <Link href="/login" className={authLink}>Entrar</Link></p>}
-              {mode === "forgot-password" && <p>Lembrou? <Link href="/login" className={authLink}>Voltar para entrar</Link></p>}
-              {mode === "update-password" && <p>Precisa recomeçar? <Link href="/login" className={authLink}>Voltar para entrar</Link></p>}
+              {mode === "signup" && <p>Já tem uma conta? <Link href="/login" className="au-link">Entrar</Link></p>}
+              {mode === "forgot-password" && <p>Lembrou? <Link href="/login" className="au-link">Voltar para entrar</Link></p>}
+              {mode === "update-password" && <p>Precisa recomeçar? <Link href="/login" className="au-link">Voltar para entrar</Link></p>}
             </div>
           </div>
         </div>
-        <p className="mt-6 text-center text-xs leading-5 text-[#5c7a6a]">Suas sessões ficam privadas na sua conta.</p>
+        <p className="au-foot ds-fade-in">Suas sessões ficam privadas na sua conta.</p>
       </section>
     </main>
   );
