@@ -423,6 +423,31 @@
     @apply font-sans;
     scrollbar-color: var(--muted-foreground) var(--background);
     scroll-behavior: smooth;
+    /* Touch baseline: no grey flash on tap, no font inflation in landscape. */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  /* Landscape on a notched phone (viewport-fit=cover): keep flow content out of the side cutouts. Fixed bars pad themselves. */
+  body {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  /* No 300ms/double-tap-zoom delay on controls. */
+  a, button, summary, label, select, [role="button"], [role="radio"], [role="switch"], [role="option"], input[type="checkbox"], input[type="radio"] {
+    touch-action: manipulation;
+  }
+  /* Long-press must not select a control's label or pop the callout. Content text (cards, captions, report) stays selectable. */
+  button, [role="button"], [role="radio"], [role="switch"], [role="option"], .ds-seg-item, .ds-option, .ds-toggle {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /* iOS zooms the page when a focused field is under 16px. */
+  @media (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select {
+      font-size: max(16px, 1em);
+    }
   }
 }
 

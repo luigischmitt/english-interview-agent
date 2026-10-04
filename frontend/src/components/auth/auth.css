@@ -32,11 +32,12 @@
 .au-alert[data-tone="success"] { background: var(--ds-tint); color: var(--ds-green-deep); }
 
 .au-links { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; text-align: center; font-size: 0.875rem; color: var(--ds-text-2); }
-.au-link { border-radius: 0.25rem; font-weight: 600; color: var(--ds-green); text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 4px; text-decoration-thickness: 1.5px; transition: color var(--ds-dur-fast) ease, text-decoration-color var(--ds-dur-fast) ease; }
+.au-link { padding-block: 0.75rem; margin-block: -0.75rem; /* hit area of a finger without moving the text */ border-radius: 0.25rem; font-weight: 600; color: var(--ds-green); text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 4px; text-decoration-thickness: 1.5px; transition: color var(--ds-dur-fast) ease, text-decoration-color var(--ds-dur-fast) ease; }
 @media (hover: hover) and (pointer: fine) {
   .au-link:hover { color: var(--ds-green-deep); text-decoration-color: currentColor; }
   .au-brand:hover img { transform: rotate(-6deg) scale(1.08); }
 }
+.au-links > .au-link { display: inline-flex; min-height: 2.75rem; align-items: center; padding-block: 0; margin-block: -0.5rem; }
 .au-foot { text-align: center; font-size: 0.8125rem; letter-spacing: 0.005em; color: var(--ds-text-2); }
 
 @media (prefers-reduced-motion: reduce) {
