@@ -11,6 +11,11 @@ export type MicEngineDeps = {
   stopTracks: (stream: MediaStream | null | undefined) => void;
   setTimeout: (callback: () => void, delay: number) => unknown;
   clearTimeout: (id: unknown) => void;
+  /** Declares the audio session before the microphone opens / after it is released (iOS Audio Session API). */
+  prepareSession?: () => void;
+  restoreSession?: () => void;
+  /** Content-free mic_open / mic_close / audio_session diagnostics. */
+  onDiagnostic?: (event: { kind: string; [field: string]: unknown }) => void;
   /** Content-free recovery diagnostics (reason only). */
   onRecovered?: (reason: string) => void;
 };
@@ -40,5 +45,5 @@ export type MicEngine = {
 export const calibrationFrameCount: number;
 export const defaultSpeechThreshold: number;
 export function rootMeanSquare(samples: Float32Array): number;
-export function createBrowserMicDeps(): MicEngineDeps;
+export function createBrowserMicDeps(options?: { onDiagnostic?: MicEngineDeps["onDiagnostic"] }): MicEngineDeps;
 export function createMicEngine(deps: MicEngineDeps): MicEngine;

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchVoiceStatus, startVoiceReadinessPolling, type VoiceReadinessState } from "@/lib/interview/voice-readiness.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
-import { installAudioUnlockOnFirstGesture, unlockSharedAudio } from "@/lib/interview/audio-unlock.mjs";
+import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
+import { installAudioUnlockOnFirstGesture, setAudioUnlockObserver, unlockSharedAudio } from "@/lib/interview/audio-unlock.mjs";
 import { playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech, warmUpInterviewerSpeech, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
 
 export type SpeechTimingEvent = "synthesis-started" | "synthesis-completed" | "playback-started";
@@ -20,6 +21,8 @@ export function useSpeechWarmup() {
   useEffect(() => {
     warmUpInterviewerSpeech(speechEndpoint, authorizedFetch);
     installAudioUnlockOnFirstGesture();
+    setAudioUnlockObserver((info) => reportAudioDiagnostic({ kind: "unlock", ...info }));
+    return () => setAudioUnlockObserver(null);
   }, []);
 }
 
@@ -74,6 +77,7 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
     onSynthesisCompleted: () => onTimingEvent?.("synthesis-completed"),
     onPlaybackStarted: () => onTimingEvent?.("playback-started"),
     onFinalChunkStarted: () => onFinalChunkStartedRef.current?.(),
+    onDiagnostic: reportAudioDiagnostic,
   }), [onTimingEvent]);
 
   useEffect(() => {

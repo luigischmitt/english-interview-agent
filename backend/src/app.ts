@@ -38,9 +38,11 @@ type AppDependencies = {
   reportService?: InterviewReportService | null;
   /** Omit for the environment default; pass null to disable authentication. */
   accessTokenVerifier?: AccessTokenVerifier | null;
+  /** Receives one JSON line per accepted client audio diagnostic (defaults to console.info). */
+  clientEventLogger?: (line: string) => void;
 };
 
-export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, accessTokenVerifier }: AppDependencies = {}) {
+export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, accessTokenVerifier, clientEventLogger }: AppDependencies = {}) {
   const resolvedSpeechConfig = speechConfig ?? loadSpeechConfig();
   const resolvedSpeechProvider = speechProvider ?? createSpeechProvider(resolvedSpeechConfig);
   const resolvedTranscriptionService = transcriptionService
@@ -64,7 +66,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
 
   const verifier = accessTokenVerifier === undefined ? defaultAccessTokenVerifier : accessTokenVerifier;
   app.use("/api/v1", requireAccessToken(verifier, (request) => request.method === "GET" && request.path === "/speech/health"));
-  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService));
+  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, clientEventLogger));
   app.use(notFoundHandler);
   app.use(errorHandler);
 

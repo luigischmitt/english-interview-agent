@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { reportMicDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { createBrowserMicDeps, createMicEngine, type MicEngine, type MicEngineState } from "@/lib/interview/mic-engine.mjs";
 
 /**
@@ -8,7 +9,7 @@ import { createBrowserMicDeps, createMicEngine, type MicEngine, type MicEngineSt
  * A denied or failing device leaves the engine in "failed"; MicrophoneCapture then opens a microphone per answer.
  */
 export function useMicEngine(active: boolean): { engine: MicEngine; state: MicEngineState } {
-  const [engine] = useState(() => createMicEngine(createBrowserMicDeps()));
+  const [engine] = useState(() => createMicEngine(createBrowserMicDeps({ onDiagnostic: reportMicDiagnostic })));
   const [state, setState] = useState<MicEngineState>("idle");
 
   useEffect(() => engine.on("state", setState), [engine]);

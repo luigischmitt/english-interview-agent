@@ -4,6 +4,8 @@
 // them on the first gesture (the document survives client-side navigation to /interview) and reuse them by
 // swapping `src`.
 
+import { createWebAudioTrack, peekPlaybackContext, shouldUseWebAudio, unlockPlaybackContext } from "./web-audio-playback.mjs";
+
 // ~0.1 s of silent 8-bit mono WAV.
 export const SILENT_AUDIO_URI = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 // One element plays while the next one buffers.
@@ -76,10 +78,26 @@ export function resetSharedAudioPool() {
 
 export const acquireSharedAudio = (url) => pool().acquire(url);
 export const releaseSharedAudio = (audio) => sharedPool?.release(audio);
+let unlockObserver = null;
+/** Optional content-free observer, called after each unlock attempt with `{ pooled, audioContextState }`. */
+export const setAudioUnlockObserver = (observer) => { unlockObserver = observer; };
+
 export const unlockSharedAudio = (force = false) => {
-  if (typeof Audio === "undefined") return false;
-  return pool().unlock(force);
+  // iOS plays the interviewer through Web Audio: its context must be resumed inside this same gesture.
+  const audioContextState = shouldUseWebAudio() ? unlockPlaybackContext() : undefined;
+  const pooled = typeof Audio === "undefined" ? false : pool().unlock(force);
+  try { unlockObserver?.({ pooled, ...(audioContextState ? { audioContextState } : {}) }); } catch { /* Diagnostics only. */ }
+  return pooled;
 };
+
+/** The interviewer's playback surface: a Web Audio track on iOS, otherwise a pooled (unlocked) HTMLAudioElement. */
+export const acquireInterviewerAudio = (url) => (shouldUseWebAudio() ? createWebAudioTrack(url) : acquireSharedAudio(url));
+export const releaseInterviewerAudio = (audio) => {
+  if (typeof audio?.dispose === "function") audio.dispose();
+  else releaseSharedAudio(audio);
+};
+/** True when the interviewer plays through Web Audio on this device. */
+export const isWebAudioPlayback = () => shouldUseWebAudio();
 
 const gestureEvents = ["pointerdown", "touchend", "click", "keydown"];
 let removeGestureListeners = null;
@@ -94,7 +112,8 @@ export function installAudioUnlockOnFirstGesture(target = typeof document === "u
   const onGesture = () => {
     unlockSharedAudio();
     // Keep listening until WebKit actually accepted the unlock (a rejected silent play re-arms `unlock`).
-    if (sharedPool?.isUnlocked) remove();
+    const contextReady = !shouldUseWebAudio() || peekPlaybackContext()?.state === "running";
+    if (sharedPool?.isUnlocked && contextReady) remove();
   };
   for (const type of gestureEvents) target.addEventListener(type, onGesture, true);
   removeGestureListeners = remove;

@@ -28,6 +28,8 @@ export type SpeechPlaybackOptions = {
   setTimeout?: (callback: () => void, delay: number) => number;
   clearTimeout?: (id: number) => void;
   onSegment?: (segment: string) => void;
+  /** Content-free per-chunk audio diagnostics (play call/result, playing, ended, error, timeout); must never throw. */
+  onDiagnostic?: (event: { kind: string; [field: string]: unknown }) => void;
   onSynthesisStarted?: () => void;
   onSynthesisCompleted?: () => void;
   onPlaybackStarted?: () => void;
