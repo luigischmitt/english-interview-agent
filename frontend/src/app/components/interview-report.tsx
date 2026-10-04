@@ -201,7 +201,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
 
       <div className="rp-foot">
         <p className="rp-hint">{persistenceLabel}</p>
-        <button type="button" className="ds-btn ds-btn-cta-green rp-back" onClick={onLeave}>Voltar à visão geral <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" /></button>
+        <button type="button" className="ds-btn ds-btn-cta-green rp-back" onClick={onLeave}>Voltar ao dashboard <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" /></button>
       </div>
     </section>
   );

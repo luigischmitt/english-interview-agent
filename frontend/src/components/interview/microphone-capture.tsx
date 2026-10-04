@@ -1,7 +1,6 @@
 "use client";
 
-import { LoaderCircle, Mic, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { getAccessToken } from "@/lib/auth/backend-auth";
 import { buildStreamStartMessage, notifySessionExpired } from "@/lib/auth/access-token.mjs";
 import type { VoiceTranscription } from "@/lib/interview/transcription";
@@ -54,8 +53,34 @@ export type VoiceTranscriptionState =
   | { status: "available"; value: VoiceTranscription }
   | { status: "failed"; message: string };
 
+/** What the room's control bar needs to present and drive the capture; the capture itself renders no UI. */
+export type MicControls = {
+  status: RecorderStatus;
+  isRecording: boolean;
+  /** Requesting the microphone, finalizing, or waiting for the transcription. */
+  isPending: boolean;
+  canStart: boolean;
+  /** A completed answer is waiting to be sent or was just sent. */
+  hasAnswer: boolean;
+  duration: number;
+  formattedDuration: string;
+  /** Silent / no-voice microphone warning while recording. */
+  micNotice: Exclude<SilentMicState, "ok"> | null;
+  /** Capture or transcription failure to present (never both). */
+  errorMessage: string | null;
+  start: () => void;
+  /** Ends the answer and sends it for transcription (what a long silence does automatically). */
+  stop: () => void;
+  discard: () => void;
+  retry: () => void;
+};
+
 type MicrophoneCaptureProps = {
   disabled?: boolean;
+  /** Renders the controls/notices; receives the live capture state. */
+  render: (controls: MicControls) => ReactNode;
+  /** Raw RMS level (0..1) of every captured frame; only fires while an answer window is open. */
+  onLevel?: (level: number) => void;
   onTranscriptionChange: (state: VoiceTranscriptionState) => void;
   onAssessmentChange?: (attemptId: string, state: VoiceAssessmentState, context: AssessmentContext) => void;
   onCaptureStateChange?: (state: VoiceCaptureState) => void;
@@ -126,7 +151,7 @@ function streamFailureMessage(reason: AnswerStreamFailure): string {
   return "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.";
 }
 
-export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onCaptionChange, captionsEnabled = false, transcriptionEngine = "whisper", onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onCaptionChange, captionsEnabled = false, transcriptionEngine = "whisper", onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +169,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const startedAtRef = useRef(0);
   const generationRef = useRef(0);
   const finalizationRequestedRef = useRef(false);
+  const onLevelRef = useRef(onLevel);
   const onTranscriptionChangeRef = useRef(onTranscriptionChange);
   const onAssessmentChangeRef = useRef(onAssessmentChange);
   const onCaptureStateChangeRef = useRef(onCaptureStateChange);
@@ -164,6 +190,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   } | null>(null);
 
   useEffect(() => {
+    onLevelRef.current = onLevel;
     onTranscriptionChangeRef.current = onTranscriptionChange;
     onAssessmentChangeRef.current = onAssessmentChange;
     onCaptureStateChangeRef.current = onCaptureStateChange;
@@ -175,7 +202,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
     onHandoffTimingEventRef.current = onHandoffTimingEvent;
     assessmentContextRef.current = assessmentContext;
     micEngineRef.current = micEngine;
-  }, [assessmentContext, captionsEnabled, transcriptionEngine, micEngine, onCaptionChange, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+  }, [assessmentContext, onLevel, captionsEnabled, transcriptionEngine, micEngine, onCaptionChange, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
 
   const clearCaption = useCallback(() => onCaptionChangeRef.current?.(emptyCaption), []);
 
@@ -459,6 +486,7 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
       engine.startCapture((frame) => {
         if (generationRef.current !== generation) return;
         detector.pushLevel(frame.level);
+        onLevelRef.current?.(frame.level);
         stream.pushFrame(frame);
       }, { replayHeld: owned });
 
@@ -532,36 +560,24 @@ export function MicrophoneCapture({ disabled = false, onTranscriptionChange, onA
   const formattedDuration = `${String(Math.floor(duration / 60)).padStart(2, "0")}:${String(duration % 60).padStart(2, "0")}`;
   const canStart = !isRecording && status !== "requesting" && status !== "finalizing" && transcription.status !== "pending";
 
-  return (
-    <section className="rm-mic" aria-label="Resposta por voz">
-      <div className="rm-mic-row">
-        <div className="rm-mic-state">
-          <span className="rm-mic-icon" data-recording={isRecording ? "true" : undefined}><Mic className="size-5" aria-hidden="true" /></span>
-          <div className="min-w-0">
-            <p className="ds-label">Responda em voz alta</p>
-            <p className="ds-small" aria-live="polite">
-              {isRecording ? "Gravando" : status === "requesting" ? "Preparando microfone…" : isPending ? "Processando sua resposta…" : transcription.status === "available" ? "Resposta concluída." : status === "error" ? "Não foi possível concluir. Você pode tentar novamente." : "Inicie a gravação para responder em voz alta."}
-            </p>
-          </div>
-        </div>
-        {isRecording && <time className="rm-mic-time" aria-label={`Tempo de gravação ${formattedDuration}`}>{formattedDuration}</time>}
-        <div className="flex flex-wrap items-center gap-2">
-          {canStart && <button type="button" className="ds-btn rm-btn-sm rm-btn-primary" onClick={() => void startRecording()} disabled={disabled}><Mic className="size-4" aria-hidden="true" />{transcription.status === "available" ? "Gravar novamente" : status === "error" || transcription.status === "failed" ? "Tentar novamente" : "Iniciar gravação"}</button>}
-          {isRecording && <button type="button" className="ds-btn ds-btn-soft rm-btn-sm" onClick={cancelRecording}><X className="size-4" aria-hidden="true" />Descartar gravação</button>}
-          {isPending && <LoaderCircle className="size-5 motion-safe:animate-spin self-center text-[var(--ds-text-2)]" aria-hidden="true" />}
-        </div>
-      </div>
-      {isRecording && micNotice && (
-        <div role="status" className="rm-notice">
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold">{micNotice === "silent" ? "Não estamos recebendo áudio do seu microfone." : "Ainda não ouvimos sua voz."}</p>
-            <p className="mt-1">{micNotice === "silent" ? "Confira se o microfone certo está selecionado e se não está mudo. Fones Bluetooth às vezes levam alguns segundos para ativar o microfone." : "Fale normalmente perto do microfone ou tente de novo."}</p>
-          </div>
-          <button type="button" className="ds-btn" onClick={retryCapture}>Tentar de novo</button>
-        </div>
-      )}
-      {error && transcription.status !== "failed" && <p className="rm-error" role="alert">{error}</p>}
-      {transcription.status === "failed" && <p className="rm-error" role="alert">{transcription.message}</p>}
-    </section>
-  );
+  return <MicControlsSlot render={render} controls={{
+    status,
+    isRecording,
+    isPending,
+    canStart,
+    hasAnswer: transcription.status === "available",
+    duration,
+    formattedDuration,
+    micNotice: isRecording ? micNotice : null,
+    errorMessage: transcription.status === "failed" ? transcription.message : error,
+    start: () => void startRecording(),
+    stop: stopRecording,
+    discard: cancelRecording,
+    retry: retryCapture,
+  }} />;
+}
+
+/** The capture renders no UI of its own: the room presents the controls (separate component so the render prop is not called during the capture's own render). */
+function MicControlsSlot({ render, controls }: { render: (controls: MicControls) => ReactNode; controls: MicControls }) {
+  return <>{render(controls)}</>;
 }
