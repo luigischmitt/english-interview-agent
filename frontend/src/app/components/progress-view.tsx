@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import type { CSSProperties } from "react";
+import { Clock, ListChecks, Play } from "lucide-react";
 import { loadInterviewSession, listInterviewSessions } from "@/lib/interview/persistence";
 import type { InterviewSession } from "@/lib/interview/types";
 import { PageIntro, SectionHeading } from "./shared";
@@ -30,7 +31,7 @@ function formatSessionDate(value: string | null) {
   return new Intl.DateTimeFormat("pt-BR", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-export function ProgressView() {
+export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
   const [sessions, setSessions] = useState<InterviewSession[]>([]);
   const [answerCounts, setAnswerCounts] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -114,61 +115,77 @@ export function ProgressView() {
   );
   const hasKnownDuration = completedSessions.some((session) => sessionDuration(session) !== null);
 
+  const startAction = onStart && (
+    <button type="button" className="ds-btn ds-btn-soft" onClick={onStart}>
+      <Play className="size-4 fill-current" aria-hidden="true" /> Nova prática
+    </button>
+  );
+
   return (
-    <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
+    <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14 lg:pb-16">
       <PageIntro
         title="Histórico de prática"
         description="Veja as entrevistas que você já concluiu."
+        action={completedSessions.length > 0 ? startAction : undefined}
       />
       {isLoading ? (
-        <section className="mt-12 space-y-8" aria-busy="true" aria-label="Carregando progresso">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="skeleton h-28 w-full" />
-            <div className="skeleton h-28 w-full" />
+        <section className="mt-8 space-y-5 lg:mt-10" aria-busy="true" aria-label="Carregando progresso">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="skeleton h-32 w-full !rounded-[var(--ds-r-card)]" />
+            <div className="skeleton h-32 w-full !rounded-[var(--ds-r-card)]" />
           </div>
-          <div className="skeleton h-56 w-full" />
+          <div className="skeleton h-56 w-full !rounded-[var(--ds-r-card)]" />
         </section>
       ) : error ? (
-        <section className="mt-12" role="alert">
-          <div className="alert alert-error items-start rounded-lg">
+        <section className="mt-8 lg:mt-10" role="alert">
+          <div className="shl-error ds-fade-in flex flex-col items-start gap-4 p-5 sm:p-6">
             <div>
-              <h2 className="font-semibold">Não foi possível carregar seu progresso.</h2>
+              <h2 className="ds-h2">Não foi possível carregar seu progresso.</h2>
               <p className="mt-1 text-sm">Verifique sua conexão e tente novamente.</p>
             </div>
-            <Button type="button" variant="outline" onClick={() => void loadProgress()}>
+            <button type="button" className="ds-btn ds-btn-soft" onClick={() => void loadProgress()}>
               Tentar novamente
-            </Button>
+            </button>
           </div>
         </section>
       ) : completedSessions.length === 0 ? (
-        <section className="mt-12" data-aos="fade-up" data-aos-duration="500">
-          <div className="border border-dashed border-border p-6 sm:p-8">
-            <span className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground">Nenhuma sessão concluída ainda</span>
+        <section className="mt-8 lg:mt-10">
+          <div className="shl-dashed ds-enter p-6 sm:p-8">
+            <span className="shl-pill shl-pill-off">Nenhuma sessão concluída ainda</span>
             <div className="mt-4">
-              <h2 className="text-xl font-semibold tracking-[-0.02em]">Ainda não há sessões concluídas.</h2>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+              <h2 className="ds-h2">Ainda não há sessões concluídas.</h2>
+              <p className="ds-body mt-2 max-w-xl">
                 Conclua uma entrevista para ver o tempo de prática e o histórico aqui. Sessões em andamento ou abandonadas não entram na lista.
               </p>
+              {startAction && <div className="mt-5">{startAction}</div>}
             </div>
           </div>
         </section>
       ) : (
         <>
-          <section className="mt-12 grid gap-4 sm:grid-cols-2" data-aos="fade-up" data-aos-duration="500">
-            <div className="border border-border p-5 sm:p-6">
-              <p className="text-sm text-muted-foreground">Sessões concluídas</p>
-              <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] tabular-nums">{completedSessions.length}</p>
+          <section className="mt-8 grid gap-5 sm:grid-cols-2 lg:mt-10" aria-label="Resumo">
+            <div className="ds-card ds-enter flex items-start gap-4 p-5 sm:p-6" style={{ "--i": 0 } as CSSProperties}>
+              <span className="shl-icon-tile" aria-hidden="true"><ListChecks className="size-5" /></span>
+              <div>
+                <p className="ds-small">Sessões concluídas</p>
+                <p className="shl-stat-value mt-2">{completedSessions.length}</p>
+              </div>
             </div>
-            <div className="border border-border p-5 sm:p-6">
-              <p className="text-sm text-muted-foreground">Tempo de prática</p>
-              <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] tabular-nums">{hasKnownDuration ? formatPracticeDuration(practicedMilliseconds) : "Indisponível"}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Com base nos horários disponíveis das sessões concluídas</p>
+            <div className="ds-card ds-enter flex items-start gap-4 p-5 sm:p-6" style={{ "--i": 1 } as CSSProperties}>
+              <span className="shl-icon-tile" aria-hidden="true"><Clock className="size-5" /></span>
+              <div>
+                <p className="ds-small">Tempo de prática</p>
+                <p className="shl-stat-value mt-2">{hasKnownDuration ? formatPracticeDuration(practicedMilliseconds) : "Indisponível"}</p>
+                <p className="ds-hint mt-2 text-text-2">Com base nos horários disponíveis das sessões concluídas</p>
+              </div>
             </div>
           </section>
-          <section className="mt-12" data-aos="fade-up" data-aos-duration="450">
-            <SectionHeading title="Sessões concluídas" description="Suas práticas de entrevista mais recentes primeiro." />
-            <div className="mt-6 overflow-x-auto border border-border">
-              <table className="table">
+          <section className="ds-card ds-enter mt-5 overflow-hidden pt-5 sm:pt-6" style={{ "--i": 2 } as CSSProperties}>
+            <div className="px-5 sm:px-6">
+              <SectionHeading title="Sessões concluídas" description="Suas práticas de entrevista mais recentes primeiro." />
+            </div>
+            <div className="mt-3 overflow-x-auto">
+              <table className="shl-table">
                 <caption className="sr-only">Sessões de entrevista concluídas</caption>
                 <thead>
                   <tr>
@@ -195,5 +212,4 @@ export function ProgressView() {
       )}
     </main>
   );
-
 }

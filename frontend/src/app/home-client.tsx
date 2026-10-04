@@ -1,29 +1,29 @@
 "use client";
 
-import AOS from "aos";
-import gsap from "gsap";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useState, type CSSProperties } from "react";
 import {
   ArrowUpRight,
+  Check,
   Home,
   LineChart,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
+  Shuffle,
   SlidersHorizontal,
   Target,
   Video,
+  Volume2,
 } from "lucide-react";
 
 import { SessionExpiredNotice } from "@/components/auth/session-expired-notice";
 import { SignOutButton } from "@/components/auth/sign-out-button";
-import { Button } from "@/components/ui/button";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { composeContextualOpening } from "@/lib/interview/speech-playback.mjs";
 import type { InterviewConfig } from "@/lib/interview/types";
 
-import "aos/dist/aos.css";
+import "./components/shell.css";
 
 type View = "home" | "interview-setup" | "interview" | "progress" | "settings";
 
@@ -40,19 +40,20 @@ import { InterviewRoom } from "./components/interview-room";
 import { InterviewSetup } from "./components/interview-setup";
 import { prewarmInterviewerUtterance, useSpeechWarmup } from "./hooks/use-speech-playback";
 import { ProgressView } from "./components/progress-view";
-import { PageIntro, SectionHeading } from "./components/shared";
+import { PageIntro } from "./components/shared";
 import { defaultInterviewConfig } from "./interview-config";
 
 function isNavigationItemActive(view: View, item: View) {
   return view === item || (item === "interview-setup" && view === "interview");
 }
 
-const viewLabels: Record<View, string> = {
-  home: "Início",
-  "interview-setup": "Preparar entrevista",
-  interview: "Sala de entrevista",
-  progress: "Seu progresso",
-  settings: "Configurações",
+// Wayfinding: [section, page?]. The section matches a navigation label; the page names the step inside it.
+const viewTrail: Record<View, readonly [string, string?]> = {
+  home: ["Início"],
+  "interview-setup": ["Entrevista", "Preparar entrevista"],
+  interview: ["Entrevista", "Sala de entrevista"],
+  progress: ["Progresso"],
+  settings: ["Configurações"],
 };
 
 const warmUpPrompts = [
@@ -93,6 +94,8 @@ function Brand({ compact = false }: { compact?: boolean }) {
   );
 }
 
+type NavigationItem = (typeof navigationItems)[number];
+
 function Navigation({
   view,
   onNavigate,
@@ -104,37 +107,34 @@ function Navigation({
   sidebarExpanded: boolean;
   onToggleSidebar: () => void;
 }) {
-  const renderNavigationItem = ({ id, label, icon: Icon }: (typeof navigationItems)[number]) => (
+  const renderNavigationItem = ({ id, label, icon: Icon }: NavigationItem) => (
     <li key={id} className="flex">
       <button
         type="button"
         aria-label={label}
         aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
         onClick={() => onNavigate(id)}
-        className={`flex h-11 w-full items-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-          sidebarExpanded ? "gap-3 px-3" : "justify-center px-0"
-        } ${
-          isNavigationItemActive(view, id)
-            ? "border-l-2 border-primary bg-sidebar-accent/70 text-sidebar-foreground"
-            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
-        }`}
+        className={`shl-nav-item ${sidebarExpanded ? "gap-3 px-3.5" : "justify-center px-0"}`}
       >
-        <Icon className="size-4" aria-hidden="true" />
+        <Icon className="size-[1.125rem]" aria-hidden="true" />
         <span className={sidebarExpanded ? "whitespace-nowrap" : "sr-only"}>{label}</span>
       </button>
     </li>
   );
+
+  const primaryIndex = primaryNavigationItems.findIndex((item) => isNavigationItemActive(view, item.id));
+  const mobileIndex = navigationItems.findIndex((item) => isNavigationItemActive(view, item.id));
 
   return (
     <>
       <aside
         id="desktop-sidebar"
         aria-label="Navegação para desktop"
-        className={`sticky top-0 hidden h-dvh max-h-dvh min-h-0 shrink-0 self-start overflow-y-auto border-r bg-sidebar px-4 py-5 transition-[width] duration-200 lg:flex lg:flex-col ${
+        className={`shl-sidebar sticky top-0 hidden h-dvh max-h-dvh min-h-0 shrink-0 self-start overflow-y-auto px-3.5 py-5 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
           sidebarExpanded ? "w-72" : "w-20"
         }`}
       >
-        <div className={`flex items-center pb-8 ${sidebarExpanded ? "justify-between gap-2" : "flex-col gap-3"}`}>
+        <div className={`flex items-center pb-8 ${sidebarExpanded ? "justify-between gap-2 pl-2" : "flex-col gap-3"}`}>
           <Brand compact={!sidebarExpanded} />
           <button
             type="button"
@@ -142,42 +142,45 @@ function Navigation({
             aria-expanded={sidebarExpanded}
             aria-controls="desktop-sidebar"
             onClick={onToggleSidebar}
-            className="grid size-8 shrink-0 place-items-center rounded-lg text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="shl-collapse"
           >
             {sidebarExpanded ? <PanelLeftClose className="size-4" aria-hidden="true" /> : <PanelLeftOpen className="size-4" aria-hidden="true" />}
           </button>
         </div>
         <nav aria-label="Navegação principal">
-          <ul className="space-y-1">{primaryNavigationItems.map(renderNavigationItem)}</ul>
+          <ul className="shl-nav-list" style={{ "--idx": Math.max(primaryIndex, 0) } as CSSProperties}>
+            <li aria-hidden="true" className="shl-thumb" data-hidden={primaryIndex < 0} />
+            {primaryNavigationItems.map(renderNavigationItem)}
+          </ul>
         </nav>
-        <div className="mt-auto border-t border-sidebar-border pt-4">
+        <div className="mt-auto pt-4">
           <nav aria-label="Navegação utilitária">
-            <ul>{renderNavigationItem(settingsNavigationItem)}</ul>
+            <ul className="shl-nav-list">
+              <li aria-hidden="true" className="shl-thumb" data-hidden={view !== "settings"} />
+              {renderNavigationItem(settingsNavigationItem)}
+            </ul>
           </nav>
         </div>
-        <p className={`mt-5 text-xs leading-5 text-muted-foreground ${sidebarExpanded ? "" : "sr-only"}`}>
+        <p className={`mt-5 px-2 text-xs leading-5 text-muted-foreground ${sidebarExpanded ? "" : "sr-only"}`}>
           Pratique inglês para entrevistas.
         </p>
       </aside>
 
       <nav
         aria-label="Navegação móvel"
-        className="fixed inset-x-0 bottom-0 z-20 border-t bg-background px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden"
+        className="shl-mobile-nav fixed inset-x-0 bottom-0 z-20 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden"
       >
-        <ul className="menu menu-horizontal grid w-full grid-cols-4 gap-1 p-0">
+        <ul className="shl-mobile-list" style={{ "--idx": Math.max(mobileIndex, 0) } as CSSProperties}>
+          <li aria-hidden="true" className="shl-thumb" />
           {navigationItems.map(({ id, label, icon: Icon }) => (
             <li key={id} className="min-w-0">
               <button
                 type="button"
                 aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
                 onClick={() => onNavigate(id)}
-                className={`flex min-h-12 w-full flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                  isNavigationItemActive(view, id)
-                    ? "bg-accent text-primary"
-                    : "text-muted-foreground"
-                }`}
+                className="shl-mobile-item"
               >
-                <Icon className="size-4" aria-hidden="true" />
+                <Icon className="size-[1.125rem]" aria-hidden="true" />
                 {label}
               </button>
             </li>
@@ -189,20 +192,29 @@ function Navigation({
 }
 
 function Topbar({ view }: { view: View }) {
+  const [section, page] = viewTrail[view];
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background px-4 sm:px-8">
+    <header className="shl-topbar sticky top-0 z-10 flex h-16 items-center justify-between px-4 sm:px-8">
       <div className="lg:hidden">
         <Brand />
       </div>
-      <p className="hidden text-sm font-medium text-muted-foreground lg:block">
-        {viewLabels[view]}
+      <p className="shl-crumbs hidden lg:flex">
+        <span aria-current={page ? undefined : "page"}>{section}</span>
+        {page && (
+          <>
+            <span aria-hidden="true">/</span>
+            <span aria-current="page">{page}</span>
+          </>
+        )}
       </p>
-      <div className="flex items-center gap-2">
+      <div className="shl-signout flex items-center gap-2">
         <SignOutButton />
       </div>
     </header>
   );
 }
+
+const pageMain = "mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14 lg:pb-16";
 
 function HomeView({
   onStart,
@@ -212,84 +224,97 @@ function HomeView({
   onProgress: () => void;
 }) {
   const [promptIndex, setPromptIndex] = useState(0);
-  const promptRef = useRef<HTMLDivElement>(null);
   const prompt = warmUpPrompts[promptIndex];
 
-  const selectPrompt = (index: number) => {
-    if (index === promptIndex) return;
-    setPromptIndex(index);
-  };
-
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-    gsap.fromTo(
-      promptRef.current,
-      { opacity: 0, y: 12 },
-      { opacity: 1, y: 0, duration: 0.32, ease: "power2.out" },
-    );
-  }, [promptIndex]);
-
   return (
-    <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-10 pb-36 sm:px-8 sm:py-14 sm:pb-28 lg:px-12 lg:py-20">
+    <main id="main-content" className={pageMain}>
       <PageIntro
         title="Vamos praticar?"
         description="Monte uma entrevista para o cargo que você busca e responda em inglês."
       />
 
-      <section className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,1.3fr)_minmax(17rem,0.7fr)] lg:gap-16" data-aos="fade-up" data-aos-duration="220">
-        <div className="border-t border-border pt-6">
-          <h2 className="text-2xl font-semibold tracking-[-0.025em]">Prepare sua prática.</h2>
-          <p className="mt-3 max-w-[52ch] text-base leading-7 text-muted-foreground">Escolha o cargo e o foco. Na entrevista, as perguntas aparecem em texto e também podem ser lidas em voz alta.</p>
-          <Button className="mt-7 min-h-12 gap-2 rounded-full px-5" onClick={onStart}><Play className="size-4 fill-current" /> Começar prática</Button>
-        </div>
-        <aside className="border-y border-border py-6" aria-labelledby="warm-up-title">
-          <div className="flex items-start justify-between gap-4"><div><h2 id="warm-up-title" className="text-lg font-semibold">Aquecimento opcional</h2><p className="mt-1 text-sm text-muted-foreground">Use uma pergunta para começar a pensar em inglês.</p></div><Target className="mt-1 size-5 text-primary" aria-hidden="true" /></div>
-          <div ref={promptRef} aria-live="polite" className="mt-5"><p className="text-sm font-medium leading-6">{prompt.question}</p><p className="mt-3 text-sm leading-6 text-muted-foreground">{prompt.cue}</p></div>
-          <button type="button" onClick={() => selectPrompt((promptIndex + 1) % warmUpPrompts.length)} className="btn btn-ghost mt-5 min-h-11 px-0 hover:bg-transparent hover:text-primary">Outra pergunta <ArrowUpRight className="size-4" aria-hidden="true" /></button>
-          <dl className="mt-6 space-y-3 border-t border-border pt-5 text-sm">
-            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Modo</dt><dd className="text-right font-medium">Inglês, respostas faladas</dd></div>
-            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Foco</dt><dd className="font-medium">Escolha na configuração</dd></div>
-            <div className="flex items-baseline justify-between gap-4"><dt className="text-muted-foreground">Sala</dt><dd className="max-w-[18rem] text-right font-medium">Você responde no seu ritmo e escolhe quando ver as legendas.</dd></div>
+      <div className="mt-8 grid items-start gap-5 lg:mt-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:gap-6">
+        {/* Primary action: the one thing to do here. */}
+        <section className="shl-hero ds-enter p-6 sm:p-8" style={{ "--i": 0 } as CSSProperties} aria-labelledby="start-title">
+          <h2 id="start-title" className="text-balance font-[family-name:var(--font-display)] text-[clamp(1.875rem,1.4rem+1.6vw,2.375rem)] leading-[1.1] tracking-[-0.02em]">
+            Prepare sua prática.
+          </h2>
+          <p className="shl-hero-muted mt-3 max-w-[48ch] text-[0.9375rem] leading-6">
+            Escolha o cargo e o foco. Na entrevista, as perguntas aparecem em texto e também podem ser lidas em voz alta.
+          </p>
+          <button type="button" className="ds-btn ds-btn-cta mt-7" onClick={onStart}>
+            <Play className="size-4 fill-current" aria-hidden="true" /> Começar prática
+          </button>
+          <dl className="shl-hero-facts mt-8 grid gap-2 text-sm sm:grid-cols-3">
+            <div><dt className="shl-hero-muted text-xs">Modo</dt><dd className="font-medium">Inglês, respostas faladas</dd></div>
+            <div><dt className="shl-hero-muted text-xs">Foco</dt><dd className="font-medium">Escolha na configuração</dd></div>
+            <div><dt className="shl-hero-muted text-xs">Sala</dt><dd className="font-medium">Você responde no seu ritmo e escolhe quando ver as legendas.</dd></div>
           </dl>
-        </aside>
-      </section>
+        </section>
 
-      <section className="mt-16 flex flex-col gap-5 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between" data-aos="fade-up" data-aos-duration="220">
-        <div><h2 className="text-lg font-semibold tracking-[-0.02em]">Confira seu histórico de prática.</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">Veja as sessões que você já concluiu.</p></div>
-        <button type="button" className="btn btn-ghost min-h-11 w-fit gap-2 px-0 hover:bg-transparent hover:text-primary" onClick={onProgress}>Ver progresso <ArrowUpRight className="size-4" aria-hidden="true" /></button>
-      </section>
+        {/* Optional: a single warm-up question. */}
+        <aside className="ds-card ds-enter p-5 sm:p-6" style={{ "--i": 1 } as CSSProperties} aria-labelledby="warm-up-title">
+          <div className="flex items-start gap-3">
+            <span className="shl-icon-tile" aria-hidden="true"><Target className="size-5" /></span>
+            <div className="min-w-0">
+              <h2 id="warm-up-title" className="ds-h2">Aquecimento opcional</h2>
+              <p className="ds-small mt-1">Use uma pergunta para começar a pensar em inglês.</p>
+            </div>
+          </div>
+          <div aria-live="polite" className="shl-well mt-5">
+            <div key={promptIndex} className="ds-enter">
+              <p className="ds-hint font-semibold tabular-nums text-green">{prompt.topic}</p>
+              <p lang="en" className="mt-1.5 text-base font-medium leading-6 tracking-[-0.005em] text-ink">{prompt.question}</p>
+              <p lang="en" className="ds-small mt-3">{prompt.cue}</p>
+            </div>
+          </div>
+          <button type="button" onClick={() => setPromptIndex((promptIndex + 1) % warmUpPrompts.length)} className="ds-btn ds-btn-soft mt-4">
+            <Shuffle className="size-4" aria-hidden="true" /> Outra pergunta
+          </button>
+        </aside>
+
+        {/* Secondary destination. */}
+        <section className="ds-card ds-enter flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6 lg:col-span-2" style={{ "--i": 2 } as CSSProperties} aria-labelledby="history-title">
+          <div className="flex items-start gap-3">
+            <span className="shl-icon-tile" aria-hidden="true"><LineChart className="size-5" /></span>
+            <div>
+              <h2 id="history-title" className="ds-h2">Confira seu histórico de prática.</h2>
+              <p className="ds-small mt-1">Veja as sessões que você já concluiu.</p>
+            </div>
+          </div>
+          <button type="button" className="ds-btn ds-btn-soft w-fit shrink-0" onClick={onProgress}>
+            Ver progresso <ArrowUpRight className="size-4" aria-hidden="true" />
+          </button>
+        </section>
+      </div>
     </main>
   );
 }
 
 function SettingsView() {
   return (
-    <main id="main-content" className="mx-auto w-full min-w-0 max-w-4xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
+    <main id="main-content" className={`${pageMain} max-w-4xl`}>
       <PageIntro
         title="Configurações"
         description="Escolha como você prefere usar a plataforma."
       />
-      <section className="mt-12" data-aos="fade-up" data-aos-duration="450">
-        <SectionHeading title="Experiência da entrevista" />
-        <div className="mt-4 border-y">
-          <div className="flex flex-col gap-3 py-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-            <div>
-              <p className="text-sm font-medium">Entrevista com foco na voz</p>
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                As perguntas podem ser reproduzidas em voz alta durante a entrevista.
-              </p>
-            </div>
-            <span className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground">
-              Ativado
-            </span>
+      <section className="ds-card ds-enter mt-8 px-5 py-2 sm:px-7 lg:mt-10" aria-labelledby="interview-experience-title">
+        <h2 id="interview-experience-title" className="ds-label pt-5 text-text-2">Experiência da entrevista</h2>
+        <div className="shl-row">
+          <span className="shl-icon-tile" aria-hidden="true"><Volume2 className="size-5" /></span>
+          <div className="min-w-0 flex-1">
+            <p className="ds-label">Entrevista com foco na voz</p>
+            <p className="ds-small mt-1">As perguntas podem ser reproduzidas em voz alta durante a entrevista.</p>
           </div>
-          <div className="border-t py-5">
-            <p className="text-sm font-medium">Câmera e avatar do entrevistador</p>
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              Esses recursos ainda não estão disponíveis.
-            </p>
+          <span className="shl-pill shl-pill-on"><Check className="size-3.5" strokeWidth={3} aria-hidden="true" />Ativado</span>
+        </div>
+        <div className="shl-row">
+          <span className="shl-icon-tile" aria-hidden="true"><Video className="size-5" /></span>
+          <div className="min-w-0 flex-1">
+            <p className="ds-label">Câmera e avatar do entrevistador</p>
+            <p className="ds-small mt-1">Esses recursos ainda não estão disponíveis.</p>
           </div>
+          <span className="shl-pill shl-pill-off">Indisponível</span>
         </div>
       </section>
     </main>
@@ -301,21 +326,6 @@ export default function App() {
   const [view, setView] = useState<View>("home");
   const [interviewConfig, setInterviewConfig] = useState<InterviewConfig>(defaultInterviewConfig);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
-
-  useEffect(() => {
-    AOS.init({
-      duration: 500,
-      easing: "ease-out-cubic",
-      once: true,
-      offset: 48,
-      disable: () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-    });
-  }, []);
-
-  useEffect(() => {
-    const refreshTimer = window.setTimeout(() => AOS.refreshHard(), 0);
-    return () => window.clearTimeout(refreshTimer);
-  }, [view]);
 
   const navigate = (nextView: View) => {
     setView(nextView);
@@ -357,7 +367,7 @@ export default function App() {
           {view === "interview" && (
             <InterviewRoom config={interviewConfig} onLeave={() => navigate("home")} />
           )}
-          {view === "progress" && <ProgressView />}
+          {view === "progress" && <ProgressView onStart={() => navigate("interview-setup")} />}
           {view === "settings" && <SettingsView />}
         </div>
       </div>

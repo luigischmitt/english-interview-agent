@@ -149,7 +149,7 @@ export function InterviewSetup({
   const roleInvalid = showErrors && !config.role.trim();
 
   return (
-    <main id="main-content" className={`isu-root mx-auto w-full min-w-0 max-w-6xl px-4 pb-40 pt-6 sm:px-8 sm:pt-8 lg:px-12 lg:pb-16 lg:pt-10`}>
+    <main id="main-content" className={`isu-root mx-auto w-full min-w-0 max-w-6xl px-4 pb-[calc(var(--shl-bottom-nav-h,0px)+9rem)] pt-6 sm:px-8 sm:pt-8 lg:px-12 lg:pb-16 lg:pt-10`}>
       <button type="button" className="ds-btn ds-btn-quiet -ml-3 mb-6 min-h-10 gap-2 px-3 text-sm" onClick={onBack}>
         <ArrowLeft className="size-4" aria-hidden="true" />
         Voltar à visão geral
@@ -356,7 +356,7 @@ export function InterviewSetup({
         </div>
 
         {/* Mobile: the primary action stays reachable */}
-        <div className="isu-bar fixed inset-x-0 bottom-0 z-20 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 lg:hidden">
+        <div className="isu-bar fixed inset-x-0 z-20 px-4 pb-3 pt-3 lg:hidden">
           {voiceBlocked && <p className="ds-hint ds-fade-in mb-2 text-center text-[#44604f]">{startHint}</p>}
           <button type="submit" form="interview-setup-form" className="ds-btn ds-btn-cta-green" disabled={voiceBlocked}>
             {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
