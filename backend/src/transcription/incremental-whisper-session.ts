@@ -1,13 +1,13 @@
 import { TranscriptionUnavailableError } from "./errors.js";
-import type { CartesiaFailureReason, StreamingTurnSession, TurnEndInfo } from "./cartesia-ink-session.js";
+import type { StreamFailureReason, StreamingTurnSession, TurnEndInfo } from "./streaming-turn-session.js";
 import { pcmToWav } from "./streaming-transcription.js";
 import type { TranscriptionService } from "./types.js";
 
 /**
  * Incremental Whisper: the answer is cut at local VAD pauses (and every ~15 s of continuous speech) and each segment is
  * transcribed in the background with OpenRouter Whisper while the candidate keeps talking, so the transcript is almost
- * ready when the answer ends. It exposes the same surface as `CartesiaInkSession` in Ink-Whisper mode (the local VAD
- * drives `markSpeech`/`endTurn`), so the WebSocket runs one orchestration path for both.
+ * ready when the answer ends. It implements `StreamingTurnSession` (the local VAD drives `markSpeech`/`endTurn`) and the
+ * WebSocket runs the answer orchestration (grace, provisional answer, semantic end, captions) on top of it.
  *
  * Privacy: PCM stays in memory, every buffer (copies, segment audio, WAVs) is zeroed after use, and neither audio nor text
  * is logged here. `diagnostics()` returns counters only.
@@ -35,7 +35,7 @@ export type IncrementalWhisperOptions = {
   onTurnStart?: () => void;
   onTurnEnd?: (transcript: string, info?: TurnEndInfo) => void;
   onCaptionChange?: () => void;
-  onFailure?: (reason: CartesiaFailureReason) => void;
+  onFailure?: (reason: StreamFailureReason) => void;
 };
 
 /** Phrases Whisper tends to invent on near-silence; dropped only when the segment had little speech. */
@@ -70,7 +70,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
   private speechEpoch = 0;
   private closed = false;
   private flushing = false;
-  private failedReason: CartesiaFailureReason | null = null;
+  private failedReason: StreamFailureReason | null = null;
   private readonly controller = new AbortController();
   private readonly waiters = new Set<() => void>();
   private turnObserver: ((kind: "start" | "end", transcript: string) => void) | null = null;
@@ -83,7 +83,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
   }
 
   get failed(): boolean { return this.failedReason !== null; }
-  get failureReason(): CartesiaFailureReason | null { return this.failedReason; }
+  get failureReason(): StreamFailureReason | null { return this.failedReason; }
   get turnCount(): number { return this.turnEnds; }
   get turnActive(): boolean { return this.activeTurn; }
   private get alive(): boolean { return !this.closed && !this.failed; }
@@ -186,7 +186,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
     return this.finals.join(" ").replace(/\s+/g, " ").trim();
   }
 
-  private markFailed(reason: CartesiaFailureReason): void {
+  private markFailed(reason: StreamFailureReason): void {
     if (this.failedReason) return;
     this.failedReason = reason;
     this.options.onFailure?.(reason);

@@ -1,15 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createServer, type Server } from "node:http";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocket } from "ws";
 
-import { CartesiaInkSession, isCreditsExhausted } from "../src/transcription/cartesia-ink-session.js";
-import { attachTranscriptionWebSocket, type CartesiaStreamingOptions } from "../src/transcription/transcription-websocket.js";
-import type { AnswerCompletionService } from "../src/thinking/answer-completion-service.js";
+import { attachTranscriptionWebSocket, looksUnfinished, sanitizeQuestion, type StreamingOptions } from "../src/transcription/transcription-websocket.js";
+import { AnswerCompletionError, type AnswerCompletionInput, type AnswerCompletionService } from "../src/thinking/answer-completion-service.js";
 import type { TranscriptionResult, TranscriptionService } from "../src/transcription/types.js";
 import { defaultStreamingLimits } from "../src/transcription/streaming-transcription.js";
 
-const sentinelKey = "SENTINEL-CARTESIA-KEY-9e2f";
 const frameBytes = 3_200;
 const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -40,9 +38,9 @@ function createWhisper(segmentTexts: Array<string | Error>, fullText = "Full aud
   return { service, transcribe, wavSizes, callTimes };
 }
 
-async function startServer(service: TranscriptionService, cartesia: CartesiaStreamingOptions) {
+async function startServer(service: TranscriptionService, streaming: StreamingOptions) {
   const server = createServer();
-  attachTranscriptionWebSocket(server, service, null, defaultStreamingLimits, cartesia);
+  attachTranscriptionWebSocket(server, service, null, defaultStreamingLimits, streaming);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
   const url = `ws://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/transcriptions/stream`;
@@ -78,8 +76,8 @@ async function speak(socket: WebSocket, durationMs: number, level: number) {
   }
 }
 
-const incremental = (extra: Partial<CartesiaStreamingOptions> = {}): CartesiaStreamingOptions => ({
-  provider: "whisper-incremental", pauseMs: 300, answerGraceMs: 500, incompleteGraceMs: 500, prepareAfterMs: 0, ...extra,
+const incremental = (extra: Partial<StreamingOptions> = {}): StreamingOptions => ({
+  pauseMs: 300, answerGraceMs: 500, incompleteGraceMs: 500, prepareAfterMs: 0, ...extra,
 });
 
 describe("incremental Whisper over the stream WebSocket", () => {
@@ -96,7 +94,7 @@ describe("incremental Whisper over the stream WebSocket", () => {
     expect(whisper.wavSizes[0]).toBeLessThanOrEqual(44 + 14 * frameBytes);
     expect(messages.filter((message) => message.type === "caption").pop()).toMatchObject({ committed: "Secret answer about Kafka.", partial: "" });
     const completeLog = JSON.parse(logs().split("\n").find((line) => line.includes('"status":"complete"'))!);
-    expect(completeLog).toMatchObject({ provider: "whisper-incremental", answerEndReason: "cartesia_turn_end", segmentsTranscribed: 1, incrementalTurns: 1 });
+    expect(completeLog).toMatchObject({ provider: "whisper-incremental", answerEndReason: "turn_end_grace", segmentsTranscribed: 1, incrementalTurns: 1 });
     expect(completeLog).toHaveProperty("segmentsSkipped");
     expect(completeLog).toHaveProperty("tailMs");
     expect(completeLog).toHaveProperty("maxSegmentLatencyMs");
@@ -179,135 +177,224 @@ describe("timing from the pause, not from text arrival", () => {
   });
 });
 
-describe("credits detection", () => {
-  it("recognises credit and quota conditions but not plain rate limits", () => {
-    expect(isCreditsExhausted({ status: 402 })).toBe(true);
-    expect(isCreditsExhausted({ status: 429, text: '{"error":"Monthly usage limit reached"}' })).toBe(true);
-    expect(isCreditsExhausted({ text: "Insufficient credits" })).toBe(true);
-    expect(isCreditsExhausted({ text: "quota exceeded" })).toBe(true);
-    expect(isCreditsExhausted({ status: 429, text: "Rate limit exceeded, too many requests" })).toBe(false);
-    expect(isCreditsExhausted({ status: 429, text: "" })).toBe(false);
-    expect(isCreditsExhausted({ status: 500, text: "internal error" })).toBe(false);
+describe("answer-provisional and captions", () => {
+  const provisionals = (messages: Array<Record<string, any>>) => messages.filter((message) => message.type === "answer-provisional");
+
+  it("sends the committed transcript after the delay and before complete, and logs only the count", async () => {
+    const whisper = createWhisper(["Zeta provisional sentence."]);
+    const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_500, incompleteGraceMs: 1_500, prepareAfterMs: 300 }));
+    const { socket, messages, waitFor } = await connect();
+    await speak(socket, 800, 0.05);
+    const silenceStartedAt = Date.now();
+    await speak(socket, 1_000, 0.001);
+    const provisional = await waitFor("answer-provisional");
+    expect(provisional).toMatchObject({ transcript: "Zeta provisional sentence.", revision: 1 });
+    expect(provisional.at - silenceStartedAt).toBeGreaterThanOrEqual(550);
+    const complete = await waitFor("complete");
+    expect(provisional.at).toBeLessThan(complete.at);
+    expect(provisionals(messages)).toHaveLength(1);
+    expect(logs()).not.toContain("Zeta");
+    expect(logs()).toContain('"preparesSent":1');
   });
 
-  async function rejectingServer(statusLine: string, body: string): Promise<{ endpoint: string; hits: () => number }> {
-    let hits = 0;
-    const server: Server = createServer();
-    server.on("upgrade", (_request, socket) => {
-      hits += 1;
-      socket.end(`HTTP/1.1 ${statusLine}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`);
-    });
+  it("is not sent when disabled", async () => {
+    const whisper = createWhisper(["Quiet sentence."]);
+    const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_000, incompleteGraceMs: 1_000, prepareAfterMs: 0 }));
+    const { socket, messages, waitFor } = await connect();
+    await speak(socket, 800, 0.05);
+    await speak(socket, 600, 0.001);
+    await waitFor("complete");
+    expect(provisionals(messages)).toHaveLength(0);
+  });
+
+  it("is cancelled by resumed local speech", async () => {
+    const whisper = createWhisper(["Second sentence.", "More."]);
+    const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 2_500, incompleteGraceMs: 2_500, prepareAfterMs: 900 }));
+    const { socket, messages } = await connect();
+    await speak(socket, 800, 0.05);
+    await speak(socket, 400, 0.001);
+    await speak(socket, 500, 0.05);
+    await delay(900);
+    expect(messages.some((message) => message.type === "speech-resumed")).toBe(true);
+    expect(provisionals(messages)).toHaveLength(0);
+  });
+
+  it("sends at most two per answer with increasing revisions", async () => {
+    const whisper = createWhisper(["One.", "Two.", "Three."]);
+    const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 200 }));
+    const { socket, messages, waitFor } = await connect();
+    for (let turn = 0; turn < 3; turn += 1) {
+      await speak(socket, 600, 0.05);
+      await speak(socket, 700, 0.001);
+    }
+    await waitFor("complete", 6_000);
+    expect(provisionals(messages).map((message) => [message.transcript, message.revision])).toEqual([["One.", 1], ["One. Two.", 2]]);
+  }, 15_000);
+
+  it("sends no captions without the start flag", async () => {
+    const whisper = createWhisper(["No caption please."]);
+    const { connect } = await startServer(whisper.service, incremental());
+    const { socket, messages, waitFor } = await connect({ captions: false });
+    await speak(socket, 800, 0.05);
+    await speak(socket, 600, 0.001);
+    await waitFor("complete");
+    expect(messages.some((message) => message.type === "caption")).toBe(false);
+  });
+
+  it("sends no captions and no incremental session on the plain Whisper path, even when requested", async () => {
+    const whisper = createWhisper([], "Plain path answer.");
+    const server = createServer();
+    attachTranscriptionWebSocket(server, whisper.service, null, defaultStreamingLimits, null);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     cleanups.push(() => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }));
-    return { endpoint: `ws://127.0.0.1:${(server.address() as AddressInfo).port}/stt/turns/websocket`, hits: () => hits };
-  }
-
-  async function failureOf(endpoint: string): Promise<string | null> {
-    const failures: string[] = [];
-    const session = new CartesiaInkSession({ apiKey: sentinelKey, endpoint, onFailure: (reason) => failures.push(reason) });
-    cleanups.push(async () => session.close());
-    session.open();
-    const deadline = Date.now() + 3_000;
-    while (!failures.length && Date.now() < deadline) await delay(20);
-    return session.failureReason;
-  }
-
-  it("classifies a 402 handshake rejection as out_of_credits", async () => {
-    const { endpoint } = await rejectingServer("402 Payment Required", '{"error":"no credits"}');
-    await expect(failureOf(endpoint)).resolves.toBe("out_of_credits");
-  });
-
-  it("keeps a plain 429 rate limit and a 500 as ordinary connection errors", async () => {
-    const limited = await rejectingServer("429 Too Many Requests", '{"error":"rate limit"}');
-    await expect(failureOf(limited.endpoint)).resolves.toBe("connection_error");
-    const broken = await rejectingServer("500 Internal Server Error", "{}");
-    await expect(failureOf(broken.endpoint)).resolves.toBe("connection_error");
-  });
-
-  it("classifies a credits error frame as out_of_credits and any other error frame as provider_error", async () => {
-    for (const [frame, expected] of [[{ type: "error", error_code: "insufficient_credits", message: "Out of credits" }, "out_of_credits"], [{ type: "error", message: "bad audio" }, "provider_error"]] as const) {
-      const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
-      await new Promise<void>((resolve) => server.once("listening", resolve));
-      server.on("connection", (socket) => { socket.send(JSON.stringify({ type: "connected" })); setTimeout(() => socket.send(JSON.stringify(frame)), 30); });
-      cleanups.push(() => new Promise<void>((resolve) => { for (const client of server.clients) client.terminate(); server.close(() => resolve()); }));
-      await expect(failureOf(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/stt/turns/websocket`)).resolves.toBe(expected);
-    }
+    const socket = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/transcriptions/stream`);
+    const received: Array<Record<string, any>> = [];
+    socket.on("message", (raw) => received.push(JSON.parse(raw.toString())));
+    await new Promise<void>((resolve) => socket.once("open", resolve));
+    cleanups.push(async () => { socket.close(); });
+    socket.send(JSON.stringify({ type: "start", version: 2, sampleRate: 16_000, channels: 1, encoding: "s16le", speechThreshold: 0.025, captions: true }));
+    await delay(100);
+    await speak(socket, 800, 0.05);
+    socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+    for (let waited = 0; waited < 3_000 && !received.some((message) => message.type === "complete"); waited += 50) await delay(50);
+    expect(received.find((message) => message.type === "complete")).toMatchObject({ provider: "whisper-large-v3-turbo" });
+    expect(received.some((message) => message.type === "caption")).toBe(false);
   });
 });
 
-describe("Cartesia credits circuit breaker", () => {
-  async function setup(extra: Partial<CartesiaStreamingOptions> = {}, segmentTexts: string[] = ["Answer on the fallback."]) {
-    let hitsBody = '{"error":"payment required"}';
-    let hits = 0;
-    const cartesiaServer: Server = createServer();
-    cartesiaServer.on("upgrade", (_request, socket) => {
-      hits += 1;
-      socket.end(`HTTP/1.1 402 Payment Required\r\nContent-Length: ${Buffer.byteLength(hitsBody)}\r\nConnection: close\r\n\r\n${hitsBody}`);
-    });
-    await new Promise<void>((resolve) => cartesiaServer.listen(0, "127.0.0.1", resolve));
-    cleanups.push(() => new Promise<void>((resolve) => { cartesiaServer.closeAllConnections(); cartesiaServer.close(() => resolve()); }));
-    const endpoint = `ws://127.0.0.1:${(cartesiaServer.address() as AddressInfo).port}/stt/turns/websocket`;
-    const clock = { value: Date.UTC(2026, 9, 3, 12) };
-    const whisper = createWhisper(segmentTexts, "Plain whisper transcript.");
-    const server = await startServer(whisper.service, {
-      apiKey: sentinelKey, endpoint, pauseMs: 300, answerGraceMs: 500, incompleteGraceMs: 500, prepareAfterMs: 0, now: () => clock.value, ...extra,
-    });
-    return { server, whisper, clock, hits: () => hits };
+describe("semantic end of answer", () => {
+  const question = "Tell me about a hard bug you fixed.";
+  const answerText = "Zeta fixed it by adding a lock around the cache.";
+  function classifier(behavior: (input: AnswerCompletionInput, index: number) => Promise<boolean>) {
+    const calls: AnswerCompletionInput[] = [];
+    const signals: AbortSignal[] = [];
+    const service: AnswerCompletionService = { isComplete: (input) => { calls.push(input); signals.push(input.signal!); return behavior(input, calls.length - 1); } };
+    return { service, calls, signals };
   }
+  const options = (service: AnswerCompletionService | null, extra: Partial<StreamingOptions> = {}) => incremental({ answerGraceMs: 2_500, incompleteGraceMs: 2_500, prepareAfterMs: 300, answerCompletion: service, ...extra });
 
-  const creditLogs = () => logs().split("\n").filter((line) => line.includes('"cartesia_disabled"'));
-
-  it("disables Cartesia after a credits rejection, routes new answers to incremental Whisper and re-enables next month", async () => {
-    const { server, whisper, clock, hits } = await setup({}, ["Answer on the fallback.", "Answer on the fallback."]);
-
-    // First answer: Cartesia refuses at connect; this answer uses the plain Whisper fallback and trips the breaker.
-    const first = await server.connect();
-    await delay(300);
-    expect(hits()).toBe(1);
-    expect(creditLogs()).toHaveLength(1);
-    expect(creditLogs()[0]).toContain('"reason":"credits"');
-    await speak(first.socket, 800, 0.05);
-    first.socket.send(JSON.stringify({ type: "finalize", reason: "silence" }));
-    await expect(first.waitFor("complete")).resolves.toMatchObject({ provider: "whisper-large-v3-turbo" });
-
-    // Second answer: no Cartesia attempt, incremental Whisper handles it.
-    const second = await server.connect();
-    await speak(second.socket, 800, 0.05);
-    await speak(second.socket, 500, 0.001);
-    await expect(second.waitFor("complete")).resolves.toMatchObject({ provider: "whisper-incremental", transcript: "Answer on the fallback." });
-    expect(hits()).toBe(1);
-    expect(creditLogs()).toHaveLength(1);
-
-    // Still the same month: still disabled.
-    clock.value = Date.UTC(2026, 9, 31, 23, 59);
-    const third = await server.connect();
-    await delay(100);
-    expect(hits()).toBe(1);
-    third.socket.close();
-
-    // Next calendar month (UTC): Cartesia is tried again, and a new rejection disables it once more.
-    clock.value = Date.UTC(2026, 10, 1, 0, 0, 1);
-    await server.connect();
-    await delay(300);
-    expect(hits()).toBe(2);
-    expect(creditLogs()).toHaveLength(2);
-    expect(whisper.transcribe).toHaveBeenCalled();
-    expect(logs()).not.toContain("payment required");
-    expect(logs()).not.toContain(sentinelKey);
+  it("sanitizes the question: control characters, empty and over-long values", () => {
+    expect(sanitizeQuestion("  Tell\nme\u0000 more\t ")).toBe("Tell me more");
+    expect(sanitizeQuestion("")).toBeNull();
+    expect(sanitizeQuestion("   ")).toBeNull();
+    expect(sanitizeQuestion(42)).toBeNull();
+    expect(sanitizeQuestion("a".repeat(401))).toBeNull();
+    expect(sanitizeQuestion("a".repeat(400))).toHaveLength(400);
   });
 
-  it("with TRANSCRIPTION_FALLBACK_MODE=whisper, new answers use the plain Whisper path while Cartesia is disabled", async () => {
-    const { server, whisper, hits } = await setup({ fallbackMode: "whisper" });
-    await server.connect();
+  it("ends the answer at the trigger on a complete verdict, logging diagnostics and no text", async () => {
+    const fake = classifier(async () => true);
+    const { connect } = await startServer(createWhisper([answerText]).service, options(fake.service));
+    const { socket, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    const silenceStartedAt = Date.now();
+    await speak(socket, 1_000, 0.001);
+    const complete = await waitFor("complete");
+    expect(complete.transcript).toBe(answerText);
+    expect(complete.at - silenceStartedAt).toBeLessThan(1_600);
+    expect(fake.calls[0]).toMatchObject({ question, answer: answerText });
+    for (const expected of ['"answerEndReason":"semantic_complete"', '"semanticChecks":1', '"semanticVerdict":"complete"', '"semanticLatencyMs"']) expect(logs()).toContain(expected);
+    expect(logs()).not.toContain("Zeta");
+    expect(logs()).not.toContain("hard bug");
+  });
+
+  it("keeps the grace when the classifier says incomplete", async () => {
+    const fake = classifier(async () => false);
+    const { connect } = await startServer(createWhisper([answerText]).service, options(fake.service, { answerGraceMs: 1_200, incompleteGraceMs: 1_200 }));
+    const { socket, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    const silenceStartedAt = Date.now();
+    await speak(socket, 600, 0.001);
+    const complete = await waitFor("complete");
+    expect(complete.at - silenceStartedAt).toBeGreaterThanOrEqual(1_100);
+    expect(fake.calls).toHaveLength(1);
+    expect(logs()).toContain('"answerEndReason":"turn_end_grace"');
+    expect(logs()).toContain('"semanticVerdict":"incomplete"');
+  });
+
+  it.each([["error"], ["timeout"]] as const)("keeps the grace on a classifier %s", async (verdict) => {
+    const fake = classifier(() => Promise.reject(new AnswerCompletionError(verdict, "x")));
+    const { connect } = await startServer(createWhisper([answerText]).service, options(fake.service, { answerGraceMs: 1_000, incompleteGraceMs: 1_000 }));
+    const { socket, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    const silenceStartedAt = Date.now();
+    await speak(socket, 600, 0.001);
+    const complete = await waitFor("complete");
+    expect(complete.at - silenceStartedAt).toBeGreaterThanOrEqual(900);
+    expect(logs()).toContain(`"semanticVerdict":"${verdict}"`);
+  });
+
+  it("aborts the classifier on resumed local speech and does not finalize", async () => {
+    const fake = classifier(() => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 700)));
+    const { connect } = await startServer(createWhisper([answerText, "More."]).service, options(fake.service, { answerGraceMs: 3_000, incompleteGraceMs: 3_000 }));
+    const { socket, messages } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    await speak(socket, 800, 0.001);
+    expect(fake.calls).toHaveLength(1);
+    await speak(socket, 400, 0.05);
+    expect(fake.signals[0]!.aborted).toBe(true);
     await delay(300);
-    expect(hits()).toBe(1);
-    const second = await server.connect();
-    await speak(second.socket, 800, 0.05);
-    await speak(second.socket, 500, 0.001);
-    second.socket.send(JSON.stringify({ type: "finalize", reason: "silence" }));
-    const complete = await second.waitFor("complete");
-    expect(complete).toMatchObject({ provider: "whisper-large-v3-turbo", transcript: "Answer on the fallback." });
-    expect(hits()).toBe(1);
-    expect(whisper.transcribe).toHaveBeenCalledTimes(1);
+    expect(messages.some((message) => message.type === "finalizing")).toBe(false);
+  });
+
+  it("aborts the classifier when the client cancels", async () => {
+    const fake = classifier(() => new Promise<boolean>(() => undefined));
+    const { connect } = await startServer(createWhisper([answerText]).service, options(fake.service));
+    const { socket } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    await speak(socket, 800, 0.001);
+    expect(fake.calls).toHaveLength(1);
+    socket.send(JSON.stringify({ type: "cancel" }));
+    await delay(200);
+    expect(fake.signals[0]!.aborted).toBe(true);
+  });
+
+  it("does not call the classifier without a valid question", async () => {
+    const fake = classifier(async () => true);
+    for (const start of [{}, { question: "q".repeat(401) }]) {
+      const { connect } = await startServer(createWhisper([answerText]).service, options(fake.service, { answerGraceMs: 900, incompleteGraceMs: 900 }));
+      const { socket, waitFor } = await connect(start);
+      await speak(socket, 800, 0.05);
+      await speak(socket, 600, 0.001);
+      await waitFor("complete");
+    }
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("does not call a disabled classifier", async () => {
+    const { connect } = await startServer(createWhisper([answerText]).service, options(null, { answerGraceMs: 900, incompleteGraceMs: 900 }));
+    const { socket, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    await speak(socket, 600, 0.001);
+    await waitFor("complete");
+    expect(logs()).toContain('"semanticVerdict":"none"');
+  });
+
+  it("calls the classifier at most twice per answer", async () => {
+    const fake = classifier(async () => false);
+    const { connect } = await startServer(createWhisper(["One.", "Two.", "Three."]).service, options(fake.service, { answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 200 }));
+    const { socket, waitFor } = await connect({ question });
+    for (let turn = 0; turn < 3; turn += 1) {
+      await speak(socket, 600, 0.05);
+      await speak(socket, 700, 0.001);
+    }
+    await waitFor("complete", 6_000);
+    expect(fake.calls.map((call) => call.answer)).toEqual(["One.", "One. Two."]);
+  }, 15_000);
+});
+
+describe("looksUnfinished", () => {
+  it("treats sentences with final punctuation as complete", () => {
+    expect(looksUnfinished("I chose Redis for the product catalog.")).toBe(false);
+    expect(looksUnfinished("Why did we need it?")).toBe(false);
+    expect(looksUnfinished("The trade-off was, hmm, the invalidation.")).toBe(false);
+  });
+
+  it("treats missing punctuation or a trailing connector as unfinished", () => {
+    expect(looksUnfinished("I chose Redis because")).toBe(true);
+    expect(looksUnfinished("I chose Redis because.")).toBe(true);
+    expect(looksUnfinished("We used Postgres and")).toBe(true);
+    expect(looksUnfinished("So the main problem was the")).toBe(true);
+    expect(looksUnfinished("")).toBe(true);
   });
 });

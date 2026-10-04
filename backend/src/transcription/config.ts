@@ -15,17 +15,15 @@ export type TranscriptionConfig = {
   vadFinalizationGraceMs: number;
   vadAmbientActivityHoldMs: number;
   hedgeAfterMs: number;
-  transcriptionProvider: "whisper" | "cartesia" | "whisper-incremental";
-  transcriptionFallbackMode: "whisper-incremental" | "whisper";
-  cartesiaApiKey: string | null;
-  cartesiaModel: "ink-2" | "ink-whisper";
-  cartesiaPauseMs: number;
-  cartesiaAnswerGraceMs: number;
-  cartesiaIncompleteGraceMs: number;
-  azureTimingFromInkTurns: boolean;
-  cartesiaTurnEndTimeoutMs: number | null;
-  cartesiaPrepareAfterMs: number;
-  cartesiaMaxPrepares: number;
+  /** Always incremental Whisper; kept as a field so logs and callers can state the active engine. */
+  transcriptionProvider: "whisper-incremental";
+  /** Set when `TRANSCRIPTION_PROVIDER` held a retired value that was mapped to `whisper-incremental` (startup warning); null otherwise. */
+  legacyTranscriptionProvider: "whisper" | "cartesia" | null;
+  pauseMs: number;
+  answerGraceMs: number;
+  incompleteGraceMs: number;
+  prepareAfterMs: number;
+  maxPrepares: number;
   semanticEndEnabled: boolean;
   semanticEndTimeoutMs: number;
 };
@@ -61,28 +59,19 @@ function parseIntegerInRange(value: string | undefined, fallback: number, minimu
   return parsed;
 }
 
-function parseTranscriptionProvider(value: string | undefined): "whisper" | "cartesia" | "whisper-incremental" {
+/**
+ * `whisper-incremental` is the only engine. `cartesia` and `whisper` were valid before and may still be set in a deployed
+ * environment, so they are accepted and mapped to `whisper-incremental` (the caller logs a one-time warning).
+ */
+function parseTranscriptionProvider(value: string | undefined): { provider: "whisper-incremental"; legacy: "whisper" | "cartesia" | null } {
   const normalized = value?.trim().toLowerCase();
-  if (!normalized) return "whisper";
-  if (normalized !== "whisper" && normalized !== "cartesia" && normalized !== "whisper-incremental") throw new Error("TRANSCRIPTION_PROVIDER must be whisper or cartesia (or whisper-incremental).");
-  return normalized;
-}
-
-function parseFallbackMode(value: string | undefined): "whisper-incremental" | "whisper" {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) return "whisper-incremental";
-  if (normalized !== "whisper-incremental" && normalized !== "whisper") throw new Error("TRANSCRIPTION_FALLBACK_MODE must be whisper-incremental or whisper.");
-  return normalized;
-}
-
-function parseCartesiaModel(value: string | undefined): "ink-2" | "ink-whisper" {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) return "ink-2";
-  if (normalized !== "ink-2" && normalized !== "ink-whisper") throw new Error("CARTESIA_STT_MODEL must be ink-2 or ink-whisper.");
-  return normalized;
+  if (!normalized || normalized === "whisper-incremental") return { provider: "whisper-incremental", legacy: null };
+  if (normalized === "cartesia" || normalized === "whisper") return { provider: "whisper-incremental", legacy: normalized };
+  throw new Error("TRANSCRIPTION_PROVIDER must be whisper-incremental.");
 }
 
 export function loadTranscriptionConfig(environment = process.env): TranscriptionConfig {
+  const provider = parseTranscriptionProvider(environment.TRANSCRIPTION_PROVIDER);
   return {
     azureSpeechKey: environment.AZURE_SPEECH_KEY?.trim() || null,
     azureSpeechRegion: environment.AZURE_SPEECH_REGION?.trim() || null,
@@ -100,20 +89,14 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     vadFinalizationGraceMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_FINALIZATION_GRACE_MS, 1_500, 5_000),
     vadAmbientActivityHoldMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_AMBIENT_HOLD_MS, 8_000, 30_000),
     hedgeAfterMs: parseNonNegativeInteger(environment.TRANSCRIPTION_HEDGE_AFTER_MS, 4_000, 30_000),
-    transcriptionProvider: parseTranscriptionProvider(environment.TRANSCRIPTION_PROVIDER),
-    transcriptionFallbackMode: parseFallbackMode(environment.TRANSCRIPTION_FALLBACK_MODE),
-    cartesiaApiKey: environment.CARTESIA_API_KEY?.trim() || null,
-    cartesiaModel: parseCartesiaModel(environment.CARTESIA_STT_MODEL),
-    cartesiaPauseMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_PAUSE_MS, 800, 300, 3_000, "Cartesia pause"),
-    cartesiaAnswerGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS, 3_500, 500, 10_000, "Cartesia answer grace"),
-    cartesiaIncompleteGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_INCOMPLETE_GRACE_MS, 6_000, 500, 15_000, "Cartesia incomplete-turn grace"),
-    azureTimingFromInkTurns: environment.AZURE_TIMING_FROM_INK_TURNS === "true",
-    cartesiaPrepareAfterMs: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS, 1_200, 0, 10_000, "Cartesia prepare delay"),
-    cartesiaMaxPrepares: parseIntegerInRange(environment.TRANSCRIPTION_CARTESIA_MAX_PREPARES, 2, 0, 5, "Cartesia max prepares"),
+    transcriptionProvider: provider.provider,
+    legacyTranscriptionProvider: provider.legacy,
+    pauseMs: parseIntegerInRange(environment.TRANSCRIPTION_PAUSE_MS, 800, 300, 3_000, "Transcription pause"),
+    answerGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_ANSWER_GRACE_MS, 3_500, 500, 10_000, "Answer grace"),
+    incompleteGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_INCOMPLETE_GRACE_MS, 6_000, 500, 15_000, "Incomplete-turn grace"),
+    prepareAfterMs: parseIntegerInRange(environment.TRANSCRIPTION_PREPARE_AFTER_MS, 1_200, 0, 10_000, "Prepare delay"),
+    maxPrepares: parseIntegerInRange(environment.TRANSCRIPTION_MAX_PREPARES, 2, 0, 5, "Max prepares"),
     semanticEndEnabled: environment.TRANSCRIPTION_SEMANTIC_END_ENABLED?.trim().toLowerCase() !== "false",
     semanticEndTimeoutMs: parseIntegerInRange(environment.TRANSCRIPTION_SEMANTIC_END_TIMEOUT_MS, 1_500, 200, 5_000, "Semantic end timeout"),
-    cartesiaTurnEndTimeoutMs: environment.CARTESIA_TURN_END_TIMEOUT_MS?.trim()
-      ? parseIntegerInRange(environment.CARTESIA_TURN_END_TIMEOUT_MS, 640, 640, 11_200, "Cartesia turn end timeout")
-      : null,
   };
 }

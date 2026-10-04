@@ -59,31 +59,25 @@ describe("optional Azure assessment configuration", () => {
   });
 });
 
-describe("optional Cartesia Ink-2 configuration", () => {
-  it("defaults to Whisper with a 2 second answer grace", () => {
+describe("incremental Whisper configuration", () => {
+  it("defaults to incremental Whisper with the documented grace, prepare and pause timings", () => {
     const config = loadTranscriptionConfig({});
-    expect(config.transcriptionProvider).toBe("whisper");
-    expect(config.cartesiaApiKey).toBeNull();
-    expect(config.cartesiaAnswerGraceMs).toBe(3_500);
-    expect(config.cartesiaIncompleteGraceMs).toBe(6_000);
-    expect(config.cartesiaTurnEndTimeoutMs).toBeNull();
-    expect(config.cartesiaPrepareAfterMs).toBe(1_200);
-    expect(config.cartesiaMaxPrepares).toBe(2);
-    expect(loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_PREPARE_AFTER_MS: "0" }).cartesiaPrepareAfterMs).toBe(0);
-    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_MAX_PREPARES: "6" })).toThrow("0 to 5");
+    expect(config).toMatchObject({
+      transcriptionProvider: "whisper-incremental", legacyTranscriptionProvider: null,
+      answerGraceMs: 3_500, incompleteGraceMs: 6_000, prepareAfterMs: 1_200, maxPrepares: 2, pauseMs: 800,
+    });
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_PREPARE_AFTER_MS: "0" }).prepareAfterMs).toBe(0);
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_MAX_PREPARES: "6" })).toThrow("0 to 5");
   });
 
-  it("parses the provider, key and bounded timings", () => {
-    const config = loadTranscriptionConfig({
-      TRANSCRIPTION_PROVIDER: "Cartesia", CARTESIA_API_KEY: " sentinel ",
-      TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS: "500", CARTESIA_TURN_END_TIMEOUT_MS: "11200",
-    });
-    expect(config).toMatchObject({ transcriptionProvider: "cartesia", cartesiaApiKey: "sentinel", cartesiaAnswerGraceMs: 500, cartesiaTurnEndTimeoutMs: 11_200 });
-    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_PROVIDER: "other" })).toThrow("whisper or cartesia");
-    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS: "499" })).toThrow("500 to 10000");
-    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_ANSWER_GRACE_MS: "10001" })).toThrow("500 to 10000");
-    expect(() => loadTranscriptionConfig({ CARTESIA_TURN_END_TIMEOUT_MS: "639" })).toThrow("640 to 11200");
-    expect(() => loadTranscriptionConfig({ CARTESIA_TURN_END_TIMEOUT_MS: "11201" })).toThrow("640 to 11200");
+  it("parses bounded timings", () => {
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_ANSWER_GRACE_MS: "500", TRANSCRIPTION_PAUSE_MS: "300" })).toMatchObject({ answerGraceMs: 500, pauseMs: 300 });
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_PAUSE_MS: "3000" }).pauseMs).toBe(3_000);
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_ANSWER_GRACE_MS: "499" })).toThrow("500 to 10000");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_ANSWER_GRACE_MS: "10001" })).toThrow("500 to 10000");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_INCOMPLETE_GRACE_MS: "15001" })).toThrow("500 to 15000");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_PAUSE_MS: "299" })).toThrow("300 to 3000");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_PAUSE_MS: "3001" })).toThrow("300 to 3000");
   });
 
   it("enables the semantic end check by default and validates its timeout", () => {
@@ -91,26 +85,11 @@ describe("optional Cartesia Ink-2 configuration", () => {
     expect(loadTranscriptionConfig({ TRANSCRIPTION_SEMANTIC_END_ENABLED: "false", TRANSCRIPTION_SEMANTIC_END_TIMEOUT_MS: "800" })).toMatchObject({ semanticEndEnabled: false, semanticEndTimeoutMs: 800 });
     expect(() => loadTranscriptionConfig({ TRANSCRIPTION_SEMANTIC_END_TIMEOUT_MS: "100" })).toThrow("200 to 5000");
   });
-});
 
-describe("Cartesia Ink-Whisper configuration", () => {
-  it("defaults to Ink-2 with an 800 ms local pause", () => {
-    expect(loadTranscriptionConfig({})).toMatchObject({ cartesiaModel: "ink-2", cartesiaPauseMs: 800 });
-  });
-
-  it("parses the model and the pause, rejecting invalid values", () => {
-    expect(loadTranscriptionConfig({ CARTESIA_STT_MODEL: " Ink-Whisper ", TRANSCRIPTION_CARTESIA_PAUSE_MS: "300" })).toMatchObject({ cartesiaModel: "ink-whisper", cartesiaPauseMs: 300 });
-    expect(loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_PAUSE_MS: "3000" }).cartesiaPauseMs).toBe(3_000);
-    expect(() => loadTranscriptionConfig({ CARTESIA_STT_MODEL: "ink-3" })).toThrow("ink-2 or ink-whisper");
-    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_PAUSE_MS: "299" })).toThrow("300 to 3000");
-    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_PAUSE_MS: "3001" })).toThrow("300 to 3000");
-  });
-});
-
-describe("incremental Whisper configuration", () => {
-  it("accepts the whisper-incremental provider and defaults the Cartesia fallback to incremental Whisper", () => {
-    expect(loadTranscriptionConfig({})).toMatchObject({ transcriptionProvider: "whisper", transcriptionFallbackMode: "whisper-incremental" });
-    expect(loadTranscriptionConfig({ TRANSCRIPTION_PROVIDER: " Whisper-Incremental ", TRANSCRIPTION_FALLBACK_MODE: "WHISPER" })).toMatchObject({ transcriptionProvider: "whisper-incremental", transcriptionFallbackMode: "whisper" });
-    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_FALLBACK_MODE: "cartesia" })).toThrow("whisper-incremental or whisper");
+  it("accepts whisper-incremental and maps the retired provider values to it, flagging them for a startup warning", () => {
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_PROVIDER: " Whisper-Incremental " })).toMatchObject({ transcriptionProvider: "whisper-incremental", legacyTranscriptionProvider: null });
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_PROVIDER: "cartesia" })).toMatchObject({ transcriptionProvider: "whisper-incremental", legacyTranscriptionProvider: "cartesia" });
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_PROVIDER: "whisper" })).toMatchObject({ transcriptionProvider: "whisper-incremental", legacyTranscriptionProvider: "whisper" });
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_PROVIDER: "other" })).toThrow("whisper-incremental");
   });
 });

@@ -12,19 +12,18 @@ only, never values. Run them from the repository root.
   Request-based billing, min 0 / max 1 instance, 1 vCPU, 1 GiB, session affinity.
   The image includes `ffmpeg` (required for Azure pronunciation assessment).
 - **Providers** (all called from the backend only): OpenRouter (interviewer voice
-  with Kokoro, reasoning, report, Whisper fallback), Cartesia (streaming STT),
+  with Kokoro, reasoning, report, Whisper answer transcription),
   Azure Speech (pronunciation assessment).
 - Local development is unchanged: `compose.yaml` uses `backend/Dockerfile` with
   `npm run dev`.
 
 ## Backend environment
 
-Secrets (Secret Manager): `OPENROUTER_API_KEY`, `AZURE_SPEECH_KEY`,
-`CARTESIA_API_KEY`.
+Secrets (Secret Manager): `OPENROUTER_API_KEY`, `AZURE_SPEECH_KEY`.
 
-Plain variables: `SPEECH_PROVIDER=openrouter`, `TRANSCRIPTION_PROVIDER=cartesia`,
-`TRANSCRIPTION_FALLBACK_MODE` (optional, default `whisper-incremental`: what new answers use when
-Cartesia runs out of credits; `whisper` keeps the old full-audio path),
+Plain variables: `SPEECH_PROVIDER=openrouter`, `TRANSCRIPTION_PROVIDER=whisper-incremental`
+(the only engine, and the default if unset; the retired values `cartesia` and `whisper` are still
+accepted, mapped to `whisper-incremental` with a startup warning),
 `AZURE_SPEECH_REGION`, `AZURE_SPEECH_ASSESSMENT_ENABLED=true`,
 `SUPABASE_URL` (the public project URL, same as `NEXT_PUBLIC_SUPABASE_URL`; the
 backend refuses to start without it while `BACKEND_AUTH_REQUIRED` is unset or
@@ -57,14 +56,14 @@ gcloud artifacts repositories create english-interview --repository-format=docke
   --location=$REGION
 
 # Secrets, read from the ignored backend/.env without printing values
-for NAME in OPENROUTER_API_KEY AZURE_SPEECH_KEY CARTESIA_API_KEY; do
+for NAME in OPENROUTER_API_KEY AZURE_SPEECH_KEY; do
   grep "^$NAME=" backend/.env | cut -d= -f2- | tr -d '\n' \
     | gcloud secrets create $NAME --data-file=-
 done
 
 # Let the Cloud Run runtime service account read them
 SA=$(gcloud projects describe $PROJECT --format='value(projectNumber)')-compute@developer.gserviceaccount.com
-for NAME in OPENROUTER_API_KEY AZURE_SPEECH_KEY CARTESIA_API_KEY; do
+for NAME in OPENROUTER_API_KEY AZURE_SPEECH_KEY; do
   gcloud secrets add-iam-policy-binding $NAME \
     --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor
 done
@@ -92,8 +91,8 @@ gcloud run deploy english-interview-backend \
   --allow-unauthenticated \
   --max-instances 1 --min-instances 0 --cpu 1 --memory 1Gi \
   --concurrency 20 --timeout 3600 --session-affinity \
-  --set-env-vars "SPEECH_PROVIDER=openrouter,TRANSCRIPTION_PROVIDER=cartesia,AZURE_SPEECH_REGION=<region>,AZURE_SPEECH_ASSESSMENT_ENABLED=true,SUPABASE_URL=<supabase-url>,SUPABASE_PUBLISHABLE_KEY=<publishable-key>,ALLOWED_ORIGIN=<vercel-origin>" \
-  --set-secrets "OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,AZURE_SPEECH_KEY=AZURE_SPEECH_KEY:latest,CARTESIA_API_KEY=CARTESIA_API_KEY:latest"
+  --set-env-vars "SPEECH_PROVIDER=openrouter,TRANSCRIPTION_PROVIDER=whisper-incremental,AZURE_SPEECH_REGION=<region>,AZURE_SPEECH_ASSESSMENT_ENABLED=true,SUPABASE_URL=<supabase-url>,SUPABASE_PUBLISHABLE_KEY=<publishable-key>,ALLOWED_ORIGIN=<vercel-origin>" \
+  --set-secrets "OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,AZURE_SPEECH_KEY=AZURE_SPEECH_KEY:latest"
 ```
 
 `--allow-unauthenticated` is required because browsers call the service
@@ -176,13 +175,40 @@ Logs never include audio, transcripts or keys by design; keep it that way.
 - In-memory audio and sessions are lost when the instance restarts; an answer in
   progress at that moment must be retried.
 
+## Removing Cartesia from an existing deployment (ENG-108)
+
+Whisper (incremental) is now the only answer-transcription engine. Rollout order
+for an environment that still has the old setup:
+
+1. Deploy the new backend. It starts even with `TRANSCRIPTION_PROVIDER=cartesia`
+   (mapped to `whisper-incremental`, log
+   `{"event":"transcription_provider","status":"legacy_value_mapped"}`) and
+   with `CARTESIA_API_KEY` still mounted (ignored, never read), so the old
+   frontend that sends `transcriptionEngine: "ink-2"` keeps working: the request
+   resolves to incremental Whisper (`requestedEngine: "ink-2"`,
+   `resolvedMode: "whisper-incremental"` in the `complete` log).
+2. Update the service: set `TRANSCRIPTION_PROVIDER=whisper-incremental`, drop
+   `TRANSCRIPTION_FALLBACK_MODE` and any `TRANSCRIPTION_CARTESIA_*`,
+   `CARTESIA_*` and `AZURE_TIMING_FROM_INK_TURNS` variables (all ignored now),
+   and remove the secret binding:
+   `gcloud run services update english-interview-backend --region $REGION --update-env-vars TRANSCRIPTION_PROVIDER=whisper-incremental --remove-env-vars TRANSCRIPTION_FALLBACK_MODE --remove-secrets CARTESIA_API_KEY`.
+3. Once the new frontend (which no longer sends an engine choice) is live,
+   delete the `CARTESIA_API_KEY` secret from Secret Manager and revoke the key
+   in the Cartesia dashboard.
+
+The tuning variables were renamed: `TRANSCRIPTION_ANSWER_GRACE_MS`,
+`TRANSCRIPTION_INCOMPLETE_GRACE_MS`, `TRANSCRIPTION_PREPARE_AFTER_MS`,
+`TRANSCRIPTION_MAX_PREPARES` and `TRANSCRIPTION_PAUSE_MS` replace their
+`TRANSCRIPTION_CARTESIA_*` equivalents (same defaults); the old names are
+ignored.
+
 ## Launch blockers
 
 - **No per-user usage limits**: any signed-up user can spend provider credits;
   limits were deferred while usage is small.
-- **Cartesia credits and data retention**: confirm the credit balance covers
-  expected usage and review Cartesia's retention terms before real users send
-  audio.
+- **Whisper cost and data retention**: answer audio is sent to OpenRouter
+  (Whisper); confirm the credit balance covers expected usage and review the
+  provider retention terms before real users send audio.
 
 ## Verified locally vs. only documented
 

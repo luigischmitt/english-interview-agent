@@ -17,13 +17,10 @@ if (!defaultPronunciationAssessmentService) {
       : !defaultTranscriptionConfig.azureSpeechRegion ? "missing_region" : "unavailable";
   console.info(JSON.stringify({ event: "azure_assessment_configuration", enabled: false, reason: unavailableReason }));
 }
-const cartesiaApiKey = defaultTranscriptionConfig.cartesiaApiKey;
-const configuredProvider = defaultTranscriptionConfig.transcriptionProvider;
-if (configuredProvider === "cartesia" && !cartesiaApiKey) {
-  console.info(JSON.stringify({ event: "transcription_provider", provider: "whisper", reason: "missing_cartesia_key" }));
+// Whisper (incremental) is the only answer-transcription engine. A retired TRANSCRIPTION_PROVIDER value still maps to it.
+if (defaultTranscriptionConfig.legacyTranscriptionProvider) {
+  console.warn(JSON.stringify({ event: "transcription_provider", status: "legacy_value_mapped", configured: defaultTranscriptionConfig.legacyTranscriptionProvider, provider: "whisper-incremental" }));
 }
-// Server default for interviews that do not choose an engine; a per-interview choice can still use Cartesia (when a key exists) or incremental Whisper.
-const defaultProvider = configuredProvider === "cartesia" && !cartesiaApiKey ? "whisper" : configuredProvider;
 const thinkingConfig = loadThinkingConfig();
 const answerCompletion = defaultTranscriptionConfig.semanticEndEnabled && thinkingConfig.openRouterApiKey
   ? new OpenRouterAnswerCompletionService({ apiKey: thinkingConfig.openRouterApiKey, model: thinkingConfig.model, timeoutMs: defaultTranscriptionConfig.semanticEndTimeoutMs })
@@ -42,7 +39,7 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
   hedgeAfterMs: defaultTranscriptionConfig.hedgeAfterMs,
   finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
 }, {
-  apiKey: cartesiaApiKey ?? undefined, provider: defaultProvider, fallbackMode: defaultTranscriptionConfig.transcriptionFallbackMode, answerGraceMs: defaultTranscriptionConfig.cartesiaAnswerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.cartesiaIncompleteGraceMs, azureFromInkTurns: defaultTranscriptionConfig.azureTimingFromInkTurns, turnEndTimeoutMs: defaultTranscriptionConfig.cartesiaTurnEndTimeoutMs, model: defaultTranscriptionConfig.cartesiaModel, pauseMs: defaultTranscriptionConfig.cartesiaPauseMs, prepareAfterMs: defaultTranscriptionConfig.cartesiaPrepareAfterMs, maxPrepares: defaultTranscriptionConfig.cartesiaMaxPrepares, answerCompletion }, { verifier: defaultAccessTokenVerifier });
+  answerGraceMs: defaultTranscriptionConfig.answerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.incompleteGraceMs, pauseMs: defaultTranscriptionConfig.pauseMs, prepareAfterMs: defaultTranscriptionConfig.prepareAfterMs, maxPrepares: defaultTranscriptionConfig.maxPrepares, answerCompletion }, { verifier: defaultAccessTokenVerifier });
 
 server.listen(port, () => {
   console.info(`Backend listening on port ${port}`);
