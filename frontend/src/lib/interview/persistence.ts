@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { nullableQuestionCount } from "./session-policy.mjs";
+import type { ProgressRecord } from "./progress-insights.mjs";
+import type { AzureMetricSummary } from "./report-metrics.mjs";
 
 import type {
   InterviewConfig,
@@ -182,4 +184,66 @@ export async function listInterviewSessions(): Promise<PersistenceResult<Intervi
     .order("created_at", { ascending: false });
   if (error) return failure(error);
   return { ok: true, value: (data as InterviewRow[]).map(toSession) };
+}
+
+type ProgressFeedbackRow = {
+  status: "pending" | "ready" | "unavailable";
+  azure_summary: AzureMetricSummary | null;
+  analysis: unknown;
+};
+type ProgressInterviewRow = InterviewRow & { interview_feedback: ProgressFeedbackRow | ProgressFeedbackRow[] | null };
+
+const progressSessionLimit = 100;
+const progressTurnChunk = 25;
+
+/**
+ * Everything the progress screen needs, read-only and scoped by RLS to the signed-in user: completed interviews with
+ * their saved report (interview_feedback) and the count of non-empty candidate answers (interview_turns).
+ */
+export async function loadProgressRecords(): Promise<PersistenceResult<ProgressRecord[]>> {
+  const auth = await authenticatedClient();
+  if (!auth.ok) return auth;
+  const { client } = auth.value;
+  const { data, error } = await client
+    .from("interviews")
+    .select(`${sessionColumns},interview_feedback(status,azure_summary,analysis)`)
+    .eq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(progressSessionLimit);
+  if (error) return failure(error);
+  const rows = data as unknown as ProgressInterviewRow[];
+
+  const answerCounts = new Map<string, number>();
+  for (let index = 0; index < rows.length; index += progressTurnChunk) {
+    const ids = rows.slice(index, index + progressTurnChunk).map((row) => row.id);
+    const { data: turns, error: turnsError } = await client
+      .from("interview_turns")
+      .select("interview_id,content")
+      .in("interview_id", ids)
+      .eq("speaker", "candidate")
+      .limit(1000);
+    if (turnsError) return failure(turnsError);
+    for (const turn of turns as Array<{ interview_id: string; content: string | null }>) {
+      if (turn.content?.trim()) answerCounts.set(turn.interview_id, (answerCounts.get(turn.interview_id) ?? 0) + 1);
+    }
+  }
+
+  return {
+    ok: true,
+    value: rows.map((row) => {
+      const embedded = Array.isArray(row.interview_feedback) ? row.interview_feedback[0] ?? null : row.interview_feedback;
+      const session = toSession(row);
+      return {
+        id: session.id,
+        status: session.status,
+        targetRole: session.targetRole,
+        seniority: session.seniority,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        createdAt: session.createdAt,
+        answerCount: answerCounts.get(session.id) ?? 0,
+        feedback: embedded ? { status: embedded.status, azureSummary: embedded.azure_summary, analysis: embedded.analysis } : null,
+      };
+    }),
+  };
 }
