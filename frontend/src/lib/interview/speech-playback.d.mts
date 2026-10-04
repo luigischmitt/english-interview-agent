@@ -1,6 +1,6 @@
 export type SpeechPlaybackResult =
   | { status: "completed"; /** "browser" is never returned any more; it stays in the type only until interview-setup.tsx stops comparing against it. */ voice?: "network" | "browser" }
-  | { status: "unavailable"; message: string }
+  | { status: "unavailable"; message: string; /** "autoplay_blocked": the browser refused play() without a user gesture. */ reason?: "autoplay_blocked" }
   | { status: "cancelled" };
 
 export type SpeechPlayback = {
@@ -56,6 +56,8 @@ export function resolveInterviewerCaption(input: {
 export function synthesizeInterviewerQuestion(text: string, options: SpeechPlaybackOptions): SpeechPlayback;
 export const FIRST_AUDIO_TIMEOUT_MS: number;
 export const speechUnavailableMessage: string;
+export const autoplayBlockedMessage: string;
+export const AUTOPLAY_BLOCKED_REASON: "autoplay_blocked";
 export const minimumChunkCharacters: number;
 export const finalChunkLeadMs: number;
 export const maxConcurrentChunkRequests: number;

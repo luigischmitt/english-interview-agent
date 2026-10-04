@@ -1,3 +1,5 @@
+import { acquireSharedAudio, isAutoplayBlockedError, releaseSharedAudio } from "./audio-unlock.mjs";
+
 export function composeOpeningUtterance(introduction, firstQuestion) {
   return [introduction.trim(), firstQuestion.trim()].filter(Boolean).join(" ");
 }
@@ -167,6 +169,9 @@ function createCaptionUpdater(units, getAudio, isCancelled, onSegment) {
 // The backend budget is 15 s (own Kokoro, then the OpenRouter hedge); this leaves time for the network and body transfer.
 export const FIRST_AUDIO_TIMEOUT_MS = 20_000;
 export const speechUnavailableMessage = "Não conseguimos reproduzir a voz do entrevistador. Leia a pergunta e responda normalmente.";
+// The browser (iOS) refused to start audio without a tap: a tap on "Ouvir" unlocks it and replays the utterance.
+export const autoplayBlockedMessage = "Toque para ouvir o entrevistador. Seu navegador bloqueou o áudio automático.";
+export const AUTOPLAY_BLOCKED_REASON = "autoplay_blocked";
 
 // A rejected session is not a provider problem: the (Portuguese) session message is shown instead of the generic one.
 const isAuthError = (error) => Boolean(error?.isUnauthenticated || (error?.isSpeechResponseError && (error.status === 401 || error.status === 403)));
@@ -180,11 +185,18 @@ const unavailableMessages = {
 // A session problem keeps its own (Portuguese) message; every other failure shows the generic one.
 const unavailableMessageFor = (error) => (isAuthError(error) && error.message ? error.message : unavailableMessages.default);
 
+// A play() refused for lack of a user gesture is reported with its own reason and message (no content, no URL).
+const unavailableResultFor = (error) => (isAutoplayBlockedError(error)
+  ? { status: "unavailable", message: autoplayBlockedMessage, reason: AUTOPLAY_BLOCKED_REASON }
+  : { status: "unavailable", message: unavailableMessageFor(error) });
+
 export function synthesizeInterviewerQuestion(text, options) {
   const firstAudioTimeoutMs = options.firstAudioTimeoutMs ?? FIRST_AUDIO_TIMEOUT_MS;
   const playbackTimeoutMs = options.playbackTimeoutMs
     ?? Math.min(45_000, Math.max(12_000, text.trim().split(/\s+/).length * 800));
-  const makeAudio = options.makeAudio ?? ((url) => new Audio(url));
+  // Default: a shared element that a user gesture already unlocked (see audio-unlock.mjs).
+  const makeAudio = options.makeAudio ?? acquireSharedAudio;
+  const releaseAudio = options.makeAudio ? () => {} : releaseSharedAudio;
   const createObjectUrl = options.createObjectUrl ?? ((blob) => URL.createObjectURL(blob));
   const revokeObjectUrl = options.revokeObjectUrl ?? ((url) => URL.revokeObjectURL(url));
   const schedule = options.setTimeout ?? ((callback, delay) => window.setTimeout(callback, delay));
@@ -218,6 +230,7 @@ export function synthesizeInterviewerQuestion(text, options) {
       audio.pause();
       audio.removeAttribute?.("src");
       if (typeof audio.load === "function") audio.load();
+      releaseAudio(audio);
     }
     audio = null;
     if (objectUrl) revokeObjectUrl(objectUrl);
@@ -283,7 +296,7 @@ export function synthesizeInterviewerQuestion(text, options) {
       return { status: "completed" };
     } catch (error) {
       if (cancelled) return { status: "cancelled" };
-      return { status: "unavailable", message: unavailableMessageFor(error) };
+      return unavailableResultFor(error);
     } finally {
       cleanup();
     }
@@ -455,7 +468,8 @@ function requestChunks(chunks, options) {
  */
 export function playInterviewerSegments(segments, options) {
   const chunks = groupInterviewerSentences(segments);
-  const makeAudio = options.makeAudio ?? ((url) => new Audio(url));
+  const makeAudio = options.makeAudio ?? acquireSharedAudio;
+  const releaseAudio = options.makeAudio ? () => {} : releaseSharedAudio;
   const createObjectUrl = options.createObjectUrl ?? ((blob) => URL.createObjectURL(blob));
   const revokeObjectUrl = options.revokeObjectUrl ?? ((url) => URL.revokeObjectURL(url));
   const schedule = options.setTimeout ?? ((callback, delay) => window.setTimeout(callback, delay));
@@ -494,6 +508,7 @@ export function playInterviewerSegments(segments, options) {
       audio.pause();
       audio.removeAttribute?.("src");
       if (typeof audio.load === "function") audio.load();
+      releaseAudio(audio);
     }
     item.audio = null;
     if (item.url) revokeObjectUrl(item.url);
@@ -574,7 +589,7 @@ export function playInterviewerSegments(segments, options) {
 
   const promise = Promise.race([run(), cancellationResult]).catch((error) => {
     if (cancelled || error?.isCancelled) return { status: "cancelled" };
-    return { status: "unavailable", message: unavailableMessageFor(error) };
+    return unavailableResultFor(error);
   }).finally(() => {
     requests?.stop();
     stopPlaying?.();
