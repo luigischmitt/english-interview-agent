@@ -587,6 +587,10 @@ Cartesia credits circuit breaker: if Cartesia rejects a connection or sends an e
 
 Privacy: audio is sent to Cartesia, which offers zero data retention only on Enterprise plans; confirm the plan before enabling for real candidate audio. The key stays on the backend. Ink-2 normalizes some forms (for example numbers as digits, "choosed" as "choose"), which can hide a few learner errors in the canonical transcript.
 
+#### Per-interview transcription engine
+
+The `start` message may carry `transcriptionEngine: "whisper" | "ink-2"` (the setup screen sends it; any other value is ignored with a content-free `invalid_message` log, field `start.transcriptionEngine`). Resolution per connection: `ink-2` uses Cartesia Ink-2 when `CARTESIA_API_KEY` is set and the credits breaker is not tripped, otherwise `TRANSCRIPTION_FALLBACK_MODE` (default incremental Whisper); `whisper` always uses incremental Whisper; absent keeps the `TRANSCRIPTION_PROVIDER` behavior. The server now always builds the Cartesia/incremental options (Cartesia whenever the key exists, whatever `TRANSCRIPTION_PROVIDER` is), so the choice works with the default `whisper` provider too. The `complete` diagnostic adds `requestedEngine` (`whisper`, `ink-2` or `default`) and `resolvedMode` (`ink-2`, `whisper-incremental` or `whisper`).
+
 #### Enabling Ink-2 (default in Docker)
 
 `compose.yaml` sets `TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-cartesia}` for the backend, so Docker uses Ink-2 whenever `CARTESIA_API_KEY` is present and falls back to Whisper automatically (log `missing_cartesia_key`) when it is not. Because `environment` in compose takes precedence over `env_file`, set `TRANSCRIPTION_PROVIDER=whisper` in the shell or the root `.env` (not only in `backend/.env`) to opt out. Running the backend outside Docker keeps the code default `whisper` unless `TRANSCRIPTION_PROVIDER=cartesia` is set.

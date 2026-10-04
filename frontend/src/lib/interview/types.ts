@@ -1,3 +1,5 @@
+export type TranscriptionEngine = "whisper" | "ink-2";
+
 export type InterviewConfig = {
   role: string;
   seniority: string;
@@ -9,6 +11,7 @@ export type InterviewConfig = {
   candidateCameraEnabled: boolean;
   autoCaptureVoice: boolean;
   showCandidateCaptions: boolean;
+  transcriptionEngine: TranscriptionEngine;
 };
 
 export type InterviewQuestion = {

@@ -15,7 +15,7 @@ import { InkTurnRecorder } from "./ink-turn-blocks.js";
 import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
-  | { type: "start"; accessToken?: unknown; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; keyterms?: unknown; captions?: unknown; question?: unknown }
+  | { type: "start"; accessToken?: unknown; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; keyterms?: unknown; captions?: unknown; question?: unknown; transcriptionEngine?: unknown }
   | { type: "level"; value: number }
   | { type: "finalize"; reason: "manual" | "silence" }
   | { type: "cancel" };
@@ -174,7 +174,7 @@ export type CartesiaStreamingOptions = {
    * `cartesia` (default): Cartesia is the transcript source while it is available. `whisper-incremental`: no Cartesia at all,
    * OpenRouter Whisper transcribes VAD-cut segments in the background (same grace/provisional/semantic orchestration).
    */
-  provider?: "cartesia" | "whisper-incremental";
+  provider?: "cartesia" | "whisper-incremental" | "whisper";
   /** What new answers use while Cartesia is disabled by the credits circuit breaker. Default `whisper-incremental`. */
   fallbackMode?: "whisper-incremental" | "whisper";
   /** Incremental Whisper tuning (tests and rare overrides). */
@@ -210,6 +210,14 @@ export type CartesiaStreamingOptions = {
   endpoint?: string;
   openTimeoutMs?: number;
 };
+
+type RequestedEngine = "whisper" | "ink-2";
+
+/** Per-interview engine choice from `start`: null when absent, undefined when invalid (ignored by the caller). */
+export function parseTranscriptionEngine(value: unknown): RequestedEngine | null | undefined {
+  if (value === undefined) return null;
+  return value === "whisper" || value === "ink-2" ? value : undefined;
+}
 
 type StreamMode = "ink-2" | "ink-whisper" | "whisper-incremental";
 
@@ -258,8 +266,14 @@ export function attachTranscriptionWebSocket(
     logStreamDiagnostic({ status: "cartesia_disabled", reason: "credits" });
   };
   /** Mode of one new answer: a Cartesia model, incremental Whisper, or null for the plain Whisper path. */
-  const resolveStreamMode = (): StreamMode | null => {
+  const resolveStreamMode = (requested: RequestedEngine | null): StreamMode | null => {
     if (!cartesia) return null;
+    if (requested === "whisper") return "whisper-incremental";
+    if (requested === "ink-2") {
+      if (cartesia.apiKey && !cartesiaDisabled()) return "ink-2";
+      return (cartesia.fallbackMode ?? "whisper-incremental") === "whisper-incremental" ? "whisper-incremental" : null;
+    }
+    if (cartesia.provider === "whisper") return null;
     if (cartesia.provider === "whisper-incremental") return "whisper-incremental";
     if (!cartesiaDisabled()) return cartesia.model ?? "ink-2";
     return (cartesia.fallbackMode ?? "whisper-incremental") === "whisper-incremental" ? "whisper-incremental" : null;
@@ -293,6 +307,7 @@ export function attachTranscriptionWebSocket(
     // The streaming session of this answer (Cartesia or incremental Whisper) and its mode; null mode means plain Whisper.
     let inkSession: StreamingTurnSession | null = null;
     let streamMode: StreamMode | null = null;
+    let requestedEngine: RequestedEngine | null = null;
     const localTurnMode = () => streamMode === "ink-whisper" || streamMode === "whisper-incremental";
     let inkTurns: InkTurnRecorder | null = null;
     let inkGraceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -611,7 +626,7 @@ export function attachTranscriptionWebSocket(
           }
           const transcriptionDurationMs = Date.now() - flushStartedAt;
           const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
-          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, ...(streamMode === "whisper-incremental" ? { provider: "whisper-incremental", incrementalTurns: ink.turnCount, ...ink.diagnostics?.() } : { provider: "cartesia", cartesiaModel: streamMode ?? "ink-2", cartesiaTurns: ink.turnCount }), preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict, semanticLatencyMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
+          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: streamMode ?? "whisper", ...(streamMode === "whisper-incremental" ? { provider: "whisper-incremental", incrementalTurns: ink.turnCount, ...ink.diagnostics?.() } : { provider: "cartesia", cartesiaModel: streamMode ?? "ink-2", cartesiaTurns: ink.turnCount }), preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict, semanticLatencyMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
           send(socket, { type: "complete", status: "complete", provider: streamProviderNames[streamMode ?? "ink-2"], durationMs, transcript });
           clearTimeout(timer);
 
@@ -708,7 +723,7 @@ export function attachTranscriptionWebSocket(
                 fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
                 return;
               }
-              logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "whisper", answerEndReason, ...(streamMode === "ink-2" || streamMode === "ink-whisper" ? { cartesiaModel: streamMode, cartesiaTurns: inkSession?.turnCount ?? 0 } : streamMode === "whisper-incremental" ? { incrementalTurns: inkSession?.turnCount ?? 0, ...inkSession?.diagnostics?.() } : {}), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
+              logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: streamMode ?? "whisper", provider: "whisper", answerEndReason, ...(streamMode === "ink-2" || streamMode === "ink-whisper" ? { cartesiaModel: streamMode, cartesiaTurns: inkSession?.turnCount ?? 0 } : streamMode === "whisper-incremental" ? { incrementalTurns: inkSession?.turnCount ?? 0, ...inkSession?.diagnostics?.() } : {}), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
               send(socket, {
                 type: "complete",
                 status: "complete",
@@ -842,7 +857,10 @@ export function attachTranscriptionWebSocket(
           retainedSession = session;
           started = true;
           logStreamDiagnostic({ status: "started", speechThresholdBand: session.vad.speechThresholdBand });
-          streamMode = resolveStreamMode();
+          const parsedEngine = parseTranscriptionEngine(message.transcriptionEngine);
+          if (parsedEngine === undefined) logStreamDiagnostic({ status: "invalid_message", field: "start.transcriptionEngine" });
+          requestedEngine = parsedEngine ?? null;
+          streamMode = resolveStreamMode(requestedEngine);
           captionsEnabled = streamMode !== null && message.captions === true;
           interviewerQuestion = cartesia?.answerCompletion ? sanitizeQuestion(message.question) : null;
           if (cartesia && streamMode) {

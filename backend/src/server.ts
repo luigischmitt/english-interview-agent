@@ -17,12 +17,13 @@ if (!defaultPronunciationAssessmentService) {
       : !defaultTranscriptionConfig.azureSpeechRegion ? "missing_region" : "unavailable";
   console.info(JSON.stringify({ event: "azure_assessment_configuration", enabled: false, reason: unavailableReason }));
 }
-const cartesiaRequested = defaultTranscriptionConfig.transcriptionProvider === "cartesia";
-const incrementalRequested = defaultTranscriptionConfig.transcriptionProvider === "whisper-incremental";
 const cartesiaApiKey = defaultTranscriptionConfig.cartesiaApiKey;
-if (cartesiaRequested && !cartesiaApiKey) {
+const configuredProvider = defaultTranscriptionConfig.transcriptionProvider;
+if (configuredProvider === "cartesia" && !cartesiaApiKey) {
   console.info(JSON.stringify({ event: "transcription_provider", provider: "whisper", reason: "missing_cartesia_key" }));
 }
+// Server default for interviews that do not choose an engine; a per-interview choice can still use Cartesia (when a key exists) or incremental Whisper.
+const defaultProvider = configuredProvider === "cartesia" && !cartesiaApiKey ? "whisper" : configuredProvider;
 const thinkingConfig = loadThinkingConfig();
 const answerCompletion = defaultTranscriptionConfig.semanticEndEnabled && thinkingConfig.openRouterApiKey
   ? new OpenRouterAnswerCompletionService({ apiKey: thinkingConfig.openRouterApiKey, model: thinkingConfig.model, timeoutMs: defaultTranscriptionConfig.semanticEndTimeoutMs })
@@ -40,9 +41,8 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
   },
   hedgeAfterMs: defaultTranscriptionConfig.hedgeAfterMs,
   finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
-}, incrementalRequested || (cartesiaRequested && cartesiaApiKey)
-  ? { apiKey: cartesiaApiKey ?? undefined, provider: incrementalRequested ? "whisper-incremental" : "cartesia", fallbackMode: defaultTranscriptionConfig.transcriptionFallbackMode, answerGraceMs: defaultTranscriptionConfig.cartesiaAnswerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.cartesiaIncompleteGraceMs, azureFromInkTurns: defaultTranscriptionConfig.azureTimingFromInkTurns, turnEndTimeoutMs: defaultTranscriptionConfig.cartesiaTurnEndTimeoutMs, model: defaultTranscriptionConfig.cartesiaModel, pauseMs: defaultTranscriptionConfig.cartesiaPauseMs, prepareAfterMs: defaultTranscriptionConfig.cartesiaPrepareAfterMs, maxPrepares: defaultTranscriptionConfig.cartesiaMaxPrepares, answerCompletion }
-  : null, { verifier: defaultAccessTokenVerifier });
+}, {
+  apiKey: cartesiaApiKey ?? undefined, provider: defaultProvider, fallbackMode: defaultTranscriptionConfig.transcriptionFallbackMode, answerGraceMs: defaultTranscriptionConfig.cartesiaAnswerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.cartesiaIncompleteGraceMs, azureFromInkTurns: defaultTranscriptionConfig.azureTimingFromInkTurns, turnEndTimeoutMs: defaultTranscriptionConfig.cartesiaTurnEndTimeoutMs, model: defaultTranscriptionConfig.cartesiaModel, pauseMs: defaultTranscriptionConfig.cartesiaPauseMs, prepareAfterMs: defaultTranscriptionConfig.cartesiaPrepareAfterMs, maxPrepares: defaultTranscriptionConfig.cartesiaMaxPrepares, answerCompletion }, { verifier: defaultAccessTokenVerifier });
 
 server.listen(port, () => {
   console.info(`Backend listening on port ${port}`);

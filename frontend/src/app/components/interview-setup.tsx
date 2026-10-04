@@ -11,6 +11,7 @@ import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudio
 import { voiceReadinessCopy } from "@/lib/interview/voice-readiness.mjs";
 import { PageIntro } from "./shared";
 import { defaultInterviewConfig } from "../interview-config";
+import { resolveTranscriptionEngine, transcriptionEngineOptions } from "@/lib/interview/transcription-engine.mjs";
 import { interviewDurationOptions } from "@/lib/interview/session-policy.mjs";
 
 const seniorityLabels: Record<InterviewConfig["seniority"], string> = {
@@ -80,6 +81,9 @@ export function InterviewSetup({
       setAudioTestStatus({ kind: "idle" });
     }
   };
+
+  const transcriptionEngine = resolveTranscriptionEngine(config);
+  const transcriptionEngineHelper = transcriptionEngineOptions.find((option) => option.value === transcriptionEngine)?.helper;
 
   const testAudio = async () => {
     if (!config.playInterviewerAudio) return;
@@ -295,9 +299,29 @@ export function InterviewSetup({
             <section className="border-t border-[#d9e3dc] pt-6" aria-labelledby="room-options-title">
               <h3 id="room-options-title" className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1f6b45]">03 · Preferências da sala</h3>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
+              <fieldset className="mt-4 flex flex-col gap-2">
+                <legend className="text-sm font-medium">Transcrição da sua resposta</legend>
+                <div className="grid gap-2 min-[420px]:grid-cols-2" role="radiogroup" aria-label="Transcrição da sua resposta">
+                  {transcriptionEngineOptions.map((option) => (
+                    <label key={option.value} className={`flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${transcriptionEngine === option.value ? "border-[#0e2a1f] bg-[#0e2a1f] text-[#f3f4ee]" : "border-[#d9e3dc] bg-[#f3f4ee] hover:border-[#1f6b45]"}`}>
+                      <input
+                        type="radio"
+                        name="transcription-engine"
+                        value={option.value}
+                        className="sr-only"
+                        checked={transcriptionEngine === option.value}
+                        aria-describedby="transcription-engine-helper"
+                        onChange={() => setConfig((current) => ({ ...current, transcriptionEngine: option.value }))}
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+                <p id="transcription-engine-helper" role="status" aria-live="polite" className="text-xs leading-5 text-muted-foreground">{transcriptionEngineHelper}</p>
+              </fieldset>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel="Sempre visível" onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
-                <SettingToggle id="show-candidate-captions" label="Legenda da sua fala" description="Veja o que você diz, palavra por palavra, enquanto responde. Só aparece quando o transcritor em tempo real está ativo e nunca é salva; a transcrição final continua sendo a usada." checked={config.showCandidateCaptions} onChange={(checked) => updateOption("showCandidateCaptions", checked)} />
+                <SettingToggle id="show-candidate-captions" label="Legenda da sua fala" description="Veja o que você diz enquanto responde. Só aparece quando o transcritor em tempo real está ativo e nunca é salva; a transcrição final continua sendo a usada." checked={config.showCandidateCaptions} onChange={(checked) => updateOption("showCandidateCaptions", checked)} />
                 <SettingToggle id="candidate-camera" label="Prévia da câmera" description="Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
                 <SettingToggle id="auto-capture-voice" label="Iniciar microfone automaticamente" description="Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala." checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
               </div>

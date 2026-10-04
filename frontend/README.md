@@ -31,12 +31,16 @@ prática da resposta em inglês da análise futura de áudio.
   persistido; a presença do entrevistador é apenas tipográfica/sonora, sem
   avatar ou câmera simulada.
 - Respostas somente por voz usando `AudioWorklet`. O microfone pode iniciar
-  automaticamente após a pergunta ou manualmente; não há resposta digitada. Com
-  `TRANSCRIPTION_PROVIDER=cartesia` no backend, a fala aparece como legenda ao
-  vivo ("VOCÊ", trecho já fechado em tinta normal e trecho em andamento em tom
-  esmaecido) abaixo do bloco "Você", opção "Legenda da sua fala" ligada por
+  automaticamente após a pergunta ou manualmente; não há resposta digitada. A
+  fala aparece como legenda ("VOCÊ", trecho já fechado em tinta normal e trecho
+  em andamento em tom esmaecido): palavra a palavra com o motor Cartesia Ink-2 e
+  por trecho, a cada pausa, com o Whisper (padrão) abaixo do bloco "Você", opção "Legenda da sua fala" ligada por
   padrão na configuração. A legenda é só de exibição: não é salva, enviada nem
-  usada no relatório. Com Whisper não há legenda. O navegador envia PCM mono s16le a
+  usada no relatório. A configuração tem "Transcrição da sua resposta" por
+  entrevista: "Whisper (padrão)" (legenda por trecho, a cada pausa) ou
+  "Cartesia Ink-2" (palavra a palavra; usa créditos da Cartesia e cai para o
+  Whisper se acabarem). A escolha segue em `transcriptionEngine` na mensagem
+  `start` do WebSocket; configs sem o campo usam Whisper. O navegador envia PCM mono s16le a
   16 kHz em frames de aproximadamente 100 ms pelo WebSocket v2. Após detectar
   3,5 segundos de silêncio, o backend mantém uma janela automática e reversível
   de 1,5 segundo, continuando a receber áudio; se a fala recomeçar nesse
