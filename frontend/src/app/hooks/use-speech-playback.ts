@@ -8,8 +8,6 @@ export type SpeechTimingEvent = "synthesis-started" | "synthesis-completed" | "p
 
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 
-export const browserVoiceNotice = "O áudio do entrevistador está instável, então usamos a voz do navegador.";
-
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
 
 /** Wakes the voice service once when the component mounts (fire-and-forget). */
@@ -40,17 +38,35 @@ export function prewarmInterviewerUtterance(utterance: string) {
 export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void) {
   const [activeSegment, setActiveSegment] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
-  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
-  // The browser-voice note is shown once per interview, not once per question.
-  const voiceNoticeShownRef = useRef(false);
   const playbackRef = useRef<SpeechPlayback | null>(null);
+  // A manual "Tentar de novo" playback; it never advances the interview, only replays the current utterance.
+  const retryRef = useRef<SpeechPlayback | null>(null);
+  const segmentsRef = useRef(segments);
   // Read through a ref so a new callback identity never restarts the utterance.
   const onFinalChunkStartedRef = useRef(onFinalChunkStarted);
   useEffect(() => { onFinalChunkStartedRef.current = onFinalChunkStarted; }, [onFinalChunkStarted]);
+  useEffect(() => { segmentsRef.current = segments; }, [segments]);
   const cancelPlayback = useCallback(() => {
     playbackRef.current?.cancel();
     playbackRef.current = null;
+    retryRef.current?.cancel();
+    retryRef.current = null;
   }, []);
+
+  const startPlayback = useCallback((utterance: string[]) => playInterviewerSegments(utterance, {
+    endpoint: speechEndpoint,
+    fetcher: authorizedFetch,
+    // Kokoro's backend budget is 15s; leave 5s for network and body transfer.
+    timeoutMs: 20_000,
+    onSegment: (segment) => {
+      setSpeechMessage(null);
+      setActiveSegment(segment);
+    },
+    onSynthesisStarted: () => onTimingEvent?.("synthesis-started"),
+    onSynthesisCompleted: () => onTimingEvent?.("synthesis-completed"),
+    onPlaybackStarted: () => onTimingEvent?.("playback-started"),
+    onFinalChunkStarted: () => onFinalChunkStartedRef.current?.(),
+  }), [onTimingEvent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,26 +75,7 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
       return () => { cancelled = true; };
     }
 
-    queueMicrotask(() => { if (!cancelled) setVoiceNotice(null); });
-    const playback = playInterviewerSegments(segments, {
-      endpoint: speechEndpoint,
-      fetcher: authorizedFetch,
-      // Kokoro's backend budget is 15s; leave 5s for network and body transfer.
-      timeoutMs: 20_000,
-      onSegment: (segment) => {
-        setSpeechMessage(null);
-        setActiveSegment(segment);
-      },
-      onSynthesisStarted: () => onTimingEvent?.("synthesis-started"),
-      onSynthesisCompleted: () => onTimingEvent?.("synthesis-completed"),
-      onPlaybackStarted: () => onTimingEvent?.("playback-started"),
-      onBrowserVoiceStarted: () => {
-        if (voiceNoticeShownRef.current) return;
-        voiceNoticeShownRef.current = true;
-        setVoiceNotice(browserVoiceNotice);
-      },
-      onFinalChunkStarted: () => onFinalChunkStartedRef.current?.(),
-    });
+    const playback = startPlayback(segments);
     playbackRef.current = playback;
 
     void playback.promise.then((result) => {
@@ -94,7 +91,27 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
       playback.cancel();
       if (playbackRef.current === playback) playbackRef.current = null;
     };
-  }, [enabled, onReady, onTimingEvent, segments]);
+  }, [enabled, onReady, segments, startPlayback]);
 
-  return { activeSegment, speechMessage, voiceNotice, setSpeechMessage, cancelPlayback };
+  // A replay never outlives its utterance (or the room).
+  useEffect(() => () => {
+    retryRef.current?.cancel();
+    retryRef.current = null;
+  }, [segments]);
+
+  /** Requests the speech for the current utterance again after a failure; the interview flow is not affected. */
+  const retrySpeech = useCallback(() => {
+    retryRef.current?.cancel();
+    setSpeechMessage(null);
+    const playback = startPlayback(segmentsRef.current);
+    retryRef.current = playback;
+    void playback.promise.then((result) => {
+      if (retryRef.current !== playback || result.status === "cancelled") return;
+      retryRef.current = null;
+      setActiveSegment(null);
+      if (result.status === "unavailable") setSpeechMessage(result.message);
+    });
+  }, [startPlayback]);
+
+  return { activeSegment, speechMessage, setSpeechMessage, cancelPlayback, retrySpeech };
 }

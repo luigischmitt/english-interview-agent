@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
-import test, { beforeEach } from "node:test";
-import { resetNetworkVoiceHealth } from "../src/lib/interview/speech-playback.mjs";
-import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+import test from "node:test";
+import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, speechUnavailableMessage, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
 
-beforeEach(() => resetNetworkVoiceHealth());
 import { createOpeningSpeechTiming, isOpeningTimingEnabled, openingTimingStorageKey } from "../src/lib/interview/opening-timing.mjs";
 
 test("the first interviewer playback combines the introduction and the first question", () => {
@@ -317,7 +315,7 @@ test("a timed out flight is aborted and removed so a fresh request can retry", a
   const options = {
     endpoint: "http://speech.test/api/v1/speech",
     timeoutMs: 10_000,
-    firstAudioFallbackMs: 10_000,
+    firstAudioTimeoutMs: 10_000,
     fetcher: async (_endpoint, init) => {
       fetchCount += 1;
       if (fetchCount === 1) return new Promise((_resolve, reject) => {
@@ -355,7 +353,7 @@ test("the interview network deadline exceeds six seconds and completes a slower 
   };
   const playback = synthesizeInterviewerQuestion("Slow question.", {
     endpoint: "http://speech.test/api/v1/speech",
-    firstAudioFallbackMs: 20_000,
+    firstAudioTimeoutMs: 20_000,
     fetcher: () => new Promise((resolve) => { finishFetch = resolve; }),
     makeAudio: () => { const audio = new FakeAudio(); audio.play = () => { audio.emit("ended"); return Promise.resolve(); }; return audio; },
     createObjectUrl: () => "blob:slow",
@@ -375,13 +373,13 @@ test("the interview network deadline exceeds six seconds and completes a slower 
   assert.equal(networkTimeoutFired, false);
 });
 
-test("a rejected browser playback returns a recoverable unavailable result", async () => {
+test("a rejected playback returns a recoverable unavailable result", async () => {
   const audio = new FakeAudio();
   audio.play = () => Promise.reject(new Error("autoplay blocked"));
   const playback = synthesizeInterviewerQuestion("Hello.", successfulOptions(audio));
   assert.deepEqual(await playback.promise, {
     status: "unavailable",
-    message: "O áudio não está disponível agora. Você pode continuar sem ele.",
+    message: speechUnavailableMessage,
   });
   assert.equal(audio.revoked, true);
 });
@@ -400,7 +398,7 @@ test("a slow speech response times out and returns a text-fallback result", asyn
   onTimeout();
   assert.deepEqual(await playback.promise, {
     status: "unavailable",
-    message: "O áudio do entrevistador não está disponível agora. O texto da pergunta continua na tela.",
+    message: speechUnavailableMessage,
   });
 });
 
