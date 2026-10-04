@@ -1,7 +1,5 @@
-import type { BrowserVoiceOptions } from "./browser-voice.mjs";
-
 export type SpeechPlaybackResult =
-  | { status: "completed"; /** Which voice spoke; "browser" means the Web Speech fallback was used. */ voice?: "network" | "browser" }
+  | { status: "completed"; /** "browser" is never returned any more; it stays in the type only until interview-setup.tsx stops comparing against it. */ voice?: "network" | "browser" }
   | { status: "unavailable"; message: string }
   | { status: "cancelled" };
 
@@ -14,14 +12,8 @@ export type SpeechPlaybackOptions = {
   endpoint: string;
   /** JSON request fields that affect synthesis; text is used when omitted. */
   requestBody?: Record<string, unknown>;
-  /** How long the first audio may take before the browser voice speaks instead (default FIRST_AUDIO_FALLBACK_MS = 4000). Also the longest wait for a later chunk. */
-  firstAudioFallbackMs?: number;
-  /** Injectable clock (ms) for the network voice cooldown; defaults to Date.now. */
-  now?: () => number;
-  /** Injectable Web Speech API pieces for the browser fallback voice. */
-  browserVoice?: BrowserVoiceOptions & { voice?: SpeechSynthesisVoice | null };
-  /** Fired when the browser voice starts speaking in place of (or after) the network audio. */
-  onBrowserVoiceStarted?: () => void;
+  /** Longest wait for the first audio (and for each later chunk) before playback ends as "unavailable" (default FIRST_AUDIO_TIMEOUT_MS = 20000). */
+  firstAudioTimeoutMs?: number;
   /** prewarmInterviewerSpeech only: deadline for the speech request and complete audio response body. */
   timeoutMs?: number;
   /** Maximum time to wait for play() and the media ended event. Defaults to a text-length estimate. */
@@ -36,8 +28,6 @@ export type SpeechPlaybackOptions = {
   setTimeout?: (callback: () => void, delay: number) => number;
   clearTimeout?: (id: number) => void;
   onSegment?: (segment: string) => void;
-  /** playInterviewerSegments only: how long a request that missed the fallback deadline may keep running to learn the voice health (default BACKGROUND_REQUEST_TIMEOUT_MS). */
-  backgroundRequestTimeoutMs?: number;
   onSynthesisStarted?: () => void;
   onSynthesisCompleted?: () => void;
   onPlaybackStarted?: () => void;
@@ -64,7 +54,7 @@ export function resolveInterviewerCaption(input: {
   questionPrompt: string;
 }): string;
 export function synthesizeInterviewerQuestion(text: string, options: SpeechPlaybackOptions): SpeechPlayback;
-export const FIRST_AUDIO_FALLBACK_MS: number;
+export const FIRST_AUDIO_TIMEOUT_MS: number;
 export const speechUnavailableMessage: string;
 export const minimumChunkCharacters: number;
 export const finalChunkLeadMs: number;
@@ -72,7 +62,6 @@ export const maxConcurrentChunkRequests: number;
 export const maximumChunkCharacters: number;
 export const firstChunkSplitThreshold: number;
 export const firstChunkPartMinimum: number;
-export const BACKGROUND_REQUEST_TIMEOUT_MS: number;
 /**
  * Groups sentences into synthesis chunks; sentences under ~40 characters merge with the next (never past ~140 characters).
  * Only the first sentence may be split (over 70 characters, at its first clause boundary). `text` is what is synthesized,
@@ -83,10 +72,5 @@ export function playInterviewerSegments(segments: string[], options: SpeechPlayb
 export function prewarmInterviewerSpeech(segments: string[], options: SpeechPlaybackOptions): { promise: Promise<boolean>; cancel: () => void };
 export function clearRetainedSpeechBlobs(): void;
 export function resetSpeechFlights(): void;
-export const NETWORK_VOICE_COOLDOWN_MS: number;
-export function markNetworkVoiceFailed(now?: number): void;
-export function markNetworkVoiceHealthy(): void;
-export function shouldSkipNetworkVoice(now?: number): boolean;
-export function resetNetworkVoiceHealth(): void;
 
 export function warmUpInterviewerSpeech(endpoint: string, fetcher: (input: string, init?: RequestInit) => Promise<unknown>): void;

@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
-import test, { beforeEach } from "node:test";
-import { resetNetworkVoiceHealth } from "../src/lib/interview/speech-playback.mjs";
+import test from "node:test";
 
-beforeEach(() => resetNetworkVoiceHealth());
 import { playInterviewerSegments } from "../src/lib/interview/speech-playback.mjs";
 import { createMicEngine } from "../src/lib/interview/mic-engine.mjs";
 import { createAnswerStream } from "../src/lib/interview/answer-stream.mjs";

@@ -228,7 +228,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     () => splitInterviewerSpeech(currentUtterance),
     [currentUtterance],
   );
-  const { activeSegment, speechMessage, voiceNotice, setSpeechMessage, cancelPlayback } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted);
+  const { activeSegment, speechMessage, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
   const currentAssessmentSamples = assessmentSamples(voiceAssessments);
   const currentAzureSummary = summarizeAzureAssessments(currentAssessmentSamples);
@@ -696,8 +696,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
               <button type="button" className="btn btn-ghost min-h-11 gap-2" onClick={finishNow} disabled={phase !== "answering" || isAdvancing}>Encerrar prática</button>
             </div>
           </div>
-          {speechMessage && <div role="status" className="alert alert-warning alert-soft mt-3 text-sm"><Volume2 className="size-4 shrink-0" aria-hidden="true" /><span>{speechMessage}</span></div>}
-          {voiceNotice && !speechMessage && <div role="status" className="alert alert-info alert-soft mt-3 text-sm"><Volume2 className="size-4 shrink-0" aria-hidden="true" /><span>{voiceNotice}</span></div>}
+          {speechMessage && (
+            <div role="status" className="alert alert-warning alert-soft mt-3 text-sm">
+              <Volume2 className="size-4 shrink-0" aria-hidden="true" />
+              <span>{speechMessage}</span>
+              {/* Replaying would be picked up by an open microphone, so the retry is offered only while it is idle. */}
+              {phase === "answering" && voiceCaptureState === "idle" && <button type="button" className="btn btn-sm btn-ghost" onClick={retrySpeech}>Tentar de novo</button>}
+            </div>
+          )}
           {persistenceMessage && <div role="status" className="alert alert-info alert-soft mt-3 text-sm"><span>{persistenceMessage}</span></div>}
           {timeLimitReached && <p className="alert alert-warning alert-soft mt-3 py-3 text-sm" role="status">O tempo chegou ao fim. Você pode concluir esta resposta; uma nova pergunta não será iniciada.</p>}
           {micEngineState === "ready" && (
