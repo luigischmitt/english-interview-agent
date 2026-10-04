@@ -160,7 +160,8 @@
 /* ---- Control dock: answer state + record + skip/finish, grouped and predictable. ---- */
 .rm-dock {
   position: sticky;
-  bottom: 0.75rem;
+  /* On mobile the shell's bottom nav is fixed below the content; keep the dock above it. */
+  bottom: calc(var(--shl-bottom-nav-h, 0px) + 0.75rem);
   z-index: 10;
   margin-top: 1rem;
   border-radius: var(--ds-r-panel);
@@ -202,3 +203,7 @@
 }
 
 .rm-mic { border-radius: var(--ds-r-xl); background: var(--ds-field); padding: 0.875rem 1rem; }
+
+@media (min-width: 1024px) {
+  .rm-dock { bottom: 0.75rem; }
+}
