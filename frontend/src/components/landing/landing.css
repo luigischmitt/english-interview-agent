@@ -142,3 +142,20 @@
 }
 
 @media (max-width: 419px) { .lp-nav .lp-brand span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
+
+/* ---- Phones ---- */
+/* Header: brand + (toggle, Entrar, CTA) do not fit side by side below ~560px. The theme toggle moves to the footer. */
+.lp-foot-theme { display: none; }
+@media (max-width: 559.98px) {
+  .lp-nav { gap: 0.5rem; }
+  .lp-nav-actions > .thm-toggle { display: none; }
+  .lp-foot-theme { display: block; margin-top: 1.5rem; }
+  .lp-foot-theme .thm-toggle { display: flex; width: fit-content; }
+}
+@media (max-width: 559.98px) { .lp-nav .lp-brand span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
+@media (pointer: coarse) {
+  .lp-link, .lp-nav-cta { min-height: 2.75rem; }
+  .lp-foot a { display: inline-flex; min-height: 2.75rem; align-items: center; }
+}
+/* Fixed/sticky chrome clears the notch in landscape. */
+.lp-header { padding-top: env(safe-area-inset-top, 0px); }

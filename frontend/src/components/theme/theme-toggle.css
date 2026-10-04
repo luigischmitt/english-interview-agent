@@ -21,3 +21,5 @@
   .thm-item:hover:not([aria-checked="true"]) { color: var(--ds-ink); background: var(--ds-hover-wash); }
 }
 @media (prefers-reduced-motion: reduce) { .thm-item:active { transform: none; } }
+
+@media (pointer: coarse) { .thm-item { width: 2.75rem; height: 2.75rem; } }

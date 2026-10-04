@@ -13,13 +13,22 @@
 
 /* Mobile action bar: a material, not an opaque strip. */
 .isu-bar {
-  bottom: var(--shl-bottom-nav-h, 0px); /* sits directly above the shell's mobile nav */
-  background: color-mix(in srgb, var(--ds-cream) 82%, transparent);
+  /* Anchored to the screen bottom and padded by the nav height, so the opaque bar also fills the strip behind the
+     shell's floating mobile nav: no scrolled content can show between the button and the nav. The nav stays on top. */
+  bottom: 0;
+  z-index: 19;
+  padding-bottom: calc(var(--shl-bottom-nav-h, 0px) + 0.75rem);
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  background: color-mix(in srgb, var(--ds-cream) 94%, transparent); /* nearly opaque: scrolling content must not show through the button */
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   box-shadow: var(--ds-shadow-bar);
 }
 @media (prefers-reduced-transparency: reduce) { .isu-bar { background: var(--ds-cream); backdrop-filter: none; -webkit-backdrop-filter: none; } }
+
+.isu-bar .ds-hint { margin-bottom: 0.5rem; font-size: 0.75rem; line-height: 1.35; }
+.isu-bar .ds-btn-cta-green { min-height: 3rem; }
 
 .isu-disclosure-button { width: 100%; text-align: left; border-radius: var(--ds-r-card); cursor: pointer; transition: background-color var(--ds-dur-fast) ease; }
 .isu-disclosure-button:focus-visible { outline: var(--ds-focus-outline); outline-offset: -2px; }

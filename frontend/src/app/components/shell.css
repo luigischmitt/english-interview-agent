@@ -61,6 +61,8 @@
 
 /* ---- Mobile bottom navigation: translucent material with a horizontally sliding thumb. ---- */
 .shl-mobile-nav {
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
   background: color-mix(in srgb, var(--ds-cream) 86%, transparent);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
@@ -105,9 +107,12 @@
   backdrop-filter: blur(14px) saturate(150%);
   -webkit-backdrop-filter: blur(14px) saturate(150%);
   box-shadow: 0 1px 0 var(--ds-line);
+  padding-top: env(safe-area-inset-top, 0px);
+  height: calc(4rem + env(safe-area-inset-top, 0px));
 }
 @media (prefers-reduced-transparency: reduce) { .shl-topbar { background: var(--ds-cream); backdrop-filter: none; -webkit-backdrop-filter: none; } }
-.shl-crumbs { display: flex; min-width: 0; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: var(--ds-text-2); }
+.shl-crumbs { display: none; /* desktop wayfinding: the mobile topbar shows the brand and the bottom nav names the page */ min-width: 0; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: var(--ds-text-2); }
+@media (min-width: 1024px) { .shl-crumbs { display: flex; } }
 .shl-crumbs [aria-current="page"] { color: var(--ds-ink); font-weight: 600; }
 
 /* Style the container of the sign-out control (component lives in components/auth). */
@@ -164,4 +169,14 @@
 @media (hover: hover) and (pointer: fine) {
   .shl-collapse:hover { background: var(--ds-hover-wash); color: var(--ds-ink); }
   .shl-nav-item:not([aria-current="page"]):hover { color: var(--ds-ink); }
+}
+
+/* ---- Touch: finger-sized targets, and no fixed bars competing with the on-screen keyboard. ---- */
+@media (pointer: coarse) {
+  .shl-signout .btn { min-height: 2.75rem; min-width: 2.75rem; }
+}
+/* While a field is focused the keyboard needs the room: on Android (resizes-content) the nav and action bar would
+   stack on top of it and cover the field being edited; on iOS they sit behind the keyboard anyway. */
+@media (max-width: 1023.98px) {
+  body:has(input:focus, textarea:focus, select:focus) :is(.shl-mobile-nav, .isu-bar) { display: none; }
 }

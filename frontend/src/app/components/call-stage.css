@@ -43,7 +43,8 @@
   grid-template-rows: auto minmax(0, 1fr);
   row-gap: 16px;
   height: 100dvh;
-  padding: 0 12px calc(104px + var(--mt-toasts-h, 0px) + env(safe-area-inset-bottom));
+  padding: 0 max(12px, env(safe-area-inset-left, 0px)) calc(104px + var(--mt-toasts-h, 0px) + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-right, 0px));
+  overscroll-behavior: none;
   background: var(--mt-bg);
   color: var(--mt-text);
   overflow: hidden;
@@ -52,7 +53,7 @@
 .mt-call :focus-visible { outline: 2px solid var(--mt-accent); outline-offset: 3px; }
 
 /* ---- Top overlay: role, save status, calm timer, hairline progress. ---- */
-.mt-top { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 4px 16px; min-width: 0; }
+.mt-top { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(18px + env(safe-area-inset-top, 0px)) 4px 16px; min-width: 0; }
 .mt-top-title { min-width: 0; }
 .mt-title { font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mt-sub { display: none; margin-top: 2px; font-size: 0.75rem; color: var(--mt-muted); text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -143,6 +144,7 @@
   max-width: 44rem;
   max-height: 45%;
   margin: 0 12px 52px;
+  overscroll-behavior: contain;
   overflow-y: auto;
   border-radius: 12px;
   background: var(--mt-caption-bg);
@@ -173,12 +175,14 @@
   .mt-candidate .mt-avatar svg { width: 24px; height: 24px; }
   .mt-candidate .mt-name { left: 6px; bottom: 6px; padding: 3px 8px; font-size: 0.6875rem; }
   .mt-candidate::after { border-width: 2px; }
+  /* The caption never runs under the picture-in-picture: leave its height to what is left below it (floor: 3 lines). */
+  .mt-caption { max-height: max(6rem, min(45%, calc(100% - 13.5rem))); }
 }
 
 /* ---- Dock: toasts above a floating control bar. ---- */
-.mt-dock { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 12px calc(14px + env(safe-area-inset-bottom)); pointer-events: none; }
+.mt-dock { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 max(12px, env(safe-area-inset-right, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); pointer-events: none; }
 .mt-dock > * { pointer-events: auto; }
-.mt-toasts { display: flex; width: 100%; max-width: 34rem; flex-direction: column; gap: 8px; }
+.mt-toasts { display: flex; width: 100%; max-width: 34rem; max-height: 34dvh; flex-direction: column; gap: 8px; overflow-y: auto; overscroll-behavior: contain; } /* many warnings scroll instead of swallowing the stage */
 .mt-toast { display: flex; align-items: flex-start; gap: 10px; border-radius: 14px; background: var(--mt-toast-bg); color: var(--mt-toast-fg); padding: 10px 12px; font-size: 0.875rem; line-height: 1.4; box-shadow: 0 0 0 1px var(--mt-toast-line), var(--ds-shadow-float); animation: mt-toast-in var(--ds-dur-slow) var(--ease-out) backwards; }
 @keyframes mt-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .mt-toast-icon { flex: none; margin-top: 2px; color: var(--ds-green); }
@@ -192,7 +196,12 @@
 .mt-toast-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .mt-toast-x { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 9999px; color: inherit; opacity: 0.7; }
 .mt-toast .mt-toast-btn:focus-visible, .mt-toast .mt-toast-x:focus-visible { outline: 2px solid var(--ds-green); outline-offset: 2px; }
-@media (max-width: 479.98px) { .mt-toast { flex-wrap: wrap; } .mt-toast-body { flex-basis: calc(100% - 30px); } .mt-toast-actions { width: 100%; justify-content: flex-start; padding-left: 26px; } }
+@media (max-width: 479.98px) {
+  .mt-toast { flex-wrap: wrap; } .mt-toast-body { flex-basis: calc(100% - 30px); } .mt-toast-actions { width: 100%; justify-content: flex-start; padding-left: 26px; }
+  /* A toast whose only action is the dismiss X keeps one row: the X sits at the end instead of alone on a second line. */
+  .mt-toast:not(:has(.mt-toast-btn)) { flex-wrap: nowrap; } .mt-toast:not(:has(.mt-toast-btn)) .mt-toast-body { flex-basis: auto; } .mt-toast:not(:has(.mt-toast-btn)) .mt-toast-actions { width: auto; padding-left: 0; }
+}
+@media (pointer: coarse) { .mt-toast-btn { min-height: 44px; } .mt-toast-x { width: 44px; height: 44px; margin: -6px -6px -6px 0; } }
 
 .mt-bar { display: flex; max-width: 100%; align-items: center; justify-content: center; gap: 8px; border-radius: 9999px; background: var(--mt-dock-bg); padding: 8px; box-shadow: 0 0 0 1px var(--mt-dock-line), var(--ds-shadow-dock); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); }
 @media (prefers-reduced-transparency: reduce) { .mt-bar { background: var(--mt-bg); backdrop-filter: none; -webkit-backdrop-filter: none; } }
@@ -235,7 +244,7 @@
 }
 
 /* ---- End-call dialog. ---- */
-.mt-dialog { margin: auto; width: min(22rem, calc(100vw - 24px)); border: 0; border-radius: 24px; background: var(--ds-dialog); color: var(--ds-ink); padding: 0; box-shadow: 0 0 0 1px var(--ds-line), var(--ds-shadow-dialog); }
+.mt-dialog { margin: auto; width: min(22rem, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; border: 0; border-radius: 24px; background: var(--ds-dialog); color: var(--ds-ink); padding: 0; box-shadow: 0 0 0 1px var(--ds-line), var(--ds-shadow-dialog); }
 .mt-dialog::backdrop { background: var(--ds-overlay); }
 .mt-dialog[open] { animation: mt-toast-in var(--ds-dur-slow) var(--ease-out); }
 .mt-dialog-body { display: flex; flex-direction: column; gap: 8px; padding: 22px; }
@@ -248,6 +257,22 @@
 .mt-dialog-primary { background: var(--ds-green-solid); color: var(--ds-on-green); }
 .mt-dialog-danger { background: transparent; color: var(--ds-error); }
 @media (hover: hover) and (pointer: fine) { .mt-dialog-danger:hover { background: var(--ds-error-tint); } .mt-dialog-btn:hover:not(:disabled):not(.mt-dialog-danger):not(.mt-dialog-primary) { background: var(--ds-tint-hover); } .mt-dialog-primary:hover:not(:disabled) { background: var(--ds-green-solid-hover); } }
+
+/* ---- Short viewports (phone in landscape): give the stage back its height. ---- */
+@media (max-height: 500px) {
+  .mt-call { row-gap: 8px; padding-bottom: calc(76px + var(--mt-toasts-h, 0px) + env(safe-area-inset-bottom, 0px)); }
+  .mt-top { padding-block: calc(8px + env(safe-area-inset-top, 0px)) 8px; }
+  .mt-sub { display: none; }
+  .mt-dock { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); gap: 6px; }
+  .mt-bar { padding: 6px; }
+  .mt-toasts { max-height: 40dvh; }
+  .mt-toast { padding: 8px 12px; font-size: 0.8125rem; }
+  .mt-avatar { width: 56px; height: 56px; }
+  .mt-avatar svg { width: 26px; height: 26px; }
+  .mt-interviewer:has(.mt-caption) .mt-center { display: none; }
+  .mt-name { left: 8px; bottom: 8px; padding: 3px 10px; }
+  .mt-caption { margin-bottom: 40px; max-height: calc(100% - 52px); font-size: 1rem; padding: 8px 12px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .mt-interviewer[data-speaking="true"]::after { animation: none; opacity: 0.9; }

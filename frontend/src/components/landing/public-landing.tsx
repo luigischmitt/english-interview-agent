@@ -216,6 +216,9 @@ export function PublicLanding() {
           <span>English Interview Agent © 2026</span>
           <span>Feito no Brasil, para vaga lá fora.</span>
         </div>
+        <div className="lp-wrap lp-foot-theme">
+          <ThemeToggle />
+        </div>
         <Image src="/landing/footer-mata-alpha.png" alt="" width={2172} height={724} className="lp-foot-img" />
       </footer>
     </div>
