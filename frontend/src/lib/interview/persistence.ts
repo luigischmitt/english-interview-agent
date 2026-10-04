@@ -9,7 +9,6 @@ import type {
   InterviewConfig,
   InterviewSession,
   InterviewSessionStatus,
-  InterviewSessionWithTurns,
   InterviewTurn,
   InterviewTurnSpeaker,
   PersistenceResult,
@@ -154,36 +153,6 @@ export async function updateInterviewStatus(
     .single();
   if (error) return failure(error);
   return { ok: true, value: toSession(data as InterviewRow) };
-}
-
-export async function loadInterviewSession(interviewId: string): Promise<PersistenceResult<InterviewSessionWithTurns | null>> {
-  const auth = await authenticatedClient();
-  if (!auth.ok) return auth;
-  const { data: session, error: sessionError } = await auth.value.client
-    .from("interviews")
-    .select(sessionColumns)
-    .eq("id", interviewId)
-    .maybeSingle();
-  if (sessionError) return failure(sessionError);
-  if (!session) return { ok: true, value: null };
-  const { data: turns, error: turnsError } = await auth.value.client
-    .from("interview_turns")
-    .select(turnColumns)
-    .eq("interview_id", interviewId)
-    .order("sequence_number", { ascending: true });
-  if (turnsError) return failure(turnsError);
-  return { ok: true, value: { ...toSession(session as InterviewRow), turns: (turns as TurnRow[]).map(toTurn) } };
-}
-
-export async function listInterviewSessions(): Promise<PersistenceResult<InterviewSession[]>> {
-  const auth = await authenticatedClient();
-  if (!auth.ok) return auth;
-  const { data, error } = await auth.value.client
-    .from("interviews")
-    .select(sessionColumns)
-    .order("created_at", { ascending: false });
-  if (error) return failure(error);
-  return { ok: true, value: (data as InterviewRow[]).map(toSession) };
 }
 
 type ProgressFeedbackRow = {

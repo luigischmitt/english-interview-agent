@@ -155,9 +155,6 @@
   text-align: left;
   animation: ds-rise var(--ds-dur-slow) var(--ease-out) backwards;
 }
-.mt-caption-you { font-size: 0.9375rem; max-height: 35%; animation: ds-fade var(--ds-dur-base) ease backwards; }
-.mt-caption-you [data-testid="candidate-caption"] { max-height: 4.5rem; overflow-y: auto; }
-.mt-partial { color: var(--mt-muted); }
 
 /* Candidate tile: camera or avatar; ring + glow follow the real microphone level. */
 .mt-candidate video { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
@@ -176,7 +173,6 @@
   .mt-candidate .mt-avatar svg { width: 24px; height: 24px; }
   .mt-candidate .mt-name { left: 6px; bottom: 6px; padding: 3px 8px; font-size: 0.6875rem; }
   .mt-candidate::after { border-width: 2px; }
-  .mt-caption-you { display: none; }
 }
 
 /* ---- Dock: toasts above a floating control bar. ---- */

@@ -8,9 +8,7 @@ import { buildPreviousAnswers, decideNextTurn, type TurnDecision } from "@/lib/i
 import { createNextTurnPreparationRegistry } from "@/lib/interview/next-turn-preparation.mjs";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
-import { emptyCaption, reduceCaption, shouldShowCandidateCaption, type CandidateCaption } from "@/lib/interview/caption-state.mjs";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
-import { resolveTranscriptionEngine } from "@/lib/interview/transcription-engine.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import { appendInterviewReportPair, type AzureAssessmentSample, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
@@ -45,10 +43,7 @@ function assessmentSamples(entries: Record<string, AssessmentEntry>): AzureAsses
 export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; onLeave: () => void }) {
   useSpeechWarmup();
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
-  const { autoCaptureVoice, showCandidateCaptions } = resolveCandidateVoicePreferences(config);
-  const transcriptionEngine = resolveTranscriptionEngine(config);
-  const [candidateCaption, setCandidateCaption] = useState<CandidateCaption>(emptyCaption);
-  const updateCandidateCaption = useCallback((next: CandidateCaption) => setCandidateCaption((current) => reduceCaption(current, next)), []);
+  const { autoCaptureVoice } = resolveCandidateVoicePreferences(config);
   const questions = getFixedInterviewQuestions(config);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [question, setQuestion] = useState<InterviewQuestion>(() => questions[0]);
@@ -576,7 +571,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   const micDisabled = isInterviewerSpeaking || isAdvancing || phase === "ending";
   const capturing = voiceCaptureState === "listening" || voiceCaptureState === "detected";
-  const candidateCaptionVisible = showCandidateCaptions && phase === "answering" && shouldShowCandidateCaption({ enabled: true, captureState: voiceCaptureState, caption: candidateCaption });
   const SaveIcon = persistenceState === "saved" ? Check : persistenceState === "local" ? CloudOff : LoaderCircle;
   const saveText = persistenceState === "saved" ? "Salva" : persistenceState === "local" ? "Só local" : "Salvando…";
 
@@ -695,7 +689,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             cameraRequesting={camera.cameraState === "requesting"}
             capturing={capturing}
             detected={voiceCaptureState === "detected"}
-            caption={candidateCaptionVisible ? candidateCaption : null}
           />
           <InterviewerTile speaking={isInterviewerSpeaking} advancing={isAdvancing} caption={showInterviewerCaption ? interviewerCaption : null} />
         </section>
@@ -722,12 +715,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             })) void submitAnswer(transcription, false, expectedQuestionId);
           }}
           onCaptureStateChange={setVoiceCaptureState}
-          captionsEnabled={showCandidateCaptions}
-          transcriptionEngine={transcriptionEngine}
-          onCaptionChange={(caption) => {
-            if (caption.partial) abortPreparation("new_speech");
-            updateCandidateCaption(caption);
-          }}
           onProvisionalAnswer={prepareFromProvisionalAnswer}
           onSpeechResumed={() => abortPreparation("speech_resumed")}
           onHandoffTimingEvent={onHandoffTimingEvent}

@@ -1,5 +1,3 @@
-export type TranscriptionEngine = "whisper" | "ink-2";
-
 export type InterviewConfig = {
   role: string;
   seniority: string;
@@ -10,8 +8,6 @@ export type InterviewConfig = {
   showQuestionCaptions: boolean;
   candidateCameraEnabled: boolean;
   autoCaptureVoice: boolean;
-  showCandidateCaptions: boolean;
-  transcriptionEngine: TranscriptionEngine;
 };
 
 export type InterviewQuestion = {
@@ -49,12 +45,6 @@ export type InterviewSession = {
   createdAt: string;
   updatedAt: string;
 };
-
-export type InterviewSessionWithTurns = InterviewSession & {
-  turns: InterviewTurn[];
-};
-
-export type TranscriptionState = "not_requested" | "pending" | "available" | "failed";
 
 export type PersistenceResult<T> =
   | { ok: true; value: T }

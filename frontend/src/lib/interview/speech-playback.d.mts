@@ -1,5 +1,5 @@
 export type SpeechPlaybackResult =
-  | { status: "completed"; /** "browser" is never returned any more; it stays in the type only until interview-setup.tsx stops comparing against it. */ voice?: "network" | "browser" }
+  | { status: "completed"; voice?: "network" }
   | { status: "unavailable"; message: string; /** "autoplay_blocked": the browser refused play() without a user gesture. */ reason?: "autoplay_blocked" }
   | { status: "cancelled" };
 

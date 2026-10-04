@@ -10,7 +10,6 @@ import { createAnswerStream, StreamConnectionError, StreamSetupError, type Answe
 import { toStreamQuestion } from "@/lib/interview/stream-question.mjs";
 import { finalVoiceTranscription, transcriptionFailureMessage } from "@/lib/interview/transcription-state.mjs";
 import { nextAutoStartSignal } from "@/lib/interview/session-policy.mjs";
-import { emptyCaption, parseCaptionMessage, type CandidateCaption } from "@/lib/interview/caption-state.mjs";
 import type { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 
 type RecorderStatus = "idle" | "requesting" | "recording" | "finalizing" | "error";
@@ -84,12 +83,7 @@ type MicrophoneCaptureProps = {
   onTranscriptionChange: (state: VoiceTranscriptionState) => void;
   onAssessmentChange?: (attemptId: string, state: VoiceAssessmentState, context: AssessmentContext) => void;
   onCaptureStateChange?: (state: VoiceCaptureState) => void;
-  /** Live, display-only caption of the answer in progress (Cartesia Ink-2 only). Cleared on new capture, finalize, cancel and unmount. */
-  onCaptionChange?: (caption: CandidateCaption) => void;
-  captionsEnabled?: boolean;
-  /** Per-interview transcription engine sent in every `start` message (also the pre-connected stream). */
-  transcriptionEngine?: "whisper" | "ink-2";
-  /** Cartesia only: the backend expects the answer to end soon with this text (display-independent; never submitted). */
+  /** The backend expects the answer to end soon with this text (never submitted). */
   onProvisionalAnswer?: (transcript: string, revision: number) => void;
   /** The speaker resumed after a pause, so any provisional answer is stale. */
   onSpeechResumed?: () => void;
@@ -151,7 +145,7 @@ function streamFailureMessage(reason: AnswerStreamFailure): string {
   return "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.";
 }
 
-export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onCaptionChange, captionsEnabled = false, transcriptionEngine = "whisper", onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -173,9 +167,6 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
   const onTranscriptionChangeRef = useRef(onTranscriptionChange);
   const onAssessmentChangeRef = useRef(onAssessmentChange);
   const onCaptureStateChangeRef = useRef(onCaptureStateChange);
-  const onCaptionChangeRef = useRef(onCaptionChange);
-  const captionsEnabledRef = useRef(captionsEnabled);
-  const transcriptionEngineRef = useRef(transcriptionEngine);
   const onProvisionalAnswerRef = useRef(onProvisionalAnswer);
   const onSpeechResumedRef = useRef(onSpeechResumed);
   const onHandoffTimingEventRef = useRef(onHandoffTimingEvent);
@@ -194,17 +185,13 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     onTranscriptionChangeRef.current = onTranscriptionChange;
     onAssessmentChangeRef.current = onAssessmentChange;
     onCaptureStateChangeRef.current = onCaptureStateChange;
-    onCaptionChangeRef.current = onCaptionChange;
-    captionsEnabledRef.current = captionsEnabled;
-    transcriptionEngineRef.current = transcriptionEngine;
     onProvisionalAnswerRef.current = onProvisionalAnswer;
     onSpeechResumedRef.current = onSpeechResumed;
     onHandoffTimingEventRef.current = onHandoffTimingEvent;
     assessmentContextRef.current = assessmentContext;
     micEngineRef.current = micEngine;
-  }, [assessmentContext, onLevel, captionsEnabled, transcriptionEngine, micEngine, onCaptionChange, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+  }, [assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
 
-  const clearCaption = useCallback(() => onCaptionChangeRef.current?.(emptyCaption), []);
 
   /** Ends the answer window: audio stops flowing, timers stop, and a per-answer (private) microphone is released. The room's microphone stays open. */
   const releaseCapture = useCallback(() => {
@@ -233,21 +220,19 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     const attempt = attemptRef.current;
     attemptRef.current = null;
     attempt?.stream.cancel();
-    clearCaption();
     setStatus("error");
     onCaptureStateChangeRef.current?.("unavailable");
     setError(message);
     const failed: VoiceTranscriptionState = { status: "failed", message };
     setTranscription(failed);
     onTranscriptionChangeRef.current(failed);
-  }, [clearCaption, releaseCapture]);
+  }, [releaseCapture]);
 
   const stopRecording = useCallback(() => {
     const attempt = attemptRef.current;
     const socket = attempt?.stream.socket;
     if (!attempt || !socket || socket.readyState !== WebSocket.OPEN || finalizationRequestedRef.current) return;
     finalizationRequestedRef.current = true;
-    clearCaption();
     setStatus("finalizing");
     onCaptureStateChangeRef.current?.("finalizing");
     const engine = activeEngineRef.current;
@@ -261,7 +246,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     };
     // The engine delivers the worklet's partial frame to the stream before resolving.
     if (engine) void engine.flush().then(finalize); else finalize();
-  }, [clearCaption, releaseCapture]);
+  }, [releaseCapture]);
 
   const cancelRecording = useCallback(() => {
     generationRef.current += 1;
@@ -270,7 +255,6 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     const attempt = attemptRef.current;
     attemptRef.current = null;
     attempt?.stream.cancel();
-    clearCaption();
     setStatus("idle");
     onCaptureStateChangeRef.current?.("idle");
     setDuration(0);
@@ -278,7 +262,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     const idle: VoiceTranscriptionState = { status: "idle" };
     setTranscription(idle);
     onTranscriptionChangeRef.current(idle);
-  }, [clearCaption, releaseCapture]);
+  }, [releaseCapture]);
 
   /** Every server message after `ready` (the stream consumes `ready` and setup errors itself). */
   const handleStreamMessage = (attempt: Attempt, message: StreamMessage, socket: AnswerStreamSocket) => {
@@ -298,11 +282,6 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     }
     if (generationRef.current !== generation) return;
     if (message.type === "error" && message.code === "UNAUTHENTICATED") notifySessionExpired();
-    if (message.type === "caption") {
-      const caption = parseCaptionMessage(message);
-      if (caption && !finalizationRequestedRef.current) onCaptionChangeRef.current?.(caption);
-      return;
-    }
     if (message.type === "speech-started") {
       micDetectorRef.current?.markSpeechStarted();
       setMicNotice(null);
@@ -324,7 +303,6 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     if (message.type === "transcription-queued" || message.type === "finalizing") {
       if (message.type === "finalizing") {
         onHandoffTimingEventRef.current?.("finalizing", message.timing);
-        clearCaption();
         releaseCapture();
       } else onHandoffTimingEventRef.current?.("transcription-queued");
       setStatus("finalizing");
@@ -339,7 +317,6 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     }
     if (message.type === "complete") {
       onHandoffTimingEventRef.current?.("transcription-completed");
-      clearCaption();
       releaseCapture();
       const result = finalVoiceTranscription(message);
       if (result.status === "available") {
@@ -408,7 +385,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
         } catch {
           throw new StreamSetupError("UNAUTHENTICATED");
         }
-        return buildStreamStartMessage({ accessToken, speechThreshold, sampleRate: pcmSampleRate, captions: captionsEnabledRef.current, transcriptionEngine: transcriptionEngineRef.current, question: toStreamQuestion(attempt.context.questionLabel) });
+        return buildStreamStartMessage({ accessToken, speechThreshold, sampleRate: pcmSampleRate, question: toStreamQuestion(attempt.context.questionLabel) });
       },
       encodeFrame: (samples) => toPcm16(samples).buffer as ArrayBuffer,
       onMessage: (message, socket) => handlersRef.current?.message(attempt, message as StreamMessage, socket),
@@ -435,7 +412,6 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     setStatus("requesting");
     onCaptureStateChangeRef.current?.("requesting");
     finalizationRequestedRef.current = false;
-    clearCaption();
     setDuration(0);
     setTranscription({ status: "idle" });
     onTranscriptionChangeRef.current({ status: "idle" });
@@ -520,7 +496,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
               ? "A conexão com o transcritor falhou. Tente novamente ou pule esta pergunta."
               : microphoneError(captureError));
     }
-  }, [clearCaption, createAttempt, disabled, fail, status, stopRecording]);
+  }, [createAttempt, disabled, fail, status, stopRecording]);
 
   const retryCapture = useCallback(() => {
     // Same path as "Descartar gravação" (sends cancel, drops partial audio), then a fresh capture for the same
@@ -547,13 +523,12 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
   useEffect(() => () => {
     generationRef.current += 1;
     finalizationRequestedRef.current = true;
-    clearCaption();
     releaseCapture();
     cancelPreconnect();
     const attempt = attemptRef.current;
     attemptRef.current = null;
     attempt?.stream.cancel();
-  }, [cancelPreconnect, clearCaption, releaseCapture]);
+  }, [cancelPreconnect, releaseCapture]);
 
   const isRecording = status === "recording";
   const isPending = status === "requesting" || status === "finalizing" || transcription.status === "pending";

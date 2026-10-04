@@ -51,7 +51,7 @@ export function createAuthorizedFetch(getAccessToken, fetcher = (...args) => fet
 }
 
 /** First message of the transcription socket; browsers cannot set headers, so the token travels in the message. */
-export function buildStreamStartMessage({ accessToken, speechThreshold, sampleRate, captions, question, transcriptionEngine }) {
+export function buildStreamStartMessage({ accessToken, speechThreshold, sampleRate, question }) {
   return {
     type: "start",
     version: 2,
@@ -60,8 +60,6 @@ export function buildStreamStartMessage({ accessToken, speechThreshold, sampleRa
     encoding: "s16le",
     speechThreshold,
     accessToken,
-    ...(captions ? { captions: true } : {}),
     ...(question ? { question } : {}),
-    ...(transcriptionEngine === "whisper" || transcriptionEngine === "ink-2" ? { transcriptionEngine } : {}),
   };
 }

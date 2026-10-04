@@ -6,7 +6,6 @@ import { Captions, CaptionsOff, Info, LoaderCircle, Mic, MicOff, PhoneOff, SkipF
 
 import { levelToIntensity, smoothIntensity } from "@/lib/interview/mic-level-visual.mjs";
 import { stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
-import type { CandidateCaption } from "@/lib/interview/caption-state.mjs";
 
 import "./call-stage.css";
 
@@ -142,7 +141,7 @@ export function InterviewerTile({ speaking, advancing, caption, children }: { sp
   );
 }
 
-export function CandidateTile({ tileRef, stream, cameraRequesting, capturing, detected, caption, children }: {
+export function CandidateTile({ tileRef, stream, cameraRequesting, capturing, detected, children }: {
   tileRef: RefObject<HTMLDivElement | null>;
   stream: MediaStream | null;
   cameraRequesting: boolean;
@@ -150,7 +149,6 @@ export function CandidateTile({ tileRef, stream, cameraRequesting, capturing, de
   capturing: boolean;
   /** The server heard speech in this window. */
   detected: boolean;
-  caption: CandidateCaption | null;
   children?: ReactNode;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -171,31 +169,12 @@ export function CandidateTile({ tileRef, stream, cameraRequesting, capturing, de
         </div>
       )}
       {cameraRequesting && <LoaderCircle className="mt-cam-spinner size-5" aria-label="Iniciando câmera" />}
-      {caption && <CandidateCaptionBlock caption={caption} />}
       <div className="mt-name">
         <span>Você</span>
         {!stream && <VideoOff className="size-3.5 opacity-70" aria-hidden="true" />}
       </div>
       {children}
     </section>
-  );
-}
-
-function CandidateCaptionBlock({ caption }: { caption: CandidateCaption }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [caption]);
-  return (
-    <div className="mt-caption mt-caption-you">
-      {/* Display-only and updated several times per second, so it is deliberately not announced to screen readers. */}
-      <div ref={scrollRef} lang="en" aria-live="off" data-testid="candidate-caption">
-        <span>{caption.committed}</span>
-        {caption.committed && caption.partial ? " " : null}
-        <span className="mt-partial">{caption.partial}</span>
-      </div>
-    </div>
   );
 }
 
