@@ -104,3 +104,23 @@ export function materializeAzureBlock(wav: Buffer, block: AzureAudioBlock): Buff
   slice.writeUInt32LE(pcm.length, 40); pcm.copy(slice, 44);
   return slice;
 }
+
+export type AzureBlockScoreInput = { durationMs: number; scores: { accuracy: number | null; fluency: number | null; prosody: number | null } | null };
+export type AzureAnswerScores = { accuracy: number | null; fluency: number | null; prosody: number | null };
+
+/**
+ * Per-answer score: mean of each dimension over the assessed blocks, weighted by block duration.
+ * Failed blocks (null scores) and null dimensions are skipped per dimension, never counted as zero.
+ */
+export function aggregateAzureBlockScores(blocks: AzureBlockScoreInput[]): AzureAnswerScores {
+  const result: AzureAnswerScores = { accuracy: null, fluency: null, prosody: null };
+  for (const dimension of Object.keys(result) as (keyof AzureAnswerScores)[]) {
+    const available = blocks.flatMap(({ scores, durationMs }) => {
+      const score = scores?.[dimension];
+      return score === null || score === undefined || !Number.isFinite(durationMs) || durationMs <= 0 ? [] : [{ score, durationMs }];
+    });
+    const totalDurationMs = available.reduce((sum, item) => sum + item.durationMs, 0);
+    if (totalDurationMs > 0) result[dimension] = available.reduce((sum, item) => sum + item.score * item.durationMs, 0) / totalDurationMs;
+  }
+  return result;
+}

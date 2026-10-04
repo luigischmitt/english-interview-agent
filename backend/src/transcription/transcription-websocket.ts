@@ -12,7 +12,7 @@ import { CartesiaInkSession, sanitizeKeyterms, type CartesiaFailureReason, type 
 import { IncrementalWhisperSession } from "./incremental-whisper-session.js";
 import { AnswerCompletionError, type AnswerCompletionService } from "../thinking/answer-completion-service.js";
 import { InkTurnRecorder } from "./ink-turn-blocks.js";
-import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
+import { aggregateAzureBlockScores, alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
   | { type: "start"; accessToken?: unknown; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; keyterms?: unknown; captions?: unknown; question?: unknown; transcriptionEngine?: unknown }
@@ -532,15 +532,7 @@ export function attachTranscriptionWebSocket(
           const serviceDurationMs = assessments.reduce((sum, item) => sum + item.serviceDurationMs, 0);
           const totalDurationMs = Date.now() - assessmentStartedAt;
           const failureCategory = mostCommonFailure(assessments);
-          const scores = { accuracy: null as number | null, fluency: null as number | null, prosody: null as number | null };
-          for (const dimension of Object.keys(scores) as (keyof typeof scores)[]) {
-            const available = assessments.flatMap(({ assessment, durationMs: assessedDuration }) => {
-              const score = assessment?.scores[dimension];
-              return score === null || score === undefined ? [] : [{ score, durationMs: assessedDuration }];
-            });
-            if (available.length) scores[dimension] = available.reduce((sum, item) => sum + item.score * item.durationMs, 0)
-              / available.reduce((sum, item) => sum + item.durationMs, 0);
-          }
+          const scores = aggregateAzureBlockScores(assessments.map(({ assessment, durationMs: blockDurationMs }) => ({ durationMs: blockDurationMs, scores: assessment?.scores ?? null })));
           const assessedDurationMs = assessments.reduce((sum, item) => sum + (item.assessment ? item.durationMs : 0), 0);
           const diagnostics = { transcriptionDurationMs, azureQueueWaitMs: queueWaitMs, azureServiceDurationMs: serviceDurationMs, totalDurationMs };
           if (Object.values(scores).some((score) => score !== null)) {

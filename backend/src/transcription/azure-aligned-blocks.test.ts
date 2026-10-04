@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock } from "./azure-aligned-blocks.js";
+import { aggregateAzureBlockScores, alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock } from "./azure-aligned-blocks.js";
 import { pcmToWav } from "./streaming-transcription.js";
 import { parseWhisperSegments, parseWhisperWords } from "./openrouter-whisper-transcription-service.js";
 
@@ -62,5 +62,35 @@ describe("Azure aligned blocks", () => {
   it("rejects invalid chronology and a single word longer than the target", () => {
     expect(createAzureAlignedBlocks(wavOfSeconds(4), [word("a", 0, 1), word("b", 0.5, 2)])).toEqual([]);
     expect(createAzureAlignedBlocks(wavOfSeconds(40), [word("long", 0, 26)])).toEqual([]);
+  });
+});
+
+describe("aggregateAzureBlockScores (ENG-113)", () => {
+  const scores = (accuracy: number | null, fluency: number | null, prosody: number | null) => ({ accuracy, fluency, prosody });
+
+  it("weights each dimension by block duration, not by block count", () => {
+    expect(aggregateAzureBlockScores([
+      { durationMs: 1_000, scores: scores(50, 40, 60) },
+      { durationMs: 3_000, scores: scores(90, 80, 100) },
+    ])).toEqual({ accuracy: 80, fluency: 70, prosody: 90 });
+  });
+
+  it("skips failed blocks and null dimensions per dimension instead of counting them as zero", () => {
+    expect(aggregateAzureBlockScores([
+      { durationMs: 2_000, scores: scores(80, null, 70) },
+      { durationMs: 2_000, scores: null },
+      { durationMs: 2_000, scores: scores(60, 90, null) },
+    ])).toEqual({ accuracy: 70, fluency: 90, prosody: 70 });
+  });
+
+  it("returns null scores for no blocks, only failed blocks or zero-length blocks", () => {
+    const empty = { accuracy: null, fluency: null, prosody: null };
+    expect(aggregateAzureBlockScores([])).toEqual(empty);
+    expect(aggregateAzureBlockScores([{ durationMs: 1_000, scores: null }])).toEqual(empty);
+    expect(aggregateAzureBlockScores([{ durationMs: 0, scores: scores(90, 90, 90) }])).toEqual(empty);
+  });
+
+  it("a single short block is returned unchanged", () => {
+    expect(aggregateAzureBlockScores([{ durationMs: 400, scores: scores(91.5, 88, 75) }])).toEqual({ accuracy: 91.5, fluency: 88, prosody: 75 });
   });
 });

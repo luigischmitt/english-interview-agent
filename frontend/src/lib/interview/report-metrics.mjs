@@ -1,19 +1,48 @@
 const dimensions = ["accuracy", "fluency", "prosody"];
 
-/** Summarize Azure scores without treating missing or unavailable results as zero. */
+/** Below this much assessed speech a dimension is too noisy to show as a number. */
+export const insufficientAzureAudioMs = 5_000;
+/** Below this much assessed speech a dimension is shown with an explicit low-confidence note. */
+export const limitedAzureAudioMs = 20_000;
+
+const hasValidDuration = (assessment) => Number.isFinite(assessment.durationMs) && assessment.durationMs > 0;
+
+/**
+ * Summarize Azure scores without treating missing or unavailable results as zero.
+ * Each answer's score is weighted by its assessed speech duration. When any contributing answer has no valid
+ * duration, every answer counts equally instead (a missing duration must not silently shrink an answer to ~0 weight).
+ * `sampleCount` counts answers (not blocks); `totalDurationMs` is the assessed speech behind the mean, or null when unknown.
+ */
 export function summarizeAzureAssessments(assessments) {
   const summary = {};
   for (const dimension of dimensions) {
     const values = assessments
       .filter((assessment) => assessment?.status === "available")
-      .map((assessment) => ({ score: assessment.scores?.[dimension], weight: Number.isFinite(assessment.durationMs) && assessment.durationMs > 0 ? assessment.durationMs : 1 }))
+      .map((assessment) => ({ score: assessment.scores?.[dimension], durationMs: hasValidDuration(assessment) ? assessment.durationMs : null }))
       .filter(({ score }) => typeof score === "number" && Number.isFinite(score) && score >= 0 && score <= 100);
+    const durationKnown = values.length > 0 && values.every(({ durationMs }) => durationMs !== null);
+    const weightOf = ({ durationMs }) => durationKnown ? durationMs : 1;
+    const totalWeight = values.reduce((sum, entry) => sum + weightOf(entry), 0);
     summary[dimension] = {
-      mean: values.length ? Math.round((values.reduce((sum, entry) => sum + entry.score * entry.weight, 0) / values.reduce((sum, entry) => sum + entry.weight, 0)) * 10) / 10 : null,
+      mean: values.length ? Math.round((values.reduce((sum, entry) => sum + entry.score * weightOf(entry), 0) / totalWeight) * 10) / 10 : null,
       sampleCount: values.length,
+      totalDurationMs: durationKnown ? totalWeight : null,
     };
   }
   return summary;
+}
+
+/**
+ * How much a dimension's mean can be trusted, from the assessed speech behind it.
+ * "none": no score. "insufficient": too little audio, hide the number. "limited": show it with a caution.
+ * "ok": enough audio (still an experimental signal). Summaries saved before ENG-113 have no duration and are "limited".
+ */
+export function azureMetricReliability(metric) {
+  if (!metric || metric.mean === null || metric.sampleCount === 0) return "none";
+  if (typeof metric.totalDurationMs !== "number") return "limited";
+  if (metric.totalDurationMs < insufficientAzureAudioMs) return "insufficient";
+  if (metric.totalDurationMs < limitedAzureAudioMs) return "limited";
+  return "ok";
 }
 
 /** Match each candidate response with the nearest preceding interviewer question. */

@@ -119,6 +119,9 @@ describe("consolidation service", () => {
     });
     expect(bodies[0].max_tokens).toBeLessThanOrEqual(1_536);
     expect(Object.keys(bodies[0].response_format.json_schema.schema.properties).sort()).toEqual(["clarity", "priorities", "summary"]);
+    // ENG-113: the consolidation (which decides clarity) must carry the transcription-error guard.
+    expect(bodies[0].messages[0].content).toContain("a transcription error must never become the candidate's error");
+    expect(bodies[0].messages[0].content).toContain("Do not lower clarity because of garbled");
     expect(Object.keys(result).sort()).toEqual(["analysisVersion", "englishCommunication", "evidenceReview", "model", "priorities", "technicalContent"]);
     expect(result.analysisVersion).toBe("v2");
     expect(result.model).toBe(defaultThinkingModel);
