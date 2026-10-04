@@ -23,6 +23,8 @@ Secrets (Secret Manager): `OPENROUTER_API_KEY`, `AZURE_SPEECH_KEY`,
 `CARTESIA_API_KEY`.
 
 Plain variables: `SPEECH_PROVIDER=openrouter`, `TRANSCRIPTION_PROVIDER=cartesia`,
+`TRANSCRIPTION_FALLBACK_MODE` (optional, default `whisper-incremental`: what new answers use when
+Cartesia runs out of credits; `whisper` keeps the old full-audio path),
 `AZURE_SPEECH_REGION`, `AZURE_SPEECH_ASSESSMENT_ENABLED=true`,
 `SUPABASE_URL` (the public project URL, same as `NEXT_PUBLIC_SUPABASE_URL`; the
 backend refuses to start without it while `BACKEND_AUTH_REQUIRED` is unset or

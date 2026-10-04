@@ -8,7 +8,8 @@ import { TranscriptionUnavailableError } from "./errors.js";
 import type { TranscriptionResult, TranscriptionService } from "./types.js";
 import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type SlotReservation, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
 import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
-import { CartesiaInkSession, sanitizeKeyterms } from "./cartesia-ink-session.js";
+import { CartesiaInkSession, sanitizeKeyterms, type CartesiaFailureReason, type StreamingTurnSession, type TurnEndInfo } from "./cartesia-ink-session.js";
+import { IncrementalWhisperSession } from "./incremental-whisper-session.js";
 import { AnswerCompletionError, type AnswerCompletionService } from "../thinking/answer-completion-service.js";
 import { InkTurnRecorder } from "./ink-turn-blocks.js";
 import { alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
@@ -167,7 +168,19 @@ export function looksUnfinished(transcript: string): boolean {
 
 /** Server-side Cartesia Ink-2 settings; the API key never leaves the backend and is never logged. */
 export type CartesiaStreamingOptions = {
-  apiKey: string;
+  /** Cartesia key; unused (and may be empty) when `provider` is `whisper-incremental`. */
+  apiKey?: string;
+  /**
+   * `cartesia` (default): Cartesia is the transcript source while it is available. `whisper-incremental`: no Cartesia at all,
+   * OpenRouter Whisper transcribes VAD-cut segments in the background (same grace/provisional/semantic orchestration).
+   */
+  provider?: "cartesia" | "whisper-incremental";
+  /** What new answers use while Cartesia is disabled by the credits circuit breaker. Default `whisper-incremental`. */
+  fallbackMode?: "whisper-incremental" | "whisper";
+  /** Incremental Whisper tuning (tests and rare overrides). */
+  incrementalWhisper?: { segmentTimeoutMs?: number; maxSegmentMs?: number; minSegmentSpeechMs?: number; forcedCutWindowMs?: number; flushTimeoutMs?: number };
+  /** Test hook: clock for the credits circuit breaker. */
+  now?: () => number;
   /** Grace after an Ink-2 turn that ends like a complete sentence. */
   answerGraceMs: number;
   /** Grace after a turn that looks unfinished (no final punctuation or a trailing connector); defaults to answerGraceMs. */
@@ -175,7 +188,7 @@ export type CartesiaStreamingOptions = {
   /** Experimental: cut Azure blocks at Ink-2 turn boundaries instead of background Whisper timings (off by default; scored lower in live tests). */
   azureFromInkTurns?: boolean;
   turnEndTimeoutMs?: number | null;
-  /** Cartesia model: `ink-2` (default) or `ink-whisper` (cheaper; the local VAD pause drives turn ends). */
+  /** Cartesia model: `ink-2` (default) or `ink-whisper` (cheaper; the local VAD pause drives turn ends). Also the local-pause length for incremental Whisper (`pauseMs`). */
   model?: "ink-2" | "ink-whisper";
   /** Ink-Whisper only: local silence that counts as a turn end (default 800). */
   pauseMs?: number;
@@ -197,6 +210,10 @@ export type CartesiaStreamingOptions = {
   endpoint?: string;
   openTimeoutMs?: number;
 };
+
+type StreamMode = "ink-2" | "ink-whisper" | "whisper-incremental";
+
+const streamProviderNames: Record<StreamMode, string> = { "ink-2": "cartesia-ink-2", "ink-whisper": "cartesia-ink-whisper", "whisper-incremental": "whisper-incremental" };
 
 type AnswerEndReason = "cartesia_turn_end" | "semantic_complete" | "vad_silence" | "fallback_whisper";
 
@@ -225,13 +242,28 @@ export function attachTranscriptionWebSocket(
   const accessTokenVerifier = authentication.verifier;
   const authStartTimeoutMs = authentication.startTimeoutMs ?? 10_000;
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, perMessageDeflate: false });
-  // Ink-Whisper turn ends come from the local VAD pause; the pause length only matters for that flag.
-  const sessionLimits = cartesia?.model === "ink-whisper" && cartesia.pauseMs
+  // Ink-Whisper and incremental Whisper take turn ends from the local VAD pause; the pause length only matters for that flag.
+  const sessionLimits = cartesia?.pauseMs
     ? { ...limits, vadConfig: { ...limits.vadConfig, pauseMs: cartesia.pauseMs } }
     : limits;
   const sessions = new StreamingTranscriptionSessions(transcriptionService, undefined, undefined, sessionLimits);
-  const inkWhisperMode = cartesia?.model === "ink-whisper";
-  const cartesiaProviderName = inkWhisperMode ? "cartesia-ink-whisper" : "cartesia-ink-2";
+  const clock = cartesia?.now ?? Date.now;
+  // Credits circuit breaker: once Cartesia reports no credits it stays unavailable until the next UTC calendar month.
+  let cartesiaDisabledUntil = 0;
+  const cartesiaDisabled = () => clock() < cartesiaDisabledUntil;
+  const disableCartesiaForCredits = () => {
+    if (cartesiaDisabled()) return;
+    const date = new Date(clock());
+    cartesiaDisabledUntil = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
+    logStreamDiagnostic({ status: "cartesia_disabled", reason: "credits" });
+  };
+  /** Mode of one new answer: a Cartesia model, incremental Whisper, or null for the plain Whisper path. */
+  const resolveStreamMode = (): StreamMode | null => {
+    if (!cartesia) return null;
+    if (cartesia.provider === "whisper-incremental") return "whisper-incremental";
+    if (!cartesiaDisabled()) return cartesia.model ?? "ink-2";
+    return (cartesia.fallbackMode ?? "whisper-incremental") === "whisper-incremental" ? "whisper-incremental" : null;
+  };
   const finalQueue = new FinalTranscriptionQueue(limits.maxConcurrentTranscriptions, limits.maxQueuedTranscriptions);
 
   server.on("upgrade", (request, socket, head) => {
@@ -258,7 +290,10 @@ export function attachTranscriptionWebSocket(
     let silenceDetected = false;
     let silenceGraceTimer: ReturnType<typeof setTimeout> | null = null;
     let requestAbortController: AbortController | null = null;
-    let inkSession: CartesiaInkSession | null = null;
+    // The streaming session of this answer (Cartesia or incremental Whisper) and its mode; null mode means plain Whisper.
+    let inkSession: StreamingTurnSession | null = null;
+    let streamMode: StreamMode | null = null;
+    const localTurnMode = () => streamMode === "ink-whisper" || streamMode === "whisper-incremental";
     let inkTurns: InkTurnRecorder | null = null;
     let inkGraceTimer: ReturnType<typeof setTimeout> | null = null;
     // Provisional answer for next-turn preparation (never logged; only the count is).
@@ -564,7 +599,10 @@ export function attachTranscriptionWebSocket(
       void (async () => {
         const flushStartedAt = Date.now();
         try {
-          const transcript = await ink.flush(cartesia?.flushTimeoutMs ?? 1_500);
+          const flushTimeoutMs = streamMode === "whisper-incremental"
+            ? cartesia?.incrementalWhisper?.flushTimeoutMs ?? 8_000
+            : cartesia?.flushTimeoutMs ?? 1_500;
+          const transcript = await ink.flush(flushTimeoutMs);
           if (session.cancelled || finishing || socket.readyState !== WebSocket.OPEN) return;
           if (!transcript) {
             handedOff = true;
@@ -573,15 +611,15 @@ export function attachTranscriptionWebSocket(
           }
           const transcriptionDurationMs = Date.now() - flushStartedAt;
           const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
-          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "cartesia", cartesiaModel: cartesia?.model ?? "ink-2", cartesiaTurns: ink.turnCount, preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict, semanticLatencyMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
-          send(socket, { type: "complete", status: "complete", provider: cartesiaProviderName, durationMs, transcript });
+          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, ...(streamMode === "whisper-incremental" ? { provider: "whisper-incremental", incrementalTurns: ink.turnCount, ...ink.diagnostics?.() } : { provider: "cartesia", cartesiaModel: streamMode ?? "ink-2", cartesiaTurns: ink.turnCount }), preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict, semanticLatencyMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
+          send(socket, { type: "complete", status: "complete", provider: streamProviderNames[streamMode ?? "ink-2"], durationMs, transcript });
           clearTimeout(timer);
 
           if (!assessmentService) return;
           audio = sessions.toWav(id);
           handedOff = true;
           const assessmentAudio = audio;
-          const inkBlocks = cartesia?.azureFromInkTurns && !inkWhisperMode ? buildInkAssessmentBlocks(inkTurns, transcript, session.bytes) : undefined;
+          const inkBlocks = cartesia?.azureFromInkTurns && streamMode === "ink-2" ? buildInkAssessmentBlocks(inkTurns, transcript, session.bytes) : undefined;
           startAssessment({
             session, audio: assessmentAudio, durationMs, transcriptionDurationMs, abortController, release, inkBlocks,
             getTiming: async () => {
@@ -670,7 +708,7 @@ export function attachTranscriptionWebSocket(
                 fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
                 return;
               }
-              logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "whisper", answerEndReason, ...(cartesia ? { cartesiaModel: cartesia.model ?? "ink-2", cartesiaTurns: inkSession?.turnCount ?? 0 } : {}), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
+              logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, provider: "whisper", answerEndReason, ...(streamMode === "ink-2" || streamMode === "ink-whisper" ? { cartesiaModel: streamMode, cartesiaTurns: inkSession?.turnCount ?? 0 } : streamMode === "whisper-incremental" ? { incrementalTurns: inkSession?.turnCount ?? 0, ...inkSession?.diagnostics?.() } : {}), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
               send(socket, {
                 type: "complete",
                 status: "complete",
@@ -707,7 +745,7 @@ export function attachTranscriptionWebSocket(
         finalizeWithInk(id, session, reason, triggeredBy === "semantic" ? "semantic_complete" : triggeredBy === "cartesia" ? "cartesia_turn_end" : "vad_silence", runWhisperFinalization);
         return;
       }
-      runWhisperFinalization(cartesia ? "fallback_whisper" : "vad_silence");
+      runWhisperFinalization(streamMode ? "fallback_whisper" : "vad_silence");
     };
 
     timer = setTimeout(() => {
@@ -804,31 +842,28 @@ export function attachTranscriptionWebSocket(
           retainedSession = session;
           started = true;
           logStreamDiagnostic({ status: "started", speechThresholdBand: session.vad.speechThresholdBand });
-          captionsEnabled = Boolean(cartesia) && message.captions === true;
+          streamMode = resolveStreamMode();
+          captionsEnabled = streamMode !== null && message.captions === true;
           interviewerQuestion = cartesia?.answerCompletion ? sanitizeQuestion(message.question) : null;
-          if (cartesia) {
+          if (cartesia && streamMode) {
             // Invalid keyterm lists are ignored entirely (and never logged); the answer simply gets no biasing.
             const keyterms = message.keyterms === undefined ? [] : sanitizeKeyterms(message.keyterms);
             if (keyterms === null) logStreamDiagnostic({ status: "invalid_message", field: "start.keyterms" });
-            inkSession = new CartesiaInkSession({
-              apiKey: cartesia.apiKey,
-              model: cartesia.model,
-              keyterms: inkWhisperMode ? [] : keyterms ?? [],
-              turnEndTimeoutMs: inkWhisperMode ? null : cartesia.turnEndTimeoutMs,
-              endpoint: cartesia.endpoint,
-              openTimeoutMs: cartesia.openTimeoutMs,
+            const sessionCallbacks = {
               onTurnStart: () => clearInkGrace(),
               onCaptionChange: scheduleCaption,
-              onTurnEnd: (turnTranscript) => {
+              onTurnEnd: (turnTranscript: string, info?: TurnEndInfo) => {
                 if (finalRequested || finishing || !turnTranscript) return;
                 clearInkGrace();
                 const graceMs = looksUnfinished(turnTranscript) ? (cartesia.incompleteGraceMs ?? cartesia.answerGraceMs) : cartesia.answerGraceMs;
+                // Local-VAD turns arrive after their segment was transcribed: time grace and prepare from the pause, not from now.
+                const elapsedMs = localTurnMode() && info?.silenceStartedAt !== undefined ? Math.max(0, Date.now() - info.silenceStartedAt) : 0;
                 inkGraceTimer = setTimeout(() => {
                   inkGraceTimer = null;
                   const current = sessionId ? sessions.get(sessionId) : undefined;
                   // Noise before the first words can end an empty turn; only a real answer may be closed by Ink-2.
                   if (current?.vad.hasSpeech) finalize("silence", "cartesia");
-                }, graceMs);
+                }, Math.max(0, graceMs - elapsedMs));
                 const prepareAfterMs = cartesia.prepareAfterMs ?? 0;
                 const maxPrepares = cartesia.maxPrepares ?? 2;
                 const canPrepare = preparesSent < maxPrepares;
@@ -849,14 +884,30 @@ export function attachTranscriptionWebSocket(
                       lastSemanticText = transcript;
                       runSemanticCheck(cartesia.answerCompletion, interviewerQuestion, transcript);
                     }
-                  }, prepareAfterMs);
+                  }, Math.max(0, prepareAfterMs - elapsedMs));
                 }
               },
-              onFailure: (failure) => {
+              onFailure: (failure: CartesiaFailureReason) => {
                 clearInkGrace();
+                if (streamMode === "whisper-incremental") {
+                  logStreamDiagnostic({ status: "incremental_whisper_unavailable", reason: failure });
+                  return;
+                }
                 logStreamDiagnostic({ status: "cartesia_unavailable", reason: failure });
+                if (failure === "out_of_credits") disableCartesiaForCredits();
               },
-            });
+            };
+            inkSession = streamMode === "whisper-incremental"
+              ? new IncrementalWhisperSession({ service: transcriptionService, speechThreshold: session.config.speechThreshold, ...cartesia.incrementalWhisper, ...sessionCallbacks })
+              : new CartesiaInkSession({
+                apiKey: cartesia.apiKey ?? "",
+                model: streamMode,
+                keyterms: streamMode === "ink-whisper" ? [] : keyterms ?? [],
+                turnEndTimeoutMs: streamMode === "ink-whisper" ? null : cartesia.turnEndTimeoutMs,
+                endpoint: cartesia.endpoint,
+                openTimeoutMs: cartesia.openTimeoutMs,
+                ...sessionCallbacks,
+              });
             inkTurns = new InkTurnRecorder(() => session.bytes);
             inkSession.setTurnObserver((kind, text) => inkTurns?.turnEvent(kind, text));
             inkSession.open();
@@ -883,9 +934,10 @@ export function attachTranscriptionWebSocket(
         levelMessages += 1;
         if (Number.isFinite(message.value) && message.value > maxLevel) maxLevel = message.value;
         inkTurns?.recordLevel(message.value);
+        inkSession?.recordLevel?.(message.value);
         const update = session.vad.update(message.value, Date.now());
         if (update.speechStarted) send(socket, { type: "speech-started" });
-        if (inkWhisperMode && inkSession && !inkSession.failed) {
+        if (localTurnMode() && inkSession && !inkSession.failed) {
           if (update.speechStarted || update.speechResumed) inkSession.markSpeech();
           else if (update.pauseStarted && !finalRequested && !finishing) void inkSession.endTurn(cartesia?.flushTimeoutMs ?? 1_500);
         }

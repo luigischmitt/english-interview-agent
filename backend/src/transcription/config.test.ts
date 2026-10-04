@@ -106,3 +106,11 @@ describe("Cartesia Ink-Whisper configuration", () => {
     expect(() => loadTranscriptionConfig({ TRANSCRIPTION_CARTESIA_PAUSE_MS: "3001" })).toThrow("300 to 3000");
   });
 });
+
+describe("incremental Whisper configuration", () => {
+  it("accepts the whisper-incremental provider and defaults the Cartesia fallback to incremental Whisper", () => {
+    expect(loadTranscriptionConfig({})).toMatchObject({ transcriptionProvider: "whisper", transcriptionFallbackMode: "whisper-incremental" });
+    expect(loadTranscriptionConfig({ TRANSCRIPTION_PROVIDER: " Whisper-Incremental ", TRANSCRIPTION_FALLBACK_MODE: "WHISPER" })).toMatchObject({ transcriptionProvider: "whisper-incremental", transcriptionFallbackMode: "whisper" });
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_FALLBACK_MODE: "cartesia" })).toThrow("whisper-incremental or whisper");
+  });
+});
