@@ -689,7 +689,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         <p className="sr-only" aria-live="polite">{answerHint}</p>
 
         <section className="mt-stage" aria-label="Participantes da sala">
-          <InterviewerTile speaking={isInterviewerSpeaking} advancing={isAdvancing} caption={showInterviewerCaption ? interviewerCaption : null} />
           <CandidateTile
             tileRef={meter.tileRef}
             stream={camera.enabled ? camera.stream : null}
@@ -698,6 +697,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             detected={voiceCaptureState === "detected"}
             caption={candidateCaptionVisible ? candidateCaption : null}
           />
+          <InterviewerTile speaking={isInterviewerSpeaking} advancing={isAdvancing} caption={showInterviewerCaption ? interviewerCaption : null} />
         </section>
 
         <MicrophoneCapture
