@@ -243,12 +243,15 @@ A fala do entrevistador é sintetizada em blocos (`groupInterviewerSentences`),
 ajustados ao Kokoro auto-hospedado (~1,5 s para 25 caracteres, ~4 s para 100; pedidos
 paralelos disputam a mesma CPU e todos ficam lentos):
 
-- o primeiro bloco é curto: uma primeira frase com mais de 70 caracteres é dividida na
-  primeira fronteira de oração (`, ` `; ` ` — ` `: `) que deixe 20 a 70 caracteres na
-  primeira parte; sem fronteira, a frase fica inteira. As legendas continuam mostrando
-  a frase inteira durante as duas partes;
-- os demais blocos juntam frases até 40 caracteres, sem dividir frases e sem passar de
-  ~140 caracteres;
+- o primeiro bloco tem no máximo ~60 caracteres: uma primeira frase maior é dividida na
+  primeira fronteira de oração (`, ` `; ` ` — ` `: `) que deixe 20 a 60 caracteres; senão
+  antes da última conjunção/pronome relativo (` because `, ` so `, ` and `, ` but `,
+  ` which `, ` when `, ` while `, ` where `, ` that `, ` so that `, ` to `) que deixe 25 a 60;
+  senão no último espaço antes de 60. O resto da frase abre o bloco 2;
+- os demais blocos têm no máximo ~80 caracteres: frases maiores são divididas com a mesma
+  ordem de preferência (recursivamente, partes de 25+ caracteres quando possível; sem
+  espaço utilizável, a frase fica inteira). Frases curtas se juntam até 40 caracteres,
+  sem passar de 80. As legendas continuam mostrando a frase inteira em todas as partes;
 - um pedido por vez: o bloco 1 é pedido na hora e o bloco N+1 só quando o áudio do
   bloco N chegou (não quando termina de tocar). O pré-aquecimento
   (`prewarmInterviewerSpeech`) usa a mesma ordem, os mesmos blocos e corpos, então a

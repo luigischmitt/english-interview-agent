@@ -506,12 +506,12 @@ question, transcript, the chosen question, a deterministic `bridgeLeadIn`
 (rotating, avoiding the first two words of the last three
 `recentAcknowledgements`) and role context. The bridge restates what the
 candidate did using only transcript facts; for `FOLLOW_UP` it is one sentence of
-at most 22 words, for `NEXT` a restating sentence plus an optional short
-transition (at most 12 words), 30 words in total. It is validated
+at most 16 words (110 characters), for `NEXT` a restating sentence of at most 18
+words plus an optional short transition (at most 14 words), 30 words in total. It is validated
 deterministically and an invalid bridge only drops the bridge, never the
 question: praise or evaluation and inferred feelings, a question mark, extra
 sentences, invented details (every non-glue content word must come from the
-transcript, one paraphrase word tolerated when at least two overlap, and a
+transcript, one paraphrase word tolerated when at least two overlap and two when at least three overlap, and a
 new capitalized name or number never), copying more than eight consecutive
 transcript words, an exact repeat of `recentAcknowledgements`, and a question
 that adds no new content word. For `NEXT`, if the question shares two or more
