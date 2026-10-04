@@ -12,4 +12,6 @@ export const defaultInterviewConfig: InterviewConfig = {
   ...defaultCandidateVoicePreferences,
   ...defaultInterviewRoomPreferences,
   transcriptionEngine: defaultTranscriptionEngine,
+  // Whisper is not real-time, so the candidate's own live captions stay off.
+  showCandidateCaptions: false,
 };

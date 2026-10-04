@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowUpRight, ArrowLeft } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { ArrowUpRight, ArrowLeft, ChevronDown, Check } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { useSpeechWarmup, useVoiceReadiness } from "../hooks/use-speech-playback";
-import { synthesizeInterviewerQuestion } from "@/lib/interview/speech-playback.mjs";
-import { isBrowserVoiceAvailable, speakWithBrowserVoice } from "@/lib/interview/browser-voice.mjs";
+import { synthesizeInterviewerQuestion, warmUpInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
-import { voiceReadinessCopy } from "@/lib/interview/voice-readiness.mjs";
 import { PageIntro } from "./shared";
+import { RoleCombobox } from "./role-combobox";
+import { SlidingSegmented } from "./sliding-segmented";
+import { setupSans } from "@/lib/setup-fonts";
+import "./interview-setup.css";
 import { defaultInterviewConfig } from "../interview-config";
-import { resolveTranscriptionEngine, transcriptionEngineOptions } from "@/lib/interview/transcription-engine.mjs";
+import { defaultTranscriptionEngine } from "@/lib/interview/transcription-engine.mjs";
 import { interviewDurationOptions } from "@/lib/interview/session-policy.mjs";
 
 const seniorityLabels: Record<InterviewConfig["seniority"], string> = {
@@ -31,12 +33,6 @@ const focusLabels: Record<InterviewConfig["focus"], string> = {
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const audioTestPhrase = "Hello, thanks for joining me today. Could you tell me about a recent project?";
 
-const cardFieldInput =
-  "w-full rounded-lg border border-[#d9e3dc] bg-[#f3f4ee] px-4 py-2.5 text-[15px] text-[#0e2a1f] placeholder:text-[#8a9c92] outline-none transition-colors duration-200 focus:border-[#1f6b45]";
-
-const summaryPillButton =
-  "block w-full rounded-full bg-[#f3f4ee] px-6 py-3.5 text-center text-base font-medium text-[#0e2a1f] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-white active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0";
-
 export function InterviewSetup({
   onBack,
   onStart,
@@ -49,13 +45,15 @@ export function InterviewSetup({
   const [showErrors, setShowErrors] = useState(false);
   const [audioTestStatus, setAudioTestStatus] = useState<{ kind: "idle" | "loading" | "success" | "error"; message?: string }>({ kind: "idle" });
   const audioTestRef = useRef<{ cancel: () => void } | null>(null);
-  const [browserVoiceTesting, setBrowserVoiceTesting] = useState(false);
-  const voiceState = useVoiceReadiness(config.playInterviewerAudio);
+  const [voiceAttempt, setVoiceAttempt] = useState(0);
+  const voiceState = useVoiceReadiness(config.playInterviewerAudio, voiceAttempt);
+  const [roomOptionsOpen, setRoomOptionsOpen] = useState(false);
+  const roomOptionsRef = useRef<HTMLElement>(null);
+  const voiceBlocked = config.playInterviewerAudio && voiceState !== "ready";
 
   const cancelAudioTest = () => {
     audioTestRef.current?.cancel();
     audioTestRef.current = null;
-    setBrowserVoiceTesting(false);
   };
 
   useEffect(() => () => {
@@ -82,11 +80,9 @@ export function InterviewSetup({
     }
   };
 
-  const transcriptionEngine = resolveTranscriptionEngine(config);
-  const transcriptionEngineHelper = transcriptionEngineOptions.find((option) => option.value === transcriptionEngine)?.helper;
 
   const testAudio = async () => {
-    if (!config.playInterviewerAudio) return;
+    if (!config.playInterviewerAudio || voiceState !== "ready") return;
     if (audioTestRef.current) {
       cancelAudioTest();
       setAudioTestStatus({ kind: "idle" });
@@ -106,9 +102,7 @@ export function InterviewSetup({
     if (result.status === "completed") {
       setAudioTestStatus({
         kind: "success",
-        message: result.voice === "browser"
-          ? "Usamos a voz do navegador porque o áudio do entrevistador está instável."
-          : "A reprodução terminou neste dispositivo.",
+        message: "A reprodução terminou neste dispositivo.",
       });
     } else if (result.status === "unavailable") {
       setAudioTestStatus({
@@ -120,50 +114,44 @@ export function InterviewSetup({
     }
   };
 
-  const testBrowserVoice = async () => {
-    if (!config.playInterviewerAudio) return;
-    if (audioTestRef.current) {
-      cancelAudioTest();
-      setAudioTestStatus({ kind: "idle" });
-      return;
-    }
-    if (!isBrowserVoiceAvailable()) {
-      setAudioTestStatus({ kind: "error", message: "Este navegador não oferece voz sintetizada." });
-      return;
-    }
-
-    setAudioTestStatus({ kind: "loading", message: "Reproduzindo a voz do navegador…" });
-    const speech = speakWithBrowserVoice([audioTestPhrase]);
-    audioTestRef.current = speech;
-    setBrowserVoiceTesting(true);
-    const result = await speech.promise;
-    if (audioTestRef.current !== speech) return;
-    audioTestRef.current = null;
-    setBrowserVoiceTesting(false);
-    if (result.status === "completed") setAudioTestStatus({ kind: "success", message: "A voz do navegador terminou de falar. Compare com o áudio do entrevistador." });
-    else if (result.status === "unavailable") setAudioTestStatus({ kind: "error", message: "Não foi possível reproduzir a voz do navegador neste dispositivo." });
-    else setAudioTestStatus({ kind: "idle" });
-  };
-
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!config.role.trim()) {
       setShowErrors(true);
       return;
     }
+    if (voiceBlocked) return;
     cancelAudioTest();
-    onStart({ ...config, role: config.role.trim() });
+    // Whisper is the only engine and the candidate's own live captions are always off.
+    onStart({ ...config, role: config.role.trim(), transcriptionEngine: defaultTranscriptionEngine, showCandidateCaptions: false });
   };
 
-  const [cargoSummary, ...restSummary] = getInterviewSetupSummary(config, seniorityLabels, focusLabels);
+  const [cargoSummary, ...allSummary] = getInterviewSetupSummary(config, seniorityLabels, focusLabels);
+  const restSummary = allSummary.filter(({ label }) => label !== "Legenda da sua fala");
+
+  const retryVoice = () => {
+    warmUpInterviewerSpeech(`${backendBaseUrl}/api/v1/speech`, authorizedFetch);
+    setVoiceAttempt((attempt) => attempt + 1);
+  };
+
+  const toggleRoomOptions = () => setRoomOptionsOpen((open) => !open);
+
+  // When the section opens, bring the revealed content into view once it has grown.
+  const handleRevealEnd = (event: React.TransitionEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget || event.propertyName !== "grid-template-rows" || !roomOptionsOpen) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    roomOptionsRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "nearest" });
+  };
+
+  const startLabel = config.playInterviewerAudio ? "Iniciar com áudio" : "Iniciar somente com texto";
+  const startHint = voiceState === "unavailable"
+    ? "A voz não ficou pronta. Tente de novo acima ou escolha “Somente texto”."
+    : "Aguarde a voz do entrevistador ficar pronta para iniciar com áudio.";
+  const roleInvalid = showErrors && !config.role.trim();
 
   return (
-    <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
-      <button
-        type="button"
-        className="btn btn-ghost -ml-3 mb-7 gap-2 text-sm text-muted-foreground hover:text-foreground"
-        onClick={onBack}
-      >
+    <main id="main-content" className={`isu-root ${setupSans.variable} mx-auto w-full min-w-0 max-w-6xl px-4 pb-40 pt-6 sm:px-8 sm:pt-8 lg:px-12 lg:pb-16 lg:pt-10`}>
+      <button type="button" className="isu-btn isu-btn-quiet -ml-3 mb-6 min-h-10 gap-2 px-3 text-sm" onClick={onBack}>
         <ArrowLeft className="size-4" aria-hidden="true" />
         Voltar à visão geral
       </button>
@@ -173,194 +161,211 @@ export function InterviewSetup({
         description="Escolha o cargo, o foco e o tempo que você quer praticar."
       />
 
-      <form onSubmit={handleSubmit} className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)]" noValidate>
-        <section className="border border-[#d9e3dc] bg-white" aria-labelledby="interview-details-title" data-aos="fade-up" data-aos-duration="450">
-          <div className="flex flex-col gap-7 p-5 sm:p-8">
-            <div>
-              <h2 id="interview-details-title" className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1f6b45]">
-                01 · Detalhes da entrevista
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Você pode mudar essas opções a cada nova sessão.
-              </p>
+      <form id="interview-setup-form" onSubmit={handleSubmit} className="mt-8 grid items-start gap-6 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-8" noValidate>
+        <div className="flex min-w-0 flex-col gap-5">
+          {/* 1. Essentials: what is being practiced */}
+          <section className="isu-card isu-enter p-5 sm:p-7" style={{ "--i": 0 } as CSSProperties} aria-labelledby="interview-details-title">
+            <div className="flex items-center gap-3">
+              <span className="isu-step" aria-hidden="true">1</span>
+              <h2 id="interview-details-title" className="isu-h2">Detalhes da entrevista</h2>
             </div>
+            <p className="isu-body mt-2">Você pode mudar essas opções a cada nova sessão.</p>
 
-            <div className="grid gap-6 sm:grid-cols-2">
-              <label className="flex flex-col gap-2 sm:col-span-2">
-                <span className="text-sm font-medium">Cargo para praticar <span className="text-error" aria-hidden="true">*</span></span>
-                <input
-                  className={`${cardFieldInput} ${showErrors ? "border-error" : ""}`}
+            <div className="mt-6 flex flex-col gap-6">
+              <div className="flex flex-col gap-2">
+                <label htmlFor="role-input" className="isu-label">
+                  Cargo para praticar <span className="text-[#8a3a21]" aria-hidden="true">*</span>
+                </label>
+                <RoleCombobox
+                  id="role-input"
                   value={config.role}
-                  onChange={(event) => updateConfig("role", event.target.value)}
-                  placeholder="ex.: Software Engineer"
-                  aria-invalid={showErrors && !config.role.trim()}
-                  aria-describedby={showErrors ? "role-error" : undefined}
-                  required
+                  onChange={(role) => updateConfig("role", role)}
+                  placeholder="Escolha ou digite, ex.: Software Engineer"
+                  invalid={roleInvalid}
+                  describedBy={roleInvalid ? "role-error" : undefined}
                 />
-                {showErrors && !config.role.trim() && (
-                  <span id="role-error" className="text-sm text-error">Informe o cargo para o qual você quer praticar.</span>
+                {roleInvalid && (
+                  <span id="role-error" role="alert" className="isu-fade-in text-sm font-medium text-[#8a3a21]">Informe o cargo para o qual você quer praticar.</span>
                 )}
-              </label>
+              </div>
 
-              <label className="flex flex-col gap-2">
-                <span className="text-sm font-medium">Senioridade</span>
-                <select
-                  className={cardFieldInput}
+              <fieldset className="flex min-w-0 flex-col gap-2">
+                <legend className="isu-label mb-2">Senioridade</legend>
+                <SlidingSegmented
+                  name="seniority"
+                  ariaLabel="Senioridade"
+                  className="grid-cols-2 min-[460px]:grid-cols-4"
+                  options={(Object.keys(seniorityLabels) as InterviewConfig["seniority"][]).map((value) => ({ value, label: seniorityLabels[value] }))}
                   value={config.seniority}
-                  onChange={(event) => updateConfig("seniority", event.target.value)}
-                >
-                  <option value="junior">Júnior</option>
-                  <option value="mid-level">Pleno</option>
-                  <option value="senior">Sênior</option>
-                  <option value="staff">Staff / Lead</option>
-                </select>
-              </label>
+                  onChange={(value) => updateConfig("seniority", value)}
+                />
+              </fieldset>
 
-              <label className="flex flex-col gap-2">
-                <span className="text-sm font-medium">Foco da prática</span>
-                <select
-                  className={cardFieldInput}
+              <fieldset className="flex min-w-0 flex-col gap-2">
+                <legend className="isu-label mb-2">Foco da prática</legend>
+                <SlidingSegmented
+                  name="focus"
+                  ariaLabel="Foco da prática"
+                  className="grid-cols-1 min-[560px]:grid-cols-2"
+                  itemClassName="min-h-11"
+                  options={(Object.keys(focusLabels) as InterviewConfig["focus"][]).map((value) => ({ value, label: focusLabels[value] }))}
                   value={config.focus}
-                  onChange={(event) => updateConfig("focus", event.target.value)}
-                >
-                  <option value="technical-depth">Profundidade técnica</option>
-                  <option value="communication">Comunicação e clareza</option>
-                  <option value="behavioral">Respostas comportamentais</option>
-                  <option value="mixed">Prática equilibrada</option>
-                </select>
-              </label>
+                  onChange={(value) => updateConfig("focus", value)}
+                />
+              </fieldset>
 
-              <fieldset className="flex flex-col gap-2">
-                <legend className="text-sm font-medium">Duração da sessão</legend>
-                <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-4" role="radiogroup" aria-label="Duração da sessão">
-                  {interviewDurationOptions.map((option) => {
-                    const minutes = String(option);
-                    return (
-                    <label key={minutes} className={`flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border px-3 text-sm font-medium transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${config.duration === minutes ? "border-[#0e2a1f] bg-[#0e2a1f] text-[#f3f4ee]" : "border-[#d9e3dc] bg-[#f3f4ee] hover:border-[#1f6b45]"}`}>
-                      <input
-                        type="radio"
-                        name="duration"
-                        value={minutes}
-                        className="sr-only"
-                        checked={config.duration === minutes}
-                        onChange={(event) => updateConfig("duration", event.target.value)}
-                      />
-                      {minutes} min
-                    </label>
-                    );
-                  })}
-                </div>
+              <fieldset className="flex min-w-0 flex-col gap-2">
+                <legend className="isu-label mb-2">Duração da sessão</legend>
+                <SlidingSegmented
+                  name="duration"
+                  ariaLabel="Duração da sessão"
+                  className="grid-cols-4"
+                  options={interviewDurationOptions.map((option) => ({ value: String(option), label: `${option} min` }))}
+                  value={config.duration}
+                  onChange={(value) => updateConfig("duration", value)}
+                />
               </fieldset>
             </div>
+          </section>
 
-            <section className="border-t border-[#d9e3dc] pt-6" aria-labelledby="interviewer-audio-title">
-              <h3 id="interviewer-audio-title" className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1f6b45]">02 · Como o entrevistador fala</h3>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.</p>
-              <fieldset className="mt-4 grid gap-3 sm:grid-cols-2">
-                <legend className="sr-only">Como o entrevistador fala</legend>
-                <label className={`flex min-h-20 cursor-pointer items-start gap-3 border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${config.playInterviewerAudio ? "border-[#1f6b45] bg-[#e9f3ed]" : "border-[#d9e3dc] bg-[#f3f4ee] hover:bg-[#eceee5]"}`}>
-                  <input type="radio" name="interviewer-audio-mode" value="audio" className="radio radio-primary mt-1" checked={getInterviewerAudioMode(config) === "audio"} onChange={() => updateInterviewerAudioMode("audio")} />
-                  <span className="min-w-0">
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">Com áudio <span className="rounded-full border border-[#1f6b45] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#1f6b45]">Recomendado</span></span>
-                    <span className="mt-1 block text-sm leading-6 text-muted-foreground">O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.</span>
+          {/* 2. Interviewer voice, with its readiness and test next to the choice they affect */}
+          <section className="isu-card isu-enter p-5 sm:p-7" style={{ "--i": 1 } as CSSProperties} aria-labelledby="interviewer-audio-title">
+            <div className="flex items-center gap-3">
+              <span className="isu-step" aria-hidden="true">2</span>
+              <h2 id="interviewer-audio-title" className="isu-h2">Como o entrevistador fala</h2>
+            </div>
+            <p className="isu-body mt-2 max-w-2xl">Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.</p>
+
+            <fieldset className="mt-5 grid gap-3 sm:grid-cols-2">
+              <legend className="sr-only">Como o entrevistador fala</legend>
+              <label className="isu-option">
+                <input type="radio" name="interviewer-audio-mode" value="audio" className="isu-radio" checked={getInterviewerAudioMode(config) === "audio"} onChange={() => updateInterviewerAudioMode("audio")} />
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">Com áudio <span className="rounded-full bg-[#1f6b45] px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-[#f3f4ee]">Recomendado</span></span>
+                  <span className="isu-small mt-1 block">O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.</span>
+                </span>
+              </label>
+              <label className="isu-option">
+                <input type="radio" name="interviewer-audio-mode" value="text" className="isu-radio" checked={getInterviewerAudioMode(config) === "text"} onChange={() => updateInterviewerAudioMode("text")} />
+                <span className="min-w-0">
+                  <span className="block text-[15px] font-semibold">Somente texto</span>
+                  <span className="isu-small mt-1 block">O entrevistador não terá voz. A introdução e as perguntas aparecem por escrito.</span>
+                </span>
+              </label>
+            </fieldset>
+
+            {config.playInterviewerAudio && (
+              <div className="isu-voice isu-fade-in mt-5 flex flex-col gap-3" data-voice-state={voiceState}>
+                <div role="status" aria-live="polite" className="flex items-start gap-3">
+                  <span aria-hidden="true" className="mt-0.5 flex size-6 shrink-0 items-center justify-center">
+                    {voiceState === "ready" ? (
+                      <span className="isu-pop flex size-6 items-center justify-center rounded-full bg-[#1f6b45] text-[#f3f4ee]"><Check className="size-3.5" strokeWidth={3} /></span>
+                    ) : voiceState === "warming" ? (
+                      <span className="size-2.5 rounded-full bg-[#1f6b45] motion-safe:animate-pulse" />
+                    ) : (
+                      <span className="size-2.5 rounded-full bg-[#c9694a]" />
+                    )}
                   </span>
-                </label>
-                <label className={`flex min-h-20 cursor-pointer items-start gap-3 border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${!config.playInterviewerAudio ? "border-[#1f6b45] bg-[#e9f3ed]" : "border-[#d9e3dc] bg-[#f3f4ee] hover:bg-[#eceee5]"}`}>
-                  <input type="radio" name="interviewer-audio-mode" value="text" className="radio radio-primary mt-1" checked={getInterviewerAudioMode(config) === "text"} onChange={() => updateInterviewerAudioMode("text")} />
-                  <span className="min-w-0">
-                    <span className="block font-medium">Somente texto</span>
-                    <span className="mt-1 block text-sm leading-6 text-muted-foreground">O entrevistador não terá voz. A introdução e as perguntas aparecem por escrito.</span>
-                  </span>
-                </label>
-              </fieldset>
-
-              {config.playInterviewerAudio && (
-                <p role="status" aria-live="polite" data-voice-state={voiceState} className={`mt-4 flex items-start gap-2 text-sm leading-6 ${voiceState === "ready" ? "text-[#1f6b45]" : "text-muted-foreground"}`}>
-                  <span aria-hidden="true" className={`mt-2 size-2 shrink-0 rounded-full ${voiceState === "ready" ? "bg-[#1f6b45]" : voiceState === "warming" ? "bg-[#9fc4ac] motion-safe:animate-pulse" : "bg-[#8a9c92]"}`} />
-                  <span>{voiceReadinessCopy[voiceState]}</span>
-                </p>
-              )}
-
-              {config.playInterviewerAudio && (
-                <div className="mt-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-                  <button type="button" className="btn btn-outline min-h-11 rounded-full" onClick={() => void testAudio()}>
-                    {audioTestStatus.kind === "loading" && !browserVoiceTesting ? "Cancelar teste" : "Testar áudio"}
-                  </button>
-                  <button type="button" className="btn btn-ghost min-h-11 rounded-full" onClick={() => void testBrowserVoice()} disabled={audioTestStatus.kind === "loading" && !browserVoiceTesting}>
-                    {browserVoiceTesting ? "Parar voz do navegador" : "Ouvir voz do navegador"}
-                  </button>
-                  <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "text-error" : audioTestStatus.kind === "success" ? "text-success" : "text-muted-foreground"}`}>
-                    {audioTestStatus.message ?? "Clique para gerar e ouvir uma frase curta antes de começar."}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="isu-label">
+                      {voiceState === "ready" ? "Voz do entrevistador pronta" : voiceState === "warming" ? "Preparando a voz do entrevistador" : "Não conseguimos preparar a voz"}
+                    </p>
+                    <p className="isu-small mt-0.5">
+                      {voiceState === "ready"
+                        ? "Tudo certo para começar com áudio."
+                        : voiceState === "warming"
+                          ? "Na primeira vez isso pode levar cerca de 1 minuto. Ajuste o resto enquanto espera; o botão de iniciar libera sozinho."
+                          : "Sem a voz não dá para iniciar com áudio. Tente de novo ou escolha “Somente texto”."}
+                    </p>
+                  </div>
                 </div>
-              )}
-            </section>
-
-            <section className="border-t border-[#d9e3dc] pt-6" aria-labelledby="room-options-title">
-              <h3 id="room-options-title" className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1f6b45]">03 · Preferências da sala</h3>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
-              <fieldset className="mt-4 flex flex-col gap-2">
-                <legend className="text-sm font-medium">Transcrição da sua resposta</legend>
-                <div className="grid gap-2 min-[420px]:grid-cols-2" role="radiogroup" aria-label="Transcrição da sua resposta">
-                  {transcriptionEngineOptions.map((option) => (
-                    <label key={option.value} className={`flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${transcriptionEngine === option.value ? "border-[#0e2a1f] bg-[#0e2a1f] text-[#f3f4ee]" : "border-[#d9e3dc] bg-[#f3f4ee] hover:border-[#1f6b45]"}`}>
-                      <input
-                        type="radio"
-                        name="transcription-engine"
-                        value={option.value}
-                        className="sr-only"
-                        checked={transcriptionEngine === option.value}
-                        aria-describedby="transcription-engine-helper"
-                        onChange={() => setConfig((current) => ({ ...current, transcriptionEngine: option.value }))}
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-                <p id="transcription-engine-helper" role="status" aria-live="polite" className="text-xs leading-5 text-muted-foreground">{transcriptionEngineHelper}</p>
-              </fieldset>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel="Sempre visível" onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
-                <SettingToggle id="show-candidate-captions" label="Legenda da sua fala" description="Veja o que você diz enquanto responde. Só aparece quando o transcritor em tempo real está ativo e nunca é salva; a transcrição final continua sendo a usada." checked={config.showCandidateCaptions} onChange={(checked) => updateOption("showCandidateCaptions", checked)} />
-                <SettingToggle id="candidate-camera" label="Prévia da câmera" description="Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
-                <SettingToggle id="auto-capture-voice" label="Iniciar microfone automaticamente" description="Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala." checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
+                <div className="isu-voice-bar" aria-hidden="true" />
+                {voiceState === "unavailable" && (
+                  <div>
+                    <button type="button" className="isu-btn isu-btn-soft" onClick={retryVoice}>Tentar de novo</button>
+                  </div>
+                )}
+                {voiceState === "ready" && (
+                  <div className="flex flex-col gap-2 min-[460px]:flex-row min-[460px]:items-center">
+                    <button type="button" className="isu-btn isu-btn-soft" onClick={() => void testAudio()}>
+                      {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
+                    </button>
+                    <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "font-medium text-[#8a3a21]" : audioTestStatus.kind === "success" ? "font-medium text-[#1f6b45]" : "text-[#44604f]"}`}>
+                      {audioTestStatus.message ?? "Opcional: ouça uma frase curta antes de começar."}
+                    </p>
+                  </div>
+                )}
               </div>
-            </section>
-          </div>
-        </section>
+            )}
+          </section>
 
-        <div data-aos="fade-up" data-aos-delay="80" data-aos-duration="450">
-          <aside className="bg-[#0e2a1f] px-6 py-8 text-[#f3f4ee] sm:px-8" aria-labelledby="session-preview-title">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#9fc4ac]">Sua sessão</p>
+          {/* 3. Advanced: one level deeper, collapsed by default */}
+          <section ref={roomOptionsRef} className="isu-card isu-enter scroll-mb-28 scroll-mt-24" style={{ "--i": 2 } as CSSProperties} aria-labelledby="room-options-title">
+            <button type="button" className="isu-disclosure-button flex items-center gap-3 p-5 sm:px-7" aria-expanded={roomOptionsOpen} aria-controls="room-options-panel" onClick={toggleRoomOptions}>
+              <span className="isu-step" aria-hidden="true">3</span>
+              <span className="min-w-0 flex-1">
+                <span id="room-options-title" className="isu-h2 block">Preferências da sala</span>
+                <span className="isu-small block">Legendas das perguntas, câmera e microfone. Os padrões já funcionam bem.</span>
+              </span>
+              <ChevronDown className="isu-chevron size-5 shrink-0 text-[#44604f]" style={{ transform: roomOptionsOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
+            </button>
+            <div id="room-options-panel" className="isu-reveal" data-open={roomOptionsOpen} inert={!roomOptionsOpen} onTransitionEnd={handleRevealEnd}>
+              <div>
+                <div className="px-5 pb-6 sm:px-7">
+                  <p className="isu-body">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
+                  <div className="-mx-1 mt-4 grid gap-1 sm:grid-cols-2">
+                    <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel="Sempre visível" onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
+                    <SettingToggle id="candidate-camera" label="Prévia da câmera" description="Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
+                    <SettingToggle id="auto-capture-voice" label="Iniciar microfone automaticamente" description="Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala." checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* Summary + primary action: sticky beside the form on desktop, recap in flow on mobile */}
+        <div className="isu-enter lg:sticky lg:top-24" style={{ "--i": 3 } as CSSProperties}>
+          <aside className="isu-aside px-6 py-7 sm:px-8" aria-labelledby="session-preview-title">
+            <p className="text-xs font-semibold tracking-[0.08em] text-[#9fc4ac]">Sua sessão</p>
             <h2
               id="session-preview-title"
-              className="mt-3 text-balance font-[family-name:var(--font-landing-serif)] text-3xl leading-tight tracking-[-0.02em]"
+              key={cargoSummary.value}
+              className="isu-fade-in mt-2 text-balance font-[family-name:var(--font-landing-serif)] text-[1.875rem] leading-[1.1] tracking-[-0.02em] [overflow-wrap:anywhere]"
             >
               {cargoSummary.value}
             </h2>
-            <dl className="mt-6 space-y-3 border-t border-white/15 pt-5 text-sm">
+            <dl className="mt-5 space-y-2.5 text-sm">
               {restSummary.map(({ label, value }) => (
-                <div key={label} className="flex items-baseline justify-between gap-4 border-b border-white/10 pb-3">
+                <div key={label} className="flex items-baseline justify-between gap-4">
                   <dt className="shrink-0 text-[#9fc4ac]">{label}</dt>
-                  <dd className="min-w-0 text-right font-medium [overflow-wrap:anywhere]">{value}</dd>
+                  <dd key={value} className="isu-fade-in min-w-0 text-right font-medium [overflow-wrap:anywhere]">{value}</dd>
                 </div>
               ))}
             </dl>
-            <button type="submit" className={`${summaryPillButton} mt-7 flex items-center justify-center gap-2`}>
-              {config.playInterviewerAudio ? "Iniciar com áudio" : "Iniciar somente com texto"} <ArrowUpRight className="size-4" aria-hidden="true" />
+            <button type="submit" className="isu-btn isu-btn-cta mt-7 hidden lg:flex" disabled={voiceBlocked} aria-describedby={voiceBlocked ? "start-hint" : undefined}>
+              {startLabel} <ArrowUpRight className="isu-arrow size-4" aria-hidden="true" />
             </button>
-            <button type="button" className="mt-3 block w-full text-center text-sm text-[#9fc4ac] underline-offset-4 hover:text-[#f3f4ee] hover:underline" onClick={onBack}>
+            {voiceBlocked && <p id="start-hint" className="isu-hint isu-fade-in mt-3 hidden text-[#9fc4ac] lg:block">{startHint}</p>}
+            <button type="button" className="isu-btn isu-btn-quiet mt-2 hidden w-full text-[#9fc4ac] hover:text-[#f3f4ee] lg:flex" onClick={onBack}>
               Cancelar
             </button>
           </aside>
-          <p className="mt-6 text-sm leading-6 text-muted-foreground">
+          <p className="isu-small mt-4 px-2">
             Você pode encerrar a qualquer momento. Uma resposta já iniciada pode terminar após o tempo planejado.
           </p>
+        </div>
+
+        {/* Mobile: the primary action stays reachable */}
+        <div className="isu-bar fixed inset-x-0 bottom-0 z-20 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 lg:hidden">
+          {voiceBlocked && <p className="isu-hint isu-fade-in mb-2 text-center text-[#44604f]">{startHint}</p>}
+          <button type="submit" form="interview-setup-form" className="isu-btn isu-btn-cta-green" disabled={voiceBlocked}>
+            {startLabel} <ArrowUpRight className="isu-arrow size-4" aria-hidden="true" />
+          </button>
         </div>
       </form>
     </main>
   );
-
 }
 
 function SettingToggle({
@@ -383,14 +388,14 @@ function SettingToggle({
   const stateLabel = disabled ? (disabledStatusLabel ?? "Desligado") : checked ? "Ligado" : "Desligado";
 
   return (
-    <label htmlFor={id} className={`flex min-h-11 w-full items-start gap-3 border p-4 transition-colors focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${disabled ? "cursor-not-allowed border-[#d9e3dc] bg-[#eceee5]" : checked ? "cursor-pointer border-[#1f6b45] bg-[#e9f3ed]" : "cursor-pointer border-[#d9e3dc] bg-[#f3f4ee] hover:bg-[#eceee5]"}`}>
-      <input id={id} type="checkbox" className="checkbox checkbox-primary mt-0.5 size-5 shrink-0" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+    <label htmlFor={id} className="isu-toggle" data-disabled={disabled}>
+      <input id={id} type="checkbox" role="switch" className="isu-switch" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <span className="text-sm font-medium">{label}</span>
-          <span className={`shrink-0 text-xs font-semibold ${disabled ? "text-muted-foreground/70" : checked ? "text-[#1f6b45]" : "text-muted-foreground"}`}>{stateLabel}</span>
+        <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <span className="text-sm font-semibold">{label}</span>
+          <span className={`shrink-0 text-xs font-semibold ${checked || disabled ? "text-[#1f6b45]" : "text-[#5c7a6a]"}`}>{stateLabel}</span>
         </span>
-        <span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span>
+        <span className="isu-small mt-1 block">{description}</span>
       </span>
     </label>
   );
