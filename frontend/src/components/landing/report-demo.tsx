@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Dimension = { label: string; value: number };
 
@@ -36,8 +36,28 @@ export function ReportDemo() {
   const [displayScore, setDisplayScore] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [inView, setInView] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Start the count-up and radar reveal when the report scrolls into view, not on page load.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setInView(true);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setInView(true);
+        observer.disconnect();
+      }
+    }, { threshold: 0.25 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
+    if (!inView) return;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const duration = reduceMotion ? 0 : SCORE_ANIMATION_MS;
 
@@ -55,56 +75,52 @@ export function ReportDemo() {
       cancelAnimationFrame(frame);
       cancelAnimationFrame(revealFrame);
     };
-  }, []);
+  }, [inView]);
 
   const valuePoints = DIMENSIONS.map((d, i) => radarPoint(i, DIMENSIONS.length, (RADAR_RADIUS * d.value) / 100));
   const polygonPoints = valuePoints.map((p) => `${p.x},${p.y}`).join(" ");
   const hoveredDimension = hovered !== null ? DIMENSIONS[hovered] : null;
 
   return (
-    <div
-      data-aos="fade-up"
-      className="bg-white shadow-[0_40px_90px_-40px_rgba(14,42,31,0.45)] transition-shadow duration-500 hover:shadow-[0_48px_100px_-36px_rgba(14,42,31,0.55)]"
-    >
-      <div className="grid grid-cols-1 gap-8 p-6 pb-8 sm:grid-cols-[repeat(auto-fit,minmax(240px,1fr))] sm:gap-6 sm:p-10 sm:pb-8">
-        <div className="flex flex-col gap-3.5">
-          <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-[0.06em] text-[#1f9a5a]">
-            <span className="inline-block size-2.5 rounded-full bg-[#1f9a5a]" aria-hidden="true" />
+    <div ref={rootRef} data-reveal className="lp-report">
+      <div className="lp-report-top">
+        <div className="flex flex-col gap-3">
+          <span className="lp-badge">
+            <i aria-hidden="true" />
             Verificado
           </span>
-          <p className="mt-3 text-2xl font-semibold uppercase tracking-[0.02em]">Rafael Menezes</p>
+          <p className="mt-2 text-xl font-semibold tracking-[-0.018em]">Rafael Menezes</p>
           <div className="flex items-start gap-2">
-            <span className="text-[96px] font-medium leading-[0.9] tracking-[-0.04em] tabular-nums">{displayScore}</span>
-            <span className="mt-2 text-xl text-[#8a9c92]">/100</span>
+            <span className="lp-score" aria-label={`Nota ${TARGET_SCORE} de 100`}>{displayScore}</span>
+            <span className="lp-score-max">/100</span>
           </div>
-          <p className="mt-9 text-base leading-[1.5] text-[#3d5a4c]">
-            Backend Sênior ·<br />Vaga em Berlim · 2026
+          <p className="lp-report-meta md:mt-auto">
+            Backend Sênior · Vaga em Berlim · 2026
           </p>
         </div>
 
-        <div className="relative flex justify-center pt-5">
-          <div
-            className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#0e2a1f] px-2.5 py-1 text-[12.5px] font-semibold text-[#e6efe9] transition-opacity duration-200"
-            style={{ opacity: hoveredDimension ? 1 : 0 }}
-          >
+        <div className="relative flex justify-center pt-6">
+          <div className="lp-radar-tip" style={{ opacity: hoveredDimension ? 1 : 0 }} aria-hidden="true">
             {hoveredDimension ? `${hoveredDimension.label} · ${hoveredDimension.value}` : ""}
           </div>
-          <svg viewBox="0 0 300 300" width={280} height={280} className="block overflow-visible">
+          <svg viewBox="0 0 300 300" width={280} height={280} className="block max-w-full overflow-visible" role="img" aria-label="Radar com seis dimensões do inglês: artigos, preposições, tempos verbais, ritmo, falsos cognatos e pronúncia.">
             {[130, 100, 70, 40].map((r) => (
-              <circle key={r} cx={150} cy={150} r={r} fill="none" stroke="#b9cfc2" strokeDasharray="3 4" />
+              <circle key={r} cx={150} cy={150} r={r} fill="none" stroke="#c9d8cf" strokeDasharray="3 4" />
             ))}
-            <line x1={150} y1={20} x2={150} y2={280} stroke="#9fbfae" />
-            <line x1={37.4} y1={85} x2={262.6} y2={215} stroke="#9fbfae" />
-            <line x1={37.4} y1={215} x2={262.6} y2={85} stroke="#9fbfae" />
+            <line x1={150} y1={20} x2={150} y2={280} stroke="#d5e1d9" />
+            <line x1={37.4} y1={85} x2={262.6} y2={215} stroke="#d5e1d9" />
+            <line x1={37.4} y1={215} x2={262.6} y2={85} stroke="#d5e1d9" />
             <polygon
               points={polygonPoints}
               fill="rgba(31,107,69,0.14)"
               stroke="#1f6b45"
               strokeWidth={2}
+              strokeLinejoin="round"
               style={{
                 transformOrigin: "150px 150px",
-                transform: revealed ? "scale(1)" : "scale(0)",
-                transition: "transform 1.2s cubic-bezier(.2,.8,.2,1) .3s",
+                transform: revealed ? "scale(1)" : "scale(0.4)",
+                opacity: revealed ? 1 : 0,
+                transition: "transform 900ms cubic-bezier(0.23, 1, 0.32, 1) 300ms, opacity 400ms ease 300ms",
               }}
             />
             {DIMENSIONS.map((d, i) => {
@@ -123,9 +139,9 @@ export function ReportDemo() {
                     y1={150}
                     x2={axis.x}
                     y2={axis.y}
-                    stroke={active ? "#1f9a5a" : "transparent"}
+                    stroke={active ? "#1f6b45" : "transparent"}
                     strokeWidth={active ? 2 : 1}
-                    style={{ transition: "stroke .25s, stroke-width .25s" }}
+                    style={{ transition: "stroke .2s, stroke-width .2s" }}
                   />
                   {/* generous invisible hit areas so hover doesn't require pixel-precision */}
                   <circle cx={axis.x} cy={axis.y} r={16} fill="transparent" />
@@ -134,8 +150,8 @@ export function ReportDemo() {
                     cx={point.x}
                     cy={point.y}
                     r={active ? 6.5 : 3.5}
-                    fill={active ? "#1f9a5a" : "#0e2a1f"}
-                    style={{ transition: "r .25s, fill .25s" }}
+                    fill={active ? "#1f6b45" : "#0e2a1f"}
+                    style={{ transition: "r .2s, fill .2s", opacity: revealed ? 1 : 0 }}
                   />
                 </g>
               );
@@ -143,36 +159,28 @@ export function ReportDemo() {
           </svg>
         </div>
 
-        <div className="flex flex-col items-start gap-3 text-left sm:items-end sm:text-right">
-          <p className="text-[15px] font-semibold uppercase tracking-[0.04em] text-[#0e2a1f]">Relatório · Inglês sob pressão</p>
-          <p className="text-base text-[#3d5a4c]">englishinterview.ai/r/rafael</p>
-          <p className="mt-auto pt-6 text-[30px] font-medium tracking-[-0.01em] sm:pt-24">Top 22%</p>
-          <p className="text-base text-[#3d5a4c]">Ponto fraco: preposições</p>
-          <p className="mt-2 text-sm text-[#8a9c92]">Emitido por English Interview Agent</p>
+        <div className="lp-report-side">
+          <p className="text-sm font-semibold tracking-[-0.005em]">Relatório · Inglês sob pressão</p>
+          <p className="lp-report-meta">englishinterview.ai/r/rafael</p>
+          <p className="mt-4 text-[1.875rem] font-medium leading-none tracking-[-0.025em] md:mt-auto">Top 22%</p>
+          <p className="lp-report-meta">Ponto fraco: preposições</p>
+          <p className="lp-report-meta" style={{ fontSize: "0.8125rem" }}>Emitido por English Interview Agent</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 border-t border-[#e4ebe6] p-6 pt-7 sm:grid-cols-[repeat(auto-fit,minmax(110px,1fr))] sm:p-10 sm:pt-7">
-        {DIMENSIONS.map((d, i) => {
-          const active = hovered === i;
-          return (
-            <div
-              key={d.label}
-              className="-m-2.5 flex cursor-default flex-col gap-3.5 rounded-[10px] p-2.5 transition-colors duration-200"
-              style={{ backgroundColor: active ? "#e8f2ec" : "transparent" }}
-              onMouseEnter={() => setHovered(i)}
-              onMouseLeave={() => setHovered(null)}
-            >
-              <span
-                className="text-[32px] font-medium tracking-[-0.02em] tabular-nums transition-colors duration-200"
-                style={{ color: active ? "#1f6b45" : "#0e2a1f" }}
-              >
-                {d.value}
-              </span>
-              <span className="text-[15px] leading-[1.3] text-[#3d5a4c]">{d.label}</span>
-            </div>
-          );
-        })}
+      <div className="lp-report-dims">
+        {DIMENSIONS.map((d, i) => (
+          <div
+            key={d.label}
+            className="lp-dim"
+            data-active={hovered === i}
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered(null)}
+          >
+            <span className="lp-dim-v">{d.value}</span>
+            <span className="lp-dim-l">{d.label}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
