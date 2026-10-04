@@ -3,6 +3,7 @@ import { Geist_Mono } from "next/font/google";
 
 import { AuthSessionGuard } from "@/components/auth/auth-session-guard";
 import { instrumentSans, instrumentSerif } from "@/lib/fonts";
+import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme/color-scheme.mjs";
 
 import "./globals.css";
 
@@ -21,8 +22,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="pt-BR"
       data-theme="interview-light"
+      data-color-scheme="light"
+      suppressHydrationWarning
       className={`${instrumentSans.variable} ${instrumentSerif.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* Runs while the HTML is parsed, before first paint: applies the stored/OS scheme so there is no flash. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         <AuthSessionGuard />
         {children}

@@ -1,6 +1,6 @@
 ---
 name: English Interview Agent
-description: Warm, calm, green-on-cream interface for Brazilian developers rehearsing English job interviews.
+description: Warm, calm, green-on-cream (light) and green-on-graphite (dark) interface for Brazilian developers rehearsing English job interviews.
 colors:
   ink: "#0e2a1f"
   green: "#1f6b45"
@@ -52,6 +52,50 @@ Source of truth in code: tokens in `frontend/src/app/globals.css` (`--ds-*`), pr
 Contrast (WCAG): ink on cream 13.9:1; text-2 on cream 6.3:1, on surface 6.7:1, on field 6.2:1; green on cream 5.9:1; cream on green 5.9:1; green-deep on tint 7.5:1; green on tint 5.6:1; error on error-tint 6.5:1. The placeholder color is 3.3:1 and must never carry meaning on its own. Never put text-2 or green on a darker surface than `--ds-field` without re-checking.
 
 Tailwind: `bg-surface`, `bg-field`, `bg-tint`, `bg-track`, `bg-cream`, `text-ink`, `text-text-2`, `text-green`, `text-danger`, `bg-danger-tint`, `bg-warn-tint`, `shadow-card`, `shadow-pop`, `shadow-panel`. shadcn variables (`--primary`, `--card`, `--muted-foreground`, ...) and the DaisyUI `interview-light` theme (`btn`, `alert`, `text-error`, ...) are mapped to the same palette, so `text-muted-foreground` is text-2, `text-error` is `#8a3a21`, `bg-primary` is green.
+
+## Dark mode
+
+Two schemes, one set of tokens. `<html data-color-scheme="light|dark">` (and `data-theme="interview-light|interview-dark"` for DaisyUI) selects the scheme; every `--ds-*`, shadcn and DaisyUI value has a dark counterpart, so components never branch on the scheme. Light is unchanged. The Tailwind `dark:` variant is wired to the attribute.
+
+Mechanism (`frontend/src/lib/theme/color-scheme.mjs`, tested in `tests/color-scheme.test.mjs`):
+
+- Preference is `light`, `dark` or `system` (default). It lives in `localStorage["eia:color-scheme"]`; `system` removes the key; unknown values are treated as `system`; storage errors are swallowed.
+- An inline script in `<head>` of the root layout (`THEME_BOOTSTRAP_SCRIPT`) resolves preference + `prefers-color-scheme` and sets the attributes and `style.colorScheme` before first paint, so there is no flash. `<html>` has `suppressHydrationWarning` because the script changes its attributes before hydration.
+- `ThemeToggle` (`components/theme/theme-toggle.tsx`, `role="radiogroup"` with Claro / Escuro / Sistema, Sun / Moon / Monitor icons, arrow-key navigation) lives in the landing header and the app topbar (visible on mobile). While the preference is `system` it follows OS changes live.
+- Color transitions (<= 180ms) run only when the user switches (`html[data-theme-transition]`, set for ~200ms) and never on load or under `prefers-reduced-motion`.
+
+Graphite palette (neutral, not green-tinted; green is an accent; surfaces rise with lightness, so elevation comes from lightness and a 1px white hairline, not black shadows):
+
+| Token | Dark | Role |
+| --- | --- | --- |
+| `--ds-cream` | `#121316` | Page |
+| `--ds-surface` | `#1b1d22` | Cards |
+| `--ds-field` / hover | `#24272d` / `#2b2f36` | Inputs, option cards, wells |
+| `--ds-track` | `#101114` | Inset tracks (darker than the card) |
+| `--ds-thumb` | `#3a3e46` | Raised thumb, active tab, toggle |
+| `--ds-sidebar` | `#17191d` | Sidebar |
+| `--ds-panel` / `--ds-on-panel` | `#2a2e35` / `#ecebe4` | Summary panels (setup aside, home hero, report priorities, landing CTA) |
+| `--ds-ink` | `#ecebe4` | Text |
+| `--ds-text-2` / `-3` | `#a6aba5` / `#8d938d` | Secondary / tertiary text |
+| `--ds-green` | `#5fd08f` | Accent: links, eyebrows, icons, rings, bars |
+| `--ds-green-deep` | `#8fe3b2` | Text on tint |
+| `--ds-green-solid` / hover / `--ds-on-green` | `#1f6b45` / `#27794f` / `#f3f4ee` | Filled buttons and badges |
+| `--ds-tint` / hover | `#1c3328` / `#234232` | Selected, success, soft button |
+| `--ds-error` / tint / ring | `#f2a893` / `#3a2119` / `#e0745a` | Error |
+| `--ds-warning` / tint | `#ecd491` / `#33291a` | Warning |
+| `--ds-line` | `rgba(255,255,255,0.09)` | Hairlines |
+
+Contrast (dark): ink 15.5:1 on page, 14.1:1 on surface; text-2 8.0:1 / 7.2:1 / 6.4:1 on page / surface / field; green 9.7:1 on page, 7.0:1 on tint; green-deep on tint 8.9:1; on-green on green-solid 5.9:1 (4.8:1 hover); error on error-tint 7.7:1; warning on warning-tint 9.8:1; placeholder 4.3:1 on field; switch-on 3.9:1 against field, 4.4:1 against surface; radio ring 3.5:1.
+
+Rules for new CSS:
+
+- No hex or `rgba()` literals outside the token blocks in `globals.css`. Use a token, or `color-mix(in srgb, var(--ds-ink) 8%, transparent)` for a wash that adapts.
+- `--ds-ink`/`--ds-cream` are text and page, not "dark panel" and "light text": dark panels use `--ds-panel`/`--ds-on-panel`; a button on a panel uses `--ds-inverse-*`.
+- Text or an icon on a green fill uses `--ds-green-solid` + `--ds-on-green`; green as text, ring or decoration uses `--ds-green` (it is lighter in dark).
+- White surfaces are tokens too: `--ds-popover`, `--ds-thumb`, `--ds-field-focus`, `--ds-knob`, `--ds-radio-bg`.
+- Shadows are tokens (`--ds-shadow-*`); in dark they are hairline rings plus a short soft shadow.
+- Landing illustrations dim through `--ds-forest-filter` / `--ds-forest-opacity`.
+- The interview stage (`call-stage.css`, `--mt-*`) derives from the same tokens: cream in light, graphite in dark, no stage-specific scheme block.
 
 ## Typography
 

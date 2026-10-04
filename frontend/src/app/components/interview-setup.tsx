@@ -173,7 +173,7 @@ export function InterviewSetup({
             <div className="mt-6 flex flex-col gap-6">
               <div className="flex flex-col gap-2">
                 <label htmlFor="role-input" className="ds-label">
-                  Cargo para praticar <span className="text-[#8a3a21]" aria-hidden="true">*</span>
+                  Cargo para praticar <span className="text-danger" aria-hidden="true">*</span>
                 </label>
                 <RoleCombobox
                   id="role-input"
@@ -184,7 +184,7 @@ export function InterviewSetup({
                   describedBy={roleInvalid ? "role-error" : undefined}
                 />
                 {roleInvalid && (
-                  <span id="role-error" role="alert" className="ds-fade-in text-sm font-medium text-[#8a3a21]">Informe o cargo para o qual você quer praticar.</span>
+                  <span id="role-error" role="alert" className="ds-fade-in text-sm font-medium text-danger">Informe o cargo para o qual você quer praticar.</span>
                 )}
               </div>
 
@@ -240,7 +240,7 @@ export function InterviewSetup({
               <label className="ds-option">
                 <input type="radio" name="interviewer-audio-mode" value="audio" className="ds-radio" checked={getInterviewerAudioMode(config) === "audio"} onChange={() => updateInterviewerAudioMode("audio")} />
                 <span className="min-w-0">
-                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">Com áudio <span className="rounded-full bg-[#1f6b45] px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-[#f3f4ee]">Recomendado</span></span>
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">Com áudio <span className="rounded-full bg-green-solid px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-on-green">Recomendado</span></span>
                   <span className="ds-small mt-1 block">O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.</span>
                 </span>
               </label>
@@ -258,11 +258,11 @@ export function InterviewSetup({
                 <div role="status" aria-live="polite" className="flex items-start gap-3">
                   <span aria-hidden="true" className="mt-0.5 flex size-6 shrink-0 items-center justify-center">
                     {voiceState === "ready" ? (
-                      <span className="ds-pop flex size-6 items-center justify-center rounded-full bg-[#1f6b45] text-[#f3f4ee]"><Check className="size-3.5" strokeWidth={3} /></span>
+                      <span className="ds-pop flex size-6 items-center justify-center rounded-full bg-green-solid text-on-green"><Check className="size-3.5" strokeWidth={3} /></span>
                     ) : voiceState === "warming" ? (
-                      <span className="size-2.5 rounded-full bg-[#1f6b45] motion-safe:animate-pulse" />
+                      <span className="size-2.5 rounded-full bg-green motion-safe:animate-pulse" />
                     ) : (
-                      <span className="size-2.5 rounded-full bg-[#c9694a]" />
+                      <span className="size-2.5 rounded-full bg-danger-ring" />
                     )}
                   </span>
                   <div className="min-w-0">
@@ -289,7 +289,7 @@ export function InterviewSetup({
                     <button type="button" className="ds-btn ds-btn-soft" onClick={() => void testAudio()}>
                       {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
                     </button>
-                    <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "font-medium text-[#8a3a21]" : audioTestStatus.kind === "success" ? "font-medium text-[#1f6b45]" : "text-[#44604f]"}`}>
+                    <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "font-medium text-danger" : audioTestStatus.kind === "success" ? "font-medium text-green" : "text-text-2"}`}>
                       {audioTestStatus.message ?? "Opcional: ouça uma frase curta antes de começar."}
                     </p>
                   </div>
@@ -306,7 +306,7 @@ export function InterviewSetup({
                 <span id="room-options-title" className="ds-h2 block">Preferências da sala</span>
                 <span className="ds-small block">Legendas das perguntas, câmera e microfone. Os padrões já funcionam bem.</span>
               </span>
-              <ChevronDown className="ds-chevron size-5 shrink-0 text-[#44604f]" style={{ transform: roomOptionsOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
+              <ChevronDown className="ds-chevron size-5 shrink-0 text-text-2" style={{ transform: roomOptionsOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
             </button>
             <div id="room-options-panel" className="ds-reveal" data-open={roomOptionsOpen} inert={!roomOptionsOpen} onTransitionEnd={handleRevealEnd}>
               <div>
@@ -326,7 +326,7 @@ export function InterviewSetup({
         {/* Summary + primary action: sticky beside the form on desktop, recap in flow on mobile */}
         <div className="ds-enter lg:sticky lg:top-24" style={{ "--i": 3 } as CSSProperties}>
           <aside className="isu-aside px-6 py-7 sm:px-8" aria-labelledby="session-preview-title">
-            <p className="text-xs font-semibold tracking-[0.08em] text-[#9fc4ac]">Sua sessão</p>
+            <p className="text-xs font-semibold tracking-[0.08em] text-on-panel-accent">Sua sessão</p>
             <h2
               id="session-preview-title"
               key={cargoSummary.value}
@@ -337,7 +337,7 @@ export function InterviewSetup({
             <dl className="mt-5 space-y-2.5 text-sm">
               {restSummary.map(({ label, value }) => (
                 <div key={label} className="flex items-baseline justify-between gap-4">
-                  <dt className="shrink-0 text-[#9fc4ac]">{label}</dt>
+                  <dt className="shrink-0 text-on-panel-accent">{label}</dt>
                   <dd key={value} className="ds-fade-in min-w-0 text-right font-medium [overflow-wrap:anywhere]">{value}</dd>
                 </div>
               ))}
@@ -345,8 +345,8 @@ export function InterviewSetup({
             <button type="submit" className="ds-btn ds-btn-cta mt-7 hidden lg:flex" disabled={voiceBlocked} aria-describedby={voiceBlocked ? "start-hint" : undefined}>
               {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
             </button>
-            {voiceBlocked && <p id="start-hint" className="ds-hint ds-fade-in mt-3 hidden text-[#9fc4ac] lg:block">{startHint}</p>}
-            <button type="button" className="ds-btn ds-btn-quiet mt-2 hidden w-full text-[#9fc4ac] hover:text-[#f3f4ee] lg:flex" onClick={onBack}>
+            {voiceBlocked && <p id="start-hint" className="ds-hint ds-fade-in mt-3 hidden text-on-panel-accent lg:block">{startHint}</p>}
+            <button type="button" className="ds-btn ds-btn-quiet mt-2 hidden w-full text-on-panel-accent hover:text-[color:var(--ds-on-panel)] lg:flex" onClick={onBack}>
               Cancelar
             </button>
           </aside>
@@ -357,7 +357,7 @@ export function InterviewSetup({
 
         {/* Mobile: the primary action stays reachable */}
         <div className="isu-bar fixed inset-x-0 z-20 px-4 pb-3 pt-3 lg:hidden">
-          {voiceBlocked && <p className="ds-hint ds-fade-in mb-2 text-center text-[#44604f]">{startHint}</p>}
+          {voiceBlocked && <p className="ds-hint ds-fade-in mb-2 text-center text-text-2">{startHint}</p>}
           <button type="submit" form="interview-setup-form" className="ds-btn ds-btn-cta-green" disabled={voiceBlocked}>
             {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
           </button>
@@ -392,7 +392,7 @@ function SettingToggle({
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
           <span className="text-sm font-semibold">{label}</span>
-          <span className={`shrink-0 text-xs font-semibold ${checked || disabled ? "text-[#1f6b45]" : "text-[#5c7a6a]"}`}>{stateLabel}</span>
+          <span className={`shrink-0 text-xs font-semibold ${checked || disabled ? "text-green" : "text-text-3"}`}>{stateLabel}</span>
         </span>
         <span className="ds-small mt-1 block">{description}</span>
       </span>

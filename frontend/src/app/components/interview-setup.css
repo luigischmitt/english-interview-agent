@@ -9,15 +9,15 @@
 .isu-root .ds-card:focus-within { position: relative; z-index: 5; }
 
 /* Summary panel. */
-.isu-aside { border-radius: var(--ds-r-panel); background: var(--ds-ink); color: var(--ds-cream); box-shadow: var(--ds-shadow-panel); }
+.isu-aside { border-radius: var(--ds-r-panel); background: var(--ds-panel); color: var(--ds-on-panel); box-shadow: var(--ds-shadow-panel); }
 
 /* Mobile action bar: a material, not an opaque strip. */
 .isu-bar {
   bottom: var(--shl-bottom-nav-h, 0px); /* sits directly above the shell's mobile nav */
-  background: rgba(243, 244, 238, 0.82);
+  background: color-mix(in srgb, var(--ds-cream) 82%, transparent);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
-  box-shadow: 0 -1px 0 rgba(14, 42, 31, 0.06), 0 -12px 32px -12px rgba(14, 42, 31, 0.18);
+  box-shadow: var(--ds-shadow-bar);
 }
 @media (prefers-reduced-transparency: reduce) { .isu-bar { background: var(--ds-cream); backdrop-filter: none; -webkit-backdrop-filter: none; } }
 
@@ -29,7 +29,7 @@
 .isu-voice { border-radius: var(--ds-r-xl); background: var(--ds-field); padding: 1rem; transition: background-color var(--ds-dur-slow) ease; }
 .isu-voice[data-voice-state="ready"] { background: var(--ds-tint); }
 .isu-voice[data-voice-state="unavailable"] { background: var(--ds-error-tint); }
-.isu-voice-bar { position: relative; height: 0.25rem; overflow: hidden; border-radius: var(--ds-r-pill); background: rgba(14, 42, 31, 0.1); }
+.isu-voice-bar { position: relative; height: 0.25rem; overflow: hidden; border-radius: var(--ds-r-pill); background: color-mix(in srgb, var(--ds-ink) 10%, transparent); }
 .isu-voice-bar::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--ds-green); transform-origin: left; }
 .isu-voice[data-voice-state="warming"] .isu-voice-bar::after { width: 40%; animation: ds-slide 1.6s var(--ease-in-out) infinite; }
 .isu-voice[data-voice-state="ready"] .isu-voice-bar::after { width: 100%; animation: ds-fill 400ms var(--ease-out) backwards; }

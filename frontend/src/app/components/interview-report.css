@@ -19,18 +19,18 @@
 .rp-alert { border-radius: var(--ds-r-xl); background: var(--ds-warning-tint); color: var(--ds-warning); padding: 0.875rem 1.125rem; font-size: 0.875rem; line-height: 1.5; }
 
 /* Priorities: the dark panel is the first thing on the page. */
-.rp-priorities { border-radius: var(--ds-r-panel); background: var(--ds-ink); color: var(--ds-cream); box-shadow: var(--ds-shadow-panel); padding: 1.5rem 1.25rem; }
+.rp-priorities { border-radius: var(--ds-r-panel); background: var(--ds-panel); color: var(--ds-on-panel); box-shadow: var(--ds-shadow-panel); padding: 1.5rem 1.25rem; }
 @media (min-width: 640px) { .rp-priorities { padding: 2rem; } }
-.rp-priorities .rp-eyebrow { color: rgba(243, 244, 238, 0.75); }
+.rp-priorities .rp-eyebrow { color: color-mix(in srgb, var(--ds-on-panel) 75%, transparent); }
 .rp-priorities-title { margin-top: 0.375rem; font-size: 1.5rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.02em; text-wrap: balance; }
 .rp-priority-list { margin-top: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
 .rp-priority { display: flex; gap: 0.875rem; }
-.rp-priority + .rp-priority { border-top: 1px solid rgba(243, 244, 238, 0.14); padding-top: 1.25rem; }
-.rp-priority-num { display: inline-flex; width: 1.75rem; height: 1.75rem; flex: none; align-items: center; justify-content: center; border-radius: var(--ds-r-pill); background: var(--ds-cream); color: var(--ds-ink); font-size: 0.8125rem; font-weight: 700; }
+.rp-priority + .rp-priority { border-top: 1px solid var(--ds-panel-line); padding-top: 1.25rem; }
+.rp-priority-num { display: inline-flex; width: 1.75rem; height: 1.75rem; flex: none; align-items: center; justify-content: center; border-radius: var(--ds-r-pill); background: var(--ds-inverse-bg); color: var(--ds-inverse-fg); font-size: 0.8125rem; font-weight: 700; }
 .rp-priority-focus { font-size: 1.0625rem; line-height: 1.35; font-weight: 600; letter-spacing: -0.01em; overflow-wrap: anywhere; }
-.rp-priority-evidence { margin-top: 0.375rem; font-size: 0.875rem; line-height: 1.5; color: rgba(243, 244, 238, 0.78); overflow-wrap: anywhere; }
-.rp-priority-empty { margin-top: 1rem; font-size: 0.875rem; line-height: 1.55; color: rgba(243, 244, 238, 0.8); }
-.rp-exercise { margin-top: 0.75rem; display: flex; gap: 0.625rem; align-items: flex-start; border-radius: var(--ds-r-lg); background: rgba(243, 244, 238, 0.1); padding: 0.75rem 0.875rem; font-size: 0.9375rem; line-height: 1.5; }
+.rp-priority-evidence { margin-top: 0.375rem; font-size: 0.875rem; line-height: 1.5; color: color-mix(in srgb, var(--ds-on-panel) 78%, transparent); overflow-wrap: anywhere; }
+.rp-priority-empty { margin-top: 1rem; font-size: 0.875rem; line-height: 1.55; color: color-mix(in srgb, var(--ds-on-panel) 80%, transparent); }
+.rp-exercise { margin-top: 0.75rem; display: flex; gap: 0.625rem; align-items: flex-start; border-radius: var(--ds-r-lg); background: var(--ds-panel-wash); padding: 0.75rem 0.875rem; font-size: 0.9375rem; line-height: 1.5; }
 .rp-exercise svg { margin-top: 0.15rem; }
 
 /* Areas. */

@@ -47,7 +47,7 @@
   transition: box-shadow var(--ds-dur-fast) ease, background-color var(--ds-dur-fast) ease;
 }
 .ds-field::placeholder { color: var(--ds-placeholder); }
-.ds-field:focus-visible { background-color: #fff; box-shadow: inset 0 0 0 1.5px var(--ds-green), 0 0 0 4px var(--ds-focus-halo); }
+.ds-field:focus-visible { background-color: var(--ds-field-focus); box-shadow: inset 0 0 0 1.5px var(--ds-green), 0 0 0 4px var(--ds-focus-halo); }
 .ds-field[aria-invalid="true"] { box-shadow: inset 0 0 0 1.5px var(--ds-error-ring), 0 0 0 4px var(--ds-error-halo); }
 select.ds-field {
   appearance: none;
@@ -55,6 +55,9 @@ select.ds-field {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2344604f' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.9rem center;
+}
+:root[data-color-scheme="dark"] select.ds-field {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a6aba5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* ---- Segmented control: radio items over one sliding thumb (components/ui/sliding-segmented.tsx). ---- */
@@ -64,7 +67,7 @@ select.ds-field {
   top: 0;
   left: 0;
   border-radius: var(--ds-r-md);
-  background: #fff;
+  background: var(--ds-thumb);
   box-shadow: var(--ds-shadow-thumb);
   pointer-events: none;
 }
@@ -88,7 +91,7 @@ select.ds-field {
 .ds-seg-item:active { transform: scale(0.97); }
 .ds-seg-item:has(input:checked) { color: var(--ds-ink); font-weight: 600; }
 /* Before the thumb is measured (SSR / first paint), draw the selection on the item itself. */
-.ds-seg:not([data-ready]) .ds-seg-item:has(input:checked) { background: #fff; box-shadow: 0 1px 2px rgba(14, 42, 31, 0.1); }
+.ds-seg:not([data-ready]) .ds-seg-item:has(input:checked) { background: var(--ds-thumb); box-shadow: var(--ds-shadow-seg); }
 .ds-seg-item:has(input:focus-visible) { outline: var(--ds-focus-outline); outline-offset: 2px; }
 
 /* ---- Option cards (selectable row with a radio). ---- */
@@ -114,11 +117,11 @@ select.ds-field {
   height: 1.25rem;
   margin-top: 0.1rem;
   border-radius: var(--ds-r-pill);
-  background: #fff;
+  background: var(--ds-radio-bg);
   box-shadow: inset 0 0 0 1.5px var(--ds-line-strong);
   transition: box-shadow var(--ds-dur-fast) ease, background-color var(--ds-dur-fast) ease;
 }
-.ds-radio:checked { background: radial-gradient(circle, #fff 0 28%, var(--ds-green) 32%); box-shadow: inset 0 0 0 1.5px var(--ds-green); }
+.ds-radio:checked { background: radial-gradient(circle, var(--ds-radio-bg) 0 28%, var(--ds-green) 32%); box-shadow: inset 0 0 0 1.5px var(--ds-green); }
 
 /* ---- Switch: <label class="ds-toggle"><input type="checkbox" class="ds-switch" />…</label>. ---- */
 .ds-toggle {
@@ -153,11 +156,11 @@ select.ds-field {
   width: 1.25rem;
   height: 1.25rem;
   border-radius: var(--ds-r-pill);
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(14, 42, 31, 0.3);
+  background: var(--ds-knob);
+  box-shadow: var(--ds-shadow-knob);
   transition: transform var(--ds-dur-base) var(--ease-out);
 }
-.ds-switch:checked { background: var(--ds-green); }
+.ds-switch:checked { background: var(--ds-switch-on); }
 .ds-switch:checked::after { transform: translateX(1rem); }
 .ds-switch:active::after { width: 1.5rem; }
 .ds-switch:checked:active::after { transform: translateX(0.75rem); }
@@ -182,15 +185,15 @@ select.ds-field {
 .ds-btn:disabled { cursor: not-allowed; opacity: 0.55; }
 .ds-btn-soft { background: var(--ds-tint); color: var(--ds-green-deep); }            /* secondary */
 .ds-btn-quiet { background: transparent; color: var(--ds-text-2); }                   /* ghost */
-.ds-btn-cta { min-height: 3.25rem; width: 100%; background: var(--ds-cream); color: var(--ds-ink); font-size: 1rem; }              /* on dark panels */
-.ds-btn-cta-green { min-height: 3.25rem; width: 100%; background: var(--ds-green); color: var(--ds-cream); font-size: 1rem; }      /* primary */
+.ds-btn-cta { min-height: 3.25rem; width: 100%; background: var(--ds-inverse-bg); color: var(--ds-inverse-fg); font-size: 1rem; }              /* on dark panels */
+.ds-btn-cta-green { min-height: 3.25rem; width: 100%; background: var(--ds-green-solid); color: var(--ds-on-green); font-size: 1rem; }      /* primary */
 .ds-btn-cta .ds-arrow, .ds-btn-cta-green .ds-arrow { transition: transform var(--ds-dur-base) var(--ease-out); }
 .ds-btn-cta:disabled, .ds-btn-cta-green:disabled { opacity: 0.5; }
 @media (hover: hover) and (pointer: fine) {
   .ds-btn-soft:hover:not(:disabled) { background: var(--ds-tint-hover); }
   .ds-btn-quiet:hover:not(:disabled) { background: var(--ds-hover-wash); }
-  .ds-btn-cta:hover:not(:disabled) { background: #fff; }
-  .ds-btn-cta-green:hover:not(:disabled) { background: var(--ds-green-deep); }
+  .ds-btn-cta:hover:not(:disabled) { background: var(--ds-inverse-hover); }
+  .ds-btn-cta-green:hover:not(:disabled) { background: var(--ds-green-solid-hover); }
   .ds-btn-cta:hover .ds-arrow, .ds-btn-cta-green:hover .ds-arrow { transform: translate(2px, -2px); }
   .ds-option:hover:not(:has(input:checked)) { background: var(--ds-field-hover); }
   .ds-seg-item:hover:not(:has(input:checked)) { color: var(--ds-ink); }
@@ -208,7 +211,7 @@ select.ds-field {
   overflow-y: auto;
   overscroll-behavior: contain;
   border-radius: var(--ds-r-lg);
-  background: #fff;
+  background: var(--ds-popover);
   padding: 0.375rem;
   box-shadow: var(--ds-shadow-pop), 0 0 0 1px var(--ds-line);
   transform-origin: top center;

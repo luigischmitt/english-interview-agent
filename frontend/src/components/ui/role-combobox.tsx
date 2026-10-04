@@ -128,7 +128,7 @@ export function RoleCombobox({
         type="button"
         tabIndex={-1}
         aria-label="Mostrar sugestões de cargo"
-        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-[0.875rem] text-[#44604f]"
+        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-[0.875rem] text-text-2"
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
           if (expanded) {
