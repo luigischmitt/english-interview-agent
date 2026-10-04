@@ -12,3 +12,7 @@ export function acquireSharedAudio(url: string): HTMLAudioElement;
 export function releaseSharedAudio(audio: HTMLAudioElement): void;
 export function unlockSharedAudio(force?: boolean): boolean;
 export function installAudioUnlockOnFirstGesture(target?: Pick<Document, "addEventListener" | "removeEventListener"> | null): () => void;
+export function setAudioUnlockObserver(observer: ((info: { pooled: boolean; audioContextState?: string }) => void) | null): void;
+export function acquireInterviewerAudio(url: string): HTMLAudioElement;
+export function releaseInterviewerAudio(audio: HTMLAudioElement): void;
+export function isWebAudioPlayback(): boolean;

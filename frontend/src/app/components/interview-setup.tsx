@@ -5,6 +5,7 @@ import { ArrowUpRight, ArrowLeft, ChevronDown, Check } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { useSpeechWarmup, useVoiceReadiness } from "../hooks/use-speech-playback";
+import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { synthesizeInterviewerQuestion, warmUpInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
@@ -91,6 +92,7 @@ export function InterviewSetup({
     const playback = synthesizeInterviewerQuestion(audioTestPhrase, {
       endpoint: `${backendBaseUrl}/api/v1/speech`,
       fetcher: authorizedFetch,
+      onDiagnostic: reportAudioDiagnostic,
     });
     audioTestRef.current = playback;
     const result = await playback.promise;

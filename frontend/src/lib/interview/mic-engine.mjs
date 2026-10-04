@@ -1,6 +1,7 @@
 import { getSpeechThreshold } from "./vad-threshold.mjs";
 import { stopMediaStreamTracks } from "./session-policy.mjs";
 import { isHandoffTimingEnabled } from "./handoff-timing.mjs";
+import { setAudioSessionType } from "./client-environment.mjs";
 
 export const calibrationFrameCount = 5;
 export const defaultSpeechThreshold = 0.015;
@@ -31,8 +32,12 @@ function cancelledError() {
  * Browser dependencies of the engine. Everything touching globals is lazy so the module imports in Node.
  * @returns {import("./mic-engine.d.mts").MicEngineDeps}
  */
-export function createBrowserMicDeps() {
+export function createBrowserMicDeps({ onDiagnostic } = {}) {
   return {
+    /** iOS: keep output on the speaker while capturing (WebKit Audio Session API; no-op where it does not exist). */
+    prepareSession: () => { setAudioSessionType("play-and-record"); },
+    restoreSession: () => { setAudioSessionType("auto"); },
+    onDiagnostic,
     isSupported: () => typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia) && typeof AudioWorkletNode !== "undefined",
     getUserMedia: (constraints) => navigator.mediaDevices.getUserMedia(constraints),
     createAudioContext: () => new AudioContext(),
@@ -82,6 +87,8 @@ export function createMicEngine(deps) {
   const flushWaiters = new Set();
   const listeners = { state: new Set(), lost: new Set() };
 
+  // Content-free diagnostics (never throws).
+  const diagnose = (event) => { try { deps.onDiagnostic?.(event); } catch { /* Diagnostics only. */ } };
   const emit = (event, value) => { for (const listener of [...listeners[event]]) listener(value); };
   const setState = (next) => {
     if (state === next) return;
@@ -202,11 +209,13 @@ export function createMicEngine(deps) {
       let context = null;
       try {
         if (!deps.isSupported()) throw new Error("unsupported");
+        try { deps.prepareSession?.(); } catch { /* Best effort. */ }
         stream = await deps.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
         if (myEpoch !== epoch) throw cancelledError();
         graph = await buildGraph(stream, myEpoch, (created) => { context = created; });
         lastError = null;
         setState("ready");
+        diagnose({ kind: "mic_open", micActive: true, micContextState: graph?.context?.state });
       } catch (error) {
         if (!graph || graph.stream !== stream) {
           if (stream) deps.stopTracks(stream);
@@ -241,6 +250,7 @@ export function createMicEngine(deps) {
   }
 
   function onContextStateChange(context) {
+    if (graph?.context === context) diagnose({ kind: "audio_session", micContextState: context.state });
     if (graph?.context !== context || released || context.state === "running" || context.state === "closed") return;
     if (mode === "capture") { resumeContext(context); return; }
     if (idleResumeTimer !== null) return;
@@ -436,7 +446,12 @@ export function createMicEngine(deps) {
       refreshLevels = null;
       held = [];
       interviewerSpeaking = false;
+      const hadGraph = Boolean(graph);
       disposeGraph();
+      if (hadGraph) {
+        try { deps.restoreSession?.(); } catch { /* Best effort. */ }
+        diagnose({ kind: "mic_close", micActive: false });
+      }
       state = "idle";
       emit("state", "idle");
     },

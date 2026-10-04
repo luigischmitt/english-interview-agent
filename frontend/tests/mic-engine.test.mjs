@@ -321,3 +321,31 @@ test("force still performs a full reacquire (silent-mic retry)", async () => {
   assert.equal(await engine.ensureHealthy({ force: true }), true);
   assert.equal(deps.log.getUserMedia, 2);
 });
+
+test("the audio session is declared before getUserMedia, restored on release, and mic open/close are reported", async () => {
+  const deps = createFakeMicDeps();
+  const order = [];
+  const events = [];
+  const originalGetUserMedia = deps.getUserMedia;
+  deps.getUserMedia = (constraints) => { order.push("getUserMedia"); return originalGetUserMedia(constraints); };
+  deps.prepareSession = () => order.push("prepare");
+  deps.restoreSession = () => order.push("restore");
+  deps.onDiagnostic = (event) => events.push(event);
+  const engine = createMicEngine(deps);
+  await engine.acquire();
+  engine.release();
+  assert.deepEqual(order, ["prepare", "getUserMedia", "restore"]);
+  assert.deepEqual(events.map((event) => event.kind), ["mic_open", "mic_close"]);
+  assert.equal(events[0].micActive, true);
+  assert.equal(events[1].micActive, false);
+});
+
+test("a throwing diagnostics callback or session setup never breaks the microphone", async () => {
+  const deps = createFakeMicDeps();
+  deps.prepareSession = () => { throw new Error("no api"); };
+  deps.onDiagnostic = () => { throw new Error("nope"); };
+  const engine = createMicEngine(deps);
+  await engine.acquire();
+  assert.equal(engine.state, "ready");
+  engine.release();
+});

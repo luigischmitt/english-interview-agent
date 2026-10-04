@@ -1,4 +1,5 @@
-import { acquireSharedAudio, isAutoplayBlockedError, releaseSharedAudio } from "./audio-unlock.mjs";
+import { acquireInterviewerAudio, isAutoplayBlockedError, releaseInterviewerAudio } from "./audio-unlock.mjs";
+import { describeMedia, errorNameOf } from "./client-environment.mjs";
 
 export function composeOpeningUtterance(introduction, firstQuestion) {
   return [introduction.trim(), firstQuestion.trim()].filter(Boolean).join(" ");
@@ -190,13 +191,39 @@ const unavailableResultFor = (error) => (isAutoplayBlockedError(error)
   ? { status: "unavailable", message: autoplayBlockedMessage, reason: AUTOPLAY_BLOCKED_REASON }
   : { status: "unavailable", message: unavailableMessageFor(error) });
 
+/**
+ * Content-free per-chunk diagnostics for `options.onDiagnostic` (never throws): kind, chunk position, time since the
+ * play() call, the media element's muted/volume/currentTime and whether it is a pooled element or a Web Audio track.
+ */
+function createChunkDiagnostics(options, chunkIndex, chunkCount, getAudio) {
+  let startedAt = null;
+  return (kind, extra = {}) => {
+    if (typeof options.onDiagnostic !== "function") return;
+    try {
+      const audio = getAudio();
+      const output = typeof audio?.dispose === "function" ? "webaudio" : "element";
+      if (kind === "playback_start") startedAt = Date.now();
+      options.onDiagnostic({
+        kind,
+        chunkIndex,
+        chunkCount,
+        ...(startedAt === null ? {} : { elapsedMs: Date.now() - startedAt }),
+        output,
+        pooled: output === "element" && !options.makeAudio,
+        ...describeMedia(audio),
+        ...extra,
+      });
+    } catch { /* Diagnostics must never affect playback. */ }
+  };
+}
+
 export function synthesizeInterviewerQuestion(text, options) {
   const firstAudioTimeoutMs = options.firstAudioTimeoutMs ?? FIRST_AUDIO_TIMEOUT_MS;
   const playbackTimeoutMs = options.playbackTimeoutMs
     ?? Math.min(45_000, Math.max(12_000, text.trim().split(/\s+/).length * 800));
   // Default: a shared element that a user gesture already unlocked (see audio-unlock.mjs).
-  const makeAudio = options.makeAudio ?? acquireSharedAudio;
-  const releaseAudio = options.makeAudio ? () => {} : releaseSharedAudio;
+  const makeAudio = options.makeAudio ?? acquireInterviewerAudio;
+  const releaseAudio = options.makeAudio ? () => {} : releaseInterviewerAudio;
   const createObjectUrl = options.createObjectUrl ?? ((blob) => URL.createObjectURL(blob));
   const revokeObjectUrl = options.revokeObjectUrl ?? ((url) => URL.revokeObjectURL(url));
   const schedule = options.setTimeout ?? ((callback, delay) => window.setTimeout(callback, delay));
@@ -210,6 +237,7 @@ export function synthesizeInterviewerQuestion(text, options) {
   let removeAudioListeners = null;
   let resolveTimeout;
   let resolveCancellation;
+  const diagnose = createChunkDiagnostics(options, 0, 1, () => audio);
 
   const timeoutResult = new Promise((resolve) => { resolveTimeout = resolve; });
   const cancellationResult = new Promise((resolve) => { resolveCancellation = resolve; });
@@ -218,6 +246,7 @@ export function synthesizeInterviewerQuestion(text, options) {
     if (timeoutId !== null) unschedule(timeoutId);
     timeoutId = schedule(() => {
       timedOut = true;
+      diagnose("playback_timeout");
       flightLease?.release(false);
       resolveTimeout(result);
     }, delay);
@@ -263,9 +292,9 @@ export function synthesizeInterviewerQuestion(text, options) {
       audio = makeAudio(objectUrl);
 
       const playbackEnded = new Promise((resolve, reject) => {
-        const onEnded = () => resolve("ended");
-        const onError = () => reject(new Error("Audio playback failed."));
-        const onPlaying = () => options.onPlaybackStarted?.();
+        const onEnded = () => { diagnose("playback_ended"); resolve("ended"); };
+        const onError = () => { diagnose("playback_error", { errorName: "MediaError" }); reject(new Error("Audio playback failed.")); };
+        const onPlaying = () => { diagnose("playback_playing"); options.onPlaybackStarted?.(); };
         const captionSegments = options.captionSegments?.filter(Boolean) ?? [];
         const captionUnits = captionSegments.map((segment) => ({ caption: segment, text: segment }));
         const onTimeUpdate = createCaptionUpdater(captionUnits, () => audio, () => cancelled, options.onSegment);
@@ -285,8 +314,9 @@ export function synthesizeInterviewerQuestion(text, options) {
       });
 
       scheduleTimeout(playbackTimeoutMs, "A reprodução do áudio demorou demais. Você pode continuar sem ele.");
+      diagnose("playback_start");
       const outcome = await Promise.race([
-        Promise.resolve(audio.play()).then(() => playbackEnded),
+        Promise.resolve(audio.play()).then(() => { diagnose("playback_play_resolved"); return playbackEnded; }),
         playbackEnded,
         timeoutResult,
         cancellationResult,
@@ -296,6 +326,7 @@ export function synthesizeInterviewerQuestion(text, options) {
       return { status: "completed" };
     } catch (error) {
       if (cancelled) return { status: "cancelled" };
+      diagnose("playback_error", { errorName: errorNameOf(error) });
       return unavailableResultFor(error);
     } finally {
       cleanup();
@@ -468,8 +499,8 @@ function requestChunks(chunks, options) {
  */
 export function playInterviewerSegments(segments, options) {
   const chunks = groupInterviewerSentences(segments);
-  const makeAudio = options.makeAudio ?? acquireSharedAudio;
-  const releaseAudio = options.makeAudio ? () => {} : releaseSharedAudio;
+  const makeAudio = options.makeAudio ?? acquireInterviewerAudio;
+  const releaseAudio = options.makeAudio ? () => {} : releaseInterviewerAudio;
   const createObjectUrl = options.createObjectUrl ?? ((blob) => URL.createObjectURL(blob));
   const revokeObjectUrl = options.revokeObjectUrl ?? ((url) => URL.revokeObjectURL(url));
   const schedule = options.setTimeout ?? ((callback, delay) => window.setTimeout(callback, delay));
@@ -517,11 +548,12 @@ export function playInterviewerSegments(segments, options) {
 
   const handoffLeadMs = options.finalChunkLeadMs ?? finalChunkLeadMs;
   let finalChunkAnnounced = false;
-  const playChunk = (item, chunk, isFirst, isLast) => new Promise((resolve, reject) => {
+  const playChunk = (item, chunk, isFirst, isLast, chunkIndex) => new Promise((resolve, reject) => {
     const audio = item.audio;
     const words = chunk.text.split(/\s+/u).length;
     const playbackTimeoutMs = options.playbackTimeoutMs ?? Math.min(45_000, Math.max(12_000, words * 800));
     const updateCaption = createCaptionUpdater(chunk.units, () => audio, () => cancelled, options.onSegment);
+    const diagnose = createChunkDiagnostics(options, chunkIndex, chunks.length, () => audio);
     let playingStarted = false;
     // Zero-wait handoff: tells the caller the utterance is about to end (final chunk, <= handoffLeadMs left) once.
     const announceFinalChunk = () => {
@@ -532,14 +564,15 @@ export function playInterviewerSegments(segments, options) {
       options.onFinalChunkStarted?.();
     };
     const onTimeUpdate = () => { updateCaption(); announceFinalChunk(); };
-    const onEnded = () => finish(resolve, "ended");
-    const onError = () => finish(reject, new Error("Audio playback failed."));
+    const onEnded = () => { diagnose("playback_ended"); finish(resolve, "ended"); };
+    const onError = () => { diagnose("playback_error", { errorName: "MediaError" }); finish(reject, new Error("Audio playback failed.")); };
     const onPlaying = () => {
+      diagnose("playback_playing");
       playingStarted = true;
       if (isFirst) options.onPlaybackStarted?.();
       announceFinalChunk();
     };
-    const timer = schedule(() => finish(reject, Object.assign(new Error("playback timeout"), { isPlaybackTimeout: true })), playbackTimeoutMs);
+    const timer = schedule(() => { diagnose("playback_timeout"); finish(reject, Object.assign(new Error("playback timeout"), { isPlaybackTimeout: true })); }, playbackTimeoutMs);
     function finish(settle, value) {
       unschedule(timer);
       audio.removeEventListener("ended", onEnded);
@@ -557,7 +590,11 @@ export function playInterviewerSegments(segments, options) {
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("durationchange", onTimeUpdate);
     if (chunk.sentences.length && !cancelled) options.onSegment?.(chunk.sentences[0]);
-    Promise.resolve(audio.play()).catch((error) => finish(reject, error));
+    diagnose("playback_start");
+    Promise.resolve(audio.play()).then(
+      () => diagnose("playback_play_resolved"),
+      (error) => { diagnose("playback_error", { errorName: errorNameOf(error) }); finish(reject, error); },
+    );
   });
 
   const run = async () => {
@@ -579,7 +616,7 @@ export function playInterviewerSegments(segments, options) {
       // Start buffering the following chunk while this one plays.
       upcoming = index + 1 < chunks.length ? prepare(index + 1) : null;
       upcoming?.catch(() => {});
-      const outcome = await playChunk(item, chunks[index], index === 0, index === chunks.length - 1);
+      const outcome = await playChunk(item, chunks[index], index === 0, index === chunks.length - 1, index);
       networkPlayed = true;
       release(item);
       if (cancelled || outcome === "cancelled") return { status: "cancelled" };
