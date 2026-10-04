@@ -8,7 +8,7 @@ export type VadConfig = {
   ambientActivityHoldMs: number;
   maxDurationMs: number;
   maxBytes: number;
-  /** Silence that counts as a pause (`pauseStarted`); only used by the Ink-Whisper turn detection. Defaults to 800. */
+  /** Silence that counts as a pause (`pauseStarted`); only used by incremental Whisper turn detection. Defaults to 800. */
   pauseMs?: number;
 };
 

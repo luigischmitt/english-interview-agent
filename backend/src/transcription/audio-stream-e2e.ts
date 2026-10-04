@@ -507,7 +507,7 @@ export async function exerciseStream(
       return;
     }
     if (message.type === "finalizing" && options.serverFinalize) {
-      // The server decided the answer ended (Cartesia turn end or VAD): stop streaming like the browser does.
+      // The server decided the answer ended (turn-end grace, semantic end or VAD): stop streaming like the browser does.
       finalizedAt ??= now;
       shouldStopSending = true;
       return;
@@ -611,7 +611,7 @@ export async function exerciseStream(
   if (rejected) throw rejected;
   if (!ready) metrics.missingEvents.push("ready");
   if (metrics.firstSpeechMs === null) metrics.missingEvents.push("speech-started");
-  // With server-side finalization (e.g. Cartesia turn end) the local VAD need not report silence first.
+  // With server-side finalization (e.g. the turn-end grace) the local VAD need not report silence first.
   if (metrics.silenceDetectedMs === null && !options.serverFinalize) metrics.missingEvents.push("silence-detected");
   if (metrics.completeMs === null) metrics.missingEvents.push("complete");
   if (options.requireAssessment && metrics.assessmentStatus === null) metrics.missingEvents.push("assessment");
