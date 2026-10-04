@@ -1,202 +1,131 @@
 ---
 name: English Interview Agent
-description: Calm, focused English interview practice for Brazilian technology professionals.
+description: Warm, calm, green-on-cream interface for Brazilian developers rehearsing English job interviews.
 colors:
-  canvas: "#fbfaf3"
-  surface: "#fffef8"
-  ink: "#28343a"
-  muted-ink: "#55656b"
-  rule: "#d4dbd6"
-  accent: "#3c5966"
-  accent-content: "#f7f7f1"
-  accent-soft: "#d9e1dc"
-  sidebar: "#e9ede9"
-  positive: "#89a4a0"
-  warning: "#e3e7e3"
-  error: "#9f3d2b"
+  ink: "#0e2a1f"
+  green: "#1f6b45"
+  green-deep: "#17563a"
+  cream: "#f3f4ee"
+  surface: "#fbfbf7"
+  field: "#f1f3ec"
+  track: "#e8ece3"
+  tint: "#e6f1ea"
+  text-2: "#44604f"
+  error: "#8a3a21"
+  error-tint: "#f6e9e2"
+  warning: "#5a4512"
+  warning-tint: "#f6ecd0"
 typography:
-  display:
-    fontFamily: "Geist Sans, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "clamp(2.5rem, 5vw, 3.25rem)"
-    fontWeight: 600
-    lineHeight: 1.08
-    letterSpacing: "-0.035em"
-  headline:
-    fontFamily: "Geist Sans, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "clamp(1.875rem, calc(1.25rem + 3.125vw), 2.5rem)"
-    fontWeight: 600
-    lineHeight: 1.12
-    letterSpacing: "-0.03em"
-  title:
-    fontFamily: "Geist Sans, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "1.5rem"
-    fontWeight: 600
-    lineHeight: 1.2
-    letterSpacing: "-0.025em"
-  body:
-    fontFamily: "Geist Sans, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "1rem"
-    fontWeight: 400
-    lineHeight: 1.75
-  label:
-    fontFamily: "Geist Sans, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "0.875rem"
-    fontWeight: 500
-    lineHeight: 1.5
-rounded:
-  sm: "0.375rem"
-  md: "0.5rem"
-  lg: "0.625rem"
-  xl: "0.75rem"
-spacing:
-  xs: "0.5rem"
-  sm: "0.75rem"
-  md: "1rem"
-  lg: "1.5rem"
-  xl: "2rem"
-  section: "3rem"
-components:
-  button-primary:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.accent-content}"
-    typography: "{typography.label}"
-    rounded: "{rounded.md}"
-    padding: "0.75rem 1.25rem"
-    height: "3rem"
-  button-ghost:
-    backgroundColor: "transparent"
-    textColor: "{colors.ink}"
-    typography: "{typography.label}"
-    rounded: "{rounded.md}"
-    padding: "0.75rem"
-    height: "3rem"
-  input-field:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    padding: "0.625rem 0.75rem"
-    height: "2.75rem"
-  editorial-card:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.xl}"
-    padding: "1.25rem"
-  nav-item:
-    backgroundColor: "transparent"
-    textColor: "{colors.muted-ink}"
-    typography: "{typography.label}"
-    rounded: "{rounded.md}"
-    padding: "0.75rem"
-    height: "2.75rem"
-
+  ui: "Instrument Sans (400/500/600/700)"
+  display: "Instrument Serif (400, italic available)"
 ---
 
-# Design System: English Interview Agent
+# Design system
 
-## Overview
+Source of truth in code: tokens in `frontend/src/app/globals.css` (`--ds-*`), primitives in `frontend/src/app/design-system.css` (`ds-*`), shared components in `frontend/src/components/ui/`, fonts in `frontend/src/lib/fonts.ts`. The interview setup page (`interview-setup.tsx`) is the reference implementation. Product context is in `PRODUCT.md`; UI copy is PT-BR.
 
-**Creative North Star: "The Calm Rehearsal Desk"**
+## Principles
 
-English Interview Agent is an editorial operating surface for a high-pressure human task. The interface gives a candidate one useful next move, using warm bone surfaces, ink-colored type, sparse hairline rules, and a precise blue-green accent. It feels like a prepared desk: quiet, legible, and ready when the question arrives.
+1. Calm under pressure. The product rehearses a stressful moment, so the interface is quiet: cream ground, one green, no decoration that competes with the candidate's words.
+2. Depth from light, not lines. Soft two-layer shadows and tint changes separate surfaces; hard borders are the exception.
+3. Feedback is instant, motion is short. Press responds on pointer-down; nothing animates longer than 300ms.
+4. Precision over polish. Tracking, leading and contrast are chosen per size, not defaulted.
 
-The visual system favors hierarchy over decoration. Public Home makes the audience and promise clear before offering one account action; authenticated Home keeps one practice action in front, with warm-up and Progress as supporting paths. The implementation rejects gradients, heavy shadows, generic bento grids, decorative avatars, and claims the product cannot support.
+## Palette
 
-**Key Characteristics:**
-- Warm monochrome canvas with a single muted teal action voice.
-- Editorial rules, narrow measures, and deliberate whitespace.
-- Controls are modestly rounded, tactile, and visibly focusable.
-- Content remains useful at 390px, 768px, and 1440px.
+| Token | Value | Role |
+| --- | --- | --- |
+| `--ds-ink` | `#0e2a1f` | Primary text, dark panels |
+| `--ds-green` | `#1f6b45` | Primary action, selected ring, links, focus |
+| `--ds-green-deep` | `#17563a` | Primary hover, text on tint |
+| `--ds-cream` | `#f3f4ee` | Page background |
+| `--ds-surface` | `#fbfbf7` | Cards |
+| `--ds-field` | `#f1f3ec` | Inputs, option cards, quiet wells (hover `#e9ede3`) |
+| `--ds-track` | `#e8ece3` | Segmented and progress tracks |
+| `--ds-tint` | `#e6f1ea` | Selected state, success, soft button (hover `#d8eadf`) |
+| `--ds-text-2` | `#44604f` | Secondary text |
+| `--ds-error` / `-tint` / `-ring` | `#8a3a21` / `#f6e9e2` / `#c9694a` | Error text, error surface, invalid field ring |
+| `--ds-warning` / `-tint` | `#5a4512` / `#f6ecd0` | Warning text and surface |
+| `--ds-success` / `-tint` | green / tint | Success |
+| `--ds-placeholder` | `#75897d` | Placeholder text only |
 
-## Colors
+Contrast (WCAG): ink on cream 13.9:1; text-2 on cream 6.3:1, on surface 6.7:1, on field 6.2:1; green on cream 5.9:1; cream on green 5.9:1; green-deep on tint 7.5:1; green on tint 5.6:1; error on error-tint 6.5:1. The placeholder color is 3.3:1 and must never carry meaning on its own. Never put text-2 or green on a darker surface than `--ds-field` without re-checking.
 
-The palette is warm paper and cool ink, with one restrained blue-green accent reserved for action and wayfinding. Light and dark themes invert the canvas/surface relationship while preserving the same semantic roles.
-
-### Primary
-- **Quiet Teal** (`#3c5966`): Primary action, active indicator, focus ring, and compact brand mark in the light theme.
-
-### Neutral
-- **Warm Canvas** (`#fbfaf3`): Page background and the public reading surface.
-- **Soft Paper** (`#fffef8`): Cards, form surfaces, and other contained work areas.
-- **Ink** (`#28343a`): Primary text and high-contrast content.
-- **Muted Ink** (`#55656b`): Supporting copy, labels, and low-emphasis navigation.
-- **Hairline Rule** (`#d4dbd6`): Borders, dividers, and editorial section separators.
-- **Quiet Tint** (`#d9e1dc`): Selected mobile navigation and low-emphasis states.
-- **Sidebar Wash** (`#e9ede9`): Desktop navigation rail background.
-
-### Named Rules
-**The One Voice Rule.** Let the accent carry action and current-location meaning; do not spread it across decorative surfaces.
+Tailwind: `bg-surface`, `bg-field`, `bg-tint`, `bg-track`, `bg-cream`, `text-ink`, `text-text-2`, `text-green`, `text-danger`, `bg-danger-tint`, `bg-warn-tint`, `shadow-card`, `shadow-pop`, `shadow-panel`. shadcn variables (`--primary`, `--card`, `--muted-foreground`, ...) and the DaisyUI `interview-light` theme (`btn`, `alert`, `text-error`, ...) are mapped to the same palette, so `text-muted-foreground` is text-2, `text-error` is `#8a3a21`, `bg-primary` is green.
 
 ## Typography
 
-**Display Font:** Geist Sans (with `ui-sans-serif`, `system-ui`, sans-serif fallbacks)
-**Body Font:** Geist Sans (with `ui-sans-serif`, `system-ui`, sans-serif fallbacks)
-**Label/Mono Font:** No distinct mono face is used in the implemented UI; compact labels use the body family.
+Instrument Sans is the UI face everywhere (`font-sans`, default on `<html>`). Instrument Serif is for large display titles only (`font-display`, `var(--font-display)`); never for body, labels or buttons. Fonts load once in the root layout.
 
-**Character:** Geist Sans is direct and contemporary without becoming promotional. Tight tracking and weight establish confidence in headings; generous body leading keeps B1/B2 English copy easy to scan.
+| Level | Size / leading | Weight | Tracking | Class |
+| --- | --- | --- | --- | --- |
+| Display | `clamp(2.25rem, 1.5rem + 3.75vw, 3rem)` / 1.08 (serif) | 400 | -0.02em | `font-display text-balance` |
+| Section title | 1.1875rem / 1.25 | 600 | -0.018em | `ds-h2` |
+| Label | 0.875rem / 1.25rem | 600 | 0 | `ds-label` |
+| Body | 0.875rem / 1.55 | 400 | 0 | `ds-body` (text-2) |
+| Small / hint | 0.8125rem / 1.5 | 400 | +0.005em | `ds-small`, `ds-hint` |
+| Input | 1rem (prevents iOS zoom) | 400 | 0 | `ds-field` |
+| Button | 0.9375rem (CTA 1rem) | 600 | 0 | `ds-btn` |
 
-### Hierarchy
-- **Display** (600, `clamp(2.5rem, 5vw, 3.25rem)`, 1.08): Public Home H1; left-weighted promise and audience statement.
-- **Headline** (600, `clamp(1.875rem, calc(1.25rem + 3.125vw), 2.5rem)`, 1.12): Authenticated page introductions and prominent room headings.
-- **Title** (600, `1.5rem`, 1.2): Section titles such as “How it works” and “Start with one useful answer.”
-- **Body** (400, `1rem`, 1.75): Explanatory copy, prompts, and interview content; keep prose near 48–60ch.
-- **Label** (500, `0.875rem`, 1.5): Controls, navigation, field labels, and compact supporting metadata.
+Rule: tracking tightens as size grows and opens slightly as it shrinks. Use `text-balance` on titles. Long unbroken strings (roles, URLs) need `overflow-wrap: anywhere`.
 
-### Named Rules
-**The Clear Answer Rule.** Use tight, weight-led headings and readable measures; never use display scale to make a promise sound louder than it is.
+## Spacing and layout
 
-## Layout
+4px base. Card padding 1.25-1.5rem, gap between cards 1rem-1.5rem, field-to-label 0.5rem. Page gutters 1rem (mobile) / 2rem (sm) / 3rem (lg), content max width `max-w-6xl`. Touch targets at least 44px (`ds-btn` 2.75rem, CTA 3.25rem, segmented item 2.5rem inside a padded track). Mobile primary actions live in a sticky bar with a translucent material that falls back to opaque under `prefers-reduced-transparency`.
 
-The shared shell is a centered `max-width: 72rem` frame with responsive gutters (`1.25rem` mobile, `2rem` at small widths, `3rem` at large widths). Public Home uses a left-weighted two-column opening at large widths and a three-step row below a rule; it collapses to one reading column below the medium breakpoint. Authenticated Home uses a 1.3:0.7 content-to-context composition at large widths, with the warm-up rail aligned beside the primary practice action.
+## Radii
 
-Desktop authenticated navigation is a persistent `15rem` left rail. Below the large breakpoint it becomes a fixed bottom navigation with four labeled destinations, at least `3rem` high per item and safe-area padding. Main content reserves bottom space for that bar. Vertical rhythm is built from `0.75rem`, `1rem`, `1.5rem`, `2rem`, and section-scale gaps rather than dense card grids.
+`--ds-r-sm` 0.625rem (list option), `--ds-r-md` 0.75rem (segmented thumb), `--ds-r-field` 0.875rem (inputs), `--ds-r-lg` 1rem (track, popover), `--ds-r-xl` 1.125rem (option cards, panels in cards), `--ds-r-card` 1.5rem (cards), `--ds-r-panel` 1.75rem (dark summary panel), `--ds-r-pill` (buttons, switches). Nested radii shrink as they nest.
 
-## Elevation & Depth
+## Elevation
 
-This is a flat-by-default system. There are no structural shadows in the implemented Home surfaces; depth comes from warm tonal changes, hairline borders, and whitespace. The card primitive uses a subtle one-pixel foreground ring rather than a shadow. Motion is reserved for state changes and orientation, not ambient decoration.
+Soft two-layer shadows, never a hard border for structure:
 
-### Named Rules
-**The Flat Desk Rule.** Surfaces rest flat; use a rule, spacing, or tonal shift to establish hierarchy before adding elevation.
+- `--ds-shadow-card`: resting cards.
+- `--ds-shadow-pop`: popovers and menus (add a 1px `--ds-line` ring).
+- `--ds-shadow-thumb`: raised thumb inside a track.
+- `--ds-shadow-panel`: dark summary panel.
 
-## Shapes
+Fields use a tint plus an inset 1px `--ds-line` hairline, which becomes a 1.5px green ring and a 4px `--ds-focus-halo` on focus.
 
-The form language uses modest corners: controls and navigation sit at `0.5rem`, brand marks and cards use `0.625rem` to `0.75rem`, and full pills are reserved for status badges rather than primary actions. Borders are one pixel and low-contrast but visible in both themes. Public content uses rule-separated blocks; authenticated warm-up and context panels use top/bottom rules instead of ornamental containers.
+## Motion
 
-## Components
+Easing tokens (also Tailwind `ease-out` / `ease-in-out`): `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)` for entrances, presses and anything responding to the user; `--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1)` for movement between on-screen positions (sliding thumb, disclosure). Never `ease-in`, never `linear` except spinners.
 
-### Buttons
-Buttons are compact, confident actions with a minimum `3rem` touch height on Home. The primary button uses the accent fill; ghost buttons preserve the paper canvas and gain a muted tint on hover.
+Durations: `--ds-dur-press` 120ms (press feedback), `--ds-dur-fast` 160ms (color, hover, focus), `--ds-dur-base` 200ms (popovers, switch), `--ds-dur-slow` 300ms (entrance, panel color). Nothing exceeds 300ms except the 1.6s looping "warming" bar.
 
-- **Shape:** Gently rounded corners (`0.5rem`); no pill-shaped primary actions.
-- **Primary:** Quiet Teal fill with canvas-colored text and `0.75rem 1.25rem` padding.
-- **Hover / Focus:** Accent opacity shifts on hover; focus uses a visible accent ring and border. Active state translates by one pixel.
-- **Secondary / Ghost:** Transparent at rest, text-led, with muted background on hover; use for Sign in, View progress, Another prompt, and cancellation.
+Should it animate? Ask in order:
 
-### Cards / Containers
-Cards are bounded work surfaces, not dashboard tiles. They use Soft Paper, a `0.75rem` corner, a one-pixel tonal ring, and internal padding from `1.25rem` to `2rem`. Editorial Home blocks generally prefer borders and whitespace without a card shell.
+1. How often is it seen? Keyboard-driven or high-frequency actions (typing, list navigation, shortcut toggles) get no animation. Hover and press get near-imperceptible feedback only. Modals, popovers and disclosures get standard motion. Rare moments (completing setup, the report reveal) may carry delight.
+2. What is its purpose? Feedback, spatial continuity, state change or preventing a jarring jump. "It looks nice" on something seen often is a no.
+3. Is the user reading or acting on the data? Then it does not move for style.
 
-### Inputs / Fields
-Inputs use a Soft Paper fill, one-pixel Hairline Rule border, `0.5rem` corners, and a `2.75rem` control height. Focus shifts to the accent border/ring; invalid fields use the error role and keep the message adjacent to the field.
+Rules: animate `transform` and `opacity` only (the disclosure uses `grid-template-rows` deliberately). Enter from `translateY(8px)` + opacity, never `scale(0)`. Press is `scale(0.97)` (`0.985` on large option rows) on `:active`. Stagger entrances with `--i` x 60ms, 300ms maximum total feel. Hover effects are wrapped in `@media (hover: hover) and (pointer: fine)`. Prefer CSS transitions; use WAAPI or a library only for gesture-driven, interruptible motion.
 
-### Navigation
-The desktop rail is visible with labels at normal widths, uses a Sidebar Wash background, and marks the active route with a thin accent rule plus text contrast rather than a saturated tile. Mobile navigation is fixed to the bottom, keeps four icon-and-label targets visible, and gives the active item a Quiet Tint background. Essential labels never depend on hover.
+Reduced motion is part of every animation, not a follow-up: movement becomes a fade (`ds-fade`), press scale is removed, looping bars become a slow opacity pulse. `globals.css` also clamps all animation and transition durations to ~0 under `prefers-reduced-motion: reduce`, so a new animation only needs an explicit variant when a plain fade is a better replacement than "instant".
 
-### Warm-up Prompt
-The optional warm-up is a rule-separated editorial block with a prompt, a practical cue, and a quiet “Another prompt” action. Its prompt content changes locally with `aria-live="polite"`; it never competes visually with Start practice or navigates away.
+## Component primitives
 
-## Do's and Don'ts
+All in `design-system.css`; opt in by class.
 
-### Do:
-- **Do** keep one primary CTA in the first viewport: “Create a practice space” publicly or “Start practice” for an authenticated candidate.
-- **Do** use the accent for action, focus, and current location, with Hairline Rules for structure.
-- **Do** keep explanatory copy within roughly 48–60ch and let long roles or statuses wrap.
-- **Do** preserve visible focus, labeled navigation, 44px-or-larger touch targets, and reduced-motion behavior.
-- **Do** let warm-up and Progress support the next action without inventing metrics or analysis claims.
+- Card: `ds-card` (surface, `--ds-r-card`, `--ds-shadow-card`). Step badge: `ds-step`.
+- Field: `ds-field` on `input`, `textarea`, `select` (chevron included). `aria-invalid="true"` shows the error ring; pair with an error message in `--ds-error` and `role="alert"`.
+- Buttons: `ds-btn` plus a variant. `ds-btn-cta-green` primary (full width, 3.25rem), `ds-btn-soft` secondary, `ds-btn-quiet` ghost, `ds-btn-cta` for use on dark panels. Wrap a trailing arrow icon in `ds-arrow` to get the hover nudge. All have `scale(0.97)` press, a 2px green focus ring, 0.55 opacity when disabled.
+- Switch: `<label class="ds-toggle"><input type="checkbox" class="ds-switch" /> ...</label>`; set `data-disabled="true"` on the label when disabled.
+- Option card + radio: `<label class="ds-option"><input type="radio" class="ds-radio" /> ...</label>`; checked shows tint and a green ring.
+- Segmented control: `SlidingSegmented` in `frontend/src/components/ui/sliding-segmented.tsx` (`ds-seg*`), radio semantics with a sliding thumb.
+- Combobox: `RoleCombobox` in `frontend/src/components/ui/role-combobox.tsx` (`ds-combo-*`, `ds-field`).
+- Disclosure: `ds-reveal` with `data-open`, wrapping a single child div; `ds-chevron` rotates.
+- Entrance: `ds-enter` (with `style={{ "--i": n }}`), `ds-fade-in`, `ds-pop` (check mark).
 
-### Don't:
-- **Don't** add gradients, neon, glass, heavy shadows, decorative avatars, or generic bento/card grids.
-- **Don't** use accent color as a saturated background for every navigation item or section.
-- **Don't** make primary actions pill-shaped, icon-only, or dependent on hover to explain themselves.
-- **Don't** claim AI analysis, readiness scores, accent correction, or outcomes not represented by the product.
-- **Don't** duplicate Progress metrics, history, loading, error, or empty states on Home.
+Setup-only styles (summary panel, mobile bar, voice-readiness panel) stay in `interview-setup.css`; promote them to `ds-` only when a second screen needs them.
+
+## Accessibility
+
+- Text contrast 4.5:1 minimum (3:1 for 18px+ or bold 14px+ and for UI boundaries). Check every new pairing against the table above.
+- Focus: one ring, `outline: var(--ds-focus-outline)` (2px green) with 2-3px offset; fields use the inset ring plus halo. Never `outline: none` without a replacement. Group controls (`label:has(input:focus-visible)`) show the ring on the visible wrapper.
+- Targets at least 44px. Native inputs stay in the DOM (visually restyled, not replaced), so keyboard and screen readers work unchanged.
+- State is never color alone: errors carry text and `aria-invalid`, selection carries a ring as well as tint.
+- Dynamic status uses `role="status"` / `role="alert"`; collapsed content is `visibility: hidden` and inert.
+- Respect `prefers-reduced-motion` and `prefers-reduced-transparency`; hover styles never gate functionality.
+- Language: `<html lang="pt-BR">`; English interview content is marked where it appears in a PT-BR page.

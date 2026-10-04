@@ -48,17 +48,17 @@ export function SlidingSegmented({
   }, [value, options.length]);
 
   return (
-    <div ref={containerRef} className={`isu-seg ${className}`} role="radiogroup" aria-label={ariaLabel} data-ready={box ? "" : undefined}>
+    <div ref={containerRef} className={`ds-seg ${className}`} role="radiogroup" aria-label={ariaLabel} data-ready={box ? "" : undefined}>
       {box && (
         <span
           aria-hidden="true"
-          className="isu-seg-thumb"
+          className="ds-seg-thumb"
           data-animate={animate}
           style={{ width: box.w, height: box.h, transform: `translate(${box.x}px, ${box.y}px)` }}
         />
       )}
       {options.map((option) => (
-        <label key={option.value} ref={(node) => { if (node) itemRefs.current.set(option.value, node); }} className={`isu-seg-item ${itemClassName}`}>
+        <label key={option.value} ref={(node) => { if (node) itemRefs.current.set(option.value, node); }} className={`ds-seg-item ${itemClassName}`}>
           <input
             type="radio"
             name={name}

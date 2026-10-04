@@ -8,9 +8,8 @@ import { useSpeechWarmup, useVoiceReadiness } from "../hooks/use-speech-playback
 import { synthesizeInterviewerQuestion, warmUpInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
-import { RoleCombobox } from "./role-combobox";
-import { SlidingSegmented } from "./sliding-segmented";
-import { setupSans } from "@/lib/setup-fonts";
+import { RoleCombobox } from "@/components/ui/role-combobox";
+import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import "./interview-setup.css";
 import { defaultInterviewConfig } from "../interview-config";
 import { defaultTranscriptionEngine } from "@/lib/interview/transcription-engine.mjs";
@@ -150,8 +149,8 @@ export function InterviewSetup({
   const roleInvalid = showErrors && !config.role.trim();
 
   return (
-    <main id="main-content" className={`isu-root ${setupSans.variable} mx-auto w-full min-w-0 max-w-6xl px-4 pb-40 pt-6 sm:px-8 sm:pt-8 lg:px-12 lg:pb-16 lg:pt-10`}>
-      <button type="button" className="isu-btn isu-btn-quiet -ml-3 mb-6 min-h-10 gap-2 px-3 text-sm" onClick={onBack}>
+    <main id="main-content" className={`isu-root mx-auto w-full min-w-0 max-w-6xl px-4 pb-40 pt-6 sm:px-8 sm:pt-8 lg:px-12 lg:pb-16 lg:pt-10`}>
+      <button type="button" className="ds-btn ds-btn-quiet -ml-3 mb-6 min-h-10 gap-2 px-3 text-sm" onClick={onBack}>
         <ArrowLeft className="size-4" aria-hidden="true" />
         Voltar à visão geral
       </button>
@@ -164,16 +163,16 @@ export function InterviewSetup({
       <form id="interview-setup-form" onSubmit={handleSubmit} className="mt-8 grid items-start gap-6 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-8" noValidate>
         <div className="flex min-w-0 flex-col gap-5">
           {/* 1. Essentials: what is being practiced */}
-          <section className="isu-card isu-enter p-5 sm:p-7" style={{ "--i": 0 } as CSSProperties} aria-labelledby="interview-details-title">
+          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 0 } as CSSProperties} aria-labelledby="interview-details-title">
             <div className="flex items-center gap-3">
-              <span className="isu-step" aria-hidden="true">1</span>
-              <h2 id="interview-details-title" className="isu-h2">Detalhes da entrevista</h2>
+              <span className="ds-step" aria-hidden="true">1</span>
+              <h2 id="interview-details-title" className="ds-h2">Detalhes da entrevista</h2>
             </div>
-            <p className="isu-body mt-2">Você pode mudar essas opções a cada nova sessão.</p>
+            <p className="ds-body mt-2">Você pode mudar essas opções a cada nova sessão.</p>
 
             <div className="mt-6 flex flex-col gap-6">
               <div className="flex flex-col gap-2">
-                <label htmlFor="role-input" className="isu-label">
+                <label htmlFor="role-input" className="ds-label">
                   Cargo para praticar <span className="text-[#8a3a21]" aria-hidden="true">*</span>
                 </label>
                 <RoleCombobox
@@ -185,12 +184,12 @@ export function InterviewSetup({
                   describedBy={roleInvalid ? "role-error" : undefined}
                 />
                 {roleInvalid && (
-                  <span id="role-error" role="alert" className="isu-fade-in text-sm font-medium text-[#8a3a21]">Informe o cargo para o qual você quer praticar.</span>
+                  <span id="role-error" role="alert" className="ds-fade-in text-sm font-medium text-[#8a3a21]">Informe o cargo para o qual você quer praticar.</span>
                 )}
               </div>
 
               <fieldset className="flex min-w-0 flex-col gap-2">
-                <legend className="isu-label mb-2">Senioridade</legend>
+                <legend className="ds-label mb-2">Senioridade</legend>
                 <SlidingSegmented
                   name="seniority"
                   ariaLabel="Senioridade"
@@ -202,7 +201,7 @@ export function InterviewSetup({
               </fieldset>
 
               <fieldset className="flex min-w-0 flex-col gap-2">
-                <legend className="isu-label mb-2">Foco da prática</legend>
+                <legend className="ds-label mb-2">Foco da prática</legend>
                 <SlidingSegmented
                   name="focus"
                   ariaLabel="Foco da prática"
@@ -215,7 +214,7 @@ export function InterviewSetup({
               </fieldset>
 
               <fieldset className="flex min-w-0 flex-col gap-2">
-                <legend className="isu-label mb-2">Duração da sessão</legend>
+                <legend className="ds-label mb-2">Duração da sessão</legend>
                 <SlidingSegmented
                   name="duration"
                   ariaLabel="Duração da sessão"
@@ -229,37 +228,37 @@ export function InterviewSetup({
           </section>
 
           {/* 2. Interviewer voice, with its readiness and test next to the choice they affect */}
-          <section className="isu-card isu-enter p-5 sm:p-7" style={{ "--i": 1 } as CSSProperties} aria-labelledby="interviewer-audio-title">
+          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 1 } as CSSProperties} aria-labelledby="interviewer-audio-title">
             <div className="flex items-center gap-3">
-              <span className="isu-step" aria-hidden="true">2</span>
-              <h2 id="interviewer-audio-title" className="isu-h2">Como o entrevistador fala</h2>
+              <span className="ds-step" aria-hidden="true">2</span>
+              <h2 id="interviewer-audio-title" className="ds-h2">Como o entrevistador fala</h2>
             </div>
-            <p className="isu-body mt-2 max-w-2xl">Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.</p>
+            <p className="ds-body mt-2 max-w-2xl">Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.</p>
 
             <fieldset className="mt-5 grid gap-3 sm:grid-cols-2">
               <legend className="sr-only">Como o entrevistador fala</legend>
-              <label className="isu-option">
-                <input type="radio" name="interviewer-audio-mode" value="audio" className="isu-radio" checked={getInterviewerAudioMode(config) === "audio"} onChange={() => updateInterviewerAudioMode("audio")} />
+              <label className="ds-option">
+                <input type="radio" name="interviewer-audio-mode" value="audio" className="ds-radio" checked={getInterviewerAudioMode(config) === "audio"} onChange={() => updateInterviewerAudioMode("audio")} />
                 <span className="min-w-0">
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">Com áudio <span className="rounded-full bg-[#1f6b45] px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-[#f3f4ee]">Recomendado</span></span>
-                  <span className="isu-small mt-1 block">O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.</span>
+                  <span className="ds-small mt-1 block">O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.</span>
                 </span>
               </label>
-              <label className="isu-option">
-                <input type="radio" name="interviewer-audio-mode" value="text" className="isu-radio" checked={getInterviewerAudioMode(config) === "text"} onChange={() => updateInterviewerAudioMode("text")} />
+              <label className="ds-option">
+                <input type="radio" name="interviewer-audio-mode" value="text" className="ds-radio" checked={getInterviewerAudioMode(config) === "text"} onChange={() => updateInterviewerAudioMode("text")} />
                 <span className="min-w-0">
                   <span className="block text-[15px] font-semibold">Somente texto</span>
-                  <span className="isu-small mt-1 block">O entrevistador não terá voz. A introdução e as perguntas aparecem por escrito.</span>
+                  <span className="ds-small mt-1 block">O entrevistador não terá voz. A introdução e as perguntas aparecem por escrito.</span>
                 </span>
               </label>
             </fieldset>
 
             {config.playInterviewerAudio && (
-              <div className="isu-voice isu-fade-in mt-5 flex flex-col gap-3" data-voice-state={voiceState}>
+              <div className="isu-voice ds-fade-in mt-5 flex flex-col gap-3" data-voice-state={voiceState}>
                 <div role="status" aria-live="polite" className="flex items-start gap-3">
                   <span aria-hidden="true" className="mt-0.5 flex size-6 shrink-0 items-center justify-center">
                     {voiceState === "ready" ? (
-                      <span className="isu-pop flex size-6 items-center justify-center rounded-full bg-[#1f6b45] text-[#f3f4ee]"><Check className="size-3.5" strokeWidth={3} /></span>
+                      <span className="ds-pop flex size-6 items-center justify-center rounded-full bg-[#1f6b45] text-[#f3f4ee]"><Check className="size-3.5" strokeWidth={3} /></span>
                     ) : voiceState === "warming" ? (
                       <span className="size-2.5 rounded-full bg-[#1f6b45] motion-safe:animate-pulse" />
                     ) : (
@@ -267,10 +266,10 @@ export function InterviewSetup({
                     )}
                   </span>
                   <div className="min-w-0">
-                    <p className="isu-label">
+                    <p className="ds-label">
                       {voiceState === "ready" ? "Voz do entrevistador pronta" : voiceState === "warming" ? "Preparando a voz do entrevistador" : "Não conseguimos preparar a voz"}
                     </p>
-                    <p className="isu-small mt-0.5">
+                    <p className="ds-small mt-0.5">
                       {voiceState === "ready"
                         ? "Tudo certo para começar com áudio."
                         : voiceState === "warming"
@@ -282,12 +281,12 @@ export function InterviewSetup({
                 <div className="isu-voice-bar" aria-hidden="true" />
                 {voiceState === "unavailable" && (
                   <div>
-                    <button type="button" className="isu-btn isu-btn-soft" onClick={retryVoice}>Tentar de novo</button>
+                    <button type="button" className="ds-btn ds-btn-soft" onClick={retryVoice}>Tentar de novo</button>
                   </div>
                 )}
                 {voiceState === "ready" && (
                   <div className="flex flex-col gap-2 min-[460px]:flex-row min-[460px]:items-center">
-                    <button type="button" className="isu-btn isu-btn-soft" onClick={() => void testAudio()}>
+                    <button type="button" className="ds-btn ds-btn-soft" onClick={() => void testAudio()}>
                       {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
                     </button>
                     <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "font-medium text-[#8a3a21]" : audioTestStatus.kind === "success" ? "font-medium text-[#1f6b45]" : "text-[#44604f]"}`}>
@@ -300,19 +299,19 @@ export function InterviewSetup({
           </section>
 
           {/* 3. Advanced: one level deeper, collapsed by default */}
-          <section ref={roomOptionsRef} className="isu-card isu-enter scroll-mb-28 scroll-mt-24" style={{ "--i": 2 } as CSSProperties} aria-labelledby="room-options-title">
+          <section ref={roomOptionsRef} className="ds-card ds-enter scroll-mb-28 scroll-mt-24" style={{ "--i": 2 } as CSSProperties} aria-labelledby="room-options-title">
             <button type="button" className="isu-disclosure-button flex items-center gap-3 p-5 sm:px-7" aria-expanded={roomOptionsOpen} aria-controls="room-options-panel" onClick={toggleRoomOptions}>
-              <span className="isu-step" aria-hidden="true">3</span>
+              <span className="ds-step" aria-hidden="true">3</span>
               <span className="min-w-0 flex-1">
-                <span id="room-options-title" className="isu-h2 block">Preferências da sala</span>
-                <span className="isu-small block">Legendas das perguntas, câmera e microfone. Os padrões já funcionam bem.</span>
+                <span id="room-options-title" className="ds-h2 block">Preferências da sala</span>
+                <span className="ds-small block">Legendas das perguntas, câmera e microfone. Os padrões já funcionam bem.</span>
               </span>
-              <ChevronDown className="isu-chevron size-5 shrink-0 text-[#44604f]" style={{ transform: roomOptionsOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
+              <ChevronDown className="ds-chevron size-5 shrink-0 text-[#44604f]" style={{ transform: roomOptionsOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
             </button>
-            <div id="room-options-panel" className="isu-reveal" data-open={roomOptionsOpen} inert={!roomOptionsOpen} onTransitionEnd={handleRevealEnd}>
+            <div id="room-options-panel" className="ds-reveal" data-open={roomOptionsOpen} inert={!roomOptionsOpen} onTransitionEnd={handleRevealEnd}>
               <div>
                 <div className="px-5 pb-6 sm:px-7">
-                  <p className="isu-body">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
+                  <p className="ds-body">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
                   <div className="-mx-1 mt-4 grid gap-1 sm:grid-cols-2">
                     <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel="Sempre visível" onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
                     <SettingToggle id="candidate-camera" label="Prévia da câmera" description="Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
@@ -325,13 +324,13 @@ export function InterviewSetup({
         </div>
 
         {/* Summary + primary action: sticky beside the form on desktop, recap in flow on mobile */}
-        <div className="isu-enter lg:sticky lg:top-24" style={{ "--i": 3 } as CSSProperties}>
+        <div className="ds-enter lg:sticky lg:top-24" style={{ "--i": 3 } as CSSProperties}>
           <aside className="isu-aside px-6 py-7 sm:px-8" aria-labelledby="session-preview-title">
             <p className="text-xs font-semibold tracking-[0.08em] text-[#9fc4ac]">Sua sessão</p>
             <h2
               id="session-preview-title"
               key={cargoSummary.value}
-              className="isu-fade-in mt-2 text-balance font-[family-name:var(--font-landing-serif)] text-[1.875rem] leading-[1.1] tracking-[-0.02em] [overflow-wrap:anywhere]"
+              className="ds-fade-in mt-2 text-balance font-[family-name:var(--font-display)] text-[1.875rem] leading-[1.1] tracking-[-0.02em] [overflow-wrap:anywhere]"
             >
               {cargoSummary.value}
             </h2>
@@ -339,28 +338,28 @@ export function InterviewSetup({
               {restSummary.map(({ label, value }) => (
                 <div key={label} className="flex items-baseline justify-between gap-4">
                   <dt className="shrink-0 text-[#9fc4ac]">{label}</dt>
-                  <dd key={value} className="isu-fade-in min-w-0 text-right font-medium [overflow-wrap:anywhere]">{value}</dd>
+                  <dd key={value} className="ds-fade-in min-w-0 text-right font-medium [overflow-wrap:anywhere]">{value}</dd>
                 </div>
               ))}
             </dl>
-            <button type="submit" className="isu-btn isu-btn-cta mt-7 hidden lg:flex" disabled={voiceBlocked} aria-describedby={voiceBlocked ? "start-hint" : undefined}>
-              {startLabel} <ArrowUpRight className="isu-arrow size-4" aria-hidden="true" />
+            <button type="submit" className="ds-btn ds-btn-cta mt-7 hidden lg:flex" disabled={voiceBlocked} aria-describedby={voiceBlocked ? "start-hint" : undefined}>
+              {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
             </button>
-            {voiceBlocked && <p id="start-hint" className="isu-hint isu-fade-in mt-3 hidden text-[#9fc4ac] lg:block">{startHint}</p>}
-            <button type="button" className="isu-btn isu-btn-quiet mt-2 hidden w-full text-[#9fc4ac] hover:text-[#f3f4ee] lg:flex" onClick={onBack}>
+            {voiceBlocked && <p id="start-hint" className="ds-hint ds-fade-in mt-3 hidden text-[#9fc4ac] lg:block">{startHint}</p>}
+            <button type="button" className="ds-btn ds-btn-quiet mt-2 hidden w-full text-[#9fc4ac] hover:text-[#f3f4ee] lg:flex" onClick={onBack}>
               Cancelar
             </button>
           </aside>
-          <p className="isu-small mt-4 px-2">
+          <p className="ds-small mt-4 px-2">
             Você pode encerrar a qualquer momento. Uma resposta já iniciada pode terminar após o tempo planejado.
           </p>
         </div>
 
         {/* Mobile: the primary action stays reachable */}
         <div className="isu-bar fixed inset-x-0 bottom-0 z-20 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 lg:hidden">
-          {voiceBlocked && <p className="isu-hint isu-fade-in mb-2 text-center text-[#44604f]">{startHint}</p>}
-          <button type="submit" form="interview-setup-form" className="isu-btn isu-btn-cta-green" disabled={voiceBlocked}>
-            {startLabel} <ArrowUpRight className="isu-arrow size-4" aria-hidden="true" />
+          {voiceBlocked && <p className="ds-hint ds-fade-in mb-2 text-center text-[#44604f]">{startHint}</p>}
+          <button type="submit" form="interview-setup-form" className="ds-btn ds-btn-cta-green" disabled={voiceBlocked}>
+            {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
           </button>
         </div>
       </form>
@@ -388,14 +387,14 @@ function SettingToggle({
   const stateLabel = disabled ? (disabledStatusLabel ?? "Desligado") : checked ? "Ligado" : "Desligado";
 
   return (
-    <label htmlFor={id} className="isu-toggle" data-disabled={disabled}>
-      <input id={id} type="checkbox" role="switch" className="isu-switch" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+    <label htmlFor={id} className="ds-toggle" data-disabled={disabled}>
+      <input id={id} type="checkbox" role="switch" className="ds-switch" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
           <span className="text-sm font-semibold">{label}</span>
           <span className={`shrink-0 text-xs font-semibold ${checked || disabled ? "text-[#1f6b45]" : "text-[#5c7a6a]"}`}>{stateLabel}</span>
         </span>
-        <span className="isu-small mt-1 block">{description}</span>
+        <span className="ds-small mt-1 block">{description}</span>
       </span>
     </label>
   );

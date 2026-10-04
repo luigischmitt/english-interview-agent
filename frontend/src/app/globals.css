@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./design-system.css";
 @plugin "daisyui" {
   themes: false;
   logs: false;
@@ -17,7 +18,7 @@
   --color-base-content: #0e2a1f;
   --color-primary: #1f6b45;
   --color-primary-content: #f3f4ee;
-  --color-secondary: #e9f3ed;
+  --color-secondary: #e6f1ea;
   --color-secondary-content: #0e2a1f;
   --color-accent: #d9e3dc;
   --color-accent-content: #0e2a1f;
@@ -27,13 +28,13 @@
   --color-info-content: #f3f4ee;
   --color-success: #1f6b45;
   --color-success-content: #f3f4ee;
-  --color-warning: #e3c67a;
-  --color-warning-content: #6b5417;
-  --color-error: #d99a85;
-  --color-error-content: #8a3a21;
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.5rem;
+  --color-warning: #f6ecd0;
+  --color-warning-content: #5a4512;
+  --color-error: #8a3a21;
+  --color-error-content: #fbfbf7;
+  --radius-selector: 0.75rem;
+  --radius-field: 0.875rem;
+  --radius-box: 1.25rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;
@@ -41,14 +42,36 @@
   --noise: 0;
 }
 
+@theme {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-landing-sans);
+  --font-sans: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-landing-serif);
+  --font-display: var(--font-instrument-serif), ui-serif, Georgia, serif;
+  --font-heading: var(--font-display);
+  /* Design-system palette as Tailwind utilities: bg-surface, bg-field, bg-tint, bg-track, text-ink, text-text-2, bg-green ... */
+  --color-ink: var(--ds-ink);
+  --color-green: var(--ds-green);
+  --color-green-deep: var(--ds-green-deep);
+  --color-cream: var(--ds-cream);
+  --color-surface: var(--ds-surface);
+  --color-field: var(--ds-field);
+  --color-tint: var(--ds-tint);
+  --color-track: var(--ds-track);
+  --color-text-2: var(--ds-text-2);
+  --color-danger: var(--ds-error);
+  --color-danger-tint: var(--ds-error-tint);
+  --color-warn-tint: var(--ds-warning-tint);
+  --shadow-card: var(--ds-shadow-card);
+  --shadow-pop: var(--ds-shadow-pop);
+  --shadow-panel: var(--ds-shadow-panel);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -90,17 +113,17 @@
 :root {
   --background: #f3f4ee;
   --foreground: #0e2a1f;
-  --card: #f3f4ee;
+  --card: #fbfbf7;
   --card-foreground: #0e2a1f;
-  --popover: #f3f4ee;
+  --popover: #ffffff;
   --popover-foreground: #0e2a1f;
   --primary: #1f6b45;
   --primary-foreground: #f3f4ee;
-  --secondary: #e9f3ed;
+  --secondary: #e6f1ea;
   --secondary-foreground: #0e2a1f;
-  --muted: #e9f3ed;
-  --muted-foreground: #3d5a4c;
-  --accent: #d9e3dc;
+  --muted: #e8ece3;
+  --muted-foreground: #44604f;
+  --accent: #e6f1ea;
   --accent-foreground: #0e2a1f;
   --destructive: #8a3a21;
   --border: #d9e3dc;
@@ -120,6 +143,67 @@
   --sidebar-accent-foreground: #0e2a1f;
   --sidebar-border: #d9e3dc;
   --sidebar-ring: #1f6b45;
+}
+
+/*
+ * Design tokens (source of truth: DESIGN.md). Plain CSS variables so they work in any stylesheet, inline style,
+ * or Tailwind arbitrary value: bg-[var(--ds-tint)]. The most common ones are also exposed as Tailwind utilities
+ * in @theme above (bg-surface, text-ink, shadow-card, ...).
+ */
+:root {
+  /* Color */
+  --ds-ink: #0e2a1f;          /* text, dark panels      13.9:1 on cream */
+  --ds-green: #1f6b45;        /* primary                 5.9:1 on cream, cream on green 5.9:1 */
+  --ds-green-deep: #17563a;   /* primary hover, text on tint 7.5:1 */
+  --ds-cream: #f3f4ee;        /* page background */
+  --ds-surface: #fbfbf7;      /* cards */
+  --ds-field: #f1f3ec;        /* inputs, option cards, quiet wells */
+  --ds-field-hover: #e9ede3;
+  --ds-track: #e8ece3;        /* segmented / progress tracks */
+  --ds-tint: #e6f1ea;         /* selected, success, soft button */
+  --ds-tint-hover: #d8eadf;
+  --ds-text-2: #44604f;       /* secondary text         6.2:1 on cream/field */
+  --ds-placeholder: #75897d;  /* placeholder only (3.3:1): never for real content */
+  --ds-line: rgba(14, 42, 31, 0.09);        /* inset hairline on fields and popovers */
+  --ds-line-strong: #9bb3a5;                /* unchecked radio ring */
+  --ds-hover-wash: rgba(14, 42, 31, 0.06);
+  --ds-hover-wash-faint: rgba(14, 42, 31, 0.04);
+  --ds-switch-off: #c4d2c9;
+  --ds-switch-disabled: #d5ddd7;
+  --ds-error: #8a3a21;        /* error text              6.5:1 on error tint */
+  --ds-error-ring: #c9694a;
+  --ds-error-tint: #f6e9e2;
+  --ds-warning: #5a4512;      /* warning text            on --ds-warning-tint */
+  --ds-warning-tint: #f6ecd0;
+  --ds-success: var(--ds-green);
+  --ds-success-tint: var(--ds-tint);
+  --ds-focus-halo: rgba(31, 107, 69, 0.14);
+  --ds-error-halo: rgba(201, 105, 74, 0.12);
+
+  /* Radii */
+  --ds-r-sm: 0.625rem;
+  --ds-r-md: 0.75rem;
+  --ds-r-field: 0.875rem;
+  --ds-r-lg: 1rem;
+  --ds-r-xl: 1.125rem;
+  --ds-r-card: 1.5rem;
+  --ds-r-panel: 1.75rem;
+  --ds-r-pill: 9999px;
+
+  /* Elevation: soft two-layer shadows instead of hard borders */
+  --ds-shadow-card: 0 1px 2px rgba(14, 42, 31, 0.04), 0 14px 32px -18px rgba(14, 42, 31, 0.16);
+  --ds-shadow-pop: 0 2px 6px rgba(14, 42, 31, 0.06), 0 18px 40px -12px rgba(14, 42, 31, 0.22);
+  --ds-shadow-thumb: 0 1px 2px rgba(14, 42, 31, 0.1), 0 2px 8px -2px rgba(14, 42, 31, 0.12);
+  --ds-shadow-panel: 0 24px 48px -24px rgba(14, 42, 31, 0.5);
+
+  /* Motion: durations (all <= 300ms) */
+  --ds-dur-press: 120ms;
+  --ds-dur-fast: 160ms;
+  --ds-dur-base: 200ms;
+  --ds-dur-slow: 300ms;
+
+  /* Focus: one ring everywhere */
+  --ds-focus-outline: 2px solid var(--ds-green);
 }
 
 @layer base {
