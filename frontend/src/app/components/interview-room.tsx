@@ -1,24 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, AudioLines, Clock3, Mic, PhoneOff, Video, VideoOff, Volume2 } from "lucide-react";
+import { AudioLines, Clock3, Mic, PhoneOff, Video, VideoOff, Volume2 } from "lucide-react";
 import { MicrophoneCapture, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { buildPreviousAnswers, decideNextTurn, type TurnDecision } from "@/lib/interview/orchestration";
 import { createNextTurnPreparationRegistry } from "@/lib/interview/next-turn-preparation.mjs";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
-import { answerOrdinalForSequence, createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
+import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
 import { emptyCaption, reduceCaption, shouldShowCandidateCaption, type CandidateCaption } from "@/lib/interview/caption-state.mjs";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import { resolveTranscriptionEngine } from "@/lib/interview/transcription-engine.mjs";
-import { emptyEnglishEvidenceMessage, emptyReportEvidenceMessage, partialEvidenceReviewNote } from "@/lib/interview/report-evidence-copy.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import { appendInterviewReportPair, type AzureAssessmentSample, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 import { analyzeTurnWithRetry, resolveReportAtEnd, settleTurnAnalyses, turnAnalysisWaitMs } from "@/lib/interview/report-incremental.mjs";
-import { AzureVoiceReport } from "./azure-voice-report";
-import { clarityHelp, englishPatternsHelp, technicalContentHelp } from "@/lib/interview/report-metric-copy.mjs";
+import { InterviewReport, type ReportState } from "./interview-report";
+import "./interview-room.css";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
@@ -30,7 +29,6 @@ import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/intervi
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; state: VoiceAssessmentState };
-type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
 
 function formatClock(seconds: number) {
   const safeSeconds = Math.max(0, seconds);
@@ -41,25 +39,6 @@ function assessmentSamples(entries: Record<string, AssessmentEntry>): AzureAsses
   return Object.values(entries).map(({ state }) => state.status === "available"
     ? { status: "available", durationMs: state.durationMs, scores: state.scores }
     : state.status === "pending" ? { status: "pending" } : { status: "unavailable" });
-}
-
-function CapturedAnswers({ turns }: { turns: ReturnType<typeof pairInterviewTurns> }) {
-  return (
-    <section className="border-t border-base-300 pt-6" aria-labelledby="captured-answers-title">
-      <h2 id="captured-answers-title" className="text-lg font-semibold">Respostas registradas</h2>
-      {turns.length ? (
-        <ol className="mt-4 space-y-5">
-          {turns.map((turn, index) => (
-            <li key={`${turn.sequenceNumber}-${index}`} className="border-t border-base-300 pt-4">
-              <p className="text-sm font-medium">Pergunta {answerOrdinalForSequence(turns, turn.sequenceNumber) ?? index + 1}</p>
-              <p lang="en" className="mt-2 text-sm leading-6"><span className="font-medium">Pergunta:</span> {turn.question}</p>
-              <p lang="en" className="mt-2 text-sm leading-6"><span className="font-medium">Sua resposta:</span> {turn.answer}</p>
-            </li>
-          ))}
-        </ol>
-      ) : <p className="mt-2 text-sm leading-6 text-muted-foreground">Nenhuma resposta foi enviada nesta sessão. Sem respostas, não há evidência para uma análise detalhada.</p>}
-    </section>
-  );
 }
 
 export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; onLeave: () => void }) {
@@ -564,173 +543,141 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   });
   const showInterviewerCaption = phase === "closing" || config.showQuestionCaptions || !config.playInterviewerAudio || Boolean(speechMessage);
 
+  const speakingLabel = phase === "introducing" ? "Apresentando a primeira pergunta" : phase === "closing" ? "Encerrando a entrevista" : phase === "speaking" ? "Fazendo a pergunta" : isAdvancing ? "Preparando a próxima pergunta" : "Aguardando sua resposta";
+  const answerHint = isAdvancing ? "Preparando a próxima etapa…" : voiceCaptureState === "requesting" ? "Preparando microfone…" : voiceCaptureState === "listening" || voiceCaptureState === "detected" ? "Pode falar. A resposta será concluída automaticamente após uma pausa." : voiceCaptureState === "finalizing" || voiceTranscription.status === "pending" ? "Processando sua resposta…" : voiceTranscription.status === "failed" ? "Não foi possível concluir. Tente gravar novamente, pule a pergunta ou encerre a prática." : voiceTranscription.status === "available" ? "Resposta concluída." : "Inicie a gravação e responda em inglês.";
+
   return (
-    <main id="main-content" className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-7xl flex-col px-3 py-4 pb-36 sm:px-6 sm:py-5 sm:pb-28 lg:px-8 lg:pb-6">
+    <main id="main-content" className="rm-root mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-7xl flex-col px-4 py-4 sm:px-8 sm:py-6 lg:px-12">
       {phase === "ending" && (
-        <section className="mx-auto w-full max-w-4xl" aria-labelledby="interview-complete-title">
-          <div className="border-b border-base-300 pb-6">
-            <p className="text-sm font-medium text-primary">Prática concluída</p>
-            <h1 id="interview-complete-title" className="mt-2 font-[family-name:var(--font-display)] text-4xl tracking-[-0.02em]">Seu relatório de entrevista</h1>
-            <p className="mt-3 max-w-[60ch] text-sm leading-6 text-muted-foreground">{persistenceLabel} As respostas por voz foram transcritas; o áudio não é salvo.</p>
-            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-              <p><span className="text-muted-foreground">Cargo</span> <span className="font-medium">{config.role}</span></p>
-              <p><span className="text-muted-foreground">Tempo</span> <span className="font-medium tabular-nums">{elapsed} / {formatClock(durationMinutes * 60)}</span></p>
-              <p><span className="text-muted-foreground">Respostas</span> <span className="font-medium">{Object.keys(answers).length}</span></p>
-            </div>
-          </div>
-
-          {persistenceMessage && <div role="status" className="alert alert-warning alert-soft mt-5 text-sm"><span>{persistenceMessage}</span></div>}
-          {feedbackSyncMessage && <div role="status" className="alert alert-warning alert-soft mt-4 text-sm"><span>{feedbackSyncMessage}</span></div>}
-          <section className="mt-7" aria-busy={reportState.status === "pending"}>
-            {reportState.status === "pending" ? (
-              <div className="flex items-center gap-3 border-y border-base-300 py-6" role="status"><span className="loading loading-spinner loading-sm" aria-hidden="true" /><p className="text-sm">{reportCaption} A análise não avalia seu sotaque.</p></div>
-            ) : reportState.status === "unavailable" ? (
-              <div className="space-y-6">
-                <div role="status" className="alert alert-warning alert-soft"><div><h2 className="font-semibold">{capturedReportTurns.length ? "Não foi possível montar o relatório detalhado." : "Não há respostas para analisar."}</h2><p className="mt-1 text-sm">{reportState.message} Os sinais vocais disponíveis continuam abaixo.</p></div></div>
-                <CapturedAnswers turns={capturedReportTurns} />
-                <AzureVoiceReport summary={currentAzureSummary} coverage={coverage} />
-              </div>
-            ) : reportState.status === "ready" && reportState.result ? (
-              <div className="space-y-8">
-                <section aria-labelledby="technical-report-title">
-                  <h2 id="technical-report-title" className="text-lg font-semibold">Conteúdo técnico</h2>
-                  <p className="mt-1 max-w-[70ch] text-xs leading-5 text-muted-foreground">{technicalContentHelp}</p>
-                  <p className="mt-2 max-w-[70ch] text-sm leading-6">{reportState.result.technicalContent.summary}</p>
-                  <div className="mt-4 grid gap-6 sm:grid-cols-2">
-                    <div><h3 className="text-sm font-medium">O que correspondeu à pergunta</h3>{reportState.result.technicalContent.strengths.length ? <ul className="mt-2 space-y-3 text-sm leading-6">{reportState.result.technicalContent.strengths.map((item, index) => <li key={`${item.sequenceNumber}-${index}`} className="border-t border-base-300 pt-2"><p className="text-muted-foreground">Resposta {answerOrdinalForSequence(capturedReportTurns, item.sequenceNumber) ?? "—"}: “{item.evidence}”</p><p className="mt-1">{item.explanation}</p></li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">{emptyReportEvidenceMessage(reportState.result.evidenceReview?.technicalStrengths)}</p>}<EvidenceCountNote counts={reportState.result.evidenceReview?.technicalStrengths} /></div>
-                    <div><h3 className="text-sm font-medium">O que precisava de mais explicação</h3>{reportState.result.technicalContent.gaps.length ? <ul className="mt-2 space-y-3 text-sm leading-6">{reportState.result.technicalContent.gaps.map((item, index) => <li key={`${item.sequenceNumber}-${index}`} className="border-t border-base-300 pt-2"><p className="text-muted-foreground">Resposta {answerOrdinalForSequence(capturedReportTurns, item.sequenceNumber) ?? "—"}: “{item.evidence}”</p><p className="mt-1">{item.explanation}</p></li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">{emptyReportEvidenceMessage(reportState.result.evidenceReview?.technicalGaps)}</p>}<EvidenceCountNote counts={reportState.result.evidenceReview?.technicalGaps} /></div>
-                  </div>
-                </section>
-
-                <section className="border-t border-base-300 pt-6" aria-labelledby="english-report-title">
-                  <h2 id="english-report-title" className="text-lg font-semibold">Comunicação em inglês</h2>
-                  <p className="mt-1 max-w-[70ch] text-xs leading-5 text-muted-foreground">{englishPatternsHelp}</p>
-                  <p className="mt-2 text-sm leading-6">Clareza geral: <span className="font-medium">{clarityLabel(reportState.result.englishCommunication.clarity)}</span></p>
-                  <p className="mt-1 max-w-[70ch] text-xs leading-5 text-muted-foreground">{clarityHelp}</p>
-                  {reportState.result.englishCommunication.patterns.length ? <ul className="mt-4 space-y-4">{reportState.result.englishCommunication.patterns.map((pattern, index) => <li key={`${pattern.sequenceNumber}-${pattern.type}-${index}`} className="border-t border-base-300 pt-3 text-sm"><p className="font-medium">{patternLabel(pattern.type)} · resposta {answerOrdinalForSequence(capturedReportTurns, pattern.sequenceNumber) ?? "—"}</p><p className="mt-1 text-muted-foreground">Trecho: “{pattern.evidence}”</p><p className="mt-1">Sugestão: {pattern.suggestion}</p><p className="mt-2"><span className="font-medium">Exemplo:</span> <span lang="en">“{pattern.rephrasedExample}”</span></p></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">{emptyEnglishEvidenceMessage(reportState.result.englishCommunication.evidenceStatus, reportState.result.evidenceReview?.englishPatterns)}</p>}
-                  <EvidenceCountNote counts={reportState.result.evidenceReview?.englishPatterns} />
-                </section>
-
-                <AzureVoiceReport summary={currentAzureSummary} coverage={coverage} />
-
-                <section className="border-t border-base-300 pt-6" aria-labelledby="priorities-title">
-                  <h2 id="priorities-title" className="text-lg font-semibold">Prioridades para praticar</h2>
-                  {reportState.result.priorities.length ? <ol className="mt-4 space-y-4">{reportState.result.priorities.map((priority, index) => <li key={`${priority.sequenceNumber}-${index}`} className="border-t border-base-300 pt-3"><p className="text-sm font-medium">{priority.focus}</p><p className="mt-1 text-sm text-muted-foreground">Baseado na resposta {answerOrdinalForSequence(capturedReportTurns, priority.sequenceNumber) ?? "—"}: “{priority.evidence}”</p><p className="mt-1 text-sm leading-6">{priority.exercise}</p></li>)}</ol> : <p className="mt-3 text-sm text-muted-foreground">{emptyReportEvidenceMessage(reportState.result.evidenceReview?.priorities)}</p>}<EvidenceCountNote counts={reportState.result.evidenceReview?.priorities} />
-                </section>
-              </div>
-            ) : null}
-          </section>
-          <div className="mt-8 flex flex-col gap-3 border-t border-base-300 pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs leading-5 text-muted-foreground">{persistenceLabel}</p>
-            <button type="button" className="btn btn-primary min-h-11 gap-2 rounded-full" onClick={onLeave}>Voltar à visão geral <ArrowUpRight className="size-4" aria-hidden="true" /></button>
-          </div>
-        </section>
+        <InterviewReport
+          config={config}
+          elapsed={elapsed}
+          totalClock={formatClock(durationMinutes * 60)}
+          answerCount={Object.keys(answers).length}
+          persistenceLabel={persistenceLabel}
+          persistenceMessage={persistenceMessage}
+          feedbackSyncMessage={feedbackSyncMessage}
+          reportState={reportState}
+          reportCaption={reportCaption}
+          turns={capturedReportTurns}
+          azureSummary={currentAzureSummary}
+          coverage={coverage}
+          onLeave={onLeave}
+        />
       )}
 
-      <div hidden={phase === "ending"} aria-hidden={phase === "ending"}>
-        <header className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 pb-4">
+      <div hidden={phase === "ending"} aria-hidden={phase === "ending"} className="flex flex-1 flex-col">
+        <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 pb-3">
           <div className="min-w-0">
-            <h1 className="font-[family-name:var(--font-display)] text-xl tracking-[-0.02em] sm:text-2xl">Entrevista em andamento</h1>
-            <p className="mt-1 max-w-[65ch] break-words text-sm text-muted-foreground">{config.role} · {config.seniority.replace("-", " ")} · {config.focus.replaceAll("-", " ")}</p>
+            <h1 className="text-balance text-lg font-semibold tracking-[-0.018em] sm:text-xl">Entrevista em andamento</h1>
+            <p className="ds-small mt-0.5 max-w-[65ch] break-words [overflow-wrap:anywhere]">{config.role} · {config.seniority.replace("-", " ")} · {config.focus.replaceAll("-", " ")}</p>
           </div>
-          <div className="flex items-center gap-2 text-sm tabular-nums sm:gap-4">
-            <Clock3 className="size-4 text-muted-foreground" aria-hidden="true" />
-            <span aria-label={`Tempo decorrido ${elapsed}`}>{elapsed}</span>
-            <span className="text-base-300" aria-hidden="true">/</span>
-            <span className={timeLimitReached ? "font-medium text-warning-content" : "text-muted-foreground"} aria-label={`Tempo restante ${remaining}`}>{timeLimitReached ? `+${formatClock(seconds - durationMinutes * 60)}` : remaining} restantes</span>
+          <div className="rm-timer" data-over={timeLimitReached ? "true" : undefined}>
+            <Clock3 className="size-4" aria-hidden="true" />
+            <strong aria-label={`Tempo decorrido ${elapsed}`}>{elapsed}</strong>
+            <span aria-hidden="true">·</span>
+            <span aria-label={`Tempo restante ${remaining}`}>{timeLimitReached ? `+${formatClock(seconds - durationMinutes * 60)}` : remaining} restantes</span>
           </div>
         </header>
 
-        <progress className="progress progress-primary mx-auto mb-4 block h-1 w-full max-w-7xl" value={progress} max="100" aria-label={`${progress}% do tempo planejado`} />
+        <progress className="rm-progress mb-4" value={progress} max="100" aria-label={`${progress}% do tempo planejado`} />
 
-        <section className="mx-auto grid w-full max-w-7xl gap-3 sm:grid-cols-2 sm:gap-4 lg:gap-5" aria-label="Participantes da sala">
-          <CandidateCamera initialEnabled={config.candidateCameraEnabled} active={phase !== "ending"} captureState={voiceCaptureState} caption={candidateCaption} captionsEnabled={showCandidateCaptions && phase === "answering"} />
-          <section className={`relative flex min-h-[270px] flex-col overflow-hidden rounded-xl border border-base-300 bg-base-200 sm:min-h-[min(56vh,540px)] ${isInterviewerSpeaking ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`} aria-label="Entrevistador">
-            <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center sm:px-8">
-              <AudioLines className={`size-10 text-primary sm:size-12 ${isInterviewerSpeaking ? "motion-safe:animate-pulse" : ""}`} aria-hidden="true" />
-              <h2 className="mt-4 font-[family-name:var(--font-display)] text-3xl tracking-[-0.02em] sm:text-4xl">Entrevistador</h2>
-              <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite">
-                <span className={`status ${isInterviewerSpeaking ? "status-primary" : isAdvancing ? "status-warning" : "status-neutral"}`} aria-hidden="true" />
-                {phase === "introducing" ? "Apresentando a primeira pergunta" : phase === "closing" ? "Encerrando a entrevista" : phase === "speaking" ? "Fazendo a pergunta" : isAdvancing ? "Preparando a próxima pergunta" : "Aguardando sua resposta"}
+        <section className="rm-stage" aria-label="Participantes da sala">
+          <section className="rm-interviewer" data-speaking={isInterviewerSpeaking ? "true" : undefined} data-advancing={isAdvancing ? "true" : undefined} aria-label="Entrevistador">
+            <div className="rm-who">
+              <div className="flex items-center gap-3">
+                <span className="rm-avatar"><AudioLines className="size-5" aria-hidden="true" /></span>
+                <h2 className="rm-name">Entrevistador</h2>
+              </div>
+              <p className="rm-chip" role="status" aria-live="polite">
+                <span className="rm-eq" data-active={isInterviewerSpeaking ? "true" : undefined} aria-hidden="true"><i /><i /><i /><i /></span>
+                {speakingLabel}
                 {isInterviewerSpeaking && <Volume2 className="size-4" aria-hidden="true" />}
               </p>
             </div>
-            {showInterviewerCaption && <div className="border-t border-base-300 bg-base-100/95 px-4 py-3 sm:px-6 sm:py-4">
-              <p className="text-xs font-medium text-muted-foreground">ENTREVISTADOR</p>
-              <p className="mt-1 max-h-28 overflow-y-auto text-sm leading-6 sm:text-base" aria-live="polite">{interviewerCaption}</p>
-            </div>}
+            {showInterviewerCaption ? (
+              <div className="rm-caption-wrap">
+                <p className="rm-caption-label">Entrevistador</p>
+                <p key={interviewerCaption} className="rm-caption" lang="en" aria-live="polite">{interviewerCaption}</p>
+              </div>
+            ) : (
+              <div className="rm-idle"><span className="rm-eq rm-eq-lg" data-active={isInterviewerSpeaking ? "true" : undefined} aria-hidden="true"><i /><i /><i /><i /></span></div>
+            )}
+            {speechMessage && (
+              <div role="status" className="rm-notice">
+                <Volume2 className="size-4 shrink-0" aria-hidden="true" />
+                <span>{speechMessage}</span>
+                {/* Replaying would be picked up by an open microphone, so the retry is offered only while it is idle. */}
+                {phase === "answering" && voiceCaptureState === "idle" && <button type="button" className="ds-btn" onClick={retrySpeech}>Tentar de novo</button>}
+              </div>
+            )}
           </section>
+          <CandidateCamera initialEnabled={config.candidateCameraEnabled} active={phase !== "ending"} yourTurn={phase === "answering"} captureState={voiceCaptureState} caption={candidateCaption} captionsEnabled={showCandidateCaptions && phase === "answering"} />
         </section>
 
-        <section className="mx-auto mt-4 w-full max-w-7xl border-t border-base-300 pt-4" aria-labelledby="answer-title">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-            <div className="w-full" aria-labelledby="answer-title">
-              <h2 id="answer-title" className="text-sm font-medium">Sua resposta por voz</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {isAdvancing ? "Preparando a próxima etapa…" : voiceCaptureState === "requesting" ? "Preparando microfone…" : voiceCaptureState === "listening" || voiceCaptureState === "detected" ? "Pode falar. A resposta será concluída automaticamente após uma pausa." : voiceCaptureState === "finalizing" || voiceTranscription.status === "pending" ? "Processando sua resposta…" : voiceTranscription.status === "failed" ? "Não foi possível concluir. Tente gravar novamente, pule a pergunta ou encerre a prática." : voiceTranscription.status === "available" ? "Resposta concluída." : "Inicie a gravação e responda em inglês."}
-              </p>
-              {answerError && <p id="answer-error" className="mt-2 text-sm text-error" role="alert">{answerError}</p>}
+        {timeLimitReached && <p className="rm-notice mt-4" data-tone="info" role="status"><span>O tempo chegou ao fim. Você pode concluir esta resposta; uma nova pergunta não será iniciada.</span></p>}
+        {persistenceMessage && <div role="status" className="rm-notice mt-4" data-tone="info"><span>{persistenceMessage}</span></div>}
+
+        <section className="rm-dock" aria-labelledby="answer-title">
+          <div className="rm-dock-grid">
+            <div className="min-w-0" aria-labelledby="answer-title">
+              <h2 id="answer-title" className="ds-label">Sua resposta por voz</h2>
+              <p className="ds-small mt-1">{answerHint}</p>
+              {answerError && <p id="answer-error" className="rm-error" role="alert">{answerError}</p>}
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
-              <button type="button" className="btn btn-ghost min-h-11 gap-2" onClick={skipQuestion} disabled={phase !== "answering" || isAdvancing || !canSkipVoiceQuestion(voiceCaptureState, voiceTranscription.status)}>Pular sem enviar</button>
-              <button type="button" className="btn btn-ghost min-h-11 gap-2" onClick={finishNow} disabled={phase !== "answering" || isAdvancing}>Encerrar prática</button>
+            <div className="rm-actions">
+              <button type="button" className="ds-btn ds-btn-quiet" onClick={skipQuestion} disabled={phase !== "answering" || isAdvancing || !canSkipVoiceQuestion(voiceCaptureState, voiceTranscription.status)}>Pular sem enviar</button>
+              <button type="button" className="ds-btn ds-btn-soft" onClick={finishNow} disabled={phase !== "answering" || isAdvancing}>Encerrar prática</button>
             </div>
           </div>
-          {speechMessage && (
-            <div role="status" className="alert alert-warning alert-soft mt-3 text-sm">
-              <Volume2 className="size-4 shrink-0" aria-hidden="true" />
-              <span>{speechMessage}</span>
-              {/* Replaying would be picked up by an open microphone, so the retry is offered only while it is idle. */}
-              {phase === "answering" && voiceCaptureState === "idle" && <button type="button" className="btn btn-sm btn-ghost" onClick={retrySpeech}>Tentar de novo</button>}
-            </div>
-          )}
-          {persistenceMessage && <div role="status" className="alert alert-info alert-soft mt-3 text-sm"><span>{persistenceMessage}</span></div>}
-          {timeLimitReached && <p className="alert alert-warning alert-soft mt-3 py-3 text-sm" role="status">O tempo chegou ao fim. Você pode concluir esta resposta; uma nova pergunta não será iniciada.</p>}
+          <div className="mt-3">
+            <MicrophoneCapture
+              key={question.id}
+              disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"}
+              assessmentSockets={assessmentSockets}
+              assessmentContext={{ questionLabel: question.prompt, sequenceNumber: questionSequenceNumber }}
+              onTranscriptionChange={(transcription) => {
+                setVoiceTranscription(transcription);
+                if (transcription.status === "idle" || transcription.status === "failed") abortPreparation("capture_ended");
+                if (transcription.status === "idle" || transcription.status === "available") setAnswerError(null);
+                const expectedQuestionId = question.id;
+                if (canAutoSubmitVoiceTranscript({
+                  transcription,
+                  phase: phaseRef.current,
+                  expectedQuestionId,
+                  currentQuestionId: currentQuestionIdRef.current,
+                  submitting: submitInFlightRef.current,
+                  left: leftRef.current,
+                })) void submitAnswer(transcription, false, expectedQuestionId);
+              }}
+              onCaptureStateChange={setVoiceCaptureState}
+              captionsEnabled={showCandidateCaptions}
+              transcriptionEngine={transcriptionEngine}
+              onCaptionChange={(caption) => {
+                if (caption.partial) abortPreparation("new_speech");
+                updateCandidateCaption(caption);
+              }}
+              onProvisionalAnswer={prepareFromProvisionalAnswer}
+              onSpeechResumed={() => abortPreparation("speech_resumed")}
+              onHandoffTimingEvent={onHandoffTimingEvent}
+              autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
+              micEngine={micEngine}
+              preconnectSignal={autoCaptureVoice && preconnectQuestionId === question.id ? question.id : null}
+              onAssessmentChange={(attemptId, assessment, context) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { ...context, state: assessment } }))}
+            />
+          </div>
           {micEngineState === "ready" && (
-            <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-muted-foreground" data-testid="mic-held-note">
-              <Mic className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />
+            <p className="ds-hint mt-3 flex items-start gap-2 text-text-2" data-testid="mic-held-note">
+              <Mic className="mt-0.5 size-3.5 shrink-0 text-green" aria-hidden="true" />
               <span>Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.</span>
             </p>
           )}
-          <MicrophoneCapture
-            key={question.id}
-            disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"}
-            assessmentSockets={assessmentSockets}
-            assessmentContext={{ questionLabel: question.prompt, sequenceNumber: questionSequenceNumber }}
-            onTranscriptionChange={(transcription) => {
-              setVoiceTranscription(transcription);
-              if (transcription.status === "idle" || transcription.status === "failed") abortPreparation("capture_ended");
-              if (transcription.status === "idle" || transcription.status === "available") setAnswerError(null);
-              const expectedQuestionId = question.id;
-              if (canAutoSubmitVoiceTranscript({
-                transcription,
-                phase: phaseRef.current,
-                expectedQuestionId,
-                currentQuestionId: currentQuestionIdRef.current,
-                submitting: submitInFlightRef.current,
-                left: leftRef.current,
-              })) void submitAnswer(transcription, false, expectedQuestionId);
-            }}
-            onCaptureStateChange={setVoiceCaptureState}
-            captionsEnabled={showCandidateCaptions}
-            transcriptionEngine={transcriptionEngine}
-            onCaptionChange={(caption) => {
-              if (caption.partial) abortPreparation("new_speech");
-              updateCandidateCaption(caption);
-            }}
-            onProvisionalAnswer={prepareFromProvisionalAnswer}
-            onSpeechResumed={() => abortPreparation("speech_resumed")}
-            onHandoffTimingEvent={onHandoffTimingEvent}
-            autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
-            micEngine={micEngine}
-            preconnectSignal={autoCaptureVoice && preconnectQuestionId === question.id ? question.id : null}
-            onAssessmentChange={(attemptId, assessment, context) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { ...context, state: assessment } }))}
-          />
-          <div className="mt-4 flex flex-col gap-3 border-t border-base-300 pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs leading-5 text-muted-foreground" role="status" aria-live="polite">{persistenceLabel}</p>
-            <button type="button" className="btn btn-error btn-outline min-h-11 gap-2 rounded-full self-start sm:self-auto" onClick={leaveInterview}><PhoneOff className="size-4" aria-hidden="true" /> Sair sem concluir</button>
-          </div>
         </section>
+
+        <div className="rm-meta">
+          <p className="ds-hint text-text-2" role="status" aria-live="polite">{persistenceLabel}</p>
+          <button type="button" className="ds-btn ds-btn-quiet rm-leave" onClick={leaveInterview}><PhoneOff className="size-4" aria-hidden="true" /> Sair sem concluir</button>
+        </div>
       </div>
     </main>
   );
@@ -743,19 +690,19 @@ function CandidateCaptionBlock({ caption }: { caption: CandidateCaption }) {
     if (element) element.scrollTop = element.scrollHeight;
   }, [caption]);
   return (
-    <div className="border-t border-base-300 bg-base-100/95 px-4 py-3 sm:px-6 sm:py-4">
-      <p className="text-xs font-medium text-muted-foreground">VOCÊ</p>
+    <div className="rm-you-caption">
+      <p className="rm-caption-label">Você</p>
       {/* Display-only and updated several times per second, so it is deliberately not announced to screen readers. */}
-      <div ref={scrollRef} className="mt-1 h-[4.5rem] overflow-y-auto text-sm leading-6 sm:text-base sm:leading-6" lang="en" aria-live="off" data-testid="candidate-caption">
+      <div ref={scrollRef} lang="en" aria-live="off" data-testid="candidate-caption">
         <span>{caption.committed}</span>
         {caption.committed && caption.partial ? " " : null}
-        <span className="text-muted-foreground">{caption.partial}</span>
+        <span className="text-text-2">{caption.partial}</span>
       </div>
     </div>
   );
 }
 
-function CandidateCamera({ initialEnabled, active, captureState, caption, captionsEnabled }: { initialEnabled: boolean; active: boolean; captureState: VoiceCaptureState; caption: CandidateCaption; captionsEnabled: boolean }) {
+function CandidateCamera({ initialEnabled, active, yourTurn, captureState, caption, captionsEnabled }: { initialEnabled: boolean; active: boolean; yourTurn: boolean; captureState: VoiceCaptureState; caption: CandidateCaption; captionsEnabled: boolean }) {
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraState, setCameraState] = useState<"off" | "requesting" | "on" | "error">("off");
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -817,35 +764,25 @@ function CandidateCamera({ initialEnabled, active, captureState, caption, captio
     stopMediaStreamTracks(streamRef.current);
   }, []);
 
+  const youLive = captureState === "listening" || captureState === "detected" || captureState === "finalizing";
+  const youState = captureState === "detected" || captureState === "listening" ? "Você está falando" : captureState === "finalizing" ? "Processando sua resposta" : "Sua vez de responder";
   return (
-    <section className={`relative flex min-h-[270px] flex-col overflow-hidden rounded-xl border border-base-300 bg-base-200 sm:min-h-[min(56vh,540px)] ${captureState === "listening" || captureState === "detected" || captureState === "finalizing" ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`} aria-label="Você">
-      <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-5 py-8 text-center">
-        {cameraEnabled && stream ? <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 size-full object-cover" aria-label="Prévia local da sua câmera" /> : <div className="relative"><VideoOff className="mx-auto size-10 text-muted-foreground" aria-hidden="true" /><p className="mt-4 font-[family-name:var(--font-display)] text-3xl tracking-[-0.02em] sm:text-4xl">Você</p><p className="mt-2 text-sm text-muted-foreground">{captureState === "detected" || captureState === "listening" ? "Você está falando" : captureState === "finalizing" ? "Processando sua resposta" : "Sua vez de responder"}</p></div>}
-        {cameraEnabled && stream && <span className="absolute left-4 top-4 rounded-md bg-base-100/90 px-3 py-2 text-sm font-medium">Você · câmera local</span>}
+    <section className="rm-you" data-speaking={youLive ? "true" : undefined} aria-label="Você">
+      <div className="rm-you-body">
+        {cameraEnabled && stream ? <video ref={videoRef} autoPlay muted playsInline aria-label="Prévia local da sua câmera" /> : <VideoOff className="rm-you-icon size-8" aria-hidden="true" />}
+        {cameraEnabled && stream && <span className="rm-cam-label">Você · câmera local</span>}
         {cameraState === "requesting" && <span className="loading loading-spinner loading-sm absolute right-4 top-4" aria-label="Iniciando câmera" />}
+        <div className={cameraEnabled && stream ? "absolute inset-x-0 bottom-3 flex justify-center" : "flex flex-col items-center gap-2"}>
+          {!(cameraEnabled && stream) && <p className="text-lg font-semibold tracking-[-0.015em]">Você</p>}
+          <p className="rm-chip" data-tone={youLive ? "live" : yourTurn ? "turn" : undefined}>{youLive && <span className="rm-dot" aria-hidden="true" />}{youState}</p>
+        </div>
       </div>
       {shouldShowCandidateCaption({ enabled: captionsEnabled, captureState, caption }) && <CandidateCaptionBlock caption={caption} />}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-base-300 px-4 py-3">
-        <p className="max-w-[48ch] text-xs leading-5 text-muted-foreground">A câmera é uma prévia local e não é enviada nem salva.</p>
-        <button type="button" className="btn btn-sm min-h-11 gap-2" onClick={() => cameraEnabled || cameraState === "requesting" ? turnCameraOff() : void turnCameraOn()} aria-pressed={cameraEnabled} disabled={!active}><Video className="size-4" aria-hidden="true" />{cameraEnabled ? "Desligar câmera" : cameraState === "requesting" ? "Cancelar câmera" : cameraState === "error" ? "Tentar câmera" : "Ligar câmera"}</button>
+      <div className="rm-you-foot">
+        <p className="ds-hint text-text-2">A câmera é uma prévia local e não é enviada nem salva.</p>
+        <button type="button" className="ds-btn ds-btn-soft rm-btn-sm" onClick={() => cameraEnabled || cameraState === "requesting" ? turnCameraOff() : void turnCameraOn()} aria-pressed={cameraEnabled} disabled={!active}><Video className="size-4" aria-hidden="true" />{cameraEnabled ? "Desligar câmera" : cameraState === "requesting" ? "Cancelar câmera" : cameraState === "error" ? "Tentar câmera" : "Ligar câmera"}</button>
       </div>
-      {cameraError && <p className="px-4 pb-3 text-sm text-warning-content" role="status">{cameraError}</p>}
+      {cameraError && <p className="px-4 pb-3 text-sm text-[var(--ds-warning)]" role="status">{cameraError}</p>}
     </section>
   );
-}
-
-function clarityLabel(value: InterviewReportResult["englishCommunication"]["clarity"]) {
-  return value === "CLEAR" ? "Clara" : value === "MOSTLY_CLEAR" ? "Na maior parte clara" : "Precisa de mais clareza";
-}
-
-type EvidenceCounts = NonNullable<InterviewReportResult["evidenceReview"]>["englishPatterns"];
-
-function EvidenceCountNote({ counts }: { counts: EvidenceCounts | undefined }) {
-  const note = partialEvidenceReviewNote(counts);
-  return note ? <p className="mt-2 text-xs leading-5 text-muted-foreground">{note}</p> : null;
-}
-
-function patternLabel(value: InterviewReportResult["englishCommunication"]["patterns"][number]["type"]) {
-  const labels: Record<typeof value, string> = { GRAMMAR: "Gramática", WORD_CHOICE: "Escolha de palavras", FALSE_COGNATE: "Falso cognato", STRUCTURE: "Estrutura da resposta" };
-  return labels[value];
 }
