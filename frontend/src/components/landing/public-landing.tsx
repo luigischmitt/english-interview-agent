@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { ReportDemo } from "@/components/landing/report-demo";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 import "./landing.css";
 
@@ -93,6 +94,7 @@ export function PublicLanding() {
             <a href="#relatorio" className="lp-link">O relatório</a>
           </div>
           <div className="lp-nav-actions">
+            <ThemeToggle />
             <Link href="/login" className="lp-link">Entrar</Link>
             <Link href="/signup" className="ds-btn lp-btn-green lp-nav-cta">
               <span className="lp-nav-cta-long">Fazer entrevista grátis</span>

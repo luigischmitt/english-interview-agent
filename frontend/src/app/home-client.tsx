@@ -20,6 +20,7 @@ import {
 
 import { SessionExpiredNotice } from "@/components/auth/session-expired-notice";
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { composeContextualOpening } from "@/lib/interview/speech-playback.mjs";
 import { storeRoomHandoff } from "@/lib/interview/room-handoff.mjs";
@@ -84,7 +85,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
         priority
       />
       {!compact && (
-        <span className="whitespace-nowrap text-sm font-semibold tracking-[-0.01em]">
+        <span className="whitespace-nowrap text-sm font-semibold tracking-[-0.01em] max-[419px]:sr-only">
           English Interview Agent
         </span>
       )}
@@ -206,6 +207,7 @@ function Topbar({ view }: { view: View }) {
         )}
       </p>
       <div className="shl-signout flex items-center gap-2">
+        <ThemeToggle />
         <SignOutButton />
       </div>
     </header>

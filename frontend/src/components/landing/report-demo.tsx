@@ -105,15 +105,15 @@ export function ReportDemo() {
           </div>
           <svg viewBox="0 0 300 300" width={280} height={280} className="block max-w-full overflow-visible" role="img" aria-label="Radar com seis dimensões do inglês: artigos, preposições, tempos verbais, ritmo, falsos cognatos e pronúncia.">
             {[130, 100, 70, 40].map((r) => (
-              <circle key={r} cx={150} cy={150} r={r} fill="none" stroke="#c9d8cf" strokeDasharray="3 4" />
+              <circle key={r} cx={150} cy={150} r={r} fill="none" stroke="var(--ds-chart-ring)" strokeDasharray="3 4" />
             ))}
-            <line x1={150} y1={20} x2={150} y2={280} stroke="#d5e1d9" />
-            <line x1={37.4} y1={85} x2={262.6} y2={215} stroke="#d5e1d9" />
-            <line x1={37.4} y1={215} x2={262.6} y2={85} stroke="#d5e1d9" />
+            <line x1={150} y1={20} x2={150} y2={280} stroke="var(--ds-chart-axis)" />
+            <line x1={37.4} y1={85} x2={262.6} y2={215} stroke="var(--ds-chart-axis)" />
+            <line x1={37.4} y1={215} x2={262.6} y2={85} stroke="var(--ds-chart-axis)" />
             <polygon
               points={polygonPoints}
-              fill="rgba(31,107,69,0.14)"
-              stroke="#1f6b45"
+              fill="color-mix(in srgb, var(--ds-green) 14%, transparent)"
+              stroke="var(--ds-green)"
               strokeWidth={2}
               strokeLinejoin="round"
               style={{
@@ -139,7 +139,7 @@ export function ReportDemo() {
                     y1={150}
                     x2={axis.x}
                     y2={axis.y}
-                    stroke={active ? "#1f6b45" : "transparent"}
+                    stroke={active ? "var(--ds-green)" : "transparent"}
                     strokeWidth={active ? 2 : 1}
                     style={{ transition: "stroke .2s, stroke-width .2s" }}
                   />
@@ -150,7 +150,7 @@ export function ReportDemo() {
                     cx={point.x}
                     cy={point.y}
                     r={active ? 6.5 : 3.5}
-                    fill={active ? "#1f6b45" : "#0e2a1f"}
+                    fill={active ? "var(--ds-green)" : "var(--ds-ink)"}
                     style={{ transition: "r .2s, fill .2s", opacity: revealed ? 1 : 0 }}
                   />
                 </g>

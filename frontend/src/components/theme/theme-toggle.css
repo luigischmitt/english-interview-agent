@@ -1,0 +1,23 @@
+/*
+ * Theme toggle (Claro / Escuro / Sistema): a compact radiogroup of three icon buttons. Prefix `thm-`.
+ * Targets are 2.25rem inside the group (the group adds the padding); consumes --ds-* tokens.
+ */
+.thm-toggle { display: inline-flex; flex: none; align-items: center; gap: 0.125rem; border-radius: var(--ds-r-pill); background: var(--ds-track); padding: 0.125rem; }
+.thm-item {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border-radius: var(--ds-r-pill);
+  color: var(--ds-text-2);
+  cursor: pointer;
+  transition: background-color var(--ds-dur-fast) ease, color var(--ds-dur-fast) ease, transform var(--ds-dur-press) var(--ease-out);
+}
+.thm-item:active { transform: scale(0.95); }
+.thm-item:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
+.thm-item[aria-checked="true"] { background: var(--ds-thumb); color: var(--ds-ink); box-shadow: var(--ds-shadow-thumb); }
+.thm-item[aria-checked="true"] svg { color: var(--ds-green); }
+@media (hover: hover) and (pointer: fine) {
+  .thm-item:hover:not([aria-checked="true"]) { color: var(--ds-ink); background: var(--ds-hover-wash); }
+}
+@media (prefers-reduced-motion: reduce) { .thm-item:active { transform: none; } }

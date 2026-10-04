@@ -1,0 +1,11 @@
+export type ColorPreference = "light" | "dark" | "system";
+export type ColorScheme = "light" | "dark";
+export const COLOR_SCHEME_STORAGE_KEY: string;
+export const COLOR_PREFERENCES: readonly ColorPreference[];
+export const THEME_BOOTSTRAP_SCRIPT: string;
+export function parseColorPreference(stored: unknown): ColorPreference;
+export function resolveColorScheme(preference: unknown, systemPrefersDark: boolean): ColorScheme;
+export function daisyThemeFor(scheme: ColorScheme): string;
+export function readStoredPreference(storage: Pick<Storage, "getItem"> | null | undefined): ColorPreference;
+export function writeStoredPreference(storage: Pick<Storage, "setItem" | "removeItem"> | null | undefined, preference: ColorPreference): boolean;
+export function applyColorScheme(root: HTMLElement, scheme: ColorScheme): void;

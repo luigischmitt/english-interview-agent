@@ -42,12 +42,47 @@
   --noise: 0;
 }
 
+@plugin "daisyui/theme" {
+  name: "interview-dark";
+  default: false;
+  prefersdark: false;
+  color-scheme: dark;
+  --color-base-100: #121316;
+  --color-base-200: #1b1d22;
+  --color-base-300: #2a2d33;
+  --color-base-content: #ecebe4;
+  --color-primary: #1f6b45;
+  --color-primary-content: #f3f4ee;
+  --color-secondary: #1c3328;
+  --color-secondary-content: #ecebe4;
+  --color-accent: #2a2d33;
+  --color-accent-content: #ecebe4;
+  --color-neutral: #a6aba5;
+  --color-neutral-content: #121316;
+  --color-info: #a6aba5;
+  --color-info-content: #121316;
+  --color-success: #5fd08f;
+  --color-success-content: #121316;
+  --color-warning: #33291a;
+  --color-warning-content: #ecd491;
+  --color-error: #f2a893;
+  --color-error-content: #3a2119;
+  --radius-selector: 0.75rem;
+  --radius-field: 0.875rem;
+  --radius-box: 1.25rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
 @theme {
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is([data-color-scheme="dark"] *));
 
 @theme inline {
   --color-background: var(--background);
@@ -66,7 +101,12 @@
   --color-tint: var(--ds-tint);
   --color-track: var(--ds-track);
   --color-text-2: var(--ds-text-2);
+  --color-green-solid: var(--ds-green-solid);
+  --color-on-green: var(--ds-on-green);
+  --color-text-3: var(--ds-text-3);
+  --color-on-panel-accent: var(--ds-on-panel-accent);
   --color-danger: var(--ds-error);
+  --color-danger-ring: var(--ds-error-ring);
   --color-danger-tint: var(--ds-error-tint);
   --color-warn-tint: var(--ds-warning-tint);
   --shadow-card: var(--ds-shadow-card);
@@ -145,6 +185,40 @@
   --sidebar-ring: #1f6b45;
 }
 
+:root[data-color-scheme="dark"] {
+  --background: #121316;
+  --foreground: #ecebe4;
+  --card: #1b1d22;
+  --card-foreground: #ecebe4;
+  --popover: #23262c;
+  --popover-foreground: #ecebe4;
+  --primary: #1f6b45;
+  --primary-foreground: #f3f4ee;
+  --secondary: #1c3328;
+  --secondary-foreground: #ecebe4;
+  --muted: #24272d;
+  --muted-foreground: #a6aba5;
+  --accent: #2a2d33;
+  --accent-foreground: #ecebe4;
+  --destructive: #f2a893;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.14);
+  --ring: #5fd08f;
+  --chart-1: #5fd08f;
+  --chart-2: #8fb9a0;
+  --chart-3: #6f8f7e;
+  --chart-4: #4b6a58;
+  --chart-5: #2a2d33;
+  --sidebar: #17191d;
+  --sidebar-foreground: #ecebe4;
+  --sidebar-primary: #1f6b45;
+  --sidebar-primary-foreground: #f3f4ee;
+  --sidebar-accent: #2a2d33;
+  --sidebar-accent-foreground: #ecebe4;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: #5fd08f;
+}
+
 /*
  * Design tokens (source of truth: DESIGN.md). Plain CSS variables so they work in any stylesheet, inline style,
  * or Tailwind arbitrary value: bg-[var(--ds-tint)]. The most common ones are also exposed as Tailwind utilities
@@ -154,7 +228,10 @@
   /* Color */
   --ds-ink: #0e2a1f;          /* text, dark panels      13.9:1 on cream */
   --ds-green: #1f6b45;        /* primary                 5.9:1 on cream, cream on green 5.9:1 */
-  --ds-green-deep: #17563a;   /* primary hover, text on tint 7.5:1 */
+  --ds-green-deep: #17563a;   /* text on tint 7.5:1 (lighter green in dark) */
+  --ds-green-solid: #1f6b45;  /* fill behind --ds-on-green text: buttons, badges, check marks */
+  --ds-green-solid-hover: #17563a;
+  --ds-on-green: #f3f4ee;     /* text/icons on --ds-green-solid, 5.9:1 */
   --ds-cream: #f3f4ee;        /* page background */
   --ds-surface: #fbfbf7;      /* cards */
   --ds-field: #f1f3ec;        /* inputs, option cards, quiet wells */
@@ -163,7 +240,48 @@
   --ds-tint: #e6f1ea;         /* selected, success, soft button */
   --ds-tint-hover: #d8eadf;
   --ds-text-2: #44604f;       /* secondary text         6.2:1 on cream/field */
+  --ds-text-3: #5c7a6a;       /* tertiary state labels */
   --ds-placeholder: #75897d;  /* placeholder only (3.3:1): never for real content */
+  --ds-sidebar: #f1f3ec;      /* sidebar ground (= field in light) */
+  --ds-popover: #ffffff;      /* popovers, combobox list */
+  --ds-thumb: #ffffff;        /* raised thumb in tracks, tabs, nav */
+  --ds-field-focus: #ffffff;  /* field background while focused */
+  --ds-radio-bg: #ffffff;
+  --ds-knob: #ffffff;         /* switch knob */
+  --ds-switch-on: #1f6b45;
+  --ds-inverse-bg: #f3f4ee;   /* button / badge that sits on a dark panel */
+  --ds-inverse-fg: #0e2a1f;
+  --ds-inverse-hover: #ffffff;
+  --ds-panel: #0e2a1f;        /* dark summary panels (setup aside, home hero, report priorities, landing CTA) */
+  --ds-on-panel: #f3f4ee;
+  --ds-on-panel-accent: #9fc4ac;
+  --ds-panel-line: rgba(243, 244, 238, 0.14);
+  --ds-panel-wash: rgba(243, 244, 238, 0.1);
+  --ds-panel-wash-faint: rgba(243, 244, 238, 0.07);
+  --ds-panel-glow: rgba(31, 107, 69, 0.55);
+  --ds-overlay: rgba(6, 20, 14, 0.6);        /* modal backdrop */
+  --ds-chart-ring: #c9d8cf;
+  --ds-chart-axis: #d5e1d9;
+  --ds-forest-filter: none;  /* landing illustrations */
+  --ds-forest-opacity: 0.9;
+  /* Interview stage (call-stage.css): tile, captions, dock, toasts */
+  --ds-tile-shadow: 0 1px 2px rgba(14, 42, 31, 0.05), 0 22px 44px -26px rgba(14, 42, 31, 0.28);
+  --ds-avatar: #e6ebe2;
+  --ds-avatar-you: #dfe6dc;
+  --ds-caption-bg: rgba(14, 42, 31, 0.9);
+  --ds-caption-text: #f7f8f3;
+  --ds-caption-accent: #6fd9a0;
+  --ds-tooltip-bg: #0e2a1f;
+  --ds-dock-bg: rgba(251, 251, 247, 0.92);
+  --ds-btn-off-hover: #17402e;
+  --ds-dialog: #f3f4ee;
+  --ds-danger-solid: #d9533a;
+  --ds-danger-solid-hover: #c1442d;
+  --ds-on-danger: #ffffff;
+  --ds-shadow-float: 0 10px 30px -10px rgba(0, 0, 0, 0.55);
+  --ds-shadow-dock: 0 14px 36px -12px rgba(0, 0, 0, 0.45);
+  --ds-shadow-dialog: 0 30px 80px -20px rgba(0, 0, 0, 0.7);
+  --ds-shadow-pip: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
   --ds-line: rgba(14, 42, 31, 0.09);        /* inset hairline on fields and popovers */
   --ds-line-strong: #9bb3a5;                /* unchecked radio ring */
   --ds-hover-wash: rgba(14, 42, 31, 0.06);
@@ -178,6 +296,7 @@
   --ds-success: var(--ds-green);
   --ds-success-tint: var(--ds-tint);
   --ds-focus-halo: rgba(31, 107, 69, 0.14);
+  --ds-green-wash: rgba(31, 107, 69, 0.12);  /* highlight behind corrected phrases, chart areas */
   --ds-error-halo: rgba(201, 105, 74, 0.12);
 
   /* Radii */
@@ -195,6 +314,12 @@
   --ds-shadow-pop: 0 2px 6px rgba(14, 42, 31, 0.06), 0 18px 40px -12px rgba(14, 42, 31, 0.22);
   --ds-shadow-thumb: 0 1px 2px rgba(14, 42, 31, 0.1), 0 2px 8px -2px rgba(14, 42, 31, 0.12);
   --ds-shadow-panel: 0 24px 48px -24px rgba(14, 42, 31, 0.5);
+  --ds-shadow-report: 0 2px 4px rgba(14, 42, 31, 0.05), 0 40px 80px -36px rgba(14, 42, 31, 0.5);
+  --ds-shadow-bar: 0 -1px 0 rgba(14, 42, 31, 0.06), 0 -12px 32px -12px rgba(14, 42, 31, 0.18);
+  --ds-shadow-header: 0 1px 0 var(--ds-line), 0 10px 30px -22px rgba(14, 42, 31, 0.3);
+  --ds-shadow-seg: 0 1px 2px rgba(14, 42, 31, 0.1);
+  --ds-shadow-knob: 0 1px 3px rgba(14, 42, 31, 0.3);
+  --ds-shadow-btn: 0 1px 2px rgba(14, 42, 31, 0.18), 0 12px 24px -14px rgba(31, 107, 69, 0.7);
 
   /* Motion: durations (all <= 300ms) */
   --ds-dur-press: 120ms;
@@ -204,6 +329,86 @@
 
   /* Focus: one ring everywhere */
   --ds-focus-outline: 2px solid var(--ds-green);
+}
+
+/*
+ * Dark scheme: graphite (neutral near-black), brand green as accent, cream-ish text. Set on <html data-color-scheme="dark">
+ * by the bootstrap script in layout.tsx (src/lib/theme/color-scheme.mjs). Surfaces rise with lightness; shadows are replaced by
+ * hairlines and elevation tints. Contrast and rationale: DESIGN.md.
+ */
+:root[data-color-scheme="dark"] {
+  --ds-ink: #ecebe4;           /* text 15.5:1 on page, 14.1:1 on surface */
+  --ds-green: #5fd08f;         /* accent text, rings, icons: 9.7:1 on page, 7.0:1 on tint */
+  --ds-green-deep: #8fe3b2;    /* text on tint 8.9:1 */
+  --ds-green-solid: #1f6b45;
+  --ds-green-solid-hover: #27794f;  /* on-green text stays 4.8:1 */
+  --ds-on-green: #f3f4ee;
+  --ds-cream: #121316;         /* page */
+  --ds-surface: #1b1d22;       /* cards */
+  --ds-field: #24272d;         /* inputs, option cards, wells */
+  --ds-field-hover: #2b2f36;
+  --ds-track: #101114;         /* inset tracks */
+  --ds-tint: #1c3328;          /* selected, success, soft button */
+  --ds-tint-hover: #234232;
+  --ds-text-2: #a6aba5;        /* 8.0:1 on page, 7.2:1 on surface, 6.4:1 on field */
+  --ds-text-3: #8d938d;
+  --ds-placeholder: #858a85;   /* 4.3:1 on field */
+  --ds-sidebar: #17191d;
+  --ds-popover: #23262c;
+  --ds-thumb: #3a3e46;
+  --ds-field-focus: #2a2d34;
+  --ds-radio-bg: #101114;
+  --ds-knob: #f3f4ee;
+  --ds-switch-on: #2e9461;
+  --ds-inverse-bg: #ecebe4;
+  --ds-inverse-fg: #15171a;
+  --ds-inverse-hover: #ffffff;
+  --ds-panel: #2a2e35;
+  --ds-on-panel: #ecebe4;
+  --ds-on-panel-accent: #8fe3b2;
+  --ds-panel-line: rgba(255, 255, 255, 0.12);
+  --ds-panel-wash: rgba(255, 255, 255, 0.09);
+  --ds-panel-wash-faint: rgba(255, 255, 255, 0.06);
+  --ds-panel-glow: rgba(95, 208, 143, 0.16);
+  --ds-overlay: rgba(0, 0, 0, 0.62);
+  --ds-line: rgba(255, 255, 255, 0.09);
+  --ds-line-strong: #7b817b;
+  --ds-hover-wash: rgba(255, 255, 255, 0.07);
+  --ds-hover-wash-faint: rgba(255, 255, 255, 0.04);
+  --ds-switch-off: #3b3f46;
+  --ds-switch-disabled: #2a2d33;
+  --ds-error: #f2a893;         /* 7.7:1 on error tint */
+  --ds-error-ring: #e0745a;
+  --ds-error-tint: #3a2119;
+  --ds-warning: #ecd491;
+  --ds-warning-tint: #33291a;
+  --ds-focus-halo: rgba(95, 208, 143, 0.22);
+  --ds-error-halo: rgba(224, 116, 90, 0.22);
+  --ds-green-wash: rgba(95, 208, 143, 0.16);
+  --ds-chart-ring: #3a3e46;
+  --ds-chart-axis: #2e3137;
+  --ds-forest-filter: brightness(0.62) saturate(0.85);
+  --ds-forest-opacity: 0.8;
+  --ds-tile-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 18px 40px -22px rgba(0, 0, 0, 0.8);
+  --ds-avatar: #2a2d34;
+  --ds-avatar-you: #34383f;
+  --ds-caption-bg: rgba(10, 11, 14, 0.82);
+  --ds-caption-text: #f7f8fa;
+  --ds-tooltip-bg: #000000;
+  --ds-dock-bg: rgba(32, 34, 40, 0.86);
+  --ds-btn-off-hover: #ffffff;
+  --ds-dialog: #23262c;
+
+  --ds-shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 10px 24px -16px rgba(0, 0, 0, 0.55);
+  --ds-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 14px 32px -12px rgba(0, 0, 0, 0.6);
+  --ds-shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ds-shadow-panel: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 18px 36px -24px rgba(0, 0, 0, 0.6);
+  --ds-shadow-report: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 30px 60px -36px rgba(0, 0, 0, 0.7);
+  --ds-shadow-bar: 0 -1px 0 rgba(255, 255, 255, 0.08);
+  --ds-shadow-header: 0 1px 0 var(--ds-line);
+  --ds-shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ds-shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --ds-shadow-btn: 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 @layer base {
@@ -270,5 +475,15 @@
   }
   to {
     transform: translateY(-14px);
+  }
+}
+
+/* Theme switch by the user: a short color transition, armed by the toggle for ~200ms only (never on load). */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme-transition],
+  html[data-theme-transition] *,
+  html[data-theme-transition] *::before,
+  html[data-theme-transition] *::after {
+    transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, fill 180ms ease, stroke 180ms ease !important;
   }
 }
