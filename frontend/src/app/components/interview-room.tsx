@@ -18,7 +18,7 @@ import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 import { analyzeTurnWithRetry, resolveReportAtEnd, settleTurnAnalyses, turnAnalysisWaitMs } from "@/lib/interview/report-incremental.mjs";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
-import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
+import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion, stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { useMicEngine } from "../hooks/use-mic-engine";
@@ -313,7 +313,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   /** Speech to pre-synthesize for a prepared decision, or null when the decision ends the interview or audio is off. */
   const utteranceForDecision = (decision: TurnDecision): string | null => {
-    if (!config.playInterviewerAudio || hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) return null;
+    if (!config.playInterviewerAudio || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) return null;
     if (decision.decision === "FOLLOW_UP") return composeAcknowledgedQuestion(decision.acknowledgement, decision.followUpQuestion);
     if (!decision.nextQuestion) return null;
     const matchedFixedIndex = questions.findIndex((plannedQuestion, index) => index > currentIndex && plannedQuestion.prompt === decision.nextQuestion);
@@ -327,7 +327,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (submitInFlightRef.current || leftRef.current || !mountedRef.current) return;
     if (phaseRef.current !== "answering" || currentQuestionIdRef.current !== question.id) return;
     const answer = provisionalTranscript.trim();
-    if (!answer || timeLimitReached || hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) return;
+    if (!answer || timeLimitReached || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) return;
     const turns = appendInterviewReportPair(reportTurnsRef.current, {
       questionSequenceNumber,
       candidateSequenceNumber: questionSequenceNumber + 1,
@@ -384,7 +384,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     setAnswerError(null);
     setSpeechMessage(null);
 
-    if (finishAfter || timeLimitReached || hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) {
+    // Too little time left for another question: skip the decision call and close.
+    if (finishAfter || timeLimitReached || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) {
       submitInFlightRef.current = false;
       transitionPhase("closing");
       return;
@@ -417,7 +418,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (!mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
     decisionAbortRef.current = null;
     submitInFlightRef.current = false;
-    if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)) {
+    if (!hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) {
       transitionPhase("closing");
     } else if (decision.decision === "FOLLOW_UP") {
       if (decision.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, decision.acknowledgement].slice(-5);
@@ -476,8 +477,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     advanceTimerRef.current = window.setTimeout(() => {
       advanceTimerRef.current = null;
       if (!mountedRef.current || generation !== generationRef.current) return;
-      if (hasReachedTimeLimit(elapsedSecondsRef.current, durationMinutes)
-        || !canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, currentIndex + 1, questions.length)) {
+      if (!canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, currentIndex + 1, questions.length)) {
         transitionPhase("closing");
         return;
       }

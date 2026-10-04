@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, interviewDurationOptions, nextAutoStartSignal, nullableQuestionCount, stopMediaStreamTracks } from "../src/lib/interview/session-policy.mjs";
+import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasReachedTimeLimit, hasTimeForNextQuestion, interviewDurationOptions, minimumSecondsForNextQuestion, nextAutoStartSignal, nullableQuestionCount, stopMediaStreamTracks } from "../src/lib/interview/session-policy.mjs";
 
 test("the time limit never cuts an active answer, but blocks starting another question", () => {
   const durationMinutes = 5;
@@ -8,7 +8,20 @@ test("the time limit never cuts an active answer, but blocks starting another qu
   assert.equal(hasReachedTimeLimit(elapsedAtAnswerStart, durationMinutes), false);
   assert.equal(hasReachedTimeLimit(5 * 60, durationMinutes), true);
   assert.equal(canStartNextQuestion(5 * 60, durationMinutes, 1, 8), false);
-  assert.equal(canStartNextQuestion(4 * 60 + 59, durationMinutes, 1, 8), true);
+  assert.equal(canStartNextQuestion(4 * 60 + 59, durationMinutes, 1, 8), false);
+  assert.equal(canStartNextQuestion(3 * 60, durationMinutes, 1, 8), true);
+});
+
+test("a new question or follow-up needs at least the reserve of time remaining", () => {
+  const limit = 5 * 60;
+  assert.equal(minimumSecondsForNextQuestion, 30);
+  assert.equal(hasTimeForNextQuestion(limit - 31, 5), true);
+  assert.equal(hasTimeForNextQuestion(limit - 30, 5), true);
+  assert.equal(hasTimeForNextQuestion(limit - 29, 5), false);
+  assert.equal(hasTimeForNextQuestion(limit, 5), false);
+  assert.equal(canStartNextQuestion(limit - 30, 5, 1, 8), true);
+  assert.equal(canStartNextQuestion(limit - 29, 5, 1, 8), false);
+  assert.equal(canStartNextQuestion(limit - 120, 5, 8, 8), false);
 });
 
 test("the report generation gate can be claimed exactly once", () => {
