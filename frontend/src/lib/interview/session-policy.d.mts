@@ -1,4 +1,6 @@
 export function hasReachedTimeLimit(elapsedSeconds: number, durationMinutes: number): boolean;
+export const minimumSecondsForNextQuestion: number;
+export function hasTimeForNextQuestion(elapsedSeconds: number, durationMinutes: number): boolean;
 export function canStartNextQuestion(elapsedSeconds: number, durationMinutes: number, nextIndex: number, questionCount: number): boolean;
 export function createOnceGate(): () => boolean;
 export function nextAutoStartSignal(signal: string | null, disabled: boolean, lastSignal: string | null): string | null;

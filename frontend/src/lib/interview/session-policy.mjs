@@ -2,8 +2,16 @@ export function hasReachedTimeLimit(elapsedSeconds, durationMinutes) {
   return elapsedSeconds >= Math.max(5, durationMinutes) * 60;
 }
 
+/** Below this much remaining time there is no room for a meaningful answer, so the interviewer closes instead of asking. */
+export const minimumSecondsForNextQuestion = 30;
+
+export function hasTimeForNextQuestion(elapsedSeconds, durationMinutes) {
+  const remainingSeconds = Math.max(5, durationMinutes) * 60 - elapsedSeconds;
+  return remainingSeconds >= minimumSecondsForNextQuestion;
+}
+
 export function canStartNextQuestion(elapsedSeconds, durationMinutes, nextIndex, questionCount) {
-  return !hasReachedTimeLimit(elapsedSeconds, durationMinutes) && nextIndex < questionCount;
+  return hasTimeForNextQuestion(elapsedSeconds, durationMinutes) && nextIndex < questionCount;
 }
 
 export function createOnceGate() {
