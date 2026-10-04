@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchVoiceStatus, startVoiceReadinessPolling, type VoiceReadinessState } from "@/lib/interview/voice-readiness.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
+import { installAudioUnlockOnFirstGesture, unlockSharedAudio } from "@/lib/interview/audio-unlock.mjs";
 import { playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech, warmUpInterviewerSpeech, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
 
 export type SpeechTimingEvent = "synthesis-started" | "synthesis-completed" | "playback-started";
@@ -10,10 +11,15 @@ const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:
 
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
 
-/** Wakes the voice service once when the component mounts (fire-and-forget). */
+/**
+ * Wakes the voice service once when the component mounts (fire-and-forget) and arms the one-time audio unlock: the
+ * first tap/click/key anywhere unlocks the shared playback elements, which iOS needs before it lets the interviewer
+ * speak without a gesture (the interview starts on another route, but the document and its elements survive).
+ */
 export function useSpeechWarmup() {
   useEffect(() => {
     warmUpInterviewerSpeech(speechEndpoint, authorizedFetch);
+    installAudioUnlockOnFirstGesture();
   }, []);
 }
 
@@ -38,6 +44,8 @@ export function prewarmInterviewerUtterance(utterance: string) {
 export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void) {
   const [activeSegment, setActiveSegment] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
+  // The browser refused to start audio without a tap; the room offers a button whose click unlocks and replays.
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const playbackRef = useRef<SpeechPlayback | null>(null);
   // A manual "Tentar de novo" playback; it never advances the interview, only replays the current utterance.
   const retryRef = useRef<SpeechPlayback | null>(null);
@@ -82,7 +90,10 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
       if (cancelled || result.status === "cancelled") return;
       playbackRef.current = null;
       setActiveSegment(null);
-      if (result.status === "unavailable") setSpeechMessage(result.message);
+      if (result.status === "unavailable") {
+        setAudioBlocked(result.reason === "autoplay_blocked");
+        setSpeechMessage(result.message);
+      }
       onReady();
     });
 
@@ -101,17 +112,23 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
 
   /** Requests the speech for the current utterance again after a failure; the interview flow is not affected. */
   const retrySpeech = useCallback(() => {
+    // Runs inside the click: unlock the playback elements before any async work.
+    unlockSharedAudio(true);
     retryRef.current?.cancel();
     setSpeechMessage(null);
+    setAudioBlocked(false);
     const playback = startPlayback(segmentsRef.current);
     retryRef.current = playback;
     void playback.promise.then((result) => {
       if (retryRef.current !== playback || result.status === "cancelled") return;
       retryRef.current = null;
       setActiveSegment(null);
-      if (result.status === "unavailable") setSpeechMessage(result.message);
+      if (result.status === "unavailable") {
+        setAudioBlocked(result.reason === "autoplay_blocked");
+        setSpeechMessage(result.message);
+      }
     });
   }, [startPlayback]);
 
-  return { activeSegment, speechMessage, setSpeechMessage, cancelPlayback, retrySpeech };
+  return { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech };
 }

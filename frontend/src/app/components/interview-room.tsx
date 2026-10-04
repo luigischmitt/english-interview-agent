@@ -185,7 +185,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     () => splitInterviewerSpeech(currentUtterance),
     [currentUtterance],
   );
-  const { activeSegment, speechMessage, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted);
+  const { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
   const currentAssessmentSamples = assessmentSamples(voiceAssessments);
   const currentAzureSummary = summarizeAzureAssessments(currentAssessmentSamples);
@@ -604,7 +604,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           )}
           {speechMessage && (
             // Replaying would be picked up by an open microphone, so the retry is offered only while it is idle.
-            <Toast tone="warn" actions={phase === "answering" && voiceCaptureState === "idle" ? <button type="button" className="mt-toast-btn" onClick={retrySpeech}>Tentar de novo</button> : undefined}>{speechMessage}</Toast>
+            <Toast tone="warn" actions={phase === "answering" && voiceCaptureState === "idle" ? <button type="button" className="mt-toast-btn" onClick={retrySpeech}>{audioBlocked ? "Ouvir" : "Tentar de novo"}</button> : undefined}>{speechMessage}</Toast>
           )}
           {answerError && <Toast tone="error" role="alert" onDismiss={() => setAnswerError(null)}>{answerError}</Toast>}
           {camera.cameraError && <Toast tone="warn" onDismiss={camera.dismissError}>{camera.cameraError}</Toast>}
