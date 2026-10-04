@@ -72,12 +72,8 @@ export function SectionHeading({
 }) {
   return (
     <div>
-      <h2 className="text-base font-semibold tracking-[-0.01em]">{title}</h2>
-      {description && (
-        <p className="mt-1 text-sm leading-5 text-muted-foreground">
-          {description}
-        </p>
-      )}
+      <h2 className="ds-h2">{title}</h2>
+      {description && <p className="ds-small mt-1">{description}</p>}
     </div>
   );
 }
