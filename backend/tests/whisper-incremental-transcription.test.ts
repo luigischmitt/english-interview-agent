@@ -396,6 +396,60 @@ describe("semantic end of answer", () => {
     expect(fake.signals[0]!.aborted).toBe(true);
   });
 
+  it("starts the check at the pause and ends on a complete verdict only after the minimum silence", async () => {
+    const fake = classifier(async () => true);
+    const { connect } = await startServer(createWhisper([answerText]).service, options(fake.service, { answerGraceMs: 6_000, incompleteGraceMs: 6_000, prepareAfterMs: 2_000, semanticCheckAfterMs: 0, semanticCompleteMinSilenceMs: 1_200 }));
+    const { socket, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    const silenceStartedAt = Date.now();
+    await speak(socket, 2_000, 0.001);
+    const complete = await waitFor("complete");
+    const elapsed = complete.at - silenceStartedAt;
+    expect(fake.calls).toHaveLength(1);
+    expect(elapsed).toBeGreaterThan(1_000);
+    expect(elapsed).toBeLessThan(1_900);
+    expect(logs()).toContain('"answerEndReason":"semantic_complete"');
+    expect(logs()).toContain('"semanticCheckStartedAfterSilenceMs"');
+    expect(logs()).toContain('"tailStartedAtSilence":1');
+  });
+
+  it("keeps waiting on an incomplete verdict even with a short minimum silence", async () => {
+    const fake = classifier(async () => false);
+    const { connect } = await startServer(createWhisper([answerText]).service, options(fake.service, { answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 2_000, semanticCheckAfterMs: 0, semanticCompleteMinSilenceMs: 300 }));
+    const { socket, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    const silenceStartedAt = Date.now();
+    await speak(socket, 2_200, 0.001);
+    const complete = await waitFor("complete");
+    expect(complete.at - silenceStartedAt).toBeGreaterThan(1_500);
+    expect(logs()).toContain('"answerEndReason":"turn_end_grace"');
+    expect(logs()).toContain('"semanticVerdict":"incomplete"');
+  });
+
+  it("does not end the answer when speech resumes during the minimum-silence hold", async () => {
+    const fake = classifier(async () => true);
+    const { connect } = await startServer(createWhisper([answerText, "And then we added a test."]).service, options(fake.service, { answerGraceMs: 2_500, incompleteGraceMs: 2_500, prepareAfterMs: 2_000, semanticCheckAfterMs: 0, semanticCompleteMinSilenceMs: 1_500 }));
+    const { socket, messages, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    await speak(socket, 700, 0.001);
+    await speak(socket, 800, 0.05);
+    await speak(socket, 2_500, 0.001);
+    const complete = await waitFor("complete");
+    expect(complete.transcript).toContain("And then we added a test.");
+    expect(messages.filter((message) => message.type === "complete")).toHaveLength(1);
+  });
+
+  it("judges the committed transcript when the tail segment is empty (soft-cut answer)", async () => {
+    const fake = classifier(async () => true);
+    const { connect } = await startServer(createWhisper([answerText]).service, options(fake.service, { answerGraceMs: 6_000, incompleteGraceMs: 6_000, prepareAfterMs: 2_000, semanticCheckAfterMs: 0, semanticCompleteMinSilenceMs: 0, incrementalWhisper: { softCutMinBufferedMs: 500, softCutSilenceMs: 200 } }));
+    const { socket, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    await speak(socket, 1_500, 0.001);
+    const complete = await waitFor("complete");
+    expect(complete.transcript).toBe(answerText);
+    expect(fake.calls[0]).toMatchObject({ answer: answerText });
+  });
+
   it("does not call the classifier without a valid question", async () => {
     const fake = classifier(async () => true);
     for (const start of [{}, { question: "q".repeat(401) }]) {

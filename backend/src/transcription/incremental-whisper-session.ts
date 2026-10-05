@@ -27,6 +27,8 @@ export type IncrementalWhisperOptions = {
   segmentTimeoutMs?: number;
   /** A segment request still pending after this long is raced against an identical second request (first success wins). 0 disables. Default 2500. */
   segmentHedgeAfterMs?: number;
+  /** Hedge delay for a segment on the critical path (the tail cut at the end-of-answer pause or at finalization). Default 1500; 0 disables. */
+  tailHedgeAfterMs?: number;
   /** Pause (consecutive quiet frames) that cuts a long buffered segment early, without ending the turn. 0 disables. Default 400. */
   softCutSilenceMs?: number;
   /** A soft cut only happens once at least this much audio is buffered, so the tail after the last cut stays short. Default 6000. */
@@ -86,7 +88,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
   private readonly controller = new AbortController();
   private readonly waiters = new Set<() => void>();
   private turnObserver: ((kind: "start" | "end", transcript: string) => void) | null = null;
-  private stats = { segmentsTranscribed: 0, segmentsSkipped: 0, tailMs: 0, maxSegmentLatencyMs: 0, segmentHedges: 0, segmentHedgeWins: 0, segmentRetries: 0, softCuts: 0 };
+  private stats = { segmentsTranscribed: 0, segmentsSkipped: 0, tailMs: 0, maxSegmentLatencyMs: 0, segmentHedges: 0, segmentHedgeWins: 0, segmentRetries: 0, softCuts: 0, tailStartedAtSilence: 0 };
   private quietFrames = 0;
   private softCutPending = false;
   private detail: SessionFailureDetail | null = null;
@@ -150,6 +152,8 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       return;
     }
     const segment = this.cut(this.bytes, this.levels.length, true);
+    // The tail starts transcribing at the pause itself, not at finalization.
+    if (segment?.promise) this.stats.tailStartedAtSilence = 1;
     if (segment?.promise) await segment.promise;
   }
 
@@ -175,7 +179,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
     this.flushing = true;
     if (this.alive && this.bytes > 0) {
       const tailBytes = this.bytes;
-      const segment = this.cut(this.bytes, this.levels.length, false);
+      const segment = this.cut(this.bytes, this.levels.length, false, true);
       if (segment && segment.state === "pending") this.stats.tailMs = Math.round(tailBytes / bytesPerMs);
     }
     const pending = this.segments.filter((segment) => segment.promise && segment.state === "pending").map((segment) => segment.promise!);
@@ -254,7 +258,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
   }
 
   /** Moves the first `byteCount` bytes (and `levelCount` levels) into a new segment and starts transcribing it. */
-  private cut(byteCount: number, levelCount: number, turnEnd: boolean): Segment | null {
+  private cut(byteCount: number, levelCount: number, turnEnd: boolean, critical = turnEnd): Segment | null {
     if (byteCount <= 0) return null;
     const all = this.chunks.length === 1 ? this.chunks[0]! : Buffer.concat(this.chunks, this.bytes);
     const pcm = Buffer.from(all.subarray(0, byteCount));
@@ -280,12 +284,19 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       this.drain();
       return segment;
     }
-    segment.promise = this.transcribeSegment(segment, pcm, speechMs);
+    segment.promise = this.transcribeSegment(segment, pcm, speechMs, critical);
     return segment;
   }
 
+  /** The tail is on the critical path of the answer end, so it is hedged earlier than background segments (never later). */
+  private tailHedgeAfterMs(): number {
+    const regular = this.options.segmentHedgeAfterMs ?? 2_500;
+    const tail = this.options.tailHedgeAfterMs ?? 1_500;
+    return regular === 0 ? 0 : tail === 0 ? regular : Math.min(regular, tail);
+  }
+
   /** One attempt group: a request raced against a hedge request after `segmentHedgeAfterMs`, limited to `segmentTimeoutMs`. */
-  private requestSegment(wav: Buffer): Promise<TranscriptionResult> {
+  private requestSegment(wav: Buffer, critical: boolean): Promise<TranscriptionResult> {
     const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(this.options.segmentTimeoutMs ?? 8_000)]);
     return hedgedTranscribe({
       start: async (callSignal) => {
@@ -297,7 +308,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
           throw error;
         }
       },
-      hedgeAfterMs: this.options.segmentHedgeAfterMs ?? 2_500,
+      hedgeAfterMs: critical ? this.tailHedgeAfterMs() : this.options.segmentHedgeAfterMs ?? 2_500,
       tryReserve: () => ({ active: true, release: () => undefined }),
       signal,
       onOutcome: (outcome) => {
@@ -307,7 +318,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
     });
   }
 
-  private async transcribeSegment(segment: Segment, pcm: Buffer, speechMs: number): Promise<void> {
+  private async transcribeSegment(segment: Segment, pcm: Buffer, speechMs: number, critical: boolean): Promise<void> {
     const wav = pcmToWav(pcm);
     pcm.fill(0);
     const startedAt = this.now;
@@ -317,7 +328,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       // instead of abandoning the whole incremental transcript for a full-audio call.
       for (let round = 0; ; round += 1) {
         try {
-          text = (await this.requestSegment(wav)).transcript.trim();
+          text = (await this.requestSegment(wav, critical)).transcript.trim();
           break;
         } catch (error) {
           if (this.closed) return;

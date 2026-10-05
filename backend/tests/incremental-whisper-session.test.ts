@@ -270,6 +270,25 @@ describe("IncrementalWhisperSession", () => {
     expect(session.diagnostics()).toMatchObject({ segmentHedges: 1, segmentHedgeWins: 1 });
   });
 
+  it("hedges the tail cut at the end-of-answer pause sooner than a background segment, and starts it at the pause", async () => {
+    const { session, calls } = build({ segmentHedgeAfterMs: 400, tailHedgeAfterMs: 30, softCutMinBufferedMs: 1_000 });
+    session.markSpeech();
+    feed(session, 12, speech);
+    feed(session, 4, quiet); // soft cut: background segment
+    expect(calls).toHaveLength(1);
+    session.markSpeech();
+    feed(session, 5, speech);
+    const ending = session.endTurn(1_500); // tail at the pause
+    expect(calls).toHaveLength(2);
+    expect(session.diagnostics()).toMatchObject({ tailStartedAtSilence: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 90));
+    expect(calls).toHaveLength(3); // only the tail was hedged
+    calls[0]!.resolve("Background.");
+    calls[2]!.resolve("Tail.");
+    await ending;
+    expect(session.committedText()).toBe("Background. Tail.");
+  });
+
   it("soft-cuts a long buffered segment at a short pause so the tail after the last cut stays short", async () => {
     const { session, calls, events } = build({ softCutMinBufferedMs: 3_000 });
     session.markSpeech();
