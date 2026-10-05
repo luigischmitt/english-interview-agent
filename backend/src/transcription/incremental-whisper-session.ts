@@ -12,7 +12,7 @@ import type { TranscriptionService } from "./types.js";
  * Privacy: PCM stays in memory, every buffer (copies, segment audio, WAVs) is zeroed after use, and neither audio nor text
  * is logged here. `diagnostics()` returns counters only.
  *
- * Whisper `prompt` (previous text as context) is not sent: the OpenRouter transcription service has no prompt parameter.
+ * Each segment request carries Whisper vocabulary context: the interviewer question and the tail of the transcript so far.
  */
 
 const bytesPerMs = 32; // 16 kHz s16le mono
@@ -30,6 +30,8 @@ export type IncrementalWhisperOptions = {
   minSegmentSpeechMs?: number;
   /** Window (at the end of a long segment) searched for the quietest frame. Default 3000. */
   forcedCutWindowMs?: number;
+  /** Interviewer question of this answer, used only as Whisper vocabulary context (never logged). */
+  question?: string | null;
   /** Test hook. */
   now?: () => number;
   onTurnStart?: () => void;
@@ -248,7 +250,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(this.options.segmentTimeoutMs ?? 8_000)]);
       let text = "";
       try {
-        text = (await this.options.service.transcribe(wav, "whisper-large-v3-turbo", "wav", signal)).transcript.trim();
+        text = (await this.options.service.transcribe(wav, "whisper-large-v3-turbo", "wav", signal, { question: this.options.question ?? null, previousText: this.joined() })).transcript.trim();
       } catch (error) {
         // An empty recognition is a result (nothing said), not a failure.
         if (!(error instanceof TranscriptionUnavailableError && error.providerStatus === "empty")) throw error;

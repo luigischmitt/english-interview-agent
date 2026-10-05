@@ -25,9 +25,12 @@ export type SegmentTimestampResult = { segments?: TranscriptionWord[] };
 
 export type AudioFormat = "wav" | "webm" | "mp4";
 
+/** Optional Whisper vocabulary-biasing context (question and earlier text of the same answer); never logged. */
+export type TranscribeContext = { question?: string | null; previousText?: string };
+
 export interface TranscriptionService {
   availableProviders(): TranscriptionProvider[];
-  transcribe(audio: Buffer, provider: TranscriptionProvider, format?: AudioFormat, signal?: AbortSignal): Promise<TranscriptionResult>;
+  transcribe(audio: Buffer, provider: TranscriptionProvider, format?: AudioFormat, signal?: AbortSignal, context?: TranscribeContext): Promise<TranscriptionResult>;
   /** Optional, bounded recovery request used only when the primary transcript has no usable timing. */
-  retrySegmentTimestamps?(audio: Buffer, provider: TranscriptionProvider, format?: AudioFormat, signal?: AbortSignal): Promise<SegmentTimestampResult>;
+  retrySegmentTimestamps?(audio: Buffer, provider: TranscriptionProvider, format?: AudioFormat, signal?: AbortSignal, context?: TranscribeContext): Promise<SegmentTimestampResult>;
 }

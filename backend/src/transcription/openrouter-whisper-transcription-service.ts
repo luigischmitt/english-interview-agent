@@ -1,9 +1,12 @@
 import { TranscriptionUnavailableError, type TranscriptionFailureCategory } from "./errors.js";
-import type { AudioFormat, SegmentTimestampResult, TranscriptionProvider, TranscriptionResult, TranscriptionService, TranscriptionWord } from "./types.js";
+import { buildWhisperPrompt, isWhisperPromptEcho } from "./whisper-prompt.js";
+import type { AudioFormat, SegmentTimestampResult, TranscribeContext, TranscriptionProvider, TranscriptionResult, TranscriptionService, TranscriptionWord } from "./types.js";
 
 type OpenRouterWhisperTranscriptionServiceOptions = {
   key: string;
   timeoutMs: number;
+  /** Send a Whisper vocabulary `prompt` (default true). */
+  promptEnabled?: boolean;
   fetchImplementation?: typeof fetch;
   sleepImplementation?: (milliseconds: number) => Promise<void>;
 };
@@ -24,6 +27,8 @@ const modelForProvider: Record<Exclude<TranscriptionProvider, "azure">, string> 
 export class OpenRouterWhisperTranscriptionService implements TranscriptionService {
   private readonly fetchImplementation: typeof fetch;
   private readonly sleepImplementation: (milliseconds: number) => Promise<void>;
+  /** Set after OpenRouter rejects the `prompt` field once; later requests go without it. */
+  private promptRejected = false;
 
   constructor(private readonly options: OpenRouterWhisperTranscriptionServiceOptions) {
     this.fetchImplementation = options.fetchImplementation ?? fetch;
@@ -34,7 +39,7 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
     return ["whisper-large-v3", "whisper-large-v3-turbo"];
   }
 
-  async transcribe(audio: Buffer, provider: TranscriptionProvider, format: AudioFormat = "wav", signal?: AbortSignal): Promise<TranscriptionResult> {
+  async transcribe(audio: Buffer, provider: TranscriptionProvider, format: AudioFormat = "wav", signal?: AbortSignal, context?: TranscribeContext): Promise<TranscriptionResult> {
     if (provider === "azure") throw new TranscriptionUnavailableError("This transcription provider is not configured.");
 
     const timeoutSignal = AbortSignal.timeout(this.options.timeoutMs);
@@ -53,6 +58,11 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
       form.set("response_format", "verbose_json");
       form.append("timestamp_granularities[]", "word");
       form.append("timestamp_granularities[]", "segment");
+      let prompt: string | null = null;
+      if (this.options.promptEnabled !== false && !this.promptRejected) {
+        prompt = buildWhisperPrompt(context);
+        form.set("prompt", prompt);
+      }
       // At most maxHttpAttempts requests overall: 429 retries (max 2) and the single transient retry share this cap.
       for (;;) {
         attempts += 1;
@@ -84,6 +94,19 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
           await sleepWithSignal(this.sleepImplementation, transientRetryDelayMs, requestSignal);
           continue;
         }
+        if (response.status === 400 && prompt !== null) {
+          // Unknown or unsupported `prompt` field: retry once without it (does not use up a retry attempt).
+          const rejectedPrompt = /prompt/i.test(await response.text().catch(() => ""));
+          if (rejectedPrompt) {
+            this.promptRejected = true;
+            prompt = null;
+            form.delete("prompt");
+            attempts -= 1;
+            console.warn("OpenRouter rejected the Whisper prompt field; continuing without it.");
+            continue;
+          }
+          throw unavailable("OpenRouter returned HTTP 400.", "rejected");
+        }
         if (!response.ok) {
           const category: TranscriptionFailureCategory = response.status === 429 ? "429" : response.status >= 500 ? "5xx" : "rejected";
           throw unavailable(response.status === 429 ? "OpenRouter returned HTTP 429 after retries." : `OpenRouter returned HTTP ${response.status}.`, category);
@@ -96,7 +119,7 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
           throw unavailable("OpenRouter transcription is unavailable right now.", "invalid_response", error);
         }
         const transcript = result.text?.trim();
-        if (!transcript) throw unavailable("OpenRouter could not recognize a response in this recording.", "empty");
+        if (!transcript || isWhisperPromptEcho(transcript, prompt)) throw unavailable("OpenRouter could not recognize a response in this recording.", "empty");
         const durationSeconds = wavDurationSeconds(audio);
         const words = parseWhisperWords(result.words, durationSeconds);
         const segments = parseWhisperSegments(result.segments, durationSeconds);
@@ -127,7 +150,7 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
     }
   }
 
-  async retrySegmentTimestamps(audio: Buffer, provider: TranscriptionProvider, format: AudioFormat = "wav", signal?: AbortSignal): Promise<SegmentTimestampResult> {
+  async retrySegmentTimestamps(audio: Buffer, provider: TranscriptionProvider, format: AudioFormat = "wav", signal?: AbortSignal, context?: TranscribeContext): Promise<SegmentTimestampResult> {
     if (provider === "azure") throw new TranscriptionUnavailableError("This transcription provider is not configured.");
 
     const timeoutSignal = AbortSignal.timeout(Math.min(this.options.timeoutMs, segmentTimestampRetryTimeoutMs));
@@ -141,6 +164,7 @@ export class OpenRouterWhisperTranscriptionService implements TranscriptionServi
       form.set("response_format", "verbose_json");
       // Ask only for coarse timing; the primary transcript remains canonical and is never replaced.
       form.append("timestamp_granularities[]", "segment");
+      if (this.options.promptEnabled !== false && !this.promptRejected) form.set("prompt", buildWhisperPrompt(context));
       const response = await this.fetchImplementation("https://openrouter.ai/api/v1/audio/transcriptions", {
         method: "POST",
         headers: { Authorization: `Bearer ${this.options.key}` },
