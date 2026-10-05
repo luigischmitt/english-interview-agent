@@ -30,8 +30,8 @@ export function parseApprovedJobDirection(value: unknown, targetRole: string, se
     mainInterviewEmphasis: value.mainInterviewEmphasis.trim(),
     priorityCompetencies: value.priorityCompetencies.map((item) => (item as string).trim()),
     productTeamContext: value.productTeamContext.trim(),
-    ...(tailored ? { tailoredQuestions: (tailored as string[]).map((item) => item.trim()) } : {}),
   };
+  // tailoredQuestions only plan the question order on the client; in a prompt the model would ask them out of turn.
   // Keep the serialized prompt snapshot bounded even if the schema evolves later.
   return JSON.stringify(direction).length <= 2_200 ? direction : null;
 }

@@ -11,9 +11,9 @@ const base = {
 const question = "How would you structure a Playwright test suite so it stays reliable as the product grows?";
 
 describe("approved job direction", () => {
-  it("accepts snapshots with and without tailored questions and preserves them", () => {
+  it("accepts snapshots with and without tailored questions but keeps them out of the prompt snapshot", () => {
     expect(parseApprovedJobDirection(base, "QA Analyst", "mid-level")).toEqual(base);
-    expect(parseApprovedJobDirection({ ...base, tailoredQuestions: [question] }, "QA Analyst", "mid-level")).toEqual({ ...base, tailoredQuestions: [question] });
+    expect(parseApprovedJobDirection({ ...base, tailoredQuestions: [question] }, "QA Analyst", "mid-level")).toEqual(base);
   });
 
   it.each([
