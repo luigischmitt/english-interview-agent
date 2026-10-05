@@ -1,5 +1,6 @@
 import { normalizeDeviceId } from "./mic-device.mjs";
 import { isValidJobDirection } from "./job-direction.mjs";
+import { INTERVIEWER_VOICES } from "./voices.mjs";
 
 /**
  * Hand-off of the interview configuration from the setup (inside the app shell) to the dedicated interview route.
@@ -48,6 +49,8 @@ export function parseRoomHandoff(raw, now = Date.now()) {
     // Optional (older hand-offs have none): the input device chosen on the setup.
     ...(microphoneDeviceId === null ? {} : { microphoneDeviceId }),
     ...(jobDirection ? { jobDirection } : {}),
+    // Optional (older hand-offs have none): only a known interviewer voice is kept; otherwise the room uses the default.
+    ...(INTERVIEWER_VOICES.includes(config.voice) ? { voice: config.voice } : {}),
   };
 }
 

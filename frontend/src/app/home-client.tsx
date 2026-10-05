@@ -376,7 +376,7 @@ export default function App({ initialView = "home" }: { initialView?: View }) {
               onStart={(config) => {
                 // The opening is fully known here: synthesize it while the room mounts; the room's playback reuses it.
                 if (config.playInterviewerAudio) {
-                  prewarmInterviewerUtterance(composeContextualOpening(config, getFixedInterviewQuestions(config)[0].prompt));
+                  prewarmInterviewerUtterance(composeContextualOpening(config, getFixedInterviewQuestions(config)[0].prompt), config.voice);
                 }
                 // The interview lives on its own route; the configuration travels in a single-use sessionStorage hand-off.
                 if (storeRoomHandoff(window.sessionStorage, config)) router.push("/interview");

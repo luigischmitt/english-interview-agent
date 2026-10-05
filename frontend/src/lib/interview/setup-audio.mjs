@@ -1,3 +1,6 @@
+import { voiceDisplayName } from "./voice-picker.mjs";
+import { resolveInterviewerVoice } from "./voices.mjs";
+
 export const defaultInterviewRoomPreferences = {
   playInterviewerAudio: true,
   showQuestionCaptions: true,
@@ -19,6 +22,8 @@ export function getInterviewSetupSummary(config, seniorityLabels, focusLabels) {
     { label: "Foco", value: focusLabels[config.focus] ?? config.focus },
     { label: "Duração", value: `Até ${config.duration} min` },
     { label: "Como o entrevistador fala", value: config.playInterviewerAudio ? "Com áudio" : "Somente texto" },
+    // The voice only matters when the interviewer speaks.
+    ...(config.playInterviewerAudio ? [{ label: "Voz", value: voiceDisplayName(resolveInterviewerVoice(config.voice)) }] : []),
     { label: "Legendas das perguntas", value: config.playInterviewerAudio ? (config.showQuestionCaptions ? "Ligadas" : "Desligadas") : "Sempre visíveis (somente texto)" },
     { label: "Microfone", value: config.autoCaptureVoice ? "Inicia após cada pergunta" : "Início manual" },
     { label: "Câmera", value: config.candidateCameraEnabled ? "Prévia local ligada" : "Desligada" },
