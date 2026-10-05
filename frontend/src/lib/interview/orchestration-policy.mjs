@@ -36,6 +36,26 @@ export function normalizeNextTurnDecision(result, fallbackQuestion, recentAcknow
   return fallbackTurnDecision(fallbackQuestion, recentAcknowledgements);
 }
 
+/** The question to ask again when the candidate asked for a clarification the backend could not help with. */
+export function repeatTurnDecision(source = "detector") {
+  return { decision: "REPEAT", followUpQuestion: null, nextQuestion: null, acknowledgement: null, clarificationText: null, clarification: source };
+}
+
+function parseClarificationResponse(result) {
+  if (result.followUpQuestion !== null || result.nextQuestion !== null) return null;
+  const clarification = result.clarification === "detector" ? "detector" : "model";
+  const text = typeof result.clarificationText === "string" ? result.clarificationText.trim() : null;
+  if (result.decision === "REPEAT") return repeatTurnDecision(clarification);
+  if (text === null || !text || /[\r\n]/u.test(text)) return null;
+  if (result.decision === "REPHRASE" && text.length <= 220 && text.endsWith("?") && (text.match(/\?/g) ?? []).length === 1) {
+    return { decision: "REPHRASE", followUpQuestion: null, nextQuestion: null, acknowledgement: null, clarificationText: text, clarification };
+  }
+  if (result.decision === "DEFINE" && text.length <= 160 && !text.includes("?")) {
+    return { decision: "DEFINE", followUpQuestion: null, nextQuestion: null, acknowledgement: null, clarificationText: text, clarification };
+  }
+  return null;
+}
+
 function hasQuestionShape(value, maxLength) {
   const question = value.trim();
   return question.length > 0 && question.length <= maxLength && question.endsWith("?") && (question.match(/\?/g) ?? []).length === 1 && !/[\r\n]/.test(question);
@@ -48,6 +68,7 @@ function hasQuestionShape(value, maxLength) {
  */
 export function parseTurnDecisionResponse(result, { followUpUsed, recentAcknowledgements = [], fallbackQuestion }) {
   if (typeof result !== "object" || result === null || Array.isArray(result)) return null;
+  if (result.decision === "REPEAT" || result.decision === "REPHRASE" || result.decision === "DEFINE") return parseClarificationResponse(result);
   const acknowledgement = result.acknowledgement === null ? null : typeof result.acknowledgement === "string" ? result.acknowledgement.trim() : undefined;
   if (acknowledgement === undefined || (acknowledgement !== null && acknowledgement.length > maxAcknowledgementLength)) return null;
   const recent = new Set(recentAcknowledgements.map(acknowledgementKey));

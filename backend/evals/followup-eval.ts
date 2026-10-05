@@ -3,6 +3,7 @@
 // Output is aggregate-only JSON. Set FOLLOWUP_EVAL_PRINT_ACCEPTED=true locally to also print accepted
 // follow-up questions and accepted bridges (with their questions) for manual quality review.
 import { followUpEvalCases } from "../tests/fixtures/followup-eval.js";
+import { detectClarificationRequest } from "../../frontend/src/lib/interview/clarification-request.mjs";
 import { loadThinkingConfig } from "../src/thinking/config.js";
 import { OpenRouterOrchestrationService } from "../src/thinking/openrouter-orchestration-service.js";
 import type { InterviewOrchestrationInput } from "../src/thinking/types.js";
@@ -57,15 +58,20 @@ async function main() {
   let runs = 0;
   const expectedFollowUp = { total: 0, accepted: 0 };
   const expectedNext = { total: 0, next: 0 };
+  // Clarification requests must be answered with REPEAT/REPHRASE/DEFINE (one of `acceptable`), never FOLLOW_UP or NEXT.
+  const expectedClarify = { total: 0, handled: 0, acceptableKind: 0, detectorHinted: 0, wrongMovedOn: 0 };
+  const answersMisreadAsClarification = { total: 0, misread: 0 };
   let modelNext = 0;
   let capReached = false;
 
   outer: for (const testCase of followUpEvalCases) {
     for (let run = 0; run < runsPerCase; run += 1) {
       if (spend >= costCapUsd) { capReached = true; break outer; }
-      const { id: _id, expected: _expected, followUpUsed: caseFollowUpUsed, ...rest } = testCase;
+      const { id: _id, expected: _expected, acceptable: _acceptable, followUpUsed: caseFollowUpUsed, ...rest } = testCase;
+      const clarificationHint = detectClarificationRequest(testCase.transcript);
       const input: InterviewOrchestrationInput = {
         ...rest,
+        ...(clarificationHint ? { clarificationHint } : {}),
         nextFixedQuestion: "How do you monitor a production service?",
         remainingFixedQuestions: ["How do you monitor a production service?", "Tell me about a time you had to make a tradeoff under pressure."],
         followUpUsed: caseFollowUpUsed ?? false,
@@ -81,6 +87,19 @@ async function main() {
       latencies.push(result.diagnostics?.latencyMs ?? Date.now() - started);
       spend += result.diagnostics?.costUsd ?? 0;
       runs += 1;
+      if (testCase.expected !== "clarify") {
+        answersMisreadAsClarification.total += 1;
+        if (result.decision === "REPEAT" || result.decision === "REPHRASE" || result.decision === "DEFINE") answersMisreadAsClarification.misread += 1;
+      }
+      if (testCase.expected === "clarify") {
+        expectedClarify.total += 1;
+        if (clarificationHint) expectedClarify.detectorHinted += 1;
+        if (result.decision === "REPEAT" || result.decision === "REPHRASE" || result.decision === "DEFINE") {
+          expectedClarify.handled += 1;
+          if (testCase.acceptable?.includes(result.decision)) expectedClarify.acceptableKind += 1;
+        } else expectedClarify.wrongMovedOn += 1;
+        continue;
+      }
       if (testCase.expected === "follow_up") {
         expectedFollowUp.total += 1;
         if (result.decision === "FOLLOW_UP") { expectedFollowUp.accepted += 1; if (result.followUpQuestion) accepted.push(`${testCase.id}: ${result.followUpQuestion}`); }
@@ -89,6 +108,7 @@ async function main() {
         if (result.decision === "NEXT") expectedNext.next += 1;
       }
       if (lastBridge === "grounded" || lastBridge === "neutral" || lastBridge === "dropped") bridgeCounts[lastBridge] += 1;
+      if (result.decision !== "FOLLOW_UP" && result.decision !== "NEXT") continue;
       byDecision[result.decision].runs += 1;
       if (lastBridge === "grounded" || lastBridge === "neutral" || lastBridge === "dropped") byDecision[result.decision][lastBridge] += 1;
       if (result.acknowledgement && (lastBridge === "grounded" || lastBridge === "neutral")) leadIns.push(leadInOf(result.acknowledgement));
@@ -109,8 +129,9 @@ async function main() {
   const recent: string[] = [];
   const sequenceBridges: string[] = [];
   for (const testCase of followUpEvalCases) {
+    if (testCase.expected === "clarify") continue;
     if (spend >= costCapUsd) { capReached = true; break; }
-    const { id: _id, expected: _expected, followUpUsed: caseFollowUpUsed, ...rest } = testCase;
+    const { id: _id, expected: _expected, acceptable: _acceptable, followUpUsed: caseFollowUpUsed, ...rest } = testCase;
     lastBridge = "none";
     lastFollowed = null;
     const result = await service.decide({
@@ -141,6 +162,11 @@ async function main() {
     runs,
     followUpAcceptedRateOnExpected: rate(expectedFollowUp.accepted, expectedFollowUp.total),
     nextRateOnNoiseOrLowInfo: rate(expectedNext.next, expectedNext.total),
+    clarificationHandledRate: rate(expectedClarify.handled, expectedClarify.total),
+    clarificationExpectedKindRate: rate(expectedClarify.acceptableKind, expectedClarify.total),
+    clarificationMovedOnOrFollowedUp: expectedClarify.wrongMovedOn,
+    clarificationCases: { runs: expectedClarify.total, detectorHinted: expectedClarify.detectorHinted },
+    answersMisreadAsClarification: answersMisreadAsClarification.misread,
     modelChosenNext: modelNext,
     bridgedRate: rate(bridgeCounts.grounded + bridgeCounts.neutral, runs),
     groundedBridgeRate: rate(bridgeCounts.grounded, runs),

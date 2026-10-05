@@ -103,7 +103,14 @@ export interface InterviewReportService {
   consolidate(input: InterviewReportConsolidationInput): Promise<InterviewReport & { model: string; analysisVersion: "v2" }>;
 }
 
+/** The kind of clarification request a deterministic detector found in a short candidate utterance. */
+export const clarificationHints = ["repeat", "rephrase", "define"] as const;
+export type ClarificationHint = (typeof clarificationHints)[number];
+export type ClarificationDecision = "REPEAT" | "REPHRASE" | "DEFINE";
+
 export type InterviewOrchestrationInput = InterviewThinkingInput & {
+  /** Set by the client's deterministic detector; the candidate asked to hear/understand the question again, so this is not an answer. */
+  clarificationHint?: ClarificationHint | null;
   nextFixedQuestion: string | null;
   remainingFixedQuestions?: string[];
   followUpUsed: boolean;
@@ -113,10 +120,14 @@ export type InterviewOrchestrationInput = InterviewThinkingInput & {
 };
 
 export type InterviewOrchestrationResult = {
-  decision: "FOLLOW_UP" | "NEXT";
+  decision: "FOLLOW_UP" | "NEXT" | ClarificationDecision;
   followUpQuestion: string | null;
   nextQuestion: string | null;
   acknowledgement: string | null;
+  /** REPHRASE: the simpler question; DEFINE: a one-sentence explanation of the asked term; REPEAT or other decisions: absent. */
+  clarificationText?: string | null;
+  /** Who classified the utterance as a clarification request (content-free). */
+  clarification?: "detector" | "model";
   diagnostics?: { model: string; latencyMs: number; costUsd: number | null };
 };
 

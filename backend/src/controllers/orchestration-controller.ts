@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import type { InterviewOrchestrationInput, InterviewOrchestrationService } from "../thinking/types.js";
+import { clarificationHints, type ClarificationHint, type InterviewOrchestrationInput, type InterviewOrchestrationService } from "../thinking/types.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -16,6 +16,7 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
   const { roleContext } = body;
   if (body.askedQuestions !== undefined && (!Array.isArray(body.askedQuestions) || body.askedQuestions.length > 30
     || body.askedQuestions.some((question) => !validText(question, 500)))) return null;
+  if (body.clarificationHint !== undefined && body.clarificationHint !== null && !clarificationHints.includes(body.clarificationHint as ClarificationHint)) return null;
   if (body.recentAcknowledgements !== undefined && (!Array.isArray(body.recentAcknowledgements) || body.recentAcknowledgements.length > 5
     || body.recentAcknowledgements.some((acknowledgement) => !validText(acknowledgement, 220)))) return null;
   if (body.previousAnswers !== undefined && (!Array.isArray(body.previousAnswers) || body.previousAnswers.length > 2
@@ -27,6 +28,7 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
   const targetRole = roleContext.targetRole as string;
   return {
     currentQuestion: body.currentQuestion.trim(), transcript: body.transcript.trim(), nextFixedQuestion: body.nextFixedQuestion === null ? null : body.nextFixedQuestion.trim(), followUpUsed: body.followUpUsed,
+    ...(body.clarificationHint ? { clarificationHint: body.clarificationHint as ClarificationHint } : {}),
     ...(Array.isArray(body.remainingFixedQuestions) ? { remainingFixedQuestions: body.remainingFixedQuestions.map((question) => (question as string).trim()) } : {}),
     ...(Array.isArray(body.askedQuestions) ? { askedQuestions: body.askedQuestions.map((question) => (question as string).trim()) } : {}),
     ...(Array.isArray(body.previousAnswers) ? { previousAnswers: body.previousAnswers.map((pair) => ({ question: (pair.question as string).trim(), answer: (pair.answer as string).trim() })) } : {}),

@@ -44,7 +44,7 @@ export function prewarmInterviewerUtterance(utterance: string) {
   return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 30_000 });
 }
 
-export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void) {
+export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void, speed = 1) {
   const [activeSegment, setActiveSegment] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
   // The browser refused to start audio without a tap; the room offers a button whose click unlocks and replays.
@@ -66,6 +66,7 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
 
   const startPlayback = useCallback((utterance: string[]) => playInterviewerSegments(utterance, {
     endpoint: speechEndpoint,
+    speed,
     fetcher: authorizedFetch,
     // Kokoro's backend budget is 15s; leave 5s for network and body transfer.
     timeoutMs: 20_000,
@@ -78,7 +79,7 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
     onPlaybackStarted: () => onTimingEvent?.("playback-started"),
     onFinalChunkStarted: () => onFinalChunkStartedRef.current?.(),
     onDiagnostic: reportAudioDiagnostic,
-  }), [onTimingEvent]);
+  }), [onTimingEvent, speed]);
 
   useEffect(() => {
     let cancelled = false;

@@ -47,7 +47,7 @@ describe("OpenRouter next-turn orchestration", () => {
     expect(requestBody.provider).toEqual({ sort: "latency", require_parameters: true, data_collection: "deny" });
     expect(requestBody.max_tokens).toBe(320);
     expect(requestBody.response_format.json_schema.strict).toBe(true);
-    expect(requestBody.response_format.json_schema.schema.required).toEqual(["decision", "followUpQuestion", "nextQuestion", "anchor", "acknowledgement"]);
+    expect(requestBody.response_format.json_schema.schema.required).toEqual(["decision", "followUpQuestion", "nextQuestion", "anchor", "acknowledgement", "clarificationText"]);
     expect(requestBody.messages[0].content).toContain("Decision policy:");
     expect(requestBody.messages[0].content).toContain("FOLLOW_UP is the default");
     expect(requestBody.messages[0].content).toContain("NEXT is an exception");
@@ -650,11 +650,11 @@ describe("OpenRouter next-turn orchestration resilience", () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => { body = JSON.parse(String(init?.body)); return providerResponse(JSON.stringify({ decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: null })); });
     await expect(svc(fetchMock).decide({ ...input, followUpUsed: true })).resolves.toMatchObject({ decision: "NEXT", nextQuestion });
     const properties = body!.response_format.json_schema.schema.properties;
-    expect(properties.decision).toEqual({ type: "string", enum: ["NEXT"] });
+    expect(properties.decision).toEqual({ type: "string", enum: ["NEXT", "REPEAT", "REPHRASE", "DEFINE"] });
     expect(properties.followUpQuestion).toEqual({ type: "null" });
     expect(properties.anchor).toEqual({ type: "null" });
     await svc(async (_url, init) => { body = JSON.parse(String(init?.body)); return good(); }).decide(input);
-    expect(body!.response_format.json_schema.schema.properties.decision).toEqual({ type: "string", enum: ["FOLLOW_UP", "NEXT"] });
+    expect(body!.response_format.json_schema.schema.properties.decision).toEqual({ type: "string", enum: ["FOLLOW_UP", "NEXT", "REPEAT", "REPHRASE", "DEFINE"] });
   });
 
   it("still rejects FOLLOW_UP when the follow-up is used", async () => {

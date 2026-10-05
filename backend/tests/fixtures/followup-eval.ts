@@ -1,6 +1,8 @@
 export type FollowUpEvalCase = {
   id: string;
-  expected: "follow_up" | "next";
+  /** "clarify": the candidate asked to repeat/rephrase/explain; the right outcome is one of `acceptable` (never FOLLOW_UP or NEXT). */
+  expected: "follow_up" | "next" | "clarify";
+  acceptable?: Array<"REPEAT" | "REPHRASE" | "DEFINE">;
   /** When true the case is a NEXT turn after the follow-up was spent. */
   followUpUsed?: boolean;
   currentQuestion: string;
@@ -196,4 +198,34 @@ export const followUpEvalCases: FollowUpEvalCase[] = [
     askedQuestions: [fixedQuestions.intro],
     roleContext: role,
   },
+  // Real answers that contain clarification words: they must still be answered with a follow-up.
+  {
+    id: "answer-mentions-repeat",
+    expected: "follow_up",
+    currentQuestion: "How would you make a REST API reliable?",
+    transcript: "For reliability I repeat the failed request with exponential backoff, and I use an idempotency key so the payment is not charged twice. I also set a timeout of two seconds on the client.",
+    askedQuestions: [fixedQuestions.intro, fixedQuestions.reliability],
+    roleContext: role,
+  },
+  {
+    id: "answer-what-do-you-mean",
+    expected: "follow_up",
+    currentQuestion: "How did you improve the performance of a slow endpoint?",
+    transcript: "If you mean the slow endpoint, it was the orders list. I added a database index on the customer id column and I moved the count query to a background job, so the response went from four seconds to three hundred milliseconds.",
+    askedQuestions: [fixedQuestions.intro, "How did you improve the performance of a slow endpoint?"],
+    roleContext: role,
+  },
+  // Clarification requests.
+  { id: "clarify-repeat-question", expected: "clarify", acceptable: ["REPEAT"], currentQuestion: fixedQuestions.decision, transcript: "Can you repeat the question?", askedQuestions: [fixedQuestions.intro, fixedQuestions.decision], roleContext: role },
+  { id: "clarify-sorry", expected: "clarify", acceptable: ["REPEAT"], currentQuestion: fixedQuestions.reliability, transcript: "Sorry?", askedQuestions: [fixedQuestions.intro, fixedQuestions.reliability], roleContext: role },
+  { id: "clarify-repeat-pt", expected: "clarify", acceptable: ["REPEAT"], currentQuestion: fixedQuestions.conflict, transcript: "Pode repetir?", askedQuestions: [fixedQuestions.intro, fixedQuestions.conflict], roleContext: role },
+  { id: "clarify-whisper-repit", expected: "clarify", acceptable: ["REPEAT"], currentQuestion: fixedQuestions.incident, transcript: "Sorry, can you repit the question please?", askedQuestions: [fixedQuestions.intro, fixedQuestions.incident], roleContext: role },
+  { id: "clarify-not-understood", expected: "clarify", acceptable: ["REPHRASE", "REPEAT"], currentQuestion: "Walk me through how you would design an idempotent payment API.", transcript: "I didn't understand the question.", askedQuestions: [fixedQuestions.intro, "Walk me through how you would design an idempotent payment API."], roleContext: role },
+  { id: "clarify-rephrase", expected: "clarify", acceptable: ["REPHRASE", "REPEAT"], currentQuestion: "What trade-offs did you consider when you chose an event-driven architecture?", transcript: "Could you rephrase that?", askedQuestions: [fixedQuestions.intro, "What trade-offs did you consider when you chose an event-driven architecture?"], roleContext: role },
+  { id: "clarify-nao-entendi", expected: "clarify", acceptable: ["REPHRASE", "REPEAT"], currentQuestion: fixedQuestions.decision, transcript: "Não entendi.", askedQuestions: [fixedQuestions.intro, fixedQuestions.decision], roleContext: role },
+  { id: "clarify-define-scalability", expected: "clarify", acceptable: ["DEFINE"], currentQuestion: "How did you make your system scalable as the number of users grew?", transcript: "What do you mean by scalable?", askedQuestions: [fixedQuestions.intro, "How did you make your system scalable as the number of users grew?"], roleContext: role },
+  { id: "clarify-define-idempotent", expected: "clarify", acceptable: ["DEFINE"], currentQuestion: "Walk me through how you would design an idempotent payment API.", transcript: "What does idempotent mean?", askedQuestions: [fixedQuestions.intro, "Walk me through how you would design an idempotent payment API."], roleContext: role },
+  { id: "clarify-define-pt", expected: "clarify", acceptable: ["DEFINE"], currentQuestion: "How do you handle backpressure in a message queue consumer?", transcript: "O que significa backpressure?", askedQuestions: [fixedQuestions.intro, "How do you handle backpressure in a message queue consumer?"], roleContext: role },
+  // Not caught by the deterministic detector: only the model can tell this is a clarification request.
+  { id: "clarify-model-only", expected: "clarify", acceptable: ["REPEAT", "REPHRASE", "DEFINE"], currentQuestion: fixedQuestions.decision, transcript: "Sorry, I lost the thread, which part of the decision do you want me to talk about?", askedQuestions: [fixedQuestions.intro, fixedQuestions.decision], roleContext: role },
 ];
