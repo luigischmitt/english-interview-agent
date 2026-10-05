@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { authErrorCode, authErrorMessage, suggestEmailCorrection } from "@/lib/auth/auth-errors.mjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -58,14 +59,6 @@ const copy = {
   },
 } as const;
 
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message.includes("Missing NEXT_PUBLIC")) {
-    return "O Supabase ainda não está configurado neste ambiente.";
-  }
-
-  return "Não foi possível concluir esta solicitação. Confira seus dados e tente novamente.";
-}
-
 export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: string; next?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -74,6 +67,9 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
+  const emailSuggestion = mode === "login" || mode === "signup" || mode === "forgot-password" ? suggestEmailCorrection(email) : null;
   const [isPending, setIsPending] = useState(false);
   const expired = reason === "expired";
   const details = copy[mode];
@@ -81,6 +77,8 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
+    setErrorCode(null);
+    setResendState("idle");
     setMessage(null);
 
     if ((mode === "signup" || mode === "update-password") && password.length < 8) {
@@ -122,7 +120,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
           return;
         }
 
-        setMessage("Sua conta está pronta para confirmação. Verifique seu e-mail para continuar.");
+        setMessage("Enviamos um link de confirmação para o seu e-mail. Abra o link para entrar (confira também o spam).");
         return;
       }
 
@@ -140,9 +138,27 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
       if (updateError) throw updateError;
       setMessage("Sua senha foi atualizada. Você já pode continuar praticando.");
     } catch (requestError) {
-      setError(getErrorMessage(requestError));
+      setErrorCode(authErrorCode(requestError));
+      setError(authErrorMessage(requestError));
     } finally {
       setIsPending(false);
+    }
+  };
+
+  const resendConfirmation = async () => {
+    setResendState("sending");
+    try {
+      const { error: resendError } = await getSupabaseBrowserClient().auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=%2Fdashboard` },
+      });
+      if (resendError) throw resendError;
+      setResendState("sent");
+    } catch (resendError) {
+      setResendState("idle");
+      setErrorCode(authErrorCode(resendError));
+      setError(authErrorMessage(resendError));
     }
   };
 
@@ -179,6 +195,14 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
             {error && (
               <Alert tone="error" role="alert">
                 {error}
+                {errorCode === "email_not_confirmed" && (
+                  <>
+                    {" "}
+                    <button type="button" className="au-inline-action" onClick={() => void resendConfirmation()} disabled={resendState !== "idle" || !email}>
+                      {resendState === "sent" ? "Confirmação reenviada" : resendState === "sending" ? "Reenviando…" : "Reenviar confirmação"}
+                    </button>
+                  </>
+                )}
               </Alert>
             )}
             {message && (
@@ -217,7 +241,14 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
                     autoComplete="email"
                     placeholder="you@example.com"
                     required
+                    aria-describedby={emailSuggestion ? "email-suggestion" : undefined}
                   />
+                  {emailSuggestion && (
+                    <p id="email-suggestion" className="au-suggestion" role="status">
+                      Você quis dizer{" "}
+                      <button type="button" className="au-inline-action" onClick={() => setEmail(emailSuggestion)}>{emailSuggestion}</button>?
+                    </p>
+                  )}
                 </div>
               )}
 

@@ -48,3 +48,10 @@
 
 /* Graphite stays neutral: a fainter wash in dark. */
 :root[data-color-scheme="dark"] .au-page::before { background: radial-gradient(closest-side, color-mix(in srgb, var(--ds-green) 7%, transparent), transparent); }
+
+/* Inline actions inside alerts and the e-mail typo hint. */
+.au-inline-action { display: inline; padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--ds-green); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.au-inline-action:disabled { opacity: 0.6; cursor: default; text-decoration: none; }
+.au-alert .au-inline-action { color: inherit; }
+.au-suggestion { margin-top: 0.375rem; font-size: 0.875rem; color: var(--ds-text-2); }
+@media (pointer: coarse) { .au-inline-action { padding-block: 0.5rem; } }
