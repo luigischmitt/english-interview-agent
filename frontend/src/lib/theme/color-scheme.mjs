@@ -4,10 +4,12 @@
  */
 export const COLOR_SCHEME_STORAGE_KEY = "eia:color-scheme";
 export const COLOR_PREFERENCES = ["light", "dark", "system"];
+/** The site opens in light mode until the user picks Escuro or Sistema. */
+export const DEFAULT_COLOR_PREFERENCE = "light";
 
-/** Anything that is not a known preference (null, tampered, old value) means "system". */
+/** Anything that is not a known preference (null, tampered, old value) means the default (light). */
 export function parseColorPreference(stored) {
-  return COLOR_PREFERENCES.includes(stored) ? stored : "system";
+  return COLOR_PREFERENCES.includes(stored) ? stored : DEFAULT_COLOR_PREFERENCE;
 }
 
 /** Preference + OS setting -> the scheme to apply. */
@@ -27,15 +29,14 @@ export function readStoredPreference(storage) {
   try {
     return parseColorPreference(storage?.getItem(COLOR_SCHEME_STORAGE_KEY));
   } catch {
-    return "system";
+    return DEFAULT_COLOR_PREFERENCE;
   }
 }
 
-/** Persists a preference. "system" clears the key. Returns false if storage is unavailable. */
+/** Persists a preference (including "system", which differs from the light default). Returns false if storage is unavailable. */
 export function writeStoredPreference(storage, preference) {
   try {
-    if (parseColorPreference(preference) === "system") storage.removeItem(COLOR_SCHEME_STORAGE_KEY);
-    else storage.setItem(COLOR_SCHEME_STORAGE_KEY, preference);
+    storage.setItem(COLOR_SCHEME_STORAGE_KEY, parseColorPreference(preference));
     return true;
   } catch {
     return false;
@@ -53,4 +54,4 @@ export function applyColorScheme(root, scheme) {
  * Inline script that runs while the HTML is parsed (before first paint). It must stay self-contained and
  * mirror resolveColorScheme; tests execute it in a sandbox against the pure functions.
  */
-export const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var p="system";try{var s=localStorage.getItem(${JSON.stringify(COLOR_SCHEME_STORAGE_KEY)});if(s==="light"||s==="dark")p=s}catch(e){}var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var c=d?"dark":"light",r=document.documentElement;r.setAttribute("data-color-scheme",c);r.setAttribute("data-theme",d?"interview-dark":"interview-light");r.style.colorScheme=c}catch(e){}})();`;
+export const THEME_BOOTSTRAP_SCRIPT = `(function(){try{var p="light";try{var s=localStorage.getItem(${JSON.stringify(COLOR_SCHEME_STORAGE_KEY)});if(s==="light"||s==="dark"||s==="system")p=s}catch(e){}var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var c=d?"dark":"light",r=document.documentElement;r.setAttribute("data-color-scheme",c);r.setAttribute("data-theme",d?"interview-dark":"interview-light");r.style.colorScheme=c}catch(e){}})();`;

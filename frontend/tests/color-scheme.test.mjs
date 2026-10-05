@@ -16,35 +16,35 @@ test("explicit preferences win over the OS setting", () => {
   assert.equal(resolveColorScheme("dark", false), "dark");
 });
 
-test("system and missing preferences follow the OS", () => {
+test("system follows the OS; a missing preference opens in light mode", () => {
   assert.equal(resolveColorScheme("system", true), "dark");
   assert.equal(resolveColorScheme("system", false), "light");
-  assert.equal(resolveColorScheme(null, true), "dark");
+  assert.equal(resolveColorScheme(null, true), "light");
   assert.equal(resolveColorScheme(undefined, false), "light");
 });
 
-test("invalid stored values fall back to system", () => {
+test("invalid stored values fall back to the light default", () => {
   for (const bad of ["", "DARK", "blue", "1", {}, 0, "dark "]) {
-    assert.equal(parseColorPreference(bad), "system");
+    assert.equal(parseColorPreference(bad), "light");
   }
-  assert.equal(resolveColorScheme("purple", true), "dark");
+  assert.equal(resolveColorScheme("purple", true), "light");
   assert.equal(resolveColorScheme("purple", false), "light");
 });
 
 test("storage read/write survives a throwing storage", () => {
   const broken = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); }, removeItem() { throw new Error("blocked"); } };
-  assert.equal(readStoredPreference(broken), "system");
+  assert.equal(readStoredPreference(broken), "light");
   assert.equal(writeStoredPreference(broken, "dark"), false);
-  assert.equal(readStoredPreference(null), "system");
+  assert.equal(readStoredPreference(null), "light");
 });
 
-test("storage round trip; system clears the key", () => {
+test("storage round trip; system is stored explicitly", () => {
   const data = new Map();
   const storage = { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => data.set(k, v), removeItem: (k) => data.delete(k) };
   assert.equal(writeStoredPreference(storage, "dark"), true);
   assert.equal(readStoredPreference(storage), "dark");
   writeStoredPreference(storage, "system");
-  assert.equal(data.has(COLOR_SCHEME_STORAGE_KEY), false);
+  assert.equal(data.get(COLOR_SCHEME_STORAGE_KEY), "system");
   assert.equal(readStoredPreference(storage), "system");
 });
 
@@ -84,8 +84,8 @@ test("bootstrap script agrees with resolveColorScheme", () => {
   }
 });
 
-test("bootstrap script still follows the OS when storage throws, and never throws", () => {
-  assert.equal(runBootstrap({ prefersDark: true, throwingStorage: true }).attrs["data-color-scheme"], "dark");
+test("bootstrap script opens in light mode when storage throws, and never throws", () => {
+  assert.equal(runBootstrap({ prefersDark: true, throwingStorage: true }).attrs["data-color-scheme"], "light");
   assert.equal(runBootstrap({ prefersDark: false, throwingStorage: true }).attrs["data-color-scheme"], "light");
   assert.doesNotThrow(() => runBootstrap({ prefersDark: true, throwingMatchMedia: true }));
 });
