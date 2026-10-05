@@ -32,7 +32,7 @@ const baseOptions = (audios, extra = {}) => ({
 
 test("onChunkAudio gets each chunk's blob, position clock and playing flag without changing playback", async () => {
   const audios = []; const chunks = [];
-  const playback = playInterviewerSegments(["Tell me about a hard bug you fixed recently, please."], baseOptions(audios, { onChunkAudio: (c) => chunks.push(c) }));
+  const playback = playInterviewerSegments(["Tell me about a hard bug you fixed."], baseOptions(audios, { onChunkAudio: (c) => chunks.push(c) }));
   await tick(); await tick(); await tick();
   assert.equal(chunks.length, 1);
   const [chunk] = chunks;

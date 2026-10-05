@@ -9,7 +9,7 @@ import type { TranscriptionResult, TranscriptionService } from "./types.js";
 import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, StreamingTranscriptionSessions, type SlotReservation, type StreamingLimits, type StreamingSession } from "./streaming-transcription.js";
 import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
 import type { StreamFailureReason, StreamingTurnSession, TurnEndInfo } from "./streaming-turn-session.js";
-import { IncrementalWhisperSession } from "./incremental-whisper-session.js";
+import { IncrementalWhisperSession, type SessionFailureDetail } from "./incremental-whisper-session.js";
 import { AnswerCompletionError, type AnswerCompletionService } from "../thinking/answer-completion-service.js";
 import { aggregateAzureBlockScores, alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
@@ -168,7 +168,7 @@ export function looksUnfinished(transcript: string): boolean {
 /** Server-side streaming settings: incremental Whisper tuning and the answer-end orchestration. */
 export type StreamingOptions = {
   /** Incremental Whisper tuning (tests and rare overrides). */
-  incrementalWhisper?: { segmentTimeoutMs?: number; maxSegmentMs?: number; minSegmentSpeechMs?: number; forcedCutWindowMs?: number; flushTimeoutMs?: number };
+  incrementalWhisper?: { segmentTimeoutMs?: number; segmentHedgeAfterMs?: number; softCutSilenceMs?: number; softCutMinBufferedMs?: number; maxSegmentMs?: number; minSegmentSpeechMs?: number; forcedCutWindowMs?: number; flushTimeoutMs?: number };
   /** Grace after a turn that ends like a complete sentence. */
   answerGraceMs: number;
   /** Grace after a turn that looks unfinished (no final punctuation or a trailing connector); defaults to answerGraceMs. */
@@ -268,6 +268,8 @@ export function attachTranscriptionWebSocket(
     // Provisional answer for next-turn preparation (never logged; only the count is).
     let prepareTimer: ReturnType<typeof setTimeout> | null = null;
     let preparesSent = 0;
+    // Why the incremental transcript was abandoned for a full-audio call (content-free); null while it was not.
+    let fallbackReason: SessionFailureDetail | null = null;
     let lastProvisional = "";
     // Semantic end-of-answer check (question and transcript are never logged; only counts, verdict and latency are).
     let interviewerQuestion: string | null = null;
@@ -663,7 +665,7 @@ export function attachTranscriptionWebSocket(
                 fail("NO_SPEECH_RECOGNIZED", "We couldn't understand the speech in that recording. Please try again or skip/end the practice.");
                 return;
               }
-              logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: streaming ? "whisper-incremental" : "whisper", provider: "whisper", answerEndReason, ...(streamSession ? { incrementalTurns: streamSession.turnCount, ...streamSession.diagnostics?.() } : {}), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
+              logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: streaming ? "whisper-incremental" : "whisper", provider: "whisper", answerEndReason, ...(streamSession ? { incrementalTurns: streamSession.turnCount, ...streamSession.diagnostics?.() } : {}), ...(fallbackReason ? { fallbackReason } : {}), preparesSent, speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
               send(socket, {
                 type: "complete",
                 status: "complete",
@@ -842,9 +844,10 @@ export function attachTranscriptionWebSocket(
                   }, Math.max(0, prepareAfterMs - elapsedMs));
                 }
               },
-              onFailure: (failure: StreamFailureReason) => {
+              onFailure: (failure: StreamFailureReason, detail: SessionFailureDetail) => {
                 clearGrace();
-                logStreamDiagnostic({ status: "incremental_whisper_unavailable", reason: failure });
+                fallbackReason = detail;
+                logStreamDiagnostic({ status: "incremental_whisper_unavailable", reason: failure, detail });
               },
             };
             streamSession = new IncrementalWhisperSession({ service: transcriptionService, speechThreshold: session.config.speechThreshold, question: whisperQuestion, ...streaming.incrementalWhisper, ...sessionCallbacks });

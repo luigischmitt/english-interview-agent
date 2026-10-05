@@ -1,25 +1,16 @@
 import { acquireInterviewerAudio, isAutoplayBlockedError, releaseInterviewerAudio } from "./audio-unlock.mjs";
 import { describeMedia, errorNameOf } from "./client-environment.mjs";
+import { describeRoleForSpeech, focusClause } from "./opening-copy.mjs";
 
 export function composeOpeningUtterance(introduction, firstQuestion) {
   return [introduction.trim(), firstQuestion.trim()].filter(Boolean).join(" ");
 }
 
 export function composeContextualOpening(config, firstQuestion) {
-  const role = config.role?.trim() || "target";
   const seniorityLabels = { junior: "junior", "mid-level": "mid-level", senior: "senior", staff: "staff-level" };
-  const focusLabels = {
-    "technical-depth": "technical depth",
-    communication: "communication and clarity",
-    behavioral: "behavioral questions",
-    mixed: "balanced practice",
-  };
-  const seniority = seniorityLabels[config.seniority?.trim()];
-  const focus = focusLabels[config.focus?.trim()];
   const minutes = Number.parseInt(config.duration, 10) || 5;
-  const roleDescription = `${seniority ? `${seniority} ` : ""}${role} role`;
-  const focusDescription = focus ?? "your experience and decisions";
-  return `We have about ${minutes} minutes for your ${roleDescription}, focusing on ${focusDescription}. ${firstQuestion.trim()}`;
+  const { phrase, personal } = describeRoleForSpeech(config.role, seniorityLabels[config.seniority?.trim()]);
+  return `We have about ${minutes} minutes ${personal ? "for your " : "for "}${phrase}${focusClause(config.focus)}. ${firstQuestion.trim()}`;
 }
 
 export function composeAcknowledgedQuestion(acknowledgement, question) {
@@ -142,6 +133,12 @@ function acquireSpeechBlob(options, text) {
       else abortIfUnused();
     },
   };
+}
+
+/** Fetches the synthesized audio of one short text (shared in-flight request, deduped like the chunk requests). */
+export function fetchSpeechBlob(text, options) {
+  const lease = acquireSpeechBlob(options, text);
+  return lease.promise.finally(() => lease.release(false));
 }
 
 /**
@@ -346,11 +343,13 @@ export const minimumChunkCharacters = 40;
 // Only a sentence with no usable space stays whole.
 export const maximumChunkCharacters = 80;
 // An opening of at most this many characters stays one request; a longer one makes its first sentence its own chunk.
-export const firstChunkSplitThreshold = 70;
-// The first chunk is at most this long whenever the first sentence is longer (Kokoro synthesis time grows with length).
-export const firstChunkMaximum = 60;
-/** How far a clause or conjunction split may exceed the chunk cap. */
+export const firstChunkSplitThreshold = 50;
+// The first chunk is at most this long (plus `firstChunkSlack` at a natural boundary) whenever the first sentence is longer:
+// Kokoro synthesis time grows with length and the first chunk is all the candidate waits for (~1 s at 35-45 characters).
+export const firstChunkMaximum = 40;
+/** How far a clause or conjunction split may exceed the chunk cap (the first chunk stays within ~45 characters). */
 const naturalBoundarySlack = 10;
+const firstChunkSlack = 5;
 export const firstChunkPartMinimum = 20;
 // A head cut before a conjunction or at a word boundary is at least this long.
 export const firstChunkWordPartMinimum = 25;
@@ -358,12 +357,19 @@ export const firstChunkWordPartMinimum = 25;
 export const laterChunkPartMinimum = 25;
 // The final chunk reports it is ending once at most this much of it remains (or at its start when it is shorter).
 export const finalChunkLeadMs = 3_000;
-// Chunk N+1 is requested only once chunk N's audio has arrived: one network synthesis in flight per utterance.
+// Chunk N+1 is requested as soon as chunk N's audio has arrived (so it is synthesized while N plays): one synthesis in flight per utterance, never competing with the first chunk's.
 export const maxConcurrentChunkRequests = 1;
+
+// A first sentence up to this long with no clause or conjunction boundary near the start is synthesized whole.
+const firstChunkWholeSentenceMaximum = 60;
+// Words a first chunk should not end on when it is cut at a plain word boundary.
+const danglingWords = new Set(["a", "an", "the", "to", "of", "for", "in", "on", "at", "with", "by", "from", "into", "about", "as", "if", "than", "and", "or", "but", "so", "that", "which", "how", "you", "your", "we", "i", "my", "our", "this", "these", "those", "it", "is", "are", "was", "were", "be", "can", "could", "would", "will", "do", "did", "what", "when", "where", "who", "why"]);
 
 const clauseBoundaries = [", ", "; ", " \u2014 ", ": "];
 
 const conjunctionBoundaries = [" because ", " so ", " and ", " but ", " which ", " when ", " while ", " where ", " that ", " so that ", " to "];
+// The first chunk may also end before a preposition ("We have about 10 minutes | for your ... role"), a natural breath point.
+const firstChunkPrepositionBoundaries = [" for ", " with ", " about ", " in ", " on "];
 
 /**
  * Splits a sentence longer than `cap` so the head is at most `cap` long, or returns null:
@@ -371,10 +377,12 @@ const conjunctionBoundaries = [" because ", " so ", " and ", " but ", " which ",
  * 2. before the latest conjunction/relative word leaving a 25..cap character head; else
  * 3. at the last space leaving a 25..cap character head.
  */
-function splitSentence(sentence, cap, clauseMinimum) {
+function splitSentence(sentence, cap, clauseMinimum, slack = naturalBoundarySlack, firstChunk = false) {
   if (sentence.length <= cap) return null;
+  // A first sentence that is barely over the cap is synthesized whole: a split would only add a seam.
+  if (firstChunk && sentence.length <= cap + slack) return null;
   // A clause or conjunction boundary sounds natural, so it may overshoot the cap slightly; a bare word cut may not.
-  const naturalCap = cap + naturalBoundarySlack;
+  const naturalCap = cap + slack;
   let best = null;
   for (const boundary of clauseBoundaries) {
     let from = 0;
@@ -393,14 +401,28 @@ function splitSentence(sentence, cap, clauseMinimum) {
   if (best) return { head: best.head, tail: best.tail };
   const lower = sentence.toLowerCase();
   let latest = -1;
-  for (const word of conjunctionBoundaries) {
+  const partMinimum = firstChunk ? clauseMinimum : firstChunkWordPartMinimum;
+  const usePrepositions = firstChunk && sentence.length > firstChunkWholeSentenceMaximum;
+  for (const word of usePrepositions ? [...conjunctionBoundaries, ...firstChunkPrepositionBoundaries] : conjunctionBoundaries) {
+    const isPreposition = firstChunkPrepositionBoundaries.includes(word);
     for (let at = lower.indexOf(word); at !== -1; at = lower.indexOf(word, at + 1)) {
       if (at > naturalCap) break;
-      if (at >= firstChunkWordPartMinimum && at > latest && sentence.slice(at + 1).trim()) latest = at;
+      if (isPreposition && danglingWords.has(sentence.slice(sentence.lastIndexOf(" ", at - 1) + 1, at).toLowerCase().replace(/[^a-z']/gu, ""))) continue;
+      if (at >= partMinimum && at > latest && sentence.slice(at + 1).trim()) latest = at;
     }
   }
   if (latest === -1) {
-    const at = sentence.lastIndexOf(" ", cap);
+    // First chunk: without a natural boundary a sentence that is short enough stays whole (a cut mid-phrase sounds worse
+    // than ~1.5 s of synthesis), and a word cut never leaves a dangling article, preposition or conjunction at the end.
+    if (firstChunk && sentence.length <= firstChunkWholeSentenceMaximum) return null;
+    let at = sentence.lastIndexOf(" ", cap);
+    if (firstChunk) {
+      // Prefer the latest space (up to the natural-boundary slack) after a word that can end a phrase; else the plain cut.
+      for (let candidate = sentence.lastIndexOf(" ", cap + slack); candidate >= firstChunkWordPartMinimum; candidate = sentence.lastIndexOf(" ", candidate - 1)) {
+        const word = sentence.slice(sentence.lastIndexOf(" ", candidate - 1) + 1, candidate).toLowerCase().replace(/[^a-z']/gu, "");
+        if (!danglingWords.has(word)) { at = candidate; break; }
+      }
+    }
     if (at < firstChunkWordPartMinimum || !sentence.slice(at + 1).trim()) return null;
     latest = at;
   }
@@ -417,7 +439,7 @@ function splitToFit(sentence, cap) {
  * Groups sentences into synthesis chunks: `text` is what is sent to the voice; `sentences` are the caption sentences
  * (always whole); `units` pair each spoken piece with its caption. Each chunk is at least `minimumChunkCharacters`
  * long (except a lone short utterance, a short first part or a group that merging would push past
- * `maximumChunkCharacters`). A first sentence over 60 characters becomes a first chunk of at most 60 characters plus a remainder.
+ * `maximumChunkCharacters`). A first sentence over 40 characters becomes a first chunk of ~35-45 characters (a clause or conjunction boundary, else a word boundary) plus a remainder.
  */
 export function groupInterviewerSentences(segments) {
   const sentences = segments.map((segment) => segment.trim()).filter(Boolean);
@@ -430,7 +452,7 @@ export function groupInterviewerSentences(segments) {
 
   sentences.forEach((sentence, index) => {
     let units = splitToFit(sentence, maximumChunkCharacters).map((text) => ({ text, caption: sentence }));
-    const split = index === 0 ? splitSentence(sentence, firstChunkMaximum, firstChunkPartMinimum) : null;
+    const split = index === 0 ? splitSentence(sentence, firstChunkMaximum, firstChunkPartMinimum, firstChunkSlack, true) : null;
     if (split) {
       chunks.push({ units: [{ text: split.head, caption: sentence }], locked: true });
       units = splitToFit(split.tail, maximumChunkCharacters).map((text) => ({ text, caption: sentence }));
@@ -638,6 +660,11 @@ export function playInterviewerSegments(segments, options) {
       // Start buffering the following chunk while this one plays.
       upcoming = index + 1 < chunks.length ? prepare(index + 1) : null;
       upcoming?.catch(() => {});
+      // The first chunk waits for an acknowledgement that is still playing (its audio is already here; the rest keeps loading).
+      if (index === 0 && typeof options.beforePlayback === "function") {
+        try { await Promise.race([options.beforePlayback(), cancellationResult]); } catch { /* Best effort. */ }
+        if (cancelled) return { status: "cancelled" };
+      }
       const outcome = await playChunk(item, chunks[index], index === 0, index === chunks.length - 1, index);
       networkPlayed = true;
       release(item);

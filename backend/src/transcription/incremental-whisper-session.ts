@@ -1,7 +1,8 @@
 import { TranscriptionUnavailableError } from "./errors.js";
 import type { StreamFailureReason, StreamingTurnSession, TurnEndInfo } from "./streaming-turn-session.js";
 import { pcmToWav } from "./streaming-transcription.js";
-import type { TranscriptionService } from "./types.js";
+import { hedgedTranscribe } from "./hedged-transcription.js";
+import type { TranscriptionResult, TranscriptionService } from "./types.js";
 
 /**
  * Incremental Whisper: the answer is cut at local VAD pauses (and every ~15 s of continuous speech) and each segment is
@@ -22,8 +23,14 @@ export type IncrementalWhisperOptions = {
   service: TranscriptionService;
   /** Speech threshold of the VAD (RMS level); frames at or above it count as speech. */
   speechThreshold: number;
-  /** Per-segment Whisper time limit, retries included. Default 8000. */
+  /** Per-segment Whisper time limit (one attempt group, hedge included). A failed group is retried once. Default 8000. */
   segmentTimeoutMs?: number;
+  /** A segment request still pending after this long is raced against an identical second request (first success wins). 0 disables. Default 2500. */
+  segmentHedgeAfterMs?: number;
+  /** Pause (consecutive quiet frames) that cuts a long buffered segment early, without ending the turn. 0 disables. Default 400. */
+  softCutSilenceMs?: number;
+  /** A soft cut only happens once at least this much audio is buffered, so the tail after the last cut stays short. Default 6000. */
+  softCutMinBufferedMs?: number;
   /** Longest continuous segment before a forced cut at the quietest recent frame. Default 15000. */
   maxSegmentMs?: number;
   /** Segments with less speech than this are not transcribed. Default 300. */
@@ -37,12 +44,15 @@ export type IncrementalWhisperOptions = {
   onTurnStart?: () => void;
   onTurnEnd?: (transcript: string, info?: TurnEndInfo) => void;
   onCaptionChange?: () => void;
-  onFailure?: (reason: StreamFailureReason) => void;
+  onFailure?: (reason: StreamFailureReason, detail: SessionFailureDetail) => void;
 };
 
 /** Phrases Whisper tends to invent on near-silence; dropped only when the segment had little speech. */
 const hallucinations = new Set(["you", "thank you", "thanks", "thanks for watching", "thank you for watching", "bye", "bye bye", "the end"]);
 const hallucinationSpeechMs = 1_200;
+
+/** Content-free reason the incremental session was abandoned (the caller then transcribes the full audio). */
+export type SessionFailureDetail = "segment_error" | "segment_timeout" | "flush_timeout";
 
 function normalizeForGuard(text: string): string {
   return text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
@@ -76,7 +86,10 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
   private readonly controller = new AbortController();
   private readonly waiters = new Set<() => void>();
   private turnObserver: ((kind: "start" | "end", transcript: string) => void) | null = null;
-  private stats = { segmentsTranscribed: 0, segmentsSkipped: 0, tailMs: 0, maxSegmentLatencyMs: 0 };
+  private stats = { segmentsTranscribed: 0, segmentsSkipped: 0, tailMs: 0, maxSegmentLatencyMs: 0, segmentHedges: 0, segmentHedgeWins: 0, segmentRetries: 0, softCuts: 0 };
+  private quietFrames = 0;
+  private softCutPending = false;
+  private detail: SessionFailureDetail | null = null;
 
   constructor(private readonly options: IncrementalWhisperOptions) {}
 
@@ -85,6 +98,8 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
   }
 
   get failed(): boolean { return this.failedReason !== null; }
+  /** Why the session gave up (content-free); null while it is healthy. */
+  get failureDetail(): SessionFailureDetail | null { return this.detail; }
   get failureReason(): StreamFailureReason | null { return this.failedReason; }
   get turnCount(): number { return this.turnEnds; }
   get turnActive(): boolean { return this.activeTurn; }
@@ -101,6 +116,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
   markSpeech(): void {
     if (!this.alive || this.flushing) return;
     this.speechEpoch += 1;
+    this.softCutPending = false;
     if (this.activeTurn) return;
     this.activeTurn = true;
     this.turnObserver?.("start", "");
@@ -110,6 +126,8 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
   recordLevel(level: number): void {
     if (!this.alive || this.flushing || !Number.isFinite(level)) return;
     this.levels.push(level);
+    this.quietFrames = level >= this.options.speechThreshold ? 0 : this.quietFrames + 1;
+    this.softCut();
   }
 
   sendAudio(frame: Buffer): void {
@@ -121,7 +139,16 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
 
   /** Pause detected by the local VAD: cut the pending segment, transcribe it and signal the turn end when it is ready. */
   async endTurn(_timeoutMs: number): Promise<void> {
-    if (!this.alive || this.flushing || this.bytes === 0) return;
+    if (!this.alive || this.flushing) return;
+    if (this.bytes === 0) {
+      // A soft cut already took everything up to this pause: the turn ends once the segments before it are committed.
+      if (this.softCutPending && this.activeTurn) {
+        this.softCutPending = false;
+        this.segments.push({ state: "skipped", text: "", turnEnd: true, epoch: this.speechEpoch, cutAt: Date.now(), promise: null });
+        this.drain();
+      }
+      return;
+    }
     const segment = this.cut(this.bytes, this.levels.length, true);
     if (segment?.promise) await segment.promise;
   }
@@ -157,7 +184,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       const timedOut = new Promise<"timeout">((resolve) => { timer = setTimeout(() => resolve("timeout"), timeoutMs); });
       const outcome = await Promise.race([Promise.all(pending).then(() => "done" as const), timedOut, this.waitClosed()]);
       clearTimeout(timer);
-      if (outcome !== "done") this.markFailed("segment_failed");
+      if (outcome !== "done") this.markFailed("segment_failed", "flush_timeout");
     }
     const complete = this.alive && this.segments.every((segment) => segment.state === "done" || segment.state === "skipped");
     const text = complete ? this.joined() : "";
@@ -188,10 +215,25 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
     return this.finals.join(" ").replace(/\s+/g, " ").trim();
   }
 
-  private markFailed(reason: StreamFailureReason): void {
+  private markFailed(reason: StreamFailureReason, detail: SessionFailureDetail): void {
     if (this.failedReason) return;
     this.failedReason = reason;
-    this.options.onFailure?.(reason);
+    this.detail = detail;
+    this.options.onFailure?.(reason, detail);
+  }
+
+  /**
+   * A short pause inside a long answer: cut what is buffered now (no turn end), so the segment that is still open when the
+   * answer really ends is only the last sentence or two. Whisper latency grows with segment length.
+   */
+  private softCut(): void {
+    const silenceMs = this.options.softCutSilenceMs ?? 400;
+    if (silenceMs <= 0 || this.quietFrames * frameMs < silenceMs || !this.activeTurn) return;
+    if (this.bytes < (this.options.softCutMinBufferedMs ?? 6_000) * bytesPerMs) return;
+    this.stats.softCuts += 1;
+    this.quietFrames = 0;
+    this.softCutPending = true;
+    this.cut(this.bytes, this.levels.length, false);
   }
 
   /** Continuous speech: cut at the quietest recent frame so the final tail stays short. No turn end is signalled. */
@@ -242,18 +284,47 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
     return segment;
   }
 
+  /** One attempt group: a request raced against a hedge request after `segmentHedgeAfterMs`, limited to `segmentTimeoutMs`. */
+  private requestSegment(wav: Buffer): Promise<TranscriptionResult> {
+    const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(this.options.segmentTimeoutMs ?? 8_000)]);
+    return hedgedTranscribe({
+      start: async (callSignal) => {
+        try {
+          return await this.options.service.transcribe(wav, "whisper-large-v3-turbo", "wav", AbortSignal.any([signal, callSignal]), { question: this.options.question ?? null, previousText: this.joined() });
+        } catch (error) {
+          // An empty recognition is a result (nothing said), not a failure.
+          if (error instanceof TranscriptionUnavailableError && error.providerStatus === "empty") return { provider: "whisper-large-v3-turbo", transcript: "" } as TranscriptionResult;
+          throw error;
+        }
+      },
+      hedgeAfterMs: this.options.segmentHedgeAfterMs ?? 2_500,
+      tryReserve: () => ({ active: true, release: () => undefined }),
+      signal,
+      onOutcome: (outcome) => {
+        if (outcome === "primary_won" || outcome === "secondary_won" || outcome === "both_failed") this.stats.segmentHedges += 1;
+        if (outcome === "secondary_won") this.stats.segmentHedgeWins += 1;
+      },
+    });
+  }
+
   private async transcribeSegment(segment: Segment, pcm: Buffer, speechMs: number): Promise<void> {
     const wav = pcmToWav(pcm);
     pcm.fill(0);
     const startedAt = this.now;
     try {
-      const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(this.options.segmentTimeoutMs ?? 8_000)]);
       let text = "";
-      try {
-        text = (await this.options.service.transcribe(wav, "whisper-large-v3-turbo", "wav", signal, { question: this.options.question ?? null, previousText: this.joined() })).transcript.trim();
-      } catch (error) {
-        // An empty recognition is a result (nothing said), not a failure.
-        if (!(error instanceof TranscriptionUnavailableError && error.providerStatus === "empty")) throw error;
+      // A failed attempt group is retried once with the same audio (tail-only recovery: the rest of the answer is untouched),
+      // instead of abandoning the whole incremental transcript for a full-audio call.
+      for (let round = 0; ; round += 1) {
+        try {
+          text = (await this.requestSegment(wav)).transcript.trim();
+          break;
+        } catch (error) {
+          if (this.closed) return;
+          const status = error instanceof TranscriptionUnavailableError ? error.providerStatus : undefined;
+          if (round >= 1 || status === "rejected") throw error;
+          this.stats.segmentRetries += 1;
+        }
       }
       if (this.closed) return;
       this.stats.maxSegmentLatencyMs = Math.max(this.stats.maxSegmentLatencyMs, this.now - startedAt);
@@ -266,10 +337,10 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
         segment.text = text;
         segment.state = "done";
       }
-    } catch {
+    } catch (error) {
       if (this.closed) return;
       segment.state = "failed";
-      this.markFailed("segment_failed");
+      this.markFailed("segment_failed", error instanceof TranscriptionUnavailableError && (error.providerStatus === "timeout" || error.providerStatus === "aborted") ? "segment_timeout" : "segment_error");
       return;
     } finally {
       wav.fill(0);
