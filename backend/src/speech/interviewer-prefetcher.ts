@@ -76,7 +76,13 @@ export class InterviewerSpeechPrefetcher {
   }
 
   /** Synthesizes the fixed phrases once so the instant acknowledgements and the closing line are ready before they are needed. */
-  prefetchStatic(): void {
-    for (const text of staticSpeechTexts()) this.prefetchText(text);
+  /** One at a time, outside the speculative in-flight cap, so startup never drops a phrase or competes with a live turn. */
+  async prefetchStatic(): Promise<void> {
+    const { cache, speed, format } = this.options;
+    for (const text of staticSpeechTexts()) {
+      try {
+        await cache.synthesize({ text: normalizeTextForSpeech(text.trim()), voice: resolveVoice(undefined, this.options.voice), speed, format });
+      } catch { /* A missing phrase is synthesized on demand later. */ }
+    }
   }
 }
