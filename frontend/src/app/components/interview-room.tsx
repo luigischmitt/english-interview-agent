@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, CloudOff, LoaderCircle, Mic } from "lucide-react";
-import { inAppMicBody, inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
+import { inAppMicBody, inAppMicTitle, useInAppBrowser } from "../hooks/use-in-app-browser";
 import { MicrophoneCapture, micDeniedMessage, type MicControls, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { buildPreviousAnswers, decideNextTurn, type TurnDecision } from "@/lib/interview/orchestration";
@@ -571,7 +571,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const answerHint = isAdvancing ? "Preparando a próxima etapa…" : voiceCaptureState === "requesting" ? "Preparando microfone…" : voiceCaptureState === "listening" || voiceCaptureState === "detected" ? "Pode falar. A resposta será concluída automaticamente após uma pausa." : voiceCaptureState === "finalizing" || voiceTranscription.status === "pending" ? "Processando sua resposta…" : voiceTranscription.status === "failed" ? "Não foi possível concluir. Tente gravar novamente, pule a pergunta ou encerre a prática." : voiceTranscription.status === "available" ? "Resposta concluída." : "Inicie a gravação e responda em inglês.";
 
   const inApp = useInAppBrowser();
-  const { copied: linkCopied, copy: copyLink } = useCopyPageLink();
   const micDisabled = isInterviewerSpeaking || isAdvancing || phase === "ending";
   const capturing = voiceCaptureState === "listening" || voiceCaptureState === "detected";
   const SaveIcon = persistenceState === "saved" ? Check : persistenceState === "local" ? CloudOff : LoaderCircle;
@@ -591,8 +590,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           {mic.errorMessage && (
             <Toast tone="error" role="alert" actions={<>
               {inAppDenied && inApp?.openUrl && <a href={inApp.openUrl} className="mt-toast-btn mt-toast-link">Abrir no {inApp.browserName}</a>}
-              {inAppDenied && <button type="button" className="mt-toast-btn" onClick={() => void copyLink()}>{linkCopied ? "Link copiado" : "Copiar link"}</button>}
-              {!inAppDenied && <button type="button" className="mt-toast-btn" onClick={mic.start} disabled={micDisabled || !mic.canStart}>Tentar novamente</button>}
+              <button type="button" className="mt-toast-btn" onClick={mic.start} disabled={micDisabled || !mic.canStart}>Tentar novamente</button>
               <button type="button" className="mt-toast-btn" onClick={skipQuestion} disabled={!canSkip}>Pular</button>
             </>}>{inAppDenied && inApp ? <><strong>{inAppMicTitle(inApp)}.</strong> {inAppMicBody(inApp)}</> : mic.errorMessage}</Toast>
           )}
