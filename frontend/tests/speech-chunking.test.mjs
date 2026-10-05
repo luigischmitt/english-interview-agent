@@ -7,157 +7,106 @@ beforeEach(() => { resetSpeechFlights(); });
 
 const texts = (segments) => groupInterviewerSentences(segments).map((chunk) => chunk.text);
 
-test("the first sentence is its own chunk, later short sentences merge with the next one, a sentence is never split", () => {
-  // 55 characters: a first sentence of at most 60 characters is never split.
-  const redis = "Why did you choose Redis for the session cache at scale?";
-  assert.deepEqual(texts(["Thanks.", redis, "How did it scale to many more users at peak?"]), ["Thanks.", redis, "How did it scale to many more users at peak?"]);
-  assert.deepEqual(texts([redis, "Thanks.", "How did it scale to many more users at peak?"]), [redis, "Thanks. How did it scale to many more users at peak?"]);
+const question = "Now I'd like to hear how you approach designing scalable systems. How would you design a service that sends notifications to millions of users?";
+const roleOpening = "We have about 5 minutes for your junior Software Engineer role. Can you tell me about your experience and what makes you a strong fit for Software Engineer?";
+
+test("production examples: the first sentence is the short first chunk and the second sentence is one whole chunk", () => {
+  assert.deepEqual(texts(splitSentences(question)), [
+    "Now I'd like to hear how you approach designing scalable systems.",
+    "How would you design a service that sends notifications to millions of users?",
+  ]);
+  assert.deepEqual(texts(splitSentences(roleOpening)), [
+    "We have about 5 minutes for your junior Software Engineer role.",
+    "Can you tell me about your experience and what makes you a strong fit for Software Engineer?",
+  ]);
+});
+
+test("short sentences stay in one request; a whole utterance of at most 50 characters is one chunk", () => {
   assert.deepEqual(texts(["Hi.", "Yes."]), ["Hi. Yes."]);
+  assert.deepEqual(texts(["Got it.", "Why Redis?"]), ["Got it. Why Redis?"]);
   assert.deepEqual(texts([]), []);
   assert.deepEqual(texts(["  ", ""]), []);
 });
 
-test("a short first sentence stays whole; a short trailing sentence joins the previous chunk", () => {
-  const long = "Could you walk me through how you designed the retry policy for the payment webhooks in production?";
-  const second = "Next one is surely long enough to stand.";
-  // The long first sentence splits at a word boundary that does not leave a dangling "how you" (see below); its remainder
-  // plus the second sentence would be over the 80 cap, so they stay separate chunks.
-  assert.deepEqual(texts([long, second]), ["Could you walk me through how you designed", "the retry policy for the payment webhooks in production?", second]);
-  assert.deepEqual(texts([second, "Tell me about a hard bug.", "Ok?"]), [second, "Tell me about a hard bug. Ok?"]);
-  // A whole utterance of at most 70 characters stays a single request.
-  assert.deepEqual(texts(["Got it.", "Why Redis?"]), ["Got it. Why Redis?"]);
-  const grouped = groupInterviewerSentences([second, "Next one is also long enough to stand alone."]);
-  assert.equal(grouped.length, 2);
-  assert.deepEqual(grouped[0].sentences, [second]);
+test("a first sentence of at most 70 characters is the first chunk; later short sentences merge into whole-sentence chunks", () => {
+  const redis = "Why did you choose Redis for the session cache at scale?";
+  const scale = "How did it scale to many more users at peak?";
+  assert.deepEqual(texts([redis, "Thanks.", scale]), [redis, `Thanks. ${scale}`]);
+  // A bridge shorter than 25 characters absorbs the next sentence, so no chunk is tiny.
+  assert.deepEqual(texts(["Thanks.", redis, scale]), [`Thanks. ${redis}`, scale]);
+  // A short trailing sentence joins the previous chunk.
+  assert.deepEqual(texts([redis, "Tell me about a hard bug you fixed.", "Ok?"]), [redis, "Tell me about a hard bug you fixed. Ok?"]);
 });
 
-const opening = "Thanks for joining me today, we have about 5 minutes for this backend role.";
-
-test("a first sentence over 40 characters is split at its first clause boundary leaving 20-45 characters", () => {
-  const grouped = groupInterviewerSentences([opening, "Tell me about a hard bug you fixed recently."]);
+test("a first sentence over 70 characters is cut at its first clause break of at least 25 characters", () => {
+  const grouped = groupInterviewerSentences(["Thanks for joining me today and for taking the time to talk, because I want to hear about your work.", "Tell me about a hard bug you fixed recently."]);
   assert.deepEqual(grouped.map((chunk) => chunk.text), [
-    "Thanks for joining me today,",
-    "we have about 5 minutes for this backend role.",
-    "Tell me about a hard bug you fixed recently.",
+    "Thanks for joining me today and for taking the time to talk,",
+    "because I want to hear about your work. Tell me about a hard bug you fixed recently.",
   ]);
-  assert.ok(grouped[0].text.length >= 20 && grouped[0].text.length <= 45);
-  // The remainder is not merged back into the first chunk, even when nothing follows it.
-  assert.deepEqual(texts([opening]), ["Thanks for joining me today,", "we have about 5 minutes for this backend role."]);
-  // A clause boundary a little past 40 characters is still used (natural boundaries may overshoot by 5).
-  const slack = "Let us start with your background, then the design.";
-  assert.equal(slack.indexOf(",") + 1, 34);
-  assert.deepEqual(texts([slack]), ["Let us start with your background,", "then the design."]);
+  // A clause break before 25 characters is skipped: "Hi," is too short, so the cut is at the next comma.
+  assert.equal(texts(["Hi, thanks for joining me today and for taking the time to talk about your work, ok?", "Great, tell me about your last project."])[0], "Hi, thanks for joining me today and for taking the time to talk about your work,");
+  assert.deepEqual(texts(["Let us begin with your background \u2014 especially the systems you owned end to end at work in production."]), [
+    "Let us begin with your background", "especially the systems you owned end to end at work in production.",
+  ]);
+  assert.deepEqual(texts(["Here is the plan for today: we start with a short warm up and then go deeper into system design."]), [
+    "Here is the plan for today:", "we start with a short warm up and then go deeper into system design.",
+  ]);
 });
 
-test("the first chunk of every utterance is about 35-45 characters at a natural boundary, never mid-word", () => {
-  const utterances = [
-    "Okay, that makes sense and it was a clear example of ownership. Tell me about a hard bug you fixed recently in production.",
-    "Thanks for sharing that. You mentioned the migration, so what was the hardest tradeoff you made along the way and why?",
-    "So you moved the billing service into a separate cluster for the payment team after deploys kept failing under heavy load.",
-    "Could you walk me through how you designed the retry policy for the payment webhooks in production, step by step?",
-  ];
-  for (const utterance of utterances) {
-    const first = groupInterviewerSentences(splitSentences(utterance))[0].text;
-    assert.ok(first.length <= 45, `${first.length}: ${first}`);
-    assert.ok(utterance.includes(first), "a chunk is a verbatim slice of the utterance (never splits inside a word)");
-    assert.ok(utterance.startsWith(first), first);
-    assert.ok(/^\s|\s$/.test(utterance.charAt(first.length)) || /[.?!,;:]$/.test(first) || utterance.charAt(first.length) === " ", "cut at a word boundary");
-  }
-});
-
-test("the split honours ; \u2014 and : and skips boundaries that leave a part under 20 characters", () => {
-  // "Thanks for joining," is 19 characters and the semicolon is past 45, so the sentence splits at a word boundary.
-  assert.deepEqual(texts(["Thanks for joining, we start with recent work on it; then move to design."]), [
-    "Thanks for joining, we start with recent work", "on it; then move to design.",
-  ]);
-  assert.deepEqual(texts(["Let us begin with your background \u2014 especially the systems you owned end to end at work."]), [
-    "Let us begin with your background", "especially the systems you owned end to end at work.",
-  ]);
-  assert.deepEqual(texts(["Here is the plan for today: we start with a short warm up and then go deeper on design."]), [
-    "Here is the plan for today:", "we start with a short warm up and then go deeper on design.",
-  ]);
-  // A clause boundary that leaves a head over 45 characters is not used: the sentence splits before a conjunction instead.
-  const lateComma = "Hi, thanks for joining me today and for taking the time to talk about your work, ok?";
-  assert.deepEqual(texts([lateComma]), ["Hi, thanks for joining me today", "and for taking the time to talk about your work, ok?"]);
-  // A later sentence is split only when it is over 80 characters (this one is 84, so it splits at its comma).
-  const later = ["Hello there and welcome to the interview.", "We have about 5 minutes for your senior backend role, focusing on technical depth."];
-  assert.deepEqual(texts(later), ["Hello there and welcome to the interview.", "We have about 5 minutes for your senior backend role,", "focusing on technical depth."]);
-  const mid = ["Hello there and welcome to the interview.", "We have five minutes for your backend role, focusing on depth."];
-  assert.deepEqual(texts(mid), mid, "a later sentence of at most 80 characters is never split");
-});
-
-const bridge119 = "So you moved the billing service into a separate cluster for the payment team after deploys kept failing under heavy load.";
-
-test("a long first sentence without a clause boundary splits before the latest conjunction leaving at most 45 characters", () => {
-  assert.ok(bridge119.length >= 115);
-  const [head, ...tail] = texts([bridge119]);
-  // No clause boundary; " to " does not occur, " into " is not a boundary, so the word-boundary fallback applies.
-  assert.equal(head, "So you moved the billing service");
-  assert.ok(head.length >= 25 && head.length <= 45);
-  assert.equal([head, ...tail].join(" "), bridge119);
-  assert.deepEqual(texts(["We rebuilt the cache layer last quarter because deploys kept failing under load."]), ["We rebuilt the cache layer last quarter", "because deploys kept failing under load."]);
-});
-
-test("without a clause or conjunction boundary the first sentence splits at the last space before 40 characters, preferring a cut that does not leave a dangling word", () => {
+test("a long first sentence without punctuation stays whole rather than being cut mid-phrase", () => {
   const long = "Could you walk me through how you designed the retry policy for the payment webhooks in production?";
-  // A cut right after "you" or "how" would dangle: the cut moves on to the next word that can end a phrase.
-  assert.deepEqual(texts([long]), ["Could you walk me through how you designed", "the retry policy for the payment webhooks in production?"]);
-  assert.ok(texts([long])[0].length <= 45);
-  // A single very long word run with no usable space stays whole.
+  assert.equal(texts([long, "Then tell me what you changed afterwards."])[0], long);
   const blob = "x".repeat(90);
   assert.deepEqual(texts([blob]), [blob]);
 });
 
-test("a first sentence of at most 60 characters with no clause or conjunction boundary near its start is untouched", () => {
-  const exact = "Tell me about the hardest production incident you handled.";
-  assert.ok(exact.length <= 60);
-  assert.deepEqual(texts([exact, "Take your time and answer as you would in a real interview."]), [exact, "Take your time and answer as you would in a real interview."]);
-});
-
-test("captions stay whole sentences while the two parts of a split sentence play", () => {
-  const grouped = groupInterviewerSentences([opening, "Tell me about a hard bug you fixed recently."]);
-  assert.deepEqual(grouped[0].sentences, [opening]);
-  assert.deepEqual(grouped[1].sentences, [opening]);
-  assert.deepEqual(grouped[2].sentences, ["Tell me about a hard bug you fixed recently."]);
-});
-
-test("a group never merges past 80 characters", () => {
+test("after the first chunk, chunks end only at sentence ends and merge up to 180 characters", () => {
+  const first = "Welcome to the interview today.";
+  const a = "Walk me through a system you owned end to end at your last company.";
+  const b = "Which part of it was the hardest?";
+  const c = "How did your team measure whether the redesign actually worked?";
+  assert.deepEqual(texts([first, a, b, c]), [first, a, `${b} ${c}`]);
+  assert.ok(texts([first, a, b, c]).slice(1).every((chunk) => /[.?!]$/.test(chunk)));
   const words = (n) => `${"word ".repeat(n).trim()}.`; // 5 * n characters
-  assert.deepEqual(texts(["Okay.", words(16)]), ["Okay.", words(16)], "a short sentence is not merged into one that would exceed the cap");
-  assert.deepEqual(texts([words(8), words(16), "Ok?"]), [words(8), words(16), "Ok?"], "a short trailing sentence does not join a chunk that would exceed the cap");
-  const [first, second] = [words(8), words(12)];
-  assert.deepEqual(texts([first, second, "Hm."]), [first, `${second} Hm.`], "merging below the cap still happens");
-  assert.ok(texts([words(10), words(10), words(10), "Hm."]).every((text) => text.length <= 80));
+  assert.deepEqual(texts([first, words(20), words(20)]), [first, words(20), words(20)], "two 100-character sentences stay separate chunks");
+  assert.ok(texts([first, words(6), words(8), words(10), "Hm."]).slice(1).every((text) => text.length <= 180));
+  assert.ok(texts([first, words(6), words(8), words(10), "Hm."]).every((text) => text.length >= 25));
 });
 
 const twoHundred = "We migrated the billing service to a new cluster last year because deploys were slow and risky, so the team agreed to move it gradually while keeping the old path running and then we measured the results every week.";
 
-test("a long later sentence is split into pieces of about 80 characters (up to 90 at clause and conjunction boundaries)", () => {
-  assert.ok(twoHundred.length >= 200);
+test("a single sentence over 180 characters is split at a clause break", () => {
+  assert.ok(twoHundred.length > 200);
   const chunks = texts(["Thanks for that answer.", twoHundred]);
   assert.equal(chunks[0], "Thanks for that answer.");
   const pieces = chunks.slice(1);
-  assert.ok(pieces.length >= 3);
-  assert.ok(pieces.every((piece) => piece.length <= 90), JSON.stringify(pieces)); // natural boundaries may overshoot the 80 cap by up to 10
+  assert.equal(pieces.length, 2);
+  assert.ok(pieces.every((piece) => piece.length <= 180 && piece.length >= 25), JSON.stringify(pieces));
   assert.equal(pieces.join(" "), twoHundred);
-  assert.ok(pieces.slice(1).every((piece) => /^(because|so|and|but|which|when|while|where|that|to)\b/.test(piece) || /[,;:]$/.test(pieces[pieces.indexOf(piece) - 1])), "cuts fall on clause or conjunction boundaries");
+  assert.ok(/,$/.test(pieces[0]), "the cut falls on a clause break");
+  const words = `${"word ".repeat(45).trim()}.`; // 225 characters, no boundary
+  const wordPieces = texts(["Hello there friend, welcome.", words]).slice(1);
+  assert.ok(wordPieces.length >= 2 && wordPieces.every((piece) => piece.length <= 180 && piece.length >= 25));
+  assert.equal(wordPieces.join(" "), words);
+  const blob = "x".repeat(250);
+  assert.deepEqual(texts(["Hello there friend, welcome.", blob]), ["Hello there friend, welcome.", blob], "no usable space: stays whole");
 });
 
-test("a long sentence with no boundary splits at the last space before 80 characters, recursively", () => {
-  const words = `${"word ".repeat(45).trim()}.`; // 225 characters
-  const pieces = texts(["Hello there."].concat(words)).slice(1);
-  assert.ok(pieces.length >= 3);
-  assert.ok(pieces.every((piece) => piece.length <= 80 && piece.length >= 25));
-  assert.equal(pieces.join(" "), words);
-  const blob = "x".repeat(120);
-  assert.deepEqual(texts(["Hello there.", blob]), ["Hello there.", blob], "no usable space: stays whole");
+test("captions stay whole sentences for every piece of a split sentence", () => {
+  const sentence = "Thanks for joining me today and for taking the time to talk, because I want to hear about your work.";
+  const next = "Tell me about a hard bug you fixed recently.";
+  const grouped = groupInterviewerSentences([sentence, next]);
+  assert.deepEqual(grouped[0].sentences, [sentence]);
+  assert.deepEqual(grouped[1].sentences, [sentence, next], "the remainder of the split sentence merges with the next one");
+  assert.deepEqual(grouped.flatMap((chunk) => chunk.units.map((unit) => unit.caption)), [sentence, sentence, next]);
+  const long = groupInterviewerSentences(["Thanks for that answer.", twoHundred]);
+  for (const chunk of long.slice(1)) assert.deepEqual(chunk.sentences, [twoHundred]);
 });
 
-test("every piece of a split sentence is captioned with the whole sentence, and prewarm requests the same pieces", async () => {
+test("prewarm requests the same pieces as playback", async () => {
   const segments = ["Thanks for that answer.", twoHundred];
   const grouped = groupInterviewerSentences(segments);
-  assert.deepEqual(grouped[0].sentences, ["Thanks for that answer."]);
-  for (const chunk of grouped.slice(1)) assert.deepEqual(chunk.sentences, [twoHundred]);
   clearRetainedSpeechBlobs();
   const calls = [];
   const fetcher = async (_endpoint, init) => { calls.push(JSON.parse(init.body).text); return { ok: true, blob: async () => new Blob([init.body]) }; };
@@ -204,22 +153,20 @@ function harness({ failText = null } = {}) {
   return { log, pending, audios, aborted, options };
 }
 
-test("chunks are requested one at a time: chunk N+1 only once chunk N has arrived, and chunk 1 plays on arrival", async () => {
+test("only chunk 1 is requested first; the rest start once it arrives, and the next audio is preloaded", async () => {
   const { log, pending, audios, options } = harness();
   const playback = playInterviewerSegments([chunkA, chunkB, chunkC], options);
   await flush();
-  assert.deepEqual(log, [`fetch:${chunkA}`], "only chunk 1 is requested up front");
+  assert.deepEqual(log, [`fetch:${chunkA}`], "chunk 1 is synthesized alone");
 
   pending.get(chunkA)();
   await flush();
-  assert.deepEqual(log.slice(1), [`fetch:${chunkB}`, `caption:${chunkA}`, `play:blob:${chunkA.length}`], "chunk 2 is requested as chunk 1 arrives, while it plays");
+  assert.deepEqual(log.slice(1), [`fetch:${chunkB}`, `fetch:${chunkC}`, `caption:${chunkA}`, `play:blob:${chunkA.length}`], "the rest start together once chunk 1 arrived");
   assert.equal(audios.length, 1);
 
   pending.get(chunkB)();
   await flush();
   assert.equal(audios.length, 2, "chunk 2 audio is preloaded while chunk 1 plays");
-  assert.ok(log.includes(`fetch:${chunkC}`), "chunk 3 is requested once chunk 2 arrived");
-  assert.equal(log.filter((entry) => entry.startsWith("fetch:")).length, 3);
 
   audios[0].emit("ended");
   await flush();
@@ -232,42 +179,71 @@ test("chunks are requested one at a time: chunk N+1 only once chunk N has arrive
   assert.deepEqual(log.filter((entry) => entry.startsWith("play:")), [chunkA, chunkB, chunkC].map((text) => `play:blob:${text.length}`));
 });
 
-test("at most one chunk request is in flight at a time", async () => {
+test("after chunk 1 arrives at most three chunk requests are in flight; a finished one releases the next", async () => {
   const { log, pending, options } = harness();
-  const sentences = ["One sentence that is surely long enough.", "Two sentences that are surely long enough.", "Three sentences that are surely long enough.", "Four sentences that are surely long enough."];
+  const sentences = [
+    "One sentence that is surely long enough.", "Two sentences that are surely long enough, and then some more words.",
+    "Three sentences that are surely long enough, and then some more words.", "Four sentences that are surely long enough, and then some more words.",
+    "Five sentences that are surely long enough, and then some more words.",
+  ];
+  const chunks = groupInterviewerSentences(sentences).map((chunk) => chunk.text);
+  assert.ok(chunks.length >= 5);
   playInterviewerSegments(sentences, options);
   await flush();
-  const fetches = () => log.filter((entry) => entry.startsWith("fetch:")).length;
-  assert.equal(fetches(), 1);
-  for (let index = 0; index < 3; index += 1) {
-    pending.get(sentences[index])();
-    await flush();
-    assert.equal(fetches(), index + 2);
-  }
+  const fetches = () => log.filter((entry) => entry.startsWith("fetch:")).map((entry) => entry.slice(6));
+  assert.deepEqual(fetches(), chunks.slice(0, 1), "only chunk 1 first");
+  pending.get(chunks[0])();
+  await flush();
+  assert.deepEqual(fetches(), chunks.slice(0, 4), "chunk 1 plus three more in flight");
+  pending.get(chunks[3])();
+  await flush();
+  assert.deepEqual(fetches(), chunks.slice(0, 5), "any completion frees a slot, in order");
+  pending.get(chunks[1])();
+  pending.get(chunks[2])();
+  await flush();
+  assert.deepEqual(fetches(), chunks, "every chunk is eventually requested");
+});
+
+test("playback order is preserved when later chunks resolve first", async () => {
+  const { log, pending, audios, options } = harness();
+  const playback = playInterviewerSegments([chunkA, chunkB, chunkC], options);
+  await flush();
+  assert.deepEqual(log, [`fetch:${chunkA}`]);
+  pending.get(chunkA)();
+  await flush();
+  pending.get(chunkC)();
+  pending.get(chunkB)();
+  await flush();
+  assert.deepEqual(log.filter((entry) => entry.startsWith("play:")), [`play:blob:${chunkA.length}`]);
+  audios[0].emit("ended");
+  await flush();
+  audios[1].emit("ended");
+  await flush();
+  audios[2].emit("ended");
+  assert.deepEqual(await playback.promise, { status: "completed", voice: "network" });
+  assert.deepEqual(log.filter((entry) => entry.startsWith("play:")), [chunkA, chunkB, chunkC].map((text) => `play:blob:${text.length}`));
+  assert.deepEqual(log.filter((entry) => entry.startsWith("caption:")), [chunkA, chunkB, chunkC].map((text) => `caption:${text}`));
 });
 
 test("a split first sentence plays as separate requests but is captioned as the whole sentence", async () => {
   const { log, pending, audios, options } = harness();
-  const next = "Tell me about a hard bug you fixed recently.";
-  const playback = playInterviewerSegments([opening, next], options);
+  const sentence = "Thanks for joining me today and for taking the time to talk, because I want to hear about your work.";
+  const head = "Thanks for joining me today and for taking the time to talk,";
+  const tail = "because I want to hear about your work.";
+  const playback = playInterviewerSegments([sentence], options);
   await flush();
-  const head = "Thanks for joining me today,";
   assert.deepEqual(log, [`fetch:${head}`]);
   pending.get(head)();
   await flush();
-  assert.ok(log.includes(`caption:${opening}`));
+  assert.ok(log.includes(`fetch:${tail}`), "the tail is requested once the head arrived");
+  assert.ok(log.includes(`caption:${sentence}`));
   audios[0].emit("ended");
   await flush();
-  pending.get("we have about 5 minutes for this backend role.")();
+  pending.get(tail)();
   await flush();
   audios[1].emit("ended");
-  await flush();
-  pending.get(next)();
-  await flush();
-  audios[2].emit("ended");
   assert.deepEqual(await playback.promise, { status: "completed", voice: "network" });
-  assert.deepEqual(log.filter((entry) => entry.startsWith("caption:")), [`caption:${opening}`, `caption:${opening}`, `caption:${next}`], "second part still shows the whole sentence");
-  assert.ok(!log.some((entry) => entry === "caption:we have about 5 minutes for this backend role." || entry === `caption:${head}`), "no partial caption");
+  assert.deepEqual(log.filter((entry) => entry.startsWith("caption:")), [`caption:${sentence}`, `caption:${sentence}`], "second part still shows the whole sentence");
 });
 
 test("cancelling stops the audio and aborts pending chunk requests", async () => {
@@ -279,7 +255,7 @@ test("cancelling stops the audio and aborts pending chunk requests", async () =>
   playback.cancel();
   assert.deepEqual(await playback.promise, { status: "cancelled" });
   assert.equal(audios[0].paused, true);
-  assert.deepEqual(aborted, [chunkB], "only chunk 2 was in flight; chunk 3 was never requested");
+  assert.deepEqual(aborted, [chunkB, chunkC], "chunks 2 and 3 were in flight");
 });
 
 test("a failed later chunk ends as unavailable after the earlier chunk played, without hanging", async () => {
@@ -311,7 +287,7 @@ test("prewarm requests the same chunks so playback reuses the blobs", async () =
   const fetcher = async (_endpoint, init) => { calls.push(JSON.parse(init.body).text); return { ok: true, blob: async () => new Blob([init.body]) }; };
   const prewarm = prewarmInterviewerSpeech([chunkA, chunkB], { endpoint: "/speech", fetcher, retainMs: 5_000 });
   assert.equal(await prewarm.promise, true);
-  assert.deepEqual(calls, [chunkA, chunkB], "sequential, in playback order");
+  assert.deepEqual(calls, [chunkA, chunkB], "in playback order");
   const { options } = harness();
   const playback = playInterviewerSegments([chunkA, chunkB], { ...options, fetcher });
   await flush();
@@ -325,28 +301,33 @@ test("prewarm and playback share the same chunks, including a split first senten
   clearRetainedSpeechBlobs();
   const calls = [];
   const fetcher = async (_endpoint, init) => { calls.push(JSON.parse(init.body).text); return { ok: true, blob: async () => new Blob([init.body]) }; };
-  const segments = [opening, "Tell me about a hard bug you fixed recently."];
+  const segments = splitSentences(question);
   assert.equal(await prewarmInterviewerSpeech(segments, { endpoint: "/speech", fetcher, retainMs: 5_000 }).promise, true);
   assert.deepEqual(calls, groupInterviewerSentences(segments).map((chunk) => chunk.text));
   const { options } = harness();
   const playback = playInterviewerSegments(segments, { ...options, fetcher });
   await flush();
-  assert.equal(calls.length, 3, "no extra requests");
+  assert.equal(calls.length, 2, "no extra requests");
   playback.cancel();
   await playback.promise;
   clearRetainedSpeechBlobs();
 });
 
-test("prewarm requests chunk N+1 only after chunk N arrived", async () => {
+test("prewarm requests chunk 1 alone, then the rest three at a time", async () => {
   clearRetainedSpeechBlobs();
   const { log, pending, options } = harness();
-  const prewarm = prewarmInterviewerSpeech([chunkA, chunkB], { ...options, retainMs: 5_000 });
+  const sentences = [
+    "One sentence that is surely long enough.", "Two sentences that are surely long enough, and then some more words.",
+    "Three sentences that are surely long enough, and then some more words.", "Four sentences that are surely long enough, and then some more words.",
+  ];
+  const chunks = groupInterviewerSentences(sentences).map((chunk) => chunk.text);
+  const prewarm = prewarmInterviewerSpeech(sentences, { ...options, retainMs: 5_000 });
   await flush();
-  assert.deepEqual(log, [`fetch:${chunkA}`]);
-  pending.get(chunkA)();
+  assert.deepEqual(log, [`fetch:${chunks[0]}`]);
+  pending.get(chunks[0])();
   await flush();
-  assert.deepEqual(log, [`fetch:${chunkA}`, `fetch:${chunkB}`]);
-  pending.get(chunkB)();
+  assert.equal(log.length, 4, "three more start once chunk 1 arrived");
+  for (const text of chunks) pending.get(text)?.();
   assert.equal(await prewarm.promise, true);
   clearRetainedSpeechBlobs();
 });
