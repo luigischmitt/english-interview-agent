@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { collectTurnAnalyses } from "../src/lib/interview/report-incremental.mjs";
+import { collectTurnAnalyses, finalTurnAnalysisMs } from "../src/lib/interview/report-incremental.mjs";
 
 const turns = [{ sequenceNumber: 2 }, { sequenceNumber: 4 }];
 const analysis = (sequenceNumber) => ({ sequenceNumber, technicalStrengths: [], technicalGaps: [], englishPatterns: [] });
@@ -132,4 +132,8 @@ test("abort at the end skips the final attempts", async () => {
   const { calls, run } = flow({ settled: new Map(), signal: c.signal });
   await run();
   assert.deepEqual(calls.analyze, []);
+});
+
+test("the end-of-interview recovery deadline is 30 s, matching the backend turn analysis timeout", () => {
+  assert.equal(finalTurnAnalysisMs, 30_000);
 });

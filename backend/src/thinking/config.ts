@@ -4,7 +4,7 @@ export const defaultOrchestrationTimeoutMs = 6_000;
 export const defaultOrchestrationHedgeAfterMs = 2_500;
 export const defaultBridgeTimeoutMs = 1_800;
 export const defaultInterviewReportTimeoutMs = 45_000;
-export const defaultInterviewTurnAnalysisTimeoutMs = 20_000;
+export const defaultInterviewTurnAnalysisTimeoutMs = 30_000;
 export const defaultInterviewConsolidationTimeoutMs = 25_000;
 
 export type ThinkingConfig = {

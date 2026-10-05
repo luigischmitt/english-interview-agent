@@ -7,6 +7,7 @@ export const whisperGlossary = [
   "Supabase", "Vercel", "Next.js", "Node.js", "React", "TypeScript", "JavaScript", "PostgreSQL", "MongoDB", "Redis",
   "Docker", "Kubernetes", "AWS", "GCP", "Azure", "GitHub", "CI/CD", "REST API", "GraphQL", "OAuth", "JWT",
   "microservices", "Kafka", "Terraform", "LLM", "OpenAI", "Gemini", "LangChain", "RAG", "embeddings", "WhatsApp",
+  "JSON", "webhook", "parser", "schema", "payload", "dataset", "prompt", "agent", "chatbot", "endpoint",
   "Python", "Django", "FastAPI", "Java", "Spring Boot", "Go", "Rust", "Flutter", "Swift", "Kotlin", "SQL", "NoSQL",
   "frontend", "backend", "deploy", "rollback", "latency", "throughput",
 ] as const;

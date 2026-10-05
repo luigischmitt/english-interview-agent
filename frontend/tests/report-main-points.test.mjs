@@ -77,3 +77,21 @@ test("gaps come first and strengths fill the remaining technical slots", () => {
 test("minimal or malformed legacy data does not throw", () => {
   assert.deepEqual(deriveMainPoints({}), { english: [], technical: [], priorities: [], summary: "" });
 });
+
+test("drops patterns with a wrong rule label or a request to fix a mis-heard name, and run shop evidence", () => {
+  const withFix = (type, evidence, suggestion, rephrasedExample) => ({ type, sequenceNumber: 1, evidence, suggestion, rephrasedExample });
+  const main = deriveMainPoints({
+    technicalContent: { summary: "Resumo.", gaps: [item(1, "the run shop and Russia", "Você descreveu o sistema.")], strengths: [] },
+    englishCommunication: { clarity: "MOSTLY_CLEAR", evidenceStatus: "SUFFICIENT", patterns: [
+      withFix("GRAMMAR", "Russia is a full stack system", "Use os nomes corretos dos projetos.", "Run Shop is a full stack system."),
+      withFix("GRAMMAR", "I choose To use the GLCM", "Ajuste a concordância verbal desta frase.", "I chose to use the GLCM."),
+      withFix("GRAMMAR", "for interpret this message", "Esta é a forma correta do gerúndio.", "to interpret this message."),
+      withFix("GRAMMAR", "I choose To use the GLCM", "Use o passado: o passado de choose é chose.", "I chose to use the GLCM."),
+      withFix("GRAMMAR", "after deploy the fix", "Use o gerúndio depois de after.", "after deploying the fix."),
+      withFix("GRAMMAR", "the servers was down", "Ajuste a concordância verbal.", "the servers were down."),
+    ] },
+    priorities: [],
+  });
+  assert.deepEqual(main.english.map((p) => p.suggestion), ["Use o passado: o passado de choose é chose.", "Use o gerúndio depois de after.", "Ajuste a concordância verbal."]);
+  assert.equal(main.technical.length, 0);
+});

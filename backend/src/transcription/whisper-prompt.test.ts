@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { OpenRouterWhisperTranscriptionService } from "./openrouter-whisper-transcription-service.js";
 import { pcmToWav } from "./streaming-transcription.js";
 import { loadTranscriptionConfig } from "./config.js";
-import { buildWhisperPrompt, isWhisperPromptEcho } from "./whisper-prompt.js";
+import { buildWhisperPrompt, isWhisperPromptEcho, whisperGlossary } from "./whisper-prompt.js";
 
 const audio = () => pcmToWav(Buffer.alloc(32_000));
 const ok = (text: string) => new Response(JSON.stringify({ text }), { status: 200 });
@@ -102,5 +102,14 @@ describe("TRANSCRIPTION_WHISPER_PROMPT", () => {
   it("defaults on and turns off with off", () => {
     expect(loadTranscriptionConfig({}).whisperPromptEnabled).toBe(true);
     expect(loadTranscriptionConfig({ TRANSCRIPTION_WHISPER_PROMPT: "off" }).whisperPromptEnabled).toBe(false);
+  });
+});
+
+describe("whisper glossary", () => {
+  it("includes the AI-agent vocabulary and still fits the prompt cap", () => {
+    for (const term of ["JSON", "webhook", "parser", "schema", "payload", "dataset", "prompt", "agent", "chatbot", "endpoint"]) expect(whisperGlossary).toContain(term);
+    const prompt = buildWhisperPrompt({ question: "What AI technologies did you use in the WhatsApp agent?" });
+    expect(prompt.length).toBeLessThanOrEqual(800);
+    expect(prompt).toContain("chatbot, endpoint");
   });
 });
