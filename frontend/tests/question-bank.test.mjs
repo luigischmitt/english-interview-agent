@@ -2,15 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { interviewRoles } from "../src/lib/interview/roles.ts";
 import { getFixedInterviewQuestions } from "../src/lib/interview/questions.ts";
-import { genericQuestionBank, getQuestionBankForRole, questionBankRoles } from "../src/lib/interview/question-bank.mjs";
+import { genericJuniorQuestionBank, genericQuestionBank, getQuestionBankForRole, questionBankRoles } from "../src/lib/interview/question-bank.mjs";
 
-const allBanks = [...interviewRoles.map((role) => [role, getQuestionBankForRole(role)]), ["generic", genericQuestionBank]];
+const allBanks = [
+  ...interviewRoles.map((role) => [role, getQuestionBankForRole(role)]),
+  ["generic", genericQuestionBank],
+  ...interviewRoles.map((role) => [`${role} (junior)`, getQuestionBankForRole(role, "junior")]),
+  ["generic (junior)", genericJuniorQuestionBank],
+];
 
 test("every listed role has its own bank of exactly 15 questions", () => {
   assert.deepEqual([...questionBankRoles].sort(), [...interviewRoles].sort());
   for (const [role, bank] of allBanks) {
     assert.equal(bank.length, 15, role);
-    if (role !== "generic") assert.notEqual(bank, genericQuestionBank, role);
+    if (!role.startsWith("generic")) assert.notEqual(bank, genericQuestionBank, role);
   }
 });
 
@@ -145,4 +150,38 @@ test("fewer tailored questions fill slots in order; none or a stale direction ke
   assert.equal(reseniored[1].id, getQuestionBankForRole("QA Analyst")[1].id);
   const duplicated = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: { ...qaDirection, tailoredQuestions: [tailored[0], tailored[0].toUpperCase().replace("?", "?")] } });
   assert.equal(new Set(duplicated.map((question) => question.prompt.toLowerCase())).size, 15);
+});
+
+test("junior banks have 15 unique, junior-appropriate questions per role", () => {
+  const forbidden = /millions|at scale|design a (service|system)|architecture|lead (a|the) team/i;
+  for (const role of [...interviewRoles, "Astronaut"]) {
+    const bank = getQuestionBankForRole(role, "junior");
+    assert.equal(bank.length, 15, role);
+    assert.equal(new Set(bank.map((question) => question.prompt)).size, 15, role);
+    assert.notEqual(bank, getQuestionBankForRole(role, "mid-level"), role);
+    for (const question of bank) assert.doesNotMatch(question.prompt, forbidden, `${role}/${question.id}`);
+  }
+  assert.equal(getQuestionBankForRole("Astronaut", "junior"), genericJuniorQuestionBank);
+  assert.equal(getQuestionBankForRole("QA Analyst", "Junior"), getQuestionBankForRole("QA Automation Engineer", "junior"));
+});
+
+test("mid-level, senior, staff, and missing seniority keep the existing banks", () => {
+  for (const role of interviewRoles) {
+    const base = getQuestionBankForRole(role);
+    for (const seniority of ["mid-level", "senior", "staff", "", undefined, null]) assert.equal(getQuestionBankForRole(role, seniority), base, `${role}/${seniority}`);
+  }
+  assert.equal(getQuestionBankForRole("Astronaut", "senior"), genericQuestionBank);
+  assert.equal(getFixedInterviewQuestions({ role: "Software Engineer", seniority: "senior" })[1].id, "system-design");
+});
+
+test("junior sessions never receive the system design question, and tailored questions still lead", () => {
+  const junior = getFixedInterviewQuestions({ role: "Software Engineer", seniority: "junior" });
+  assert.ok(junior.every((question) => !/millions/i.test(question.prompt)));
+  const direction = { ...qaDirection, suggestedSeniority: "junior" };
+  const questions = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "junior", jobDirection: direction });
+  const bank = getQuestionBankForRole("QA Analyst", "junior");
+  assert.equal(questions.length, 15);
+  assert.deepEqual(questions.slice(1, 4).map((question) => question.id), ["job-1", "job-2", "job-3"]);
+  assert.deepEqual(questions.slice(4).map((question) => question.id), [bank[3].id, ...bank.slice(5).map((question) => question.id)]);
+  assert.equal(new Set(questions.map((question) => question.prompt)).size, 15);
 });
