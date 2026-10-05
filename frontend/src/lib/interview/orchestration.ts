@@ -45,6 +45,7 @@ export async function decideNextTurn(input: {
         askedQuestions: input.askedQuestions,
         recentAcknowledgements: input.recentAcknowledgements ?? [],
         previousAnswers: input.previousAnswers ?? [],
+        ...(input.config.jobDirection ? { jobDirection: input.config.jobDirection } : {}),
         ...(hint ? { clarificationHint: hint } : {}),
         roleContext: { targetRole: input.config.role, seniority: input.config.seniority, focus: input.config.focus },
       }),

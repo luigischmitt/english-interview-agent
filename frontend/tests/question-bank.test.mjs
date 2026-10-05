@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { interviewRoles } from "../src/lib/interview/roles.ts";
+import { getFixedInterviewQuestions } from "../src/lib/interview/questions.ts";
 import { genericQuestionBank, getQuestionBankForRole, questionBankRoles } from "../src/lib/interview/question-bank.mjs";
 
 const allBanks = [...interviewRoles.map((role) => [role, getQuestionBankForRole(role)]), ["generic", genericQuestionBank]];
@@ -56,4 +57,40 @@ test("only the introduction uses the {role} placeholder", () => {
     assert.ok(bank[0].prompt.includes("{role}"), role);
     assert.ok(bank.slice(1).every((question) => !question.prompt.includes("{role}")), role);
   }
+});
+
+test("approved job direction tailors only the opening question and keeps the role bank intact", () => {
+  const config = {
+    role: "Backend Engineer", seniority: "mid-level", jobDirection: {
+      targetRole: "Backend Engineer", suggestedSeniority: "mid-level", mainInterviewEmphasis: "Reliable API design",
+      priorityCompetencies: ["API reliability"], productTeamContext: "A payments product team",
+    },
+  };
+  const questions = getFixedInterviewQuestions(config);
+  assert.match(questions[0].prompt, /API reliability/u);
+  assert.match(questions[0].prompt, /succeed in this role/u);
+  assert.equal(questions[0].prompt.split("?").length - 1, 1);
+  assert.equal(questions[0].prompt.length <= 220, true);
+  assert.deepEqual(questions.slice(1).map(({ id, prompt }) => ({ id, prompt })), getQuestionBankForRole("Backend Engineer").slice(1).map(({ id, prompt }) => ({ id, prompt })));
+});
+
+test("directed opening stays short with an abstract competency at the maximum allowed length", () => {
+  const competency = "cross-functional communication and stakeholder alignment".padEnd(100, "x");
+  const questions = getFixedInterviewQuestions({
+    role: "R".repeat(100), seniority: "staff", jobDirection: {
+      targetRole: "R".repeat(100), suggestedSeniority: "staff", mainInterviewEmphasis: "Cross-functional work",
+      priorityCompetencies: [competency], productTeamContext: "Distributed product team",
+    },
+  });
+  assert.match(questions[0].prompt, /cross-functional communication/u);
+  assert.ok(questions[0].prompt.length <= 220);
+  assert.equal(questions[0].prompt.split("?").length - 1, 1);
+});
+
+test("mismatched or absent approved direction preserves the generic role opening", () => {
+  const expected = getFixedInterviewQuestions({ role: "Backend Engineer", seniority: "mid-level" })[0].prompt;
+  assert.equal(getFixedInterviewQuestions({ role: "Backend Engineer", seniority: "mid-level", jobDirection: {
+    targetRole: "Frontend Engineer", suggestedSeniority: "mid-level", mainInterviewEmphasis: "API reliability",
+    priorityCompetencies: ["API reliability"], productTeamContext: "A product team",
+  } })[0].prompt, expected);
 });

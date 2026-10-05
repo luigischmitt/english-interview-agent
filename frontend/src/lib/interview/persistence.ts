@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { nullableQuestionCount } from "./session-policy.mjs";
 import type { ProgressRecord } from "./progress-insights.mjs";
 import type { AzureMetricSummary } from "./report-metrics.mjs";
+import type { JobDirection } from "./job-direction.mjs";
+import { buildInterviewSessionPayload } from "./session-payload.mjs";
 
 import type {
   InterviewConfig,
@@ -20,6 +21,7 @@ type InterviewRow = {
   target_role: string;
   seniority: string | null;
   focus: string | null;
+  job_direction: JobDirection | null;
   duration_minutes: number | null;
   question_count: number | null;
   status: InterviewSessionStatus;
@@ -45,7 +47,7 @@ export type InterviewTurnInput = {
   content: string | null;
 };
 
-const sessionColumns = "id,user_id,target_role,seniority,focus,duration_minutes,question_count,status,started_at,completed_at,created_at,updated_at";
+const sessionColumns = "id,user_id,target_role,seniority,focus,job_direction,duration_minutes,question_count,status,started_at,completed_at,created_at,updated_at";
 const turnColumns = "id,interview_id,sequence_number,speaker,content,created_at";
 
 const toSession = (row: InterviewRow): InterviewSession => ({
@@ -54,6 +56,7 @@ const toSession = (row: InterviewRow): InterviewSession => ({
   targetRole: row.target_role,
   seniority: row.seniority,
   focus: row.focus,
+  jobDirection: row.job_direction,
   durationMinutes: row.duration_minutes,
   questionCount: row.question_count,
   status: row.status,
@@ -106,16 +109,7 @@ export async function createInterviewSession(config: InterviewConfig): Promise<P
   const { client, userId } = auth.value;
   const { data, error } = await client
     .from("interviews")
-    .insert({
-      user_id: userId,
-      target_role: config.role.trim(),
-      seniority: config.seniority,
-      focus: config.focus,
-      duration_minutes: Number(config.duration),
-      question_count: nullableQuestionCount(config.questionCount),
-      status: "in_progress",
-      started_at: new Date().toISOString(),
-    })
+    .insert(buildInterviewSessionPayload(config, userId))
     .select(sessionColumns)
     .single();
   if (error) return failure(error);
