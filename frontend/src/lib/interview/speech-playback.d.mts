@@ -38,6 +38,20 @@ export type SpeechPlaybackOptions = {
   /** playInterviewerSegments only: fired once when the final chunk is playing and at most `finalChunkLeadMs` of it remains (at its start if shorter). */
   onFinalChunkStarted?: () => void;
   finalChunkLeadMs?: number;
+  /**
+   * playInterviewerSegments only: called once per chunk when its audio has arrived (before it plays) so the avatar can
+   * lip-sync it. `blob` is the received audio; `decodeAudio` (Web Audio path) resolves the already-decoded buffer.
+   * `clock()` is the chunk's playback position in seconds, `isPlaying()` whether it is the audible chunk. Must not throw.
+   */
+  onChunkAudio?: (chunk: {
+    chunkIndex: number;
+    chunkCount: number;
+    endsWithQuestion: boolean;
+    blob: Blob;
+    decodeAudio?: () => Promise<{ getChannelData(channel: number): Float32Array; sampleRate: number }>;
+    clock: () => number;
+    isPlaying: () => boolean;
+  }) => void;
   /** Caption excerpts from one utterance, advanced against the single audio track duration (synthesizeInterviewerQuestion only; playInterviewerSegments derives them per chunk). */
   captionSegments?: string[];
 };
