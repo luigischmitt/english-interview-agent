@@ -2,6 +2,7 @@ import { ThinkingServiceError } from "./errors.js";
 import type { JobDirectionAnalysis, JobDirectionInput, JobDirectionService, JobFocus } from "./types.js";
 import { maxTailoredQuestionLength, maxTailoredQuestions, normalizeProductTeamContext, normalizeTailoredQuestions, normalizeTargetRole } from "./job-direction-normalization.js";
 import { parseOpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
+import { pinnedOpenRouterFetch } from "./openrouter-routing.js";
 
 type JobDirectionServiceOptions = {
   key: string;
@@ -111,7 +112,7 @@ export class OpenRouterJobDirectionService implements JobDirectionService {
   private readonly fetchImplementation: typeof fetch;
 
   constructor(private readonly options: JobDirectionServiceOptions) {
-    this.fetchImplementation = options.fetchImplementation ?? fetch;
+    this.fetchImplementation = options.fetchImplementation ?? pinnedOpenRouterFetch;
   }
 
   async analyze(input: JobDirectionInput): Promise<JobDirectionAnalysis> {
