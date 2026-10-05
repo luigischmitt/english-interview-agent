@@ -82,9 +82,10 @@
 
 /* ---- Steps ---- */
 .lp-steps { display: grid; gap: 1rem; margin-top: clamp(2rem, 1.5rem + 2vw, 3.5rem); grid-template-columns: 1fr; list-style: none; padding: 0; }
-@media (min-width: 768px) { .lp-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; } }
+@media (min-width: 768px) { .lp-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; } }
+@media (min-width: 1024px) { .lp-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .lp-step { display: flex; flex-direction: column; gap: 0.75rem; padding: 1.5rem; transition: transform var(--ds-dur-slow) var(--ease-out), box-shadow var(--ds-dur-slow) var(--ease-out); }
-@media (min-width: 768px) { .lp-step { padding: 1.75rem; min-height: 14rem; } }
+@media (min-width: 768px) { .lp-step { padding: 1.75rem; min-height: 12rem; } }
 .lp-step-n { display: inline-flex; width: 2.5rem; height: 2.5rem; align-items: center; justify-content: center; border-radius: var(--ds-r-pill); background: var(--ds-tint); color: var(--ds-green-deep); font-family: var(--font-display); font-size: 1.375rem; line-height: 1; margin-bottom: 0.75rem; }
 .lp-step .ds-body { font-size: 0.9375rem; text-wrap: pretty; }
 
@@ -121,10 +122,14 @@
 .lp-badge { display: inline-flex; width: fit-content; align-items: center; gap: 0.5rem; border-radius: var(--ds-r-pill); background: var(--ds-tint); padding: 0.25rem 0.75rem 0.25rem 0.625rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ds-green-deep); }
 .lp-badge i { width: 0.5rem; height: 0.5rem; border-radius: 9999px; background: var(--ds-green); }
 .lp-score { font-size: clamp(5rem, 4rem + 4vw, 6.5rem); font-weight: 500; line-height: 0.9; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; }
+.lp-score-label { margin-bottom: 0.5rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ds-text-2); }
+.lp-report-meta strong { font-weight: 600; color: var(--ds-ink); font-variant-numeric: tabular-nums; }
+.lp-fix { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; font-size: 1rem; line-height: 1.5; }
+.lp-fix s { color: var(--ds-error); text-decoration-color: var(--ds-error-ring); text-decoration-thickness: 1.5px; }
+.lp-fix strong { font-weight: 600; color: var(--ds-green-deep); background: var(--ds-green-wash); border-radius: 0.3em; padding: 0.05em 0.25em; }
 .lp-score-max { margin-top: 0.5rem; font-size: 1.25rem; color: var(--ds-text-2); }
 .lp-report-meta { font-size: 0.9375rem; line-height: 1.5; color: var(--ds-text-2); }
 .lp-report-side { display: flex; flex-direction: column; gap: 0.5rem; }
-@media (min-width: 768px) { .lp-report-side { align-items: flex-end; text-align: right; } }
 .lp-report-dims { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; padding: 0.75rem; background: var(--ds-field); }
 @media (min-width: 640px) { .lp-report-dims { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 1rem 1.5rem 1.25rem; } }
 @media (min-width: 900px) { .lp-report-dims { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
@@ -132,6 +137,7 @@
 .lp-dim[data-active="true"] { background: var(--ds-surface); box-shadow: var(--ds-shadow-thumb); }
 .lp-dim-v { font-size: 1.75rem; font-weight: 500; line-height: 1.1; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; transition: color var(--ds-dur-fast) ease; }
 .lp-dim[data-active="true"] .lp-dim-v { color: var(--ds-green); }
+.lp-dim-u { font-size: 0.6875rem; line-height: 1.3; color: var(--ds-text-2); opacity: 0.8; }
 .lp-dim-l { font-size: 0.8125rem; line-height: 1.3; letter-spacing: 0.005em; color: var(--ds-text-2); }
 .lp-radar-tip { pointer-events: none; position: absolute; left: 50%; top: 0; transform: translateX(-50%); white-space: nowrap; border-radius: var(--ds-r-pill); background: var(--ds-panel); padding: 0.25rem 0.625rem; font-size: 0.75rem; font-weight: 600; color: var(--ds-on-panel); transition: opacity var(--ds-dur-base) ease; }
 

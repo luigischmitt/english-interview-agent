@@ -12,18 +12,23 @@ import "./landing.css";
 const STEPS = [
   {
     n: "1",
-    title: "Cole a vaga",
-    body: "O agente monta a entrevista em inglês para aquela posição.",
+    title: "Escolha a vaga",
+    body: "Cargo, senioridade, foco e duração. As perguntas seguem o cargo que você quer.",
   },
   {
     n: "2",
     title: "Responda por voz",
-    body: "Conversa real, com follow-ups. Sem resposta ensaiada.",
+    body: "O entrevistador fala em inglês, você responde falando. Com follow-ups, sem script.",
   },
   {
     n: "3",
     title: "Receba o relatório",
-    body: "Cada desvio ligado à interferência do português, com a frase como um nativo diria.",
+    body: "Os principais erros de inglês com a frase corrigida, pontos técnicos e a pontuação da sua fala.",
+  },
+  {
+    n: "4",
+    title: "Acompanhe sua evolução",
+    body: "Veja seus erros mais comuns e o que estudar agora, sessão após sessão.",
   },
 ];
 
@@ -141,10 +146,10 @@ export function PublicLanding() {
         <section className="lp-wrap lp-section">
           <div className="lp-section-head">
             <h2 data-reveal className="lp-h2" style={{ maxWidth: "22ch" }}>
-              Você não perde a vaga por conteúdo. Perde por artigo, preposição e tempo verbal.
+              Seu conteúdo técnico pode se perder em artigo, preposição e tempo verbal.
             </h2>
             <p data-reveal className="lp-lede" style={{ "--i": 1 } as React.CSSProperties}>
-              Mock interviewer avalia a resposta. Nós avaliamos o inglês enquanto você responde, calibrado para quem pensa em português.
+              Um simulador comum avalia só o conteúdo da resposta. Aqui, o relatório também olha o inglês que você falou, com as regras explicadas para quem pensa em português.
             </p>
           </div>
           <div data-reveal className="lp-compare" style={{ "--i": 2 } as React.CSSProperties}>
