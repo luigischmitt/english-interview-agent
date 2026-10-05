@@ -2,7 +2,7 @@
 export const maxAcknowledgementLength = 220;
 
 /** Deterministic, content-free transitions for when the model call fails. Kept identical to the backend list. */
-const fallbackTransitions = ["Thanks for that. Let's move on.", "Okay, let's move to a different topic.", "Got it. Let's switch gears.", "All right. Let's talk about something different."];
+const fallbackTransitions = ["Thanks for that. Let's move on.", "Let's move to a different topic.", "Now I'd like to ask about something else.", "Let's switch gears for a moment.", "Let me ask about a different part of your work.", "Let's talk about something different.", "I'd like to change topics now.", "Next, let's look at another area."];
 
 export function acknowledgementKey(value) {
   return value.toLocaleLowerCase().replace(/['’]/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();

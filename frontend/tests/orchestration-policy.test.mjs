@@ -14,11 +14,11 @@ test("the local NEXT fallback adds a neutral, content-free transition", () => {
 
 test("fallback transitions rotate and avoid the recent acknowledgements", () => {
   const seen = [];
-  for (let index = 0; index < 4; index += 1) seen.push(pickFallbackTransition(seen));
-  assert.equal(new Set(seen).size, 4);
+  for (let index = 0; index < 8; index += 1) seen.push(pickFallbackTransition(seen));
+  assert.equal(new Set(seen).size, 8);
   assert.notEqual(pickFallbackTransition(["Thanks for that. Let’s move on."]), "Thanks for that. Let's move on.");
   assert.equal(pickFallbackTransition(seen), seen[0]);
-  assert.equal(fallbackTurnDecision("Q?", ["Thanks for that. Let's move on."]).acknowledgement, "Okay, let's move to a different topic.");
+  assert.equal(fallbackTurnDecision("Q?", ["Thanks for that. Let's move on."]).acknowledgement, "Let's move to a different topic.");
 });
 
 test("a valid NEXT response keeps the backend bridge", () => {
@@ -39,7 +39,7 @@ test("a NEXT response without a question uses the fixed question with a neutral 
     decision: "NEXT",
     followUpQuestion: null,
     nextQuestion: "Fallback question?",
-    acknowledgement: "Okay, let's move to a different topic.",
+    acknowledgement: "Let's move to a different topic.",
   });
 });
 

@@ -206,10 +206,10 @@ describe("interview bridge call", () => {
   it("rotates the lead-in deterministically and avoids the last three", () => {
     expect(assignBridgeLeadIn([])).toBe("So you");
     expect(assignBridgeLeadIn([])).toBe(assignBridgeLeadIn([]));
-    expect(assignBridgeLeadIn(["x"])).toBe("I understand you");
-    const recent = ["So you chose X.", "Okay, so you did Y.", "I understand you did Z."];
+    expect(assignBridgeLeadIn(["x"])).toBe("");
+    const recent = ["So you chose X.", "You mentioned Y.", "It sounds like Z."];
     const picked = assignBridgeLeadIn(recent);
-    for (const used of ["so you", "okay so", "i understand"]) expect(picked.toLowerCase().startsWith(used)).toBe(false);
+    for (const used of ["so you", "you mentioned", "it sounds"]) expect(picked.toLowerCase().startsWith(used)).toBe(false);
     expect(assignBridgeLeadIn(recent)).toBe(picked);
   });
 
@@ -299,7 +299,7 @@ describe("next-turn flow with the bridge step", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { fetchImplementation } = routedFetch(nextDecision, () => new Promise<Response>(() => undefined));
     const result = await new OpenRouterOrchestrationService({ ...config, bridgeTimeoutMs: 300 }, fetchImplementation).decide({ ...decisionInput, followUpUsed: true, recentAcknowledgements: ["Thanks for that. Let's move on."] });
-    expect(result).toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: "Okay, let's move to a different topic." });
+    expect(result).toMatchObject({ decision: "NEXT", nextQuestion, acknowledgement: "Let's move to a different topic." });
     expect(logsOf(info)[0]).toMatchObject({ bridge: "neutral", bridgeOutcome: "timeout" });
   });
 
