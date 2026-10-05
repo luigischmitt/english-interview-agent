@@ -47,7 +47,7 @@ export function prewarmInterviewerUtterance(utterance: string) {
 
 /** The instant "Okay." / "Got it." player: its phrases are synthesized once (preload) and then played from memory. */
 export function createInterviewerAcknowledgements(onChunkAudio: SpeechPlaybackOptions["onChunkAudio"]) {
-  return createAcknowledgementPlayer({ endpoint: speechEndpoint, fetcher: authorizedFetch, onChunkAudio });
+  return createAcknowledgementPlayer({ endpoint: speechEndpoint, fetcher: authorizedFetch, onChunkAudio, onDiagnostic: reportAudioDiagnostic });
 }
 
 export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void, speed = 1, onChunkAudio?: SpeechPlaybackOptions["onChunkAudio"], waitBeforePlayback?: () => Promise<unknown>) {

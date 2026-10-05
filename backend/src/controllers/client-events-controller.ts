@@ -5,7 +5,9 @@ export const maxClientEventsPerRequest = 20;
 /** Global safety valve against log flooding (events per minute, per process). */
 export const maxClientEventsPerMinute = 1_200;
 
-const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "playback_ended", "playback_error", "playback_timeout", "unlock", "mic_open", "mic_close", "mic_error", "mic_level_check", "audio_session"] as const;
+const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "playback_ended", "playback_error", "playback_timeout", "unlock", "mic_open", "mic_close", "mic_error", "mic_level_check", "audio_session", "ack_preloaded", "ack_play", "ack_play_resolved", "ack_play_failed", "ack_ended", "ack_skipped", "ack_overlap", "ack_question_gap"] as const;
+/** Why an instant acknowledgement was not spoken. */
+const ackSkipReasons = ["not_loaded", "not_applicable", "question_started"] as const;
 const errorNames = ["NotAllowedError", "NotSupportedError", "AbortError", "NotFoundError", "InvalidStateError", "EncodingError", "NotReadableError", "SecurityError", "OverconstrainedError", "TypeError", "Error", "MediaError", "other"] as const;
 const audioContextStates = ["suspended", "running", "closed", "interrupted", "none"] as const;
 const audioSessionTypes = ["auto", "playback", "transient", "transient-solo", "ambient", "play-and-record"] as const;
@@ -25,6 +27,7 @@ const enumFields: Record<string, readonly string[]> = {
   output: outputs,
   inAppBrowser: inAppBrowsers,
   inputDeviceKind: inputDeviceKinds,
+  reason: ackSkipReasons,
 };
 // Numeric fields with their inclusive [min, max] range.
 const numberFields: Record<string, readonly [number, number]> = {
@@ -36,6 +39,11 @@ const numberFields: Record<string, readonly [number, number]> = {
   mediaDurationMs: [0, 3_600_000],
   readyState: [0, 4],
   peakLevel: [0, 1],
+  loaded: [0, 100],
+  total: [0, 100],
+  answerToAckMs: [0, 3_600_000],
+  ackDurationMs: [0, 3_600_000],
+  ackToQuestionMs: [0, 3_600_000],
 };
 const booleanFields = ["mediaMuted", "mediaPaused", "micActive", "pooled", "audioSessionPresent"] as const;
 

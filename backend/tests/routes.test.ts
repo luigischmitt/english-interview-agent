@@ -369,6 +369,15 @@ describe("speech routes", () => {
     ]);
   });
 
+  it("speaks a slash between words as a space without touching URLs", async () => {
+    const provider = new RecordingSpeechProvider();
+    const testApp = createApp({ speechConfig, speechProvider: provider });
+
+    await request(testApp).post("/api/v1/speech").send({ text: "How do you run CI/CD? See https://a.io/b." });
+
+    expect(provider.requests[0]?.text).toBe("How do you run CI CD? See https://a.io/b.");
+  });
+
   it.each([
     [{}, "text must be a non-empty string."],
     [{ text: "   " }, "text must be a non-empty string."],

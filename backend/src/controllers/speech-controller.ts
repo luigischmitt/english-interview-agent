@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 
+import { normalizeTextForSpeech } from "../speech/text-normalization.js";
 import { SpeechProviderUnavailableError } from "../speech/errors.js";
 import type { SpeechConfig } from "../speech/config.js";
 import type { SpeechDiagnostics, SpeechProvider, VoiceStatus } from "../speech/types.js";
@@ -80,7 +81,7 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
 
     try {
       const speech = await provider.synthesize({
-        text,
+        text: normalizeTextForSpeech(text),
         voice: config.interviewerVoice,
         speed,
         format: config.format,

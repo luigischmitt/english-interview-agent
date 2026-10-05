@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test, { beforeEach } from "node:test";
 
-import { ACKNOWLEDGEMENT_PHRASES, createAcknowledgementPlayer, pickAcknowledgement, stripLeadingAcknowledgement } from "../src/lib/interview/acknowledgement.mjs";
+import { ACKNOWLEDGEMENT_PHRASES, createAcknowledgementPlayer, isAcknowledgeableAnswer, pickAcknowledgement, stripLeadingAcknowledgement } from "../src/lib/interview/acknowledgement.mjs";
 import { clearRetainedSpeechBlobs, playInterviewerSegments, resetSpeechFlights } from "../src/lib/interview/speech-playback.mjs";
 import { createSpeechFeed } from "../src/components/interview/toucan/toucan-engine.mjs";
 
@@ -36,8 +36,14 @@ test("a bridge loses only a leading pure acknowledgement, never a phrase that ca
   assert.equal(stripLeadingAcknowledgement("Got it, thanks. Why Redis?"), "Why Redis?");
   assert.equal(stripLeadingAcknowledgement("Great — and how did you test it?"), "And how did you test it?");
   assert.equal(stripLeadingAcknowledgement("Mm-hm, okay. Next question."), "Next question.");
-  assert.equal(stripLeadingAcknowledgement("Thanks for sharing that. What happened next?"), "Thanks for sharing that. What happened next?");
-  assert.equal(stripLeadingAcknowledgement("That makes sense. What happened next?"), "That makes sense. What happened next?");
+  assert.equal(stripLeadingAcknowledgement("Thanks for sharing that. What happened next?"), "What happened next?");
+  assert.equal(stripLeadingAcknowledgement("That makes sense. What happened next?"), "What happened next?");
+  assert.equal(stripLeadingAcknowledgement("Thanks for that. Let's move on. Can you describe the design?"), "Can you describe the design?");
+  assert.equal(stripLeadingAcknowledgement("Thank you for the example. Why Redis?"), "Why Redis?");
+  assert.equal(stripLeadingAcknowledgement("Okay, thanks for sharing this. Why Redis?"), "Why Redis?");
+  assert.equal(stripLeadingAcknowledgement("Thanks for explaining the retry logic, how do you test it?"), "Thanks for explaining the retry logic, how do you test it?", "content stays");
+  assert.equal(stripLeadingAcknowledgement("That makes sense because of latency. What next?"), "That makes sense because of latency. What next?");
+  assert.equal(stripLeadingAcknowledgement("Thanks for sharing that. That makes sense."), "");
   assert.equal(stripLeadingAcknowledgement("Okay."), "");
   assert.equal(stripLeadingAcknowledgement(""), "");
   assert.equal(stripLeadingAcknowledgement(null), "");
@@ -179,4 +185,99 @@ test("cancelling while the acknowledgement is still playing never starts the spe
   playback.cancel();
   assert.deepEqual(await playback.promise, { status: "cancelled" });
   assert.deepEqual(log, []);
+});
+
+test("only answers with enough words are acknowledged", () => {
+  assert.equal(isAcknowledgeableAnswer("yes"), false);
+  assert.equal(isAcknowledgeableAnswer("I don't know"), false);
+  assert.equal(isAcknowledgeableAnswer("We moved the service to Kubernetes last year"), true);
+  assert.equal(isAcknowledgeableAnswer(null), false);
+});
+
+function timedHarness(extra = {}) {
+  const timers = new Map(); let nextId = 1; let clock = 1_000; const diagnostics = [];
+  const base = playerHarness({
+    leadMs: 450, gapMs: 300,
+    now: () => clock,
+    setTimeout: (callback, delay) => { const id = nextId++; timers.set(id, { callback, delay }); return id; },
+    clearTimeout: (id) => timers.delete(id),
+    onDiagnostic: (event) => diagnostics.push(event),
+    ...extra,
+  });
+  const fire = (delay) => { for (const [id, timer] of [...timers]) if (timer.delay === delay) { timers.delete(id); clock += delay; timer.callback(); } };
+  return { ...base, timers, diagnostics, fire, advance: (ms) => { clock += ms; } };
+}
+
+test("a scheduled acknowledgement waits a natural beat before it speaks", async () => {
+  const { player, audios, timers, fire, diagnostics } = timedHarness();
+  await player.preload();
+  const handle = player.schedule();
+  assert.ok(handle);
+  assert.equal(audios.length, 0, "nothing audible at the moment the answer is final");
+  assert.equal(player.busy, true);
+  assert.equal([...timers.values()][0].delay, 450);
+  fire(450);
+  assert.equal(audios.length, 1);
+  assert.equal(diagnostics.find((event) => event.kind === "ack_play").answerToAckMs, 450);
+  audios[0].listeners.ended();
+  await handle.promise;
+  assert.equal(diagnostics.some((event) => event.kind === "ack_ended" && typeof event.ackDurationMs === "number"), true);
+});
+
+test("cancelling during the beat means the acknowledgement never speaks and the gate opens", async () => {
+  const { player, audios } = timedHarness();
+  await player.preload();
+  player.schedule();
+  const gate = player.beforeQuestion();
+  player.cancel();
+  await gate;
+  assert.equal(audios.length, 0);
+  assert.equal(player.busy, false);
+});
+
+test("the question gate covers the beat, the acknowledgement and a short gap, in that order", async () => {
+  const { player, audios, fire, diagnostics } = timedHarness();
+  await player.preload();
+  player.schedule();
+  let opened = false;
+  const gate = player.beforeQuestion().then(() => { opened = true; });
+  await tick();
+  assert.equal(opened, false, "decision ready before the beat ends: the question still waits");
+  fire(450);
+  audios[0].listeners.ended();
+  await tick(); await tick();
+  assert.equal(opened, false, "the gap after the acknowledgement");
+  fire(300);
+  await gate;
+  assert.equal(opened, true);
+  const gap = diagnostics.find((event) => event.kind === "ack_question_gap");
+  assert.equal(gap.ackToQuestionMs, 300);
+  assert.equal(diagnostics.some((event) => event.kind === "ack_overlap"), false);
+});
+
+test("a turn without an acknowledgement is not delayed", async () => {
+  const { player } = timedHarness();
+  await player.preload();
+  await player.beforeQuestion();
+});
+
+test("an acknowledgement that would start after the question began is skipped", async () => {
+  const { player, audios } = timedHarness();
+  await player.preload();
+  await player.beforeQuestion();
+  assert.equal(player.play(), null);
+  assert.equal(audios.length, 0);
+});
+
+test("scheduling is skipped when audio is not loaded or the answer no longer applies", async () => {
+  const unloaded = timedHarness();
+  assert.equal(unloaded.player.schedule(), null);
+  const { player, audios, fire, diagnostics } = timedHarness();
+  await player.preload();
+  const handle = player.schedule({ shouldPlay: () => false });
+  fire(450);
+  await handle.promise;
+  assert.equal(audios.length, 0);
+  assert.deepEqual(diagnostics.filter((event) => event.kind === "ack_skipped").map((event) => event.reason), ["not_applicable"]);
+  assert.equal(player.schedule() !== null, true, "a new turn schedules again");
 });
