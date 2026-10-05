@@ -48,8 +48,8 @@ const providerReport = {
   priorities: validReport.priorities,
 };
 
-function providerResponse(content: string, status = 200): Response {
-  return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status });
+function providerResponse(content: string, status = 200, usage?: unknown): Response {
+  return new Response(JSON.stringify({ choices: [{ message: { content } }], ...(usage ? { usage } : {}) }), { status });
 }
 
 function makeService(fetchImplementation: typeof fetch) {
@@ -58,15 +58,17 @@ function makeService(fetchImplementation: typeof fetch) {
 
 describe("final interview report service", () => {
   it("makes one structured, privacy-routed batch request and returns model/version metadata", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     let requestBody: unknown;
     const service = makeService(async (_url, init) => {
       requestBody = JSON.parse(String(init?.body));
-      return providerResponse(JSON.stringify(providerReport));
+      return providerResponse(JSON.stringify(providerReport), 200, { prompt_tokens: 800, completion_tokens: 210, cost: 0.00012, prompt_tokens_details: { cached_tokens: 500 } });
     });
 
     await expect(service.generate(input)).resolves.toEqual({ ...validReport, model: defaultThinkingModel, analysisVersion: "v2" });
     const body = requestBody as { provider: unknown; response_format: { json_schema: { strict: boolean; schema: { properties: Record<string, unknown> } } }; messages: Array<{ content: string }> };
     expect(body.provider).toEqual({ sort: "latency", require_parameters: true, data_collection: "deny" });
+    expect((body as { usage?: unknown }).usage).toEqual({ include: true });
     expect(body.response_format.json_schema.strict).toBe(true);
     expect(body.response_format.json_schema.schema.properties).not.toHaveProperty("score");
     expect(body.response_format.json_schema.schema.properties).not.toHaveProperty("internal_rationale");
@@ -97,6 +99,9 @@ describe("final interview report service", () => {
     expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.strengths.maxItems).toBe(2);
     expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.gaps.maxItems).toBe(3);
     expect(JSON.parse(body.messages[1].content)).toEqual({ roleContext: input.roleContext, turns: input.turns });
+    const providerLog = info.mock.calls.map((call) => JSON.parse(String(call[0]))).find((entry) => entry.phase === "provider");
+    expect(providerLog).toMatchObject({ event: "interview_report_phase_timing", promptTokens: 800, completionTokens: 210, costUsd: 0.00012, cachedTokens: 500 });
+    expect(JSON.stringify(providerLog)).not.toContain(input.turns[0]?.answer);
   });
 
   it("lets a technical priority repeat any competency linked by a validated finding of the same answer", async () => {
@@ -157,7 +162,9 @@ describe("final interview report service", () => {
       expect(timingEvents).toHaveLength(2);
       expect(timingEvents.map(({ phase }) => phase)).toEqual(["provider", "validation"]);
       for (const event of timingEvents) {
-        expect(Object.keys(event).sort()).toEqual(["durationMs", "event", "phase", "turnCount"]);
+        expect(Object.keys(event).sort()).toEqual(event.phase === "provider"
+          ? ["cachedTokens", "completionTokens", "costUsd", "durationMs", "event", "phase", "promptTokens", "turnCount"]
+          : ["durationMs", "event", "phase", "turnCount"]);
         expect(event.durationMs).toEqual(expect.any(Number));
         expect(event.turnCount).toBe(input.turns.length);
         expect(JSON.stringify(event)).not.toContain("bounded retries");

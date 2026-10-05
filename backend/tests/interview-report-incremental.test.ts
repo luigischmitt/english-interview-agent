@@ -108,7 +108,9 @@ describe("per-turn analysis service", () => {
       expect(events.map(({ phase }) => phase)).toEqual(["provider", "validation"]);
       for (const event of events) {
         expect(event.scope).toBe("turn");
-        expect(Object.keys(event).sort()).toEqual(["durationMs", "event", "phase", "scope", "turnCount"]);
+        expect(Object.keys(event).sort()).toEqual(event.phase === "provider"
+          ? ["cachedTokens", "completionTokens", "costUsd", "durationMs", "event", "phase", "promptTokens", "scope", "turnCount"]
+          : ["durationMs", "event", "phase", "scope", "turnCount"]);
       }
       expect(JSON.stringify(info.mock.calls)).not.toContain(sentinel);
     } finally { info.mockRestore(); }

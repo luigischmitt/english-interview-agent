@@ -1,6 +1,7 @@
 import { ThinkingServiceError } from "./errors.js";
 import type { JobDirectionAnalysis, JobDirectionInput, JobDirectionService, JobFocus } from "./types.js";
 import { maxTailoredQuestionLength, maxTailoredQuestions, normalizeProductTeamContext, normalizeTailoredQuestions, normalizeTargetRole } from "./job-direction-normalization.js";
+import { parseOpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
 
 type JobDirectionServiceOptions = {
   key: string;
@@ -9,7 +10,7 @@ type JobDirectionServiceOptions = {
   fetchImplementation?: typeof fetch;
 };
 
-type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }> };
+type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }>; usage?: OpenRouterUsagePayload };
 
 const schema = {
   type: "object",
@@ -114,6 +115,7 @@ export class OpenRouterJobDirectionService implements JobDirectionService {
   }
 
   async analyze(input: JobDirectionInput): Promise<JobDirectionAnalysis> {
+    const startedAt = Date.now();
     const signal = AbortSignal.timeout(this.options.timeoutMs);
     let response: Response;
     try {
@@ -128,6 +130,7 @@ export class OpenRouterJobDirectionService implements JobDirectionService {
           ],
           temperature: 0,
           max_tokens: 900,
+          usage: { include: true },
           provider: { require_parameters: true, data_collection: "deny" },
           response_format: { type: "json_schema", json_schema: { name: "job_interview_direction", strict: true, schema } },
         }),
@@ -158,6 +161,7 @@ export class OpenRouterJobDirectionService implements JobDirectionService {
       }
       throw invalidProviderResponse(error);
     }
+    console.info(JSON.stringify({ event: "interview_job_direction_timing", durationMs: Math.max(0, Date.now() - startedAt), ...parseOpenRouterUsage(body.usage) }));
     return parseJobDirection(body.choices?.[0]?.message?.content, input);
   }
 }

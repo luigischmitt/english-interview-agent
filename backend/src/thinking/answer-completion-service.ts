@@ -42,7 +42,7 @@ export const answerCompletionSystemPrompt = [
   "Reply only with the JSON object.",
 ].join(" ");
 
-type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }> };
+type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }>; usage?: OpenRouterUsagePayload };
 
 /** One small OpenRouter call; never logs, and never includes the key or the text in an error message. */
 export class OpenRouterAnswerCompletionService implements AnswerCompletionService {
@@ -53,6 +53,9 @@ export class OpenRouterAnswerCompletionService implements AnswerCompletionServic
   }
 
   async isComplete({ question, answer, signal }: AnswerCompletionInput): Promise<boolean> {
+    const startedAt = Date.now();
+    let usage: OpenRouterUsage = parseOpenRouterUsage(undefined);
+    let outcome: "success" | "timeout" | "error" = "error";
     if (signal?.aborted) throw new AnswerCompletionError("error", "Answer completion check aborted");
     const controller = new AbortController();
     let timedOut = false;
@@ -71,6 +74,7 @@ export class OpenRouterAnswerCompletionService implements AnswerCompletionServic
           ],
           temperature: 0,
           max_tokens: 20,
+          usage: { include: true },
           provider: { sort: "latency", require_parameters: true, data_collection: "deny" },
           response_format: { type: "json_schema", json_schema: { name: "answer_completion", strict: true, schema } },
         }),
@@ -81,21 +85,28 @@ export class OpenRouterAnswerCompletionService implements AnswerCompletionServic
         throw new AnswerCompletionError("error", "Answer completion provider unavailable");
       }
       const body = await response.json() as OpenRouterResponse;
+      usage = parseOpenRouterUsage(body.usage);
       const content = body.choices?.[0]?.message?.content;
       const parsed: unknown = typeof content === "string" ? JSON.parse(content) : null;
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new AnswerCompletionError("error", "Invalid answer completion response");
       const keys = Object.keys(parsed);
       const complete = (parsed as { complete?: unknown }).complete;
       if (keys.length !== 1 || typeof complete !== "boolean") throw new AnswerCompletionError("error", "Invalid answer completion response");
+      outcome = "success";
       return complete;
     } catch (error) {
       if (error instanceof AnswerCompletionError) throw error;
-      if (timedOut) throw new AnswerCompletionError("timeout", "Answer completion timed out");
+      if (timedOut) {
+        outcome = "timeout";
+        throw new AnswerCompletionError("timeout", "Answer completion timed out");
+      }
       if (signal?.aborted) throw new AnswerCompletionError("error", "Answer completion check aborted");
       throw new AnswerCompletionError("error", "Answer completion failed");
     } finally {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", onAbort);
+      console.info(JSON.stringify({ event: "interview_answer_completion_timing", durationMs: Math.max(0, Date.now() - startedAt), outcome, ...usage }));
     }
   }
 }
+import { parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";

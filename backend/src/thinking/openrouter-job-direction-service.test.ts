@@ -13,14 +13,15 @@ const input = {
   jobDescription: "We are hiring a backend engineer to build distributed services, improve API reliability, and work with product on a logistics platform. " .repeat(2),
   roleContext: { targetRole: "Backend Engineer", seniority: "mid-level", focus: "technical-depth" },
 };
-const providerResponse = (content: unknown) => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200 });
+const providerResponse = (content: unknown, usage?: unknown) => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }], ...(usage ? { usage } : {}) }), { status: 200 });
 
 describe("OpenRouter job direction service", () => {
   it("requests a strict, non-question direction and returns only validated fields", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     let requestBody: Record<string, unknown> | undefined;
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      return providerResponse(direction);
+      return providerResponse(direction, { prompt_tokens: 310, completion_tokens: 88, cost: 0.00005, prompt_tokens_details: { cached_tokens: 120 } });
     });
     const service = new OpenRouterJobDirectionService({ key: "test-key", model: "mistral/test", timeoutMs: 1_000, fetchImplementation: fetcher });
 
@@ -28,6 +29,7 @@ describe("OpenRouter job direction service", () => {
     expect(fetcher).toHaveBeenCalledOnce();
     expect(requestBody?.model).toBe("mistral/test");
     expect(requestBody?.provider).toEqual({ require_parameters: true, data_collection: "deny" });
+    expect(requestBody?.usage).toEqual({ include: true });
     expect(requestBody?.response_format).toMatchObject({ type: "json_schema", json_schema: { strict: true, name: "job_interview_direction" } });
     const messages = requestBody?.messages as Array<{ role: string; content: string }>;
     expect(messages[0]?.content).toContain("untrusted data");
@@ -40,6 +42,9 @@ describe("OpenRouter job direction service", () => {
     expect(jsonSchema.required).toContain("suggestedFocus");
     expect(jsonSchema.required).toContain("tailoredQuestions");
     expect(jsonSchema.properties.suggestedFocus?.enum).toEqual(["technical-depth", "communication", "behavioral", "mixed"]);
+    const log = JSON.parse(String(info.mock.calls[0]?.[0]));
+    expect(log).toMatchObject({ event: "interview_job_direction_timing", promptTokens: 310, completionTokens: 88, costUsd: 0.00005, cachedTokens: 120 });
+    expect(JSON.stringify(log)).not.toContain(input.jobDescription);
   });
 
   it("normalizes a Portuguese title with seniority and strips placeholder context", async () => {
