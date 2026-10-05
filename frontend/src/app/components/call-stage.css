@@ -288,3 +288,6 @@
 }
 
 .mt-toast-link { display: inline-flex; align-items: center; text-decoration: none; }
+.mt-toast-select { min-height: 44px; max-width: 100%; border-radius: 9999px; background: var(--ds-ink); color: var(--ds-cream); padding: 0 14px; font-size: 0.8125rem; font-weight: 600; text-overflow: ellipsis; cursor: pointer; }
+.mt-toast-select option { background: var(--ds-popover); color: var(--ds-ink); }
+.mt-toast .mt-toast-select:focus-visible { outline: 2px solid var(--ds-green); outline-offset: 2px; }

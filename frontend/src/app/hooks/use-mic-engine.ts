@@ -8,8 +8,14 @@ import { createBrowserMicDeps, createMicEngine, type MicEngine, type MicEngineSt
  * calibrated once while the interviewer is silent, released when the room closes, ends or unmounts.
  * A denied or failing device leaves the engine in "failed"; MicrophoneCapture then opens a microphone per answer.
  */
-export function useMicEngine(active: boolean): { engine: MicEngine; state: MicEngineState } {
-  const [engine] = useState(() => createMicEngine(createBrowserMicDeps({ onDiagnostic: reportMicDiagnostic })));
+export function useMicEngine(active: boolean, { deviceId = null, onDeviceFallback }: { deviceId?: string | null; onDeviceFallback?: () => void } = {}): { engine: MicEngine; state: MicEngineState } {
+  const [fallbackListeners] = useState(() => new Set<() => void>());
+  useEffect(() => {
+    if (!onDeviceFallback) return;
+    fallbackListeners.add(onDeviceFallback);
+    return () => { fallbackListeners.delete(onDeviceFallback); };
+  }, [fallbackListeners, onDeviceFallback]);
+  const [engine] = useState(() => createMicEngine(createBrowserMicDeps({ onDiagnostic: reportMicDiagnostic, onDeviceFallback: () => fallbackListeners.forEach((notify) => notify()) }), { deviceId }));
   const [state, setState] = useState<MicEngineState>("idle");
 
   useEffect(() => engine.on("state", setState), [engine]);

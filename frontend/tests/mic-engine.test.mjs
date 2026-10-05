@@ -269,7 +269,7 @@ test("the frame watchdog calls ensureRunning, then rebuilds the graph once per a
   const frames = [];
   engine.startCapture((frame) => frames.push(frame));
   context.state = "suspended"; // silently stuck: no statechange, no frames
-  assert.equal(runTimers(deps), 1 + 1); // stale-flush timer + watchdog tick 1
+  assert.equal(runTimers(deps), 1 + 1 + 1); // stale-flush timer + watchdog tick 1 + level check
   await tick();
   assert.ok(context.resumeCalls >= 1, "first stall: ensureRunning resumes");
   assert.equal(deps.log.contexts.length, 1);

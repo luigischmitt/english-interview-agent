@@ -49,15 +49,19 @@ export class FakeWorklet {
 
 /** Builds engine dependencies that record every acquisition. */
 export function createFakeMicDeps({ autoFlush = true, rejectWith = null } = {}) {
-  const log = { getUserMedia: 0, contexts: [], tracks: [], worklets: [], timers: [], recovered: [] };
+  const log = { constraints: [], diagnostics: [], getUserMedia: 0, contexts: [], tracks: [], worklets: [], timers: [], recovered: [] };
   let nextTimer = 0;
   const deps = {
     log,
     isSupported: () => true,
-    getUserMedia: async () => {
+    onDiagnostic: (event) => log.diagnostics.push(event),
+    getUserMedia: async (constraints) => {
       log.getUserMedia += 1;
+      log.constraints.push(constraints);
       if (deps.rejectWith) throw deps.rejectWith;
+      if (deps.rejectWhen?.(constraints)) throw deps.rejectWhen(constraints);
       const track = new FakeTrack();
+      track.label = deps.trackLabel ?? "";
       log.tracks.push(track);
       return { track, getTracks: () => [track], getAudioTracks: () => [track] };
     },

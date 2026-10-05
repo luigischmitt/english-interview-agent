@@ -1,3 +1,5 @@
+import { normalizeDeviceId } from "./mic-device.mjs";
+
 /**
  * Hand-off of the interview configuration from the setup (inside the app shell) to the dedicated interview route.
  * Stored in sessionStorage (tab-scoped, never sent anywhere) and consumed once: a reload or a direct visit finds
@@ -26,6 +28,7 @@ export function parseRoomHandoff(raw, now = Date.now()) {
   if (config.role.trim() === "") return null;
   for (const field of booleanFields) if (typeof config[field] !== "boolean") return null;
   if (config.questionCount !== null && typeof config.questionCount !== "string") return null;
+  const microphoneDeviceId = normalizeDeviceId(config.microphoneDeviceId);
   return {
     role: config.role,
     seniority: config.seniority,
@@ -36,6 +39,8 @@ export function parseRoomHandoff(raw, now = Date.now()) {
     showQuestionCaptions: config.showQuestionCaptions,
     candidateCameraEnabled: config.candidateCameraEnabled,
     autoCaptureVoice: config.autoCaptureVoice,
+    // Optional (older hand-offs have none): the input device chosen on the setup.
+    ...(microphoneDeviceId === null ? {} : { microphoneDeviceId }),
   };
 }
 
