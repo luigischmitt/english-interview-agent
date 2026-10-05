@@ -5,9 +5,15 @@ export type ThinkingErrorCode =
   | "THINKING_PROVIDER_UNAVAILABLE"
   | "THINKING_INVALID_PROVIDER_RESPONSE";
 
+export type JobDirectionErrorCode =
+  | "JOB_DIRECTION_RATE_LIMITED"
+  | "JOB_DIRECTION_TIMEOUT"
+  | "JOB_DIRECTION_PROVIDER_UNAVAILABLE"
+  | "JOB_DIRECTION_INVALID_PROVIDER_RESPONSE";
+
 export class ThinkingServiceError extends Error {
   constructor(
-    readonly code: ThinkingErrorCode,
+    readonly code: ThinkingErrorCode | JobDirectionErrorCode,
     readonly status: number,
     message: string,
     options?: ErrorOptions,

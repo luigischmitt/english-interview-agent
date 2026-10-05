@@ -1,4 +1,5 @@
 import { normalizeDeviceId } from "./mic-device.mjs";
+import { isValidJobDirection } from "./job-direction.mjs";
 
 /**
  * Hand-off of the interview configuration from the setup (inside the app shell) to the dedicated interview route.
@@ -29,6 +30,11 @@ export function parseRoomHandoff(raw, now = Date.now()) {
   for (const field of booleanFields) if (typeof config[field] !== "boolean") return null;
   if (config.questionCount !== null && typeof config.questionCount !== "string") return null;
   const microphoneDeviceId = normalizeDeviceId(config.microphoneDeviceId);
+  const jobDirection = isValidJobDirection(config.jobDirection)
+    && config.jobDirection.targetRole === config.role
+    && config.jobDirection.suggestedSeniority === config.seniority
+    ? config.jobDirection
+    : undefined;
   return {
     role: config.role,
     seniority: config.seniority,
@@ -41,6 +47,7 @@ export function parseRoomHandoff(raw, now = Date.now()) {
     autoCaptureVoice: config.autoCaptureVoice,
     // Optional (older hand-offs have none): the input device chosen on the setup.
     ...(microphoneDeviceId === null ? {} : { microphoneDeviceId }),
+    ...(jobDirection ? { jobDirection } : {}),
   };
 }
 

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft, ChevronDown, Check, Leaf } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
+import type { JobDirection, JobSeniority } from "@/lib/interview/job-direction.mjs";
+import { isValidJobDirection, JobDirectionRequestError, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection } from "@/lib/interview/job-direction.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { useSpeechWarmup, useVoiceReadiness } from "../hooks/use-speech-playback";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
@@ -45,6 +47,12 @@ export function InterviewSetup({
 }) {
   useSpeechWarmup();
   const [config, setConfig] = useState<InterviewConfig>(defaultInterviewConfig);
+  const [jobDescription, setJobDescription] = useState("");
+  const [jobDirectionStatus, setJobDirectionStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [jobDirectionError, setJobDirectionError] = useState("");
+  const [jobDirectionEditNote, setJobDirectionEditNote] = useState("");
+  const [jobDirectionValidationError, setJobDirectionValidationError] = useState("");
+  const [jobDirectionOpen, setJobDirectionOpen] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [audioTestStatus, setAudioTestStatus] = useState<{ kind: "idle" | "loading" | "success" | "error"; message?: string }>({ kind: "idle" });
   const audioTestRef = useRef<{ cancel: () => void } | null>(null);
@@ -78,10 +86,89 @@ export function InterviewSetup({
   }, []);
 
   const updateConfig = (field: keyof InterviewConfig, value: string) => {
-    setConfig((current) => ({ ...current, [field]: value }));
+    if (field === "role" || field === "seniority") setJobDirectionValidationError("");
+    setConfig((current) => {
+      const jobDirection = current.jobDirection;
+      if (field === "role") {
+        return {
+          ...current,
+          role: value,
+          ...(jobDirection ? { jobDirection: value.trim() ? { ...jobDirection, targetRole: value.trim() } : undefined } : {}),
+        };
+      }
+      if (field === "seniority") {
+        return {
+          ...current,
+          seniority: value,
+          ...(jobDirection ? { jobDirection: { ...jobDirection, suggestedSeniority: value as JobSeniority } } : {}),
+        };
+      }
+      return { ...current, [field]: value };
+    });
     if (showErrors && field === "role" && value.trim()) {
       setShowErrors(false);
     }
+  };
+
+  const analyzeJobDescription = async () => {
+    if (jobDirectionStatus === "loading") return;
+    setJobDirectionStatus("loading");
+    setJobDirectionError("");
+    setJobDirectionEditNote("");
+    setJobDirectionValidationError("");
+    try {
+      const direction = await requestJobDirection(jobDescription, {
+        targetRole: config.role,
+        seniority: config.seniority,
+        focus: config.focus,
+      }, authorizedFetch, `${backendBaseUrl}/api/v1/thinking/job-direction`);
+      setConfig((current) => ({ ...current, role: direction.targetRole, seniority: direction.suggestedSeniority, jobDirection: direction }));
+      setJobDirectionOpen(true);
+      setJobDirectionStatus("idle");
+    } catch (error) {
+      const code = error instanceof JobDirectionRequestError ? error.code : "REQUEST_FAILED";
+      const message = code === "INVALID_INPUT" || code === "INVALID_JOB_DIRECTION_REQUEST"
+        ? `Cole uma descrição com pelo menos ${jobDescriptionMinLength} caracteres para gerar o direcionamento.`
+        : code === "JOB_DIRECTION_TIMEOUT"
+          ? "A análise demorou mais do que o esperado. Tente novamente ou continue sem direcionamento."
+          : code === "JOB_DIRECTION_RATE_LIMITED"
+            ? "A análise está ocupada agora. Tente novamente ou continue sem direcionamento."
+            : code === "JOB_DIRECTION_INSUFFICIENT_CONTENT"
+              ? "A descrição tem pouco conteúdo para identificar as prioridades da vaga. Cole mais detalhes e tente novamente, ou continue sem direcionamento."
+            : "Não foi possível analisar esta vaga agora. Tente novamente ou continue sem direcionamento.";
+      setJobDirectionError(message);
+      setJobDirectionOpen(true);
+      setJobDirectionStatus("error");
+    }
+  };
+
+  const editJobDirection = (field: keyof JobDirection, value: string) => {
+    setJobDirectionValidationError("");
+    let normalizedValue = value;
+    if (field === "priorityCompetencies") {
+      const lines = value.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean);
+      setJobDirectionEditNote(lines.length > 5 ? "Mantenha no máximo cinco competências; as linhas extras não foram adicionadas." : "");
+      normalizedValue = lines.slice(0, 5).map((item) => item.slice(0, 100)).join("\n");
+    } else {
+      setJobDirectionEditNote("");
+    }
+    setConfig((current) => {
+      const direction = current.jobDirection;
+      if (!direction) return current;
+      if (field === "targetRole") {
+        const targetRole = normalizedValue.slice(0, 100);
+        return { ...current, role: targetRole, jobDirection: { ...direction, targetRole } };
+      }
+      if (field === "suggestedSeniority" && ["junior", "mid-level", "senior", "staff"].includes(normalizedValue)) {
+        const suggestedSeniority = normalizedValue as JobSeniority;
+        return { ...current, seniority: suggestedSeniority, jobDirection: { ...direction, suggestedSeniority } };
+      }
+      if (field === "priorityCompetencies") {
+        return { ...current, jobDirection: { ...direction, priorityCompetencies: normalizedValue.split(/\r?\n/u) } };
+      }
+      const maximum = field === "mainInterviewEmphasis" ? 240 : 280;
+      return { ...current, jobDirection: { ...direction, [field]: normalizedValue.slice(0, maximum) } };
+    });
   };
 
   const updateOption = (field: "playInterviewerAudio" | "showQuestionCaptions" | "candidateCameraEnabled" | "autoCaptureVoice", value: boolean) => {
@@ -137,10 +224,24 @@ export function InterviewSetup({
       setShowErrors(true);
       return;
     }
+    if (config.jobDirection && (!isValidJobDirection(config.jobDirection)
+      || config.jobDirection.targetRole.trim() !== config.role.trim()
+      || config.jobDirection.suggestedSeniority !== config.seniority)) {
+      setJobDirectionValidationError("Complete os campos do direcionamento ou remova-o para continuar sem ele.");
+      setJobDirectionOpen(true);
+      return;
+    }
     if (voiceBlocked) return;
     cancelAudioTest();
     micTestRef.current?.stop();
-    onStart({ ...config, role: config.role.trim(), microphoneDeviceId });
+    const jobDirection = config.jobDirection ? {
+      ...config.jobDirection,
+      targetRole: config.jobDirection.targetRole.trim(),
+      mainInterviewEmphasis: config.jobDirection.mainInterviewEmphasis.trim(),
+      priorityCompetencies: config.jobDirection.priorityCompetencies.map((item) => item.trim()),
+      productTeamContext: config.jobDirection.productTeamContext.trim(),
+    } : undefined;
+    onStart({ ...config, role: config.role.trim(), microphoneDeviceId, ...(jobDirection ? { jobDirection } : {}) });
   };
 
   const [cargoSummary, ...restSummary] = getInterviewSetupSummary(config, seniorityLabels, focusLabels);
@@ -241,6 +342,83 @@ export function InterviewSetup({
                   onChange={(value) => updateConfig("duration", value)}
                 />
               </fieldset>
+            </div>
+          </section>
+
+          {/* Optional job context. The pasted description stays in component memory only. */}
+          <section className="ds-card ds-enter overflow-hidden" style={{ "--i": 1 } as CSSProperties} aria-labelledby="job-direction-title">
+            <button type="button" className="isu-disclosure-button flex w-full items-center gap-3 p-5 text-left sm:px-7" aria-expanded={jobDirectionOpen} aria-controls="job-direction-panel" onClick={() => setJobDirectionOpen((open) => !open)}>
+              <span className="min-w-0 flex-1">
+                <span id="job-direction-title" className="ds-h2 block">Direcionamento da vaga <span className="ds-small font-normal">· opcional</span></span>
+                <span className="ds-small block">{config.jobDirection ? "Direcionamento pronto · cargo e foco atualizados." : "Use a descrição para ajustar o cargo e os temas de prática."}</span>
+              </span>
+              <ChevronDown className="ds-chevron size-5 shrink-0 text-text-2" style={{ transform: jobDirectionOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
+            </button>
+            <div id="job-direction-panel" hidden={!jobDirectionOpen} className="border-t border-base-300 px-5 pb-6 pt-5 sm:px-7">
+            <p className="ds-body max-w-2xl">Cole a descrição para identificar o papel, o nível provável e os temas mais relevantes para a entrevista. Você pode revisar e editar tudo antes de iniciar.</p>
+
+            <label htmlFor="job-description" className="ds-label mt-5 block">Descrição da vaga</label>
+            <textarea
+              id="job-description"
+              className="textarea ds-field mt-2 min-h-40 w-full resize-y rounded-2xl text-sm leading-6"
+              value={jobDescription}
+              maxLength={jobDescriptionMaxLength}
+              onChange={(event) => setJobDescription(event.target.value)}
+              placeholder="Cole aqui a descrição da vaga…"
+              aria-describedby="job-description-help job-description-count"
+            />
+            <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:justify-between">
+              <p id="job-description-help" className="ds-small">O texto é enviado ao provedor de IA para análise e não é salvo pelo app.</p>
+              <p id="job-description-count" className="ds-small tabular-nums">{jobDescription.length.toLocaleString("pt-BR")} / {jobDescriptionMaxLength.toLocaleString("pt-BR")}</p>
+            </div>
+            <button type="button" className="btn btn-sm ds-btn ds-btn-soft mt-4" onClick={() => void analyzeJobDescription()} disabled={jobDirectionStatus === "loading"}>
+              {jobDirectionStatus === "loading" ? <><span className="loading loading-spinner loading-xs" aria-hidden="true" /> Analisando descrição…</> : config.jobDirection ? "Analisar novamente" : "Gerar direcionamento"}
+            </button>
+            {jobDirectionError && (
+              <div className="alert alert-warning mt-4" role="alert">
+                <p>{jobDirectionError}</p>
+              </div>
+            )}
+
+            {config.jobDirection && (
+              <fieldset className="mt-6 rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-5" aria-labelledby="direction-found-title">
+                <legend className="sr-only">Direcionamento encontrado</legend>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                  <h3 id="direction-found-title" className="ds-label">Direcionamento encontrado</h3>
+                  <p className="ds-small mt-1">Revise os campos. Nenhuma pergunta de entrevista foi gerada nesta etapa.</p>
+                  </div>
+                  <button type="button" className="btn btn-sm ds-btn ds-btn-quiet" onClick={() => { setConfig((current) => ({ ...current, jobDirection: undefined })); setJobDescription(""); setJobDirectionError(""); setJobDirectionEditNote(""); setJobDirectionValidationError(""); setJobDirectionOpen(false); }}>Remover direcionamento</button>
+                </div>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="direction-role" className="ds-label">Cargo-alvo</label>
+                    <textarea id="direction-role" rows={1} maxLength={100} className="textarea ds-field w-full resize-y text-sm" value={config.jobDirection.targetRole} onChange={(event) => editJobDirection("targetRole", event.target.value)} />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="direction-seniority" className="ds-label">Senioridade sugerida</label>
+                    <select id="direction-seniority" className="select ds-field w-full text-sm" value={config.jobDirection.suggestedSeniority} onChange={(event) => editJobDirection("suggestedSeniority", event.target.value)}>
+                      {(Object.keys(seniorityLabels) as JobSeniority[]).map((value) => <option key={value} value={value}>{seniorityLabels[value]}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:col-span-2">
+                    <label htmlFor="direction-emphasis" className="ds-label">Principal ênfase da entrevista</label>
+                    <textarea id="direction-emphasis" rows={2} maxLength={240} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.mainInterviewEmphasis} onChange={(event) => editJobDirection("mainInterviewEmphasis", event.target.value)} />
+                  </div>
+                  <div className="flex flex-col gap-2 sm:col-span-2">
+                    <label htmlFor="direction-competencies" className="ds-label">Competências prioritárias</label>
+                    <textarea id="direction-competencies" rows={Math.max(2, config.jobDirection.priorityCompetencies.length)} maxLength={5 * 101} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.priorityCompetencies.join("\n")} onChange={(event) => editJobDirection("priorityCompetencies", event.target.value)} aria-describedby="direction-competencies-help" />
+                    <p id="direction-competencies-help" className="ds-small">Uma competência por linha, até cinco.</p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:col-span-2">
+                    <label htmlFor="direction-context" className="ds-label">Contexto de produto e equipe</label>
+                    <textarea id="direction-context" rows={2} maxLength={280} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.productTeamContext} onChange={(event) => editJobDirection("productTeamContext", event.target.value)} />
+                  </div>
+                </div>
+                {jobDirectionEditNote && <p className="ds-small mt-3 text-warning" role="status">{jobDirectionEditNote}</p>}
+                {jobDirectionValidationError && <p className="ds-small mt-3 text-error" role="alert">{jobDirectionValidationError}</p>}
+              </fieldset>
+            )}
             </div>
           </section>
 
