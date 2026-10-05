@@ -19,17 +19,15 @@ export const metadata: Metadata = {
 };
 
 // viewport-fit=cover lets the page paint under the notch/home indicator (safe areas are padded back with env()); the
-// browser chrome follows the page ground per scheme, and ThemeColorSync keeps it in step with the in-app theme toggle.
+// browser chrome starts on the light page ground, and ThemeColorSync keeps it in step with the in-app theme toggle.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
   colorScheme: "light dark",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: THEME_COLORS.light },
-    { media: "(prefers-color-scheme: dark)", color: THEME_COLORS.dark },
-  ],
+  // Light is the default scheme; ThemeColorSync switches this when the user picks Escuro or Sistema.
+  themeColor: THEME_COLORS.light,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

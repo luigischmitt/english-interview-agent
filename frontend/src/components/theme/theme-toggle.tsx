@@ -39,8 +39,8 @@ function subscribe(onChange: () => void) {
   };
 }
 
-// The server cannot know the preference: render "system" and let the client snapshot take over after hydration.
-const getServerSnapshot = (): ColorPreference => "system";
+// The server cannot know the preference: render the light default and let the client snapshot take over after hydration.
+const getServerSnapshot = (): ColorPreference => "light";
 const getSnapshot = (): ColorPreference => readStoredPreference(getStorage());
 
 // Kept in memory when storage is blocked, so the toggle still works for the current page.
