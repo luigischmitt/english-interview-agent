@@ -26,6 +26,14 @@ export type TranscriptionConfig = {
   maxPrepares: number;
   semanticEndEnabled: boolean;
   semanticEndTimeoutMs: number;
+  /** Silence (from the end-of-answer pause) after which the semantic completeness check starts. */
+  semanticCheckAfterMs: number;
+  /** Minimum silence (from the same pause) before a "complete" verdict may end the answer. */
+  semanticCompleteMinSilenceMs: number;
+  /** Semantic end checks (a small LLM call) per answer; each later pause re-checks only while under this cap. */
+  maxSemanticChecks: number;
+  /** Hedge delay for the tail segment (critical path of the answer end). */
+  tailHedgeAfterMs: number;
   /** Send a vocabulary/context `prompt` with every Whisper request. `TRANSCRIPTION_WHISPER_PROMPT=off` disables it. */
   whisperPromptEnabled: boolean;
 };
@@ -100,6 +108,10 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     maxPrepares: parseIntegerInRange(environment.TRANSCRIPTION_MAX_PREPARES, 4, 0, 5, "Max prepares"),
     semanticEndEnabled: environment.TRANSCRIPTION_SEMANTIC_END_ENABLED?.trim().toLowerCase() !== "false",
     semanticEndTimeoutMs: parseIntegerInRange(environment.TRANSCRIPTION_SEMANTIC_END_TIMEOUT_MS, 1_500, 200, 5_000, "Semantic end timeout"),
+    semanticCheckAfterMs: parseIntegerInRange(environment.TRANSCRIPTION_SEMANTIC_CHECK_AFTER_MS, 0, 0, 5_000, "Semantic check delay"),
+    semanticCompleteMinSilenceMs: parseIntegerInRange(environment.TRANSCRIPTION_SEMANTIC_COMPLETE_MIN_SILENCE_MS, 900, 0, 5_000, "Semantic complete minimum silence"),
+    maxSemanticChecks: parseIntegerInRange(environment.TRANSCRIPTION_MAX_SEMANTIC_CHECKS, 2, 0, 5, "Max semantic checks"),
+    tailHedgeAfterMs: parseIntegerInRange(environment.TRANSCRIPTION_TAIL_HEDGE_AFTER_MS, 1_500, 0, 30_000, "Tail hedge delay"),
     whisperPromptEnabled: environment.TRANSCRIPTION_WHISPER_PROMPT?.trim().toLowerCase() !== "off",
   };
 }

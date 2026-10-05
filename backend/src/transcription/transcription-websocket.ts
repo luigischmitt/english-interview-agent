@@ -158,6 +158,11 @@ function logStreamDiagnostic(details: Record<string, string | number | boolean>)
 const trailingConnectors = new Set(["a", "about", "also", "an", "and", "as", "because", "but", "for", "from", "hmm", "i", "if", "in", "into", "is", "like", "my", "of", "on", "or", "our", "so", "that", "the", "then", "this", "to", "uh", "um", "was", "we", "when", "which", "while", "with"]);
 
 /** A transcribed segment that looks unfinished gets a longer answer grace so a thinking pause is not cut. */
+export function endsWithConnector(transcript: string): boolean {
+  const lastWord = transcript.trim().toLocaleLowerCase().match(/[\p{L}']+(?=[^\p{L}']*$)/u)?.[0] ?? "";
+  return trailingConnectors.has(lastWord);
+}
+
 export function looksUnfinished(transcript: string): boolean {
   const text = transcript.trim();
   if (!/[.?!]["')\]]*$/u.test(text)) return true;
@@ -168,7 +173,7 @@ export function looksUnfinished(transcript: string): boolean {
 /** Server-side streaming settings: incremental Whisper tuning and the answer-end orchestration. */
 export type StreamingOptions = {
   /** Incremental Whisper tuning (tests and rare overrides). */
-  incrementalWhisper?: { segmentTimeoutMs?: number; segmentHedgeAfterMs?: number; softCutSilenceMs?: number; softCutMinBufferedMs?: number; maxSegmentMs?: number; minSegmentSpeechMs?: number; forcedCutWindowMs?: number; flushTimeoutMs?: number };
+  incrementalWhisper?: { segmentTimeoutMs?: number; segmentHedgeAfterMs?: number; softCutSilenceMs?: number; softCutMinBufferedMs?: number; tailHedgeAfterMs?: number; maxSegmentMs?: number; minSegmentSpeechMs?: number; forcedCutWindowMs?: number; flushTimeoutMs?: number };
   /** Grace after a turn that ends like a complete sentence. */
   answerGraceMs: number;
   /** Grace after a turn that looks unfinished (no final punctuation or a trailing connector); defaults to answerGraceMs. */
@@ -182,6 +187,17 @@ export type StreamingOptions = {
   prepareAfterMs?: number;
   /** Maximum provisional messages (and semantic completion checks) per answer. Defaults to 2. */
   maxPrepares?: number;
+  /**
+   * Silence (measured from the pause that cut the tail) after which the semantic completeness check starts, as soon as the
+   * tail is transcribed. Defaults to `prepareAfterMs` (the check then rides on the provisional trigger).
+   */
+  semanticCheckAfterMs?: number;
+  /**
+   * A "complete" verdict ends the answer only once this much silence (from the same pause) has elapsed, so a short breath
+   * after a complete-sounding sentence cannot end the turn. Default 0.
+   */
+  semanticCompleteMinSilenceMs?: number;
+  maxSemanticChecks?: number;
   /**
    * Semantic end-of-answer classifier, called at the `answer-provisional` trigger when the browser sent the interviewer
    * question. Absent or null disables it. A "complete" verdict ends the answer immediately; anything else keeps the grace.
@@ -280,7 +296,15 @@ export function attachTranscriptionWebSocket(
     let semanticVerdict: SemanticVerdict = "none";
     let semanticLatencyMs = 0;
     let lastSemanticText = "";
+    let semanticTimer: ReturnType<typeof setTimeout> | null = null;
+    let semanticHoldTimer: ReturnType<typeof setTimeout> | null = null;
+    let semanticStartedAfterSilenceMs = 0;
+    let semanticHeldMs = 0;
     const clearGrace = () => {
+      if (semanticTimer !== null) clearTimeout(semanticTimer);
+      semanticTimer = null;
+      if (semanticHoldTimer !== null) clearTimeout(semanticHoldTimer);
+      semanticHoldTimer = null;
       semanticAbort?.abort();
       semanticAbort = null;
       if (graceTimer !== null) clearTimeout(graceTimer);
@@ -320,22 +344,35 @@ export function attachTranscriptionWebSocket(
       streamSession = null;
     };
     // Ends the answer early when the classifier says it is finished; every other outcome leaves the running grace untouched.
-    const runSemanticCheck = (classifier: AnswerCompletionService, question: string, transcript: string) => {
+    const runSemanticCheck = (classifier: AnswerCompletionService, question: string, transcript: string, silenceStartedAt: number, minSilenceMs: number) => {
       semanticAbort?.abort();
       const controller = new AbortController();
       semanticAbort = controller;
       semanticChecks += 1;
       const startedAt = Date.now();
+      semanticStartedAfterSilenceMs = Math.max(0, startedAt - silenceStartedAt);
       classifier.isComplete({ question, answer: transcript, signal: controller.signal }).then((complete) => ({ complete, kind: null }), (error: unknown) => ({ complete: false, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const })).then((outcome) => {
         if (controller.signal.aborted) return;
         if (semanticAbort === controller) semanticAbort = null;
         semanticLatencyMs = Date.now() - startedAt;
         semanticVerdict = outcome.kind ?? (outcome.complete ? "complete" : "incomplete");
         if (!outcome.complete) return;
-        const current = sessionId ? sessions.get(sessionId) : undefined;
-        if (finalRequested || finishing || !streamSession || streamSession.failed || streamSession.turnActive || !current?.vad.hasSpeech) return;
-        if (streamSession.committedText() !== transcript) return;
-        finalize("silence", "semantic");
+        // A transcript ending on a connector ("and", "because") is never trusted as finished, whatever the verdict.
+        if (endsWithConnector(transcript)) return;
+        const finishIfStillQuiet = () => {
+          semanticHoldTimer = null;
+          const current = sessionId ? sessions.get(sessionId) : undefined;
+          if (finalRequested || finishing || !streamSession || streamSession.failed || streamSession.turnActive || !current?.vad.hasSpeech) return;
+          if (streamSession.committedText() !== transcript) return;
+          finalize("silence", "semantic");
+        };
+        const holdMs = silenceStartedAt + minSilenceMs - Date.now();
+        if (holdMs > 0) {
+          semanticHeldMs = Math.round(holdMs);
+          semanticHoldTimer = setTimeout(finishIfStillQuiet, holdMs);
+        } else {
+          finishIfStillQuiet();
+        }
       });
     };
     let speculation: Speculation | null = null;
@@ -569,7 +606,7 @@ export function attachTranscriptionWebSocket(
           }
           const transcriptionDurationMs = Date.now() - flushStartedAt;
           const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
-          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: "whisper-incremental", provider: "whisper-incremental", incrementalTurns: stream.turnCount, ...stream.diagnostics?.(), preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict, semanticLatencyMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
+          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: "whisper-incremental", provider: "whisper-incremental", incrementalTurns: stream.turnCount, ...stream.diagnostics?.(), preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict, semanticLatencyMs, semanticCheckStartedAfterSilenceMs: Math.round(semanticStartedAfterSilenceMs), semanticCompleteHeldMs: semanticHeldMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
           send(socket, { type: "complete", status: "complete", provider: "whisper-incremental", durationMs, transcript });
           clearTimeout(timer);
 
@@ -809,7 +846,10 @@ export function attachTranscriptionWebSocket(
             const sessionCallbacks = {
               onTurnStart: () => clearGrace(),
               onCaptionChange: scheduleCaption,
-              onTurnEnd: (turnTranscript: string, info?: TurnEndInfo) => {
+              onTurnEnd: (segmentTranscript: string, info?: TurnEndInfo) => {
+                // The tail segment can be empty (a soft cut already took all the speech, or the tail was only silence/noise):
+                // the turn still ended, so judge the transcript committed so far instead of dropping the turn end.
+                const turnTranscript = segmentTranscript || streamSession?.committedText() || "";
                 if (finalRequested || finishing || !turnTranscript) return;
                 clearGrace();
                 const graceMs = looksUnfinished(turnTranscript) ? (streaming.incompleteGraceMs ?? streaming.answerGraceMs) : streaming.answerGraceMs;
@@ -825,7 +865,18 @@ export function attachTranscriptionWebSocket(
                 const maxPrepares = streaming.maxPrepares ?? 2;
                 const canPrepare = preparesSent < maxPrepares;
                 const canCheckSemantically = interviewerQuestion !== null && Boolean(streaming.answerCompletion) && semanticChecks < maxPrepares;
-                if (prepareAfterMs > 0 && prepareAfterMs < graceMs && (canPrepare || canCheckSemantically)) {
+                const semanticAfterMs = streaming.semanticCheckAfterMs ?? prepareAfterMs;
+                const silenceStartedAt = info?.silenceStartedAt ?? Date.now();
+                const minSilenceMs = streaming.semanticCompleteMinSilenceMs ?? 0;
+                const startSemanticCheck = () => {
+                  const current = sessionId ? sessions.get(sessionId) : undefined;
+                  if (finalRequested || finishing || !streamSession || streamSession.failed || streamSession.turnActive || !current?.vad.hasSpeech) return;
+                  const transcript = streamSession.committedText();
+                  if (!transcript || transcript === lastSemanticText || interviewerQuestion === null || !streaming.answerCompletion || semanticChecks >= (streaming.maxSemanticChecks ?? maxPrepares)) return;
+                  lastSemanticText = transcript;
+                  runSemanticCheck(streaming.answerCompletion, interviewerQuestion, transcript, silenceStartedAt, minSilenceMs);
+                };
+                if (prepareAfterMs > 0 && prepareAfterMs < graceMs && canPrepare) {
                   prepareTimer = setTimeout(() => {
                     prepareTimer = null;
                     const current = sessionId ? sessions.get(sessionId) : undefined;
@@ -837,11 +888,12 @@ export function attachTranscriptionWebSocket(
                       preparesSent += 1;
                       send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
                     }
-                    if (transcript !== lastSemanticText && interviewerQuestion !== null && streaming.answerCompletion && semanticChecks < maxPrepares) {
-                      lastSemanticText = transcript;
-                      runSemanticCheck(streaming.answerCompletion, interviewerQuestion, transcript);
-                    }
                   }, Math.max(0, prepareAfterMs - elapsedMs));
+                }
+                // The check judges the committed transcript, which already includes the tail (the turn end fires after it is transcribed).
+                // It runs on its own timer so it can start earlier than the provisional answer and the long grace.
+                if (canCheckSemantically && (streaming.semanticCheckAfterMs !== undefined || prepareAfterMs > 0) && semanticAfterMs < graceMs) {
+                  semanticTimer = setTimeout(() => { semanticTimer = null; startSemanticCheck(); }, Math.max(0, semanticAfterMs - elapsedMs));
                 }
               },
               onFailure: (failure: StreamFailureReason, detail: SessionFailureDetail) => {

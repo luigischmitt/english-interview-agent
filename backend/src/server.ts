@@ -39,7 +39,7 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
   hedgeAfterMs: defaultTranscriptionConfig.hedgeAfterMs,
   finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
 }, {
-  answerGraceMs: defaultTranscriptionConfig.answerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.incompleteGraceMs, pauseMs: defaultTranscriptionConfig.pauseMs, prepareAfterMs: defaultTranscriptionConfig.prepareAfterMs, maxPrepares: defaultTranscriptionConfig.maxPrepares, answerCompletion }, { verifier: defaultAccessTokenVerifier });
+  answerGraceMs: defaultTranscriptionConfig.answerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.incompleteGraceMs, pauseMs: defaultTranscriptionConfig.pauseMs, prepareAfterMs: defaultTranscriptionConfig.prepareAfterMs, maxPrepares: defaultTranscriptionConfig.maxPrepares, semanticCheckAfterMs: defaultTranscriptionConfig.semanticCheckAfterMs, semanticCompleteMinSilenceMs: defaultTranscriptionConfig.semanticCompleteMinSilenceMs, maxSemanticChecks: defaultTranscriptionConfig.maxSemanticChecks, incrementalWhisper: { tailHedgeAfterMs: defaultTranscriptionConfig.tailHedgeAfterMs }, answerCompletion }, { verifier: defaultAccessTokenVerifier });
 
 server.listen(port, () => {
   console.info(`Backend listening on port ${port}`);
