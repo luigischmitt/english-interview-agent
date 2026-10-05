@@ -38,6 +38,16 @@ describe("sanitizeClientEvent", () => {
     expect(sanitizeClientEvent({ kind: "mic_level_check", peakLevel: 3, inputDeviceKind: "iPhone de Lucas" })).toEqual({ kind: "mic_level_check" });
   });
 
+  it("keeps content-free acknowledgement diagnostics with their timing fields", () => {
+    expect(sanitizeClientEvent({ kind: "ack_play", answerToAckMs: 452, phrase: "Okay.", text: "secret" })).toEqual({ kind: "ack_play", answerToAckMs: 452 });
+    expect(sanitizeClientEvent({ kind: "ack_ended", ackDurationMs: 640 })).toEqual({ kind: "ack_ended", ackDurationMs: 640 });
+    expect(sanitizeClientEvent({ kind: "ack_question_gap", ackToQuestionMs: 321 })).toEqual({ kind: "ack_question_gap", ackToQuestionMs: 321 });
+    expect(sanitizeClientEvent({ kind: "ack_skipped", reason: "question_started" })).toEqual({ kind: "ack_skipped", reason: "question_started" });
+    expect(sanitizeClientEvent({ kind: "ack_skipped", reason: "free text" })).toEqual({ kind: "ack_skipped" });
+    expect(sanitizeClientEvent({ kind: "ack_preloaded", loaded: 5, total: 5 })).toEqual({ kind: "ack_preloaded", loaded: 5, total: 5 });
+    for (const kind of ["ack_play_resolved", "ack_play_failed", "ack_overlap"]) expect(sanitizeClientEvent({ kind })).toEqual({ kind });
+  });
+
   it("drops invalid enums, out-of-range numbers and wrong types", () => {
     expect(sanitizeClientEvent({ kind: "playback_error", errorName: "Some free text", platform: "windows", mediaVolume: 5, elapsedMs: -1, chunkIndex: "1", micActive: "yes", readyState: Number.NaN }))
       .toEqual({ kind: "playback_error" });

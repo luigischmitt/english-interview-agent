@@ -12,6 +12,8 @@ export type StreamFailureReason = "segment_failed";
 export interface StreamingTurnSession {
   readonly failed: boolean;
   readonly failureReason: StreamFailureReason | null;
+  /** Content-free reason the session was abandoned (for the fallback log); null while healthy. */
+  readonly failureDetail?: string | null;
   readonly turnCount: number;
   readonly turnActive: boolean;
   setTurnObserver(observer: ((kind: "start" | "end", transcript: string) => void) | null): void;

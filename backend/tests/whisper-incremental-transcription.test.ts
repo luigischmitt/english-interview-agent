@@ -130,8 +130,23 @@ describe("incremental Whisper over the stream WebSocket", () => {
     expect(logs()).toContain('"answerEndReason":"semantic_complete"');
   });
 
-  it("falls back to one full-audio Whisper call when a segment fails", async () => {
-    const whisper = createWhisper([new Error("boom")], "Recovered from the full audio.");
+  it("retries a failed segment (tail only) instead of re-transcribing the full audio", async () => {
+    const whisper = createWhisper([new Error("boom"), "Recovered by the retry."], "Full audio transcript.");
+    const { connect } = await startServer(whisper.service, incremental());
+    const { socket, waitFor } = await connect();
+    await speak(socket, 800, 0.05);
+    await speak(socket, 500, 0.001);
+    const complete = await waitFor("complete");
+    expect(complete).toMatchObject({ provider: "whisper-incremental", transcript: "Recovered by the retry." });
+    // Same short segment twice; no full-audio call.
+    expect(whisper.transcribe).toHaveBeenCalledTimes(2);
+    expect(whisper.wavSizes[0]).toBe(whisper.wavSizes[1]);
+    expect(logs()).toContain('"segmentRetries":1');
+    expect(logs()).not.toContain("incremental_whisper_unavailable");
+  });
+
+  it("falls back to one full-audio Whisper call, with a content-free reason, when a segment fails twice", async () => {
+    const whisper = createWhisper([new Error("boom"), new Error("boom again")], "Recovered from the full audio.");
     const { connect } = await startServer(whisper.service, incremental());
     const { socket, waitFor } = await connect();
     await speak(socket, 800, 0.05);
@@ -140,9 +155,29 @@ describe("incremental Whisper over the stream WebSocket", () => {
     socket.send(JSON.stringify({ type: "finalize", reason: "silence" }));
     const complete = await waitFor("complete");
     expect(complete).toMatchObject({ provider: "whisper-large-v3-turbo", transcript: "Recovered from the full audio." });
-    expect(whisper.transcribe).toHaveBeenCalledTimes(2);
-    expect(logs()).toContain('"status":"incremental_whisper_unavailable","reason":"segment_failed"');
+    expect(whisper.transcribe).toHaveBeenCalledTimes(3);
+    expect(logs()).toContain('"status":"incremental_whisper_unavailable","reason":"segment_failed","detail":"segment_error"');
     expect(logs()).toContain('"answerEndReason":"fallback_whisper"');
+    expect(logs()).toContain('"fallbackReason":"segment_error"');
+  });
+
+  it("hedges a slow segment request: the second request wins and no fallback is needed", async () => {
+    const calls: number[] = [];
+    const transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo", _format?: unknown, signal?: AbortSignal): Promise<TranscriptionResult> => {
+      calls.push(Date.now());
+      if (calls.length === 1) await new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+      return { provider, transcript: "Hedged answer." };
+    });
+    const service: TranscriptionService = { availableProviders: () => ["whisper-large-v3-turbo"], transcribe };
+    const { connect } = await startServer(service, incremental({ incrementalWhisper: { segmentHedgeAfterMs: 150 } }));
+    const { socket, waitFor } = await connect();
+    await speak(socket, 800, 0.05);
+    await speak(socket, 500, 0.001);
+    const complete = await waitFor("complete");
+    expect(complete).toMatchObject({ provider: "whisper-incremental", transcript: "Hedged answer." });
+    expect(transcribe).toHaveBeenCalledTimes(2);
+    expect(logs()).toContain('"segmentHedges":1');
+    expect(logs()).toContain('"segmentHedgeWins":1');
   });
 });
 
@@ -229,6 +264,18 @@ describe("answer-provisional and captions", () => {
     }
     await waitFor("complete", 6_000);
     expect(provisionals(messages).map((message) => [message.transcript, message.revision])).toEqual([["One.", 1], ["One. Two.", 2]]);
+  }, 15_000);
+
+  it("still prepares the real ending of a long answer after earlier thinking pauses used provisionals (maxPrepares 4)", async () => {
+    const whisper = createWhisper(["One.", "Two.", "Three."]);
+    const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 200, maxPrepares: 4 }));
+    const { socket, messages, waitFor } = await connect();
+    for (let turn = 0; turn < 3; turn += 1) {
+      await speak(socket, 600, 0.05);
+      await speak(socket, 700, 0.001);
+    }
+    await waitFor("complete", 6_000);
+    expect(provisionals(messages).map((message) => message.revision)).toEqual([1, 2, 3]);
   }, 15_000);
 
   it("sends no captions without the start flag", async () => {

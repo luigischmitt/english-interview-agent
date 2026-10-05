@@ -38,6 +38,8 @@ export type SpeechPlaybackOptions = {
   /** playInterviewerSegments only: fired once when the final chunk is playing and at most `finalChunkLeadMs` of it remains (at its start if shorter). */
   onFinalChunkStarted?: () => void;
   finalChunkLeadMs?: number;
+  /** playInterviewerSegments only: awaited once before the first chunk plays (after its audio arrived), e.g. while an instant acknowledgement is still audible. */
+  beforePlayback?: () => Promise<unknown> | null | undefined;
   /**
    * playInterviewerSegments only: called once per chunk when its audio has arrived (before it plays) so the avatar can
    * lip-sync it. `blob` is the received audio; `decodeAudio` (Web Audio path) resolves the already-decoded buffer.
@@ -90,6 +92,7 @@ export const firstChunkPartMinimum: number;
 export function groupInterviewerSentences(segments: string[]): { text: string; sentences: string[]; units: { text: string; caption: string }[] }[];
 export function playInterviewerSegments(segments: string[], options: SpeechPlaybackOptions): SpeechPlayback;
 export function prewarmInterviewerSpeech(segments: string[], options: SpeechPlaybackOptions): { promise: Promise<boolean>; cancel: () => void };
+export function fetchSpeechBlob(text: string, options: SpeechPlaybackOptions): Promise<Blob>;
 export function clearRetainedSpeechBlobs(): void;
 export function resetSpeechFlights(): void;
 

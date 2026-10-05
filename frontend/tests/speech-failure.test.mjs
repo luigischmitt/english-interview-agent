@@ -13,7 +13,7 @@ import {
 beforeEach(() => { resetSpeechFlights(); clearRetainedSpeechBlobs(); });
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
-const chunkA = "Thanks for that detailed answer about caching.";
+const chunkA = "Thanks for that answer about caching.";
 const chunkB = "How did you invalidate entries across regions?";
 const chunkC = "And what happened during a regional failover?";
 
@@ -80,9 +80,9 @@ test("a hanging first chunk ends as unavailable at the deadline instead of waiti
 
 test("a failed request resolves unavailable right away, without waiting for the deadline", async () => {
   const { pending, options } = harness();
-  const playback = playInterviewerSegments(["One single sentence that is long enough to stand alone."], options);
+  const playback = playInterviewerSegments(["One sentence that is long enough."], options);
   await flush();
-  pending.get("One single sentence that is long enough to stand alone.").fail();
+  pending.get("One sentence that is long enough.").fail();
   const result = await playback.promise;
   assert.deepEqual(result, { status: "unavailable", message: speechUnavailableMessage });
   assert.ok(!/provider/u.test(result.message));

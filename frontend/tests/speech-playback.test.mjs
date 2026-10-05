@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, speechUnavailableMessage, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
 
+import { hasSeniorityWord, looksPortuguese, roleForSpeech } from "../src/lib/interview/opening-copy.mjs";
 import { createOpeningSpeechTiming, isOpeningTimingEnabled, openingTimingStorageKey } from "../src/lib/interview/opening-timing.mjs";
 
 test("the first interviewer playback combines the introduction and the first question", () => {
@@ -9,51 +10,63 @@ test("the first interviewer playback combines the introduction and the first que
   assert.equal(composeOpeningUtterance(" Welcome. ", " Tell me about yourself. "), "Welcome. Tell me about yourself.");
 });
 
-test("the opening has one concise contextual sentence for every seniority and focus", () => {
+test("the opening is one concise, natural sentence for every seniority and focus", () => {
   const seniorityLabels = { junior: "junior", "mid-level": "mid-level", senior: "senior", staff: "staff-level" };
-  const focusLabels = {
-    "technical-depth": "technical depth",
-    communication: "communication and clarity",
-    behavioral: "behavioral questions",
-    mixed: "balanced practice",
+  const focusClauses = {
+    "technical-depth": ", with a focus on technical depth",
+    communication: ", with a focus on clear communication",
+    behavioral: ", with a focus on behavioral questions",
+    mixed: "",
   };
   const question = "Tell me about a project.";
   for (const [seniorityValue, seniorityLabel] of Object.entries(seniorityLabels)) {
-    for (const [focusValue, focusLabel] of Object.entries(focusLabels)) {
+    for (const [focusValue, clause] of Object.entries(focusClauses)) {
       const config = { role: "Backend Engineer", seniority: seniorityValue, focus: focusValue, duration: "10" };
       const opening = composeContextualOpening(config, question);
+      assert.equal(opening, `We have about 10 minutes for your ${seniorityLabel} Backend Engineer role${clause}. ${question}`);
       const prefix = opening.slice(0, -question.length).trim();
-
-      assert.ok(prefix.startsWith("We have about 10 minutes for your "));
-      assert.ok(prefix.includes(`${seniorityLabel} Backend Engineer role`));
-      assert.ok(prefix.includes(`focusing on ${focusLabel}.`));
       assert.equal(splitInterviewerSpeech(prefix).length, 1);
-      const previousPrefix = `Thanks for joining me. We have about 10 minutes today. We’ll focus on ${focusLabel} for the ${seniorityLabel} Backend Engineer role.`;
-      const prefixWords = prefix.split(/\s+/u).length;
-      const previousPrefixWords = previousPrefix.split(/\s+/u).length;
-      assert.ok(prefixWords <= Math.floor(previousPrefixWords * 0.8), `${seniorityValue}/${focusValue} prefix only reduced from ${previousPrefixWords} to ${prefixWords} words`);
-      assert.ok(prefixWords <= 17, `${seniorityValue}/${focusValue} prefix was ${prefixWords} words`);
-      assert.equal(opening.endsWith(question), true);
+      assert.ok(prefix.split(/\s+/u).length <= 17, `${seniorityValue}/${focusValue} prefix was too long`);
+      assert.ok(!opening.includes("balanced practice") && !opening.includes("focusing on"));
     }
   }
 });
 
+test("the opening never duplicates seniority already in the role, English or Portuguese", () => {
+  const question = "Tell me about a project.";
+  const open = (role, seniority = "senior") => composeContextualOpening({ role, seniority, focus: "mixed", duration: "5" }, question);
+  assert.equal(open("Senior Backend Engineer"), `We have about 5 minutes for your Senior Backend Engineer role. ${question}`);
+  assert.equal(open("Staff Software Engineer", "senior"), `We have about 5 minutes for your Staff Software Engineer role. ${question}`);
+  assert.equal(open("Lead Data Analyst", "mid-level"), `We have about 5 minutes for your Lead Data Analyst role. ${question}`);
+  assert.equal(open("Data Analyst", "junior"), `We have about 5 minutes for your junior Data Analyst role. ${question}`);
+  assert.equal(open("Backend Engineer role"), `We have about 5 minutes for your senior Backend Engineer role. ${question}`);
+});
+
+test("a Portuguese role is never spliced into the English opening", () => {
+  const question = "Tell me about a project.";
+  for (const role of ["Analista de Dados Sênior", "Desenvolvedor Backend", "Engenheira de Software Pleno", "Gerente de Produto", "Arquiteto de Soluções"]) {
+    const opening = composeContextualOpening({ role, seniority: "senior", focus: "mixed", duration: "5" }, question);
+    assert.equal(opening, `We have about 5 minutes for this role. ${question}`, role);
+  }
+  assert.equal(composeContextualOpening({ role: "", seniority: "senior", focus: "mixed", duration: "5" }, question), `We have about 5 minutes for this role. ${question}`);
+  assert.equal(looksPortuguese("Data Analyst"), false);
+  assert.equal(looksPortuguese("Product Manager"), false);
+  assert.equal(hasSeniorityWord("Sênior"), true);
+  assert.equal(hasSeniorityWord("Software Engineer"), false);
+});
+
+test("the Portuguese role is also kept out of role-fit questions", () => {
+  assert.equal(roleForSpeech("Backend Engineer"), "Backend Engineer");
+  assert.equal(roleForSpeech("Analista de Dados Sênior"), "this role");
+  assert.equal(roleForSpeech(""), "this role");
+  assert.equal(roleForSpeech(undefined), "this role");
+});
+
 test("unknown opening labels use a safe generic fallback without leaking identifiers", () => {
   const opening = composeContextualOpening({ role: "Backend Engineer", seniority: "principal-engineer", focus: "technical-depth-plus", duration: "10" }, "Tell me about a project.");
-  const question = "Tell me about a project.";
-  const prefix = opening.slice(0, -question.length).trim();
-  assert.ok(prefix.includes("for your Backend Engineer role"));
-  assert.ok(prefix.includes("focusing on your experience and decisions."));
+  assert.equal(opening, "We have about 10 minutes for your Backend Engineer role. Tell me about a project.");
   assert.ok(!opening.includes("principal-engineer"));
   assert.ok(!opening.includes("technical-depth-plus"));
-  assert.ok(!opening.includes("your staff Backend Engineer interview"));
-  assert.ok(!opening.includes("Take your time"));
-  assert.equal(splitInterviewerSpeech(prefix).length, 1);
-  const prefixWords = prefix.split(/\s+/u).length;
-  const previousPrefix = "Thanks for joining me. We have about 10 minutes today. I’ll ask about your experience and decisions for the Backend Engineer role.";
-  assert.ok(prefixWords <= Math.floor(previousPrefix.split(/\s+/u).length * 0.8));
-  assert.ok(prefixWords <= 18);
-  assert.ok(opening.endsWith(question));
 });
 
 test("opening timing emits numeric synthesis-to-playback durations only once", () => {

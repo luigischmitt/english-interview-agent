@@ -64,7 +64,7 @@ describe("incremental Whisper configuration", () => {
     const config = loadTranscriptionConfig({});
     expect(config).toMatchObject({
       transcriptionProvider: "whisper-incremental", legacyTranscriptionProvider: null,
-      answerGraceMs: 3_500, incompleteGraceMs: 6_000, prepareAfterMs: 1_200, maxPrepares: 2, pauseMs: 800,
+      answerGraceMs: 3_500, incompleteGraceMs: 6_000, prepareAfterMs: 1_200, maxPrepares: 4, pauseMs: 800,
     });
     expect(loadTranscriptionConfig({ TRANSCRIPTION_PREPARE_AFTER_MS: "0" }).prepareAfterMs).toBe(0);
     expect(() => loadTranscriptionConfig({ TRANSCRIPTION_MAX_PREPARES: "6" })).toThrow("0 to 5");

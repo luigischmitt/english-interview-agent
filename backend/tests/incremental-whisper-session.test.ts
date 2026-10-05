@@ -210,18 +210,94 @@ describe("IncrementalWhisperSession", () => {
     expect(session.diagnostics()).toMatchObject({ tailMs: 0, segmentsSkipped: 1, segmentsTranscribed: 1 });
   });
 
-  it("fails on a segment error so the caller can fall back to the full audio, and flush resolves empty", async () => {
+  it("retries a failed segment once with the same audio before giving up", async () => {
     const { session, calls, events } = build();
     session.markSpeech();
     feed(session, 10, speech);
     const ending = session.endTurn(1_500);
     calls[0]!.reject(new TranscriptionUnavailableError("boom", { providerStatus: "5xx", attempts: 2 }));
+    await tick();
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.wav.length).toBe(calls[0]!.wav.length);
+    expect(session.failed).toBe(false);
+    calls[1]!.resolve("Recovered.");
+    await ending;
+    expect(session.committedText()).toBe("Recovered.");
+    expect(events.turnEnds).toEqual(["Recovered."]);
+    expect(session.diagnostics()).toMatchObject({ segmentRetries: 1, segmentsTranscribed: 1 });
+  });
+
+  it("fails after the retry also fails so the caller can fall back to the full audio, and flush resolves empty", async () => {
+    const { session, calls, events } = build();
+    session.markSpeech();
+    feed(session, 10, speech);
+    const ending = session.endTurn(1_500);
+    calls[0]!.reject(new TranscriptionUnavailableError("boom", { providerStatus: "5xx", attempts: 2 }));
+    await tick();
+    calls[1]!.reject(new TranscriptionUnavailableError("boom", { providerStatus: "5xx", attempts: 2 }));
     await ending;
     expect(session.failed).toBe(true);
     expect(session.failureReason).toBe("segment_failed");
+    expect(session.failureDetail).toBe("segment_error");
     expect(events.failures).toEqual(["segment_failed"]);
     expect(events.turnEnds).toEqual([]);
     await expect(session.flush(1_000)).resolves.toBe("");
+  });
+
+  it("does not retry a request the provider rejected", async () => {
+    const { session, calls } = build();
+    session.markSpeech();
+    feed(session, 10, speech);
+    const ending = session.endTurn(1_500);
+    calls[0]!.reject(new TranscriptionUnavailableError("bad", { providerStatus: "rejected", attempts: 1 }));
+    await ending;
+    expect(calls).toHaveLength(1);
+    expect(session.failed).toBe(true);
+  });
+
+  it("races a hedge request against a slow segment request and takes the first success", async () => {
+    const { session, calls } = build({ segmentHedgeAfterMs: 20 });
+    session.markSpeech();
+    feed(session, 10, speech);
+    const ending = session.endTurn(1_500);
+    expect(calls).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(calls).toHaveLength(2);
+    calls[1]!.resolve("From the hedge.");
+    await ending;
+    expect(session.committedText()).toBe("From the hedge.");
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(session.diagnostics()).toMatchObject({ segmentHedges: 1, segmentHedgeWins: 1 });
+  });
+
+  it("soft-cuts a long buffered segment at a short pause so the tail after the last cut stays short", async () => {
+    const { session, calls, events } = build({ softCutMinBufferedMs: 3_000 });
+    session.markSpeech();
+    feed(session, 30, speech);
+    feed(session, 3, quiet);
+    expect(calls).toHaveLength(0);
+    feed(session, 1, quiet); // 400 ms of quiet after 3 s buffered
+    expect(calls).toHaveLength(1);
+    // The level arrives just before its audio frame, so the cut holds 33 frames.
+    expect(calls[0]!.wav.length).toBe(44 + 33 * 3_200);
+    expect(session.diagnostics().softCuts).toBe(1);
+    // The pause that then becomes a turn end finds nothing left to cut but still ends the turn once the soft segment is in.
+    const ending = session.endTurn(1_500);
+    expect(events.turnEnds).toEqual([]);
+    calls[0]!.resolve("A long first sentence.");
+    await ending;
+    await tick();
+    expect(events.turnEnds).toEqual([""]);
+    expect(session.committedText()).toBe("A long first sentence.");
+  });
+
+  it("does not soft-cut a short buffer or when speech resumes", async () => {
+    const { session, calls } = build({ softCutMinBufferedMs: 3_000 });
+    session.markSpeech();
+    feed(session, 10, speech);
+    feed(session, 6, quiet);
+    expect(calls).toHaveLength(0);
+    expect(session.diagnostics().softCuts).toBe(0);
   });
 
   it("flush resolves empty (and reports the failure) when a segment does not finish in time", async () => {
@@ -245,9 +321,15 @@ describe("IncrementalWhisperSession", () => {
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(calls[0]!.signal.aborted).toBe(true);
     calls[0]!.reject(new TranscriptionUnavailableError("timeout", { providerStatus: "timeout" }));
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(calls).toHaveLength(2);
+    calls[1]!.reject(new TranscriptionUnavailableError("timeout", { providerStatus: "timeout" }));
     await ending;
     expect(calls[0]!.wav.every((byte) => byte === 0)).toBe(true);
+    expect(calls[1]!.wav.every((byte) => byte === 0)).toBe(true);
     expect(session.failureReason).toBe("segment_failed");
+    expect(session.failureDetail).toBe("segment_timeout");
   });
 
   it("close aborts in-flight calls and ignores later audio", async () => {

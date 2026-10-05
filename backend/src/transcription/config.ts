@@ -97,7 +97,7 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     answerGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_ANSWER_GRACE_MS, 3_500, 500, 10_000, "Answer grace"),
     incompleteGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_INCOMPLETE_GRACE_MS, 6_000, 500, 15_000, "Incomplete-turn grace"),
     prepareAfterMs: parseIntegerInRange(environment.TRANSCRIPTION_PREPARE_AFTER_MS, 1_200, 0, 10_000, "Prepare delay"),
-    maxPrepares: parseIntegerInRange(environment.TRANSCRIPTION_MAX_PREPARES, 2, 0, 5, "Max prepares"),
+    maxPrepares: parseIntegerInRange(environment.TRANSCRIPTION_MAX_PREPARES, 4, 0, 5, "Max prepares"),
     semanticEndEnabled: environment.TRANSCRIPTION_SEMANTIC_END_ENABLED?.trim().toLowerCase() !== "false",
     semanticEndTimeoutMs: parseIntegerInRange(environment.TRANSCRIPTION_SEMANTIC_END_TIMEOUT_MS, 1_500, 200, 5_000, "Semantic end timeout"),
     whisperPromptEnabled: environment.TRANSCRIPTION_WHISPER_PROMPT?.trim().toLowerCase() !== "off",
