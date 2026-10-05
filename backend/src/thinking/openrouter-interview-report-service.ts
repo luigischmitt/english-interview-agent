@@ -326,12 +326,12 @@ function validateTechnicalItems(items: unknown[], answerFor: AnswerLookup, count
     if (!boundedString(item.evidence, 120)) { counts.rejectionReasons.invalidFormat += 1; return []; }
     const evidence = answer ? resolveCanonicalEvidence(answer, item.evidence, 120) : undefined;
     const explanation = portugueseField(normalizeFeedbackSentence(item.explanation, 180, 1));
-    const vacancyCompetency = item.vacancyCompetency === undefined || item.vacancyCompetency === null
-      ? undefined
-      : typeof item.vacancyCompetency === "string" && jobDirection?.priorityCompetencies.includes(item.vacancyCompetency) ? item.vacancyCompetency : false;
+    // Only an exact approved competency survives; an invented one, or any link on a session without a direction, is
+    // dropped from the finding (the finding itself is still judged on its evidence).
+    const vacancyCompetency = typeof item.vacancyCompetency === "string" && jobDirection?.priorityCompetencies.includes(item.vacancyCompetency) ? item.vacancyCompetency : undefined;
     if (!answer || !evidence) { counts.rejectionReasons.mismatch += 1; return []; }
     if (likelyTranscriptionArtifact(evidence)) { counts.rejectionReasons.artifact += 1; return []; }
-    if (!explanation || vacancyCompetency === false || (kind === "strength" && isTrivialStrength(explanation))) { counts.rejectionReasons.invalidFormat += 1; return []; }
+    if (!explanation || (kind === "strength" && isTrivialStrength(explanation))) { counts.rejectionReasons.invalidFormat += 1; return []; }
     // A gap about how something was integrated or implemented is unfair when the question never asked for it.
     if (kind === "gap" && isOffQuestionIntegrationItem(explanation, questionFor?.(item.sequenceNumber))) { counts.rejectionReasons.mismatch += 1; return []; }
     if (counts.accepted >= maxAccepted) { counts.rejectionReasons.limit += 1; return []; }
@@ -379,8 +379,20 @@ function dedupePatterns(candidates: PatternItem[], counts: MutableEvidenceCounts
   });
 }
 
+/** Competencies linked by validated technical findings, per answer; a priority may only repeat one of these. */
+function linkedCompetencies(findings: TechnicalItem[]): (sequenceNumber: number) => ReadonlySet<string> {
+  const bySequence = new Map<number, Set<string>>();
+  for (const finding of findings) {
+    if (!finding.vacancyCompetency) continue;
+    const set = bySequence.get(finding.sequenceNumber) ?? new Set<string>();
+    set.add(finding.vacancyCompetency);
+    bySequence.set(finding.sequenceNumber, set);
+  }
+  return (sequenceNumber) => bySequence.get(sequenceNumber) ?? new Set<string>();
+}
+
 /** `isSupported` lets consolidation require a priority to build on a validated finding. */
-function validatePriorities(items: unknown[], answerFor: AnswerLookup, counts: MutableEvidenceCounts, isSupported?: (area: PriorityItem["area"], sequenceNumber: number) => boolean, questionFor?: QuestionLookup, jobDirection?: InterviewReportInput["jobDirection"], competencyFor?: (area: PriorityItem["area"], sequenceNumber: number) => string | undefined): PriorityItem[] {
+function validatePriorities(items: unknown[], answerFor: AnswerLookup, counts: MutableEvidenceCounts, isSupported?: (area: PriorityItem["area"], sequenceNumber: number) => boolean, questionFor?: QuestionLookup, competenciesFor?: (sequenceNumber: number) => ReadonlySet<string>): PriorityItem[] {
   return items.flatMap((item) => {
     counts.candidates += 1;
     if (!isRecord(item) || Object.keys(item).some((key) => !["area", "sequenceNumber", "evidence", "focus", "exercise", "vacancyCompetency"].includes(key))) {
@@ -392,16 +404,15 @@ function validatePriorities(items: unknown[], answerFor: AnswerLookup, counts: M
     if (!answer || !evidence) { counts.rejectionReasons.mismatch += 1; return []; }
     const exercise = portugueseField(normalizeFeedbackSentence(item.exercise, 240, 1));
     const focus = typeof item.focus === "string" ? portugueseField(item.focus.trim()) : undefined;
-    const vacancyCompetency = item.vacancyCompetency === undefined || item.vacancyCompetency === null
-      ? undefined
-      : typeof item.vacancyCompetency === "string" && jobDirection?.priorityCompetencies.includes(item.vacancyCompetency) ? item.vacancyCompetency : false;
     if (!["TECHNICAL_CONTENT", "ENGLISH_COMMUNICATION"].includes(item.area as string) || !boundedString(item.focus, 160) || !focus || !exercise) {
       counts.rejectionReasons.invalidFormat += 1; return [];
     }
-    if (vacancyCompetency === false) { counts.rejectionReasons.invalidFormat += 1; return []; }
     if (isSupported && !isSupported(item.area as PriorityItem["area"], item.sequenceNumber as number)) { counts.rejectionReasons.mismatch += 1; return []; }
-    const linkedCompetency = item.area === "TECHNICAL_CONTENT" ? competencyFor?.(item.area as PriorityItem["area"], item.sequenceNumber as number) : undefined;
-    if (vacancyCompetency !== linkedCompetency) { counts.rejectionReasons.mismatch += 1; return []; }
+    // A technical priority may only repeat a competency already linked by a validated finding of the same answer;
+    // anything else (English priorities, invented or unlinked competencies) is dropped from the priority.
+    const vacancyCompetency = item.area === "TECHNICAL_CONTENT" && typeof item.vacancyCompetency === "string" && competenciesFor?.(item.sequenceNumber as number).has(item.vacancyCompetency)
+      ? item.vacancyCompetency
+      : undefined;
     if (item.area === "TECHNICAL_CONTENT" && isOffQuestionIntegrationItem(`${item.focus} ${item.exercise}`, questionFor?.(item.sequenceNumber))) { counts.rejectionReasons.mismatch += 1; return []; }
     if (counts.accepted >= reportLimits.priorities) { counts.rejectionReasons.limit += 1; return []; }
     counts.accepted += 1;
@@ -474,8 +485,7 @@ function parseReport(value: unknown, input: InterviewReportInput): ParsedIntervi
   const strengths = validateTechnicalItems(technical.strengths, answerFor, counts.technicalStrengths, reportLimits.strengths, "strength", questionFor, input.jobDirection);
   const gaps = validateTechnicalItems(technical.gaps, answerFor, counts.technicalGaps, reportLimits.gaps, "gap", questionFor, input.jobDirection);
   const patterns = dedupePatterns(validatePatternCandidates(english.patterns, answerFor, counts.englishPatterns), counts.englishPatterns, reportLimits.patterns);
-  const competencyFor = (_area: PriorityItem["area"], sequenceNumber: number) => [...strengths, ...gaps].find((finding) => finding.sequenceNumber === sequenceNumber)?.vacancyCompetency;
-  const parsedPriorities = validatePriorities(priorities, answerFor, counts.priorities, undefined, questionFor, input.jobDirection, competencyFor);
+  const parsedPriorities = validatePriorities(priorities, answerFor, counts.priorities, undefined, questionFor, linkedCompetencies([...strengths, ...gaps]));
   return buildParsed(counts, {
     technicalContent: { summary: technicalSummary(technical.summary), strengths, gaps },
     englishCommunication: { clarity: english.clarity as CommunicationClarity, evidenceStatus: englishEvidenceStatus(patterns.length, counts.englishPatterns.candidates), patterns },
@@ -556,8 +566,7 @@ function parseConsolidation(value: unknown, input: InterviewReportConsolidationI
     TECHNICAL_CONTENT: new Set([...findings.strengths, ...findings.gaps].map((item) => item.sequenceNumber)),
     ENGLISH_COMMUNICATION: new Set(findings.patterns.map((item) => item.sequenceNumber)),
   };
-  const competencyFor = (_area: PriorityItem["area"], sequenceNumber: number) => [...findings.strengths, ...findings.gaps].find((finding) => finding.sequenceNumber === sequenceNumber)?.vacancyCompetency;
-  const priorities = validatePriorities(parsed.priorities, answerLookup(input.turns), findings.counts.priorities, (area, sequenceNumber) => supported[area].has(sequenceNumber), questionLookup(input.turns), input.jobDirection, competencyFor);
+  const priorities = validatePriorities(parsed.priorities, answerLookup(input.turns), findings.counts.priorities, (area, sequenceNumber) => supported[area].has(sequenceNumber), questionLookup(input.turns), linkedCompetencies([...findings.strengths, ...findings.gaps]));
   return buildParsed(findings.counts, {
     technicalContent: { summary: technicalSummary(parsed.summary), strengths: findings.strengths, gaps: findings.gaps },
     englishCommunication: { clarity: parsed.clarity as CommunicationClarity, evidenceStatus: englishEvidenceStatus(findings.patterns.length, findings.counts.englishPatterns.candidates), patterns: findings.patterns },

@@ -84,8 +84,9 @@ describe("per-turn analysis service", () => {
     expect(result.technicalStrengths).toEqual([linkedStrength]);
 
     const { fetchImplementation: fakeLabelFetch } = capture({ technicalStrengths: [{ ...linkedStrength, vacancyCompetency: "distributed consensus" }], technicalGaps: [], englishPatterns: [] });
-    const rejected = await makeService(fakeLabelFetch).analyzeTurn({ roleContext, jobDirection, turn: turns[0] });
-    expect(rejected.technicalStrengths).toEqual([]);
+    const invented = await makeService(fakeLabelFetch).analyzeTurn({ roleContext, jobDirection, turn: turns[0] });
+    const { vacancyCompetency: _droppedLabel, ...unlinkedStrength } = linkedStrength;
+    expect(invented.technicalStrengths).toEqual([unlinkedStrength]);
   });
 
   it("maps provider failures to standardized thinking errors", async () => {
@@ -172,11 +173,13 @@ describe("consolidation service", () => {
 
     const { fetchImplementation: invalidLinkFetch } = capture({ ...output, priorities: [{ ...output.priorities[0], vacancyCompetency: "observability" }] });
     const invalidLink = await makeService(invalidLinkFetch).consolidate({ roleContext, jobDirection: direction, turns, turnAnalyses: linkedAnalysis });
-    expect(invalidLink.priorities).toEqual([]);
+    const { vacancyCompetency: _droppedPriorityLabel, ...unlinkedPriority } = output.priorities[0];
+    expect(invalidLink.priorities).toEqual([unlinkedPriority]);
 
     const { fetchImplementation: noDirectionFetch } = capture({ ...output, priorities: [] });
     const noDirection = await makeService(noDirectionFetch).consolidate({ roleContext, turns, turnAnalyses: linkedAnalysis });
-    expect(noDirection.technicalContent.strengths).toEqual([]);
+    const { vacancyCompetency: _droppedFindingLabel, ...unlinkedFinding } = linked;
+    expect(noDirection.technicalContent.strengths).toEqual([unlinkedFinding]);
   });
 
   it("re-validates tampered client items, sends only validated findings to the provider, and counts rejections", async () => {
