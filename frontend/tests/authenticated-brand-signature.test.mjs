@@ -65,6 +65,6 @@ test("authenticated Home carries its Brazilian signature and retains its optimiz
 
 test("setup and true first-use progress marks remain decorative", () => {
   assert.match(setup, /<Leaf className="size-3\.5 text-\[color:var\(--ds-brand-warm\)\]" aria-hidden="true" \/>/u);
-  assert.match(progress, /insights\.sessionCount === 0 && <Leaf className="pg-growth-mark size-5" aria-hidden="true" \/>/u);
-  assert.match(progressCss, /\.pg-growth-mark \{ color: var\(--ds-brand-warm\); \}/u);
+  assert.match(progress, /insights\.sessionCount === 0 && <span className="pg-tucano" aria-hidden="true" \/>/u);
+  assert.match(progressCss, /\.pg-tucano \{[^}]*tucano-mark\.webp/u);
 });
