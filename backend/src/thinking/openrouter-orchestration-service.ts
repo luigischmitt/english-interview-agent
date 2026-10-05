@@ -23,8 +23,8 @@ function isClarificationDecision(value: unknown): value is ClarificationDecision
   return typeof value === "string" && clarificationDecisions.includes(value);
 }
 
-/** Reasons logged when the deterministic repetition guard replaces a model question with the planned fixed one. */
-type RepetitionOutcome = "repetitive_next" | "repetitive_follow_up";
+/** Reasons logged when a deterministic guard replaces a model question with the planned fixed one. */
+type QuestionGuardOutcome = "repetitive_next" | "repetitive_follow_up" | "planned_question_drift";
 
 function logOrchestrationFallback(reason: OrchestrationFallbackReason): void {
   console.warn(JSON.stringify({ event: "interview_orchestration_fallback", reason }));
@@ -79,7 +79,7 @@ function logClarificationDecision(decision: ClarificationDecision, requestedDeci
   }));
 }
 
-function logOrchestrationDecision(decision: StandardDecision, requestedDecision: RequestedDecision, outcome: "accepted" | "fallback", reason: OrchestrationFallbackReason | RepetitionOutcome | "model_decision", followUpUsed: boolean, latencyMs: number, attempts: number, hedge: HedgeOutcome, corrective: CorrectiveOutcome = "not_needed", recoveredFrom?: OrchestrationFallbackReason, bridge: BridgeLog = { bridge: "none" }, anchorCheck?: AnchorCheck): void {
+function logOrchestrationDecision(decision: StandardDecision, requestedDecision: RequestedDecision, outcome: "accepted" | "fallback", reason: OrchestrationFallbackReason | QuestionGuardOutcome | "model_decision", followUpUsed: boolean, latencyMs: number, attempts: number, hedge: HedgeOutcome, corrective: CorrectiveOutcome = "not_needed", recoveredFrom?: OrchestrationFallbackReason, bridge: BridgeLog = { bridge: "none" }, anchorCheck?: AnchorCheck): void {
   console.info(JSON.stringify({
     event: "interview_orchestration_decision",
     decision,
@@ -132,8 +132,8 @@ const systemPrompt = [
   "Use simple B1/B2 English, short natural spoken sentences, and a respectful neutral tone. Never praise technical ability or invent background.",
   "Decision policy: if followUpUsed is false and the transcript has any clear, relevant detail about an action, project, technology, decision, difficulty, result, or trade-off, FOLLOW_UP is the default and should be chosen. Deepen the mechanism, reason, trade-off, or result in that detail. Do not choose NEXT just because the answer is complete, clear, or because a planned question is available.",
   "The currentQuestion is the question the candidate has just answered; its subject is not prior coverage. Treat useful details in this answer as new material and deepen them even when they relate to the currentQuestion. Only askedQuestions other than currentQuestion represent earlier coverage.",
-  "NEXT is an exception: choose it only when followUpUsed is true, the answer is noise/unclear/low-information, it has no safe specific hook relevant to the current question, or every possible hook would repeat an earlier asked context. When choosing NEXT, write a conversational main question adapted to target role, seniority, focus, and the supplied next question. Review earlier askedQuestions first: never repeat a question or return to a story, event, or context covered by an earlier turn. Change the subject and interview dimension, not only the wording. The supplied remainingFixedQuestions are safe planned alternatives when the immediate fixed question has already been covered.",
-  "An adapted NEXT must cover the topic and competency of the planned nextFixedQuestion; that is the purpose of the question bank. The candidate's earlier answers may only add light context, such as naming a project they mentioned. Never re-ask the same theme, action, or verb pattern (for example 'how did you integrate...' or 'walk me through how you built...') as either of the last two askedQuestions. If the planned question is a different competency from them, ask that competency, not a variation of their last answer.",
+  "NEXT is an exception: choose it only when followUpUsed is true, the answer is noise/unclear/low-information, it has no safe specific hook relevant to the current question, or every possible hook would repeat an earlier asked context. When choosing NEXT, write a conversational main question adapted to target role, seniority, focus, and the supplied nextFixedQuestion. The client has already chosen nextFixedQuestion deterministically: it is mandatory and you must not replace it with another question from remainingFixedQuestions. The remainingFixedQuestions list is only the future roadmap, never a set of alternatives.",
+  "An adapted NEXT must cover the topic and competency of the planned nextFixedQuestion; that is the purpose of the question bank. If an earlier answer already touched that topic, ask for a deeper mechanism, decision, trade-off, example, or result within the same competency instead of skipping it. Review askedQuestions: never repeat a question's exact wording. The candidate's earlier answers may only add light context, such as naming a project they mentioned. Never re-ask the same action or verb pattern (for example 'how did you integrate...' or 'walk me through how you built...') as either of the last two askedQuestions; deepen a different aspect while preserving the mandatory competency.",
   "A FOLLOW_UP must dig into a different aspect than the question just asked and than any earlier follow-up: depth, trade-offs, results, or failure. Do not rephrase it or reuse its opening words or main verb.",
   "A follow-up must acknowledge and deepen something the candidate actually said: a technology, decision, action, difficulty, or result. Do not introduce facts, technologies, evaluations, or assumptions absent from the transcript.",
   "For FOLLOW_UP, return anchor as a short, specific phrase (1–12 words) copied exactly from the transcript. Prefer 2–6 words for a project detail, action, decision, result, or trade-off. A single word is allowed only for a meaningful technology, technical term, or proper term (any capitalization), never an article, pronoun, filler, or noise. The question may refer to that detail with a natural inflection or close lexical paraphrase instead of repeating the whole anchor, but it must clearly explore the same detail and share meaningful content words with the transcript. Never attach an unrelated question to a copied anchor; if the connection is unclear, choose NEXT.",
@@ -245,9 +245,20 @@ function repeatsAskedQuestion(question: string, askedQuestions: string[] = []): 
 }
 
 function fallbackQuestion(input: InterviewOrchestrationInput): string | null {
+  // Question order belongs to the client. Even when the topic appeared earlier or the provider fails, never skip ahead.
+  if (input.nextFixedQuestion) return input.nextFixedQuestion;
   const candidates = input.remainingFixedQuestions ?? (input.nextFixedQuestion ? [input.nextFixedQuestion] : []);
   const history = [...(input.askedQuestions ?? []), input.currentQuestion];
   return candidates.find((question) => !repeatsAskedQuestion(question, history)) ?? null;
+}
+
+/** A rewritten NEXT must retain at least one meaningful word from the mandatory planned competency. */
+function preservesPlannedCompetency(question: string, plannedQuestion: string | null | undefined): boolean {
+  if (!plannedQuestion) return true;
+  const proposed = canonicalQuestionWords(question);
+  const planned = canonicalQuestionWords(plannedQuestion);
+  if (planned.size === 0) return true;
+  return [...planned].some((word) => proposed.has(word));
 }
 
 function isSafeAcknowledgement(value: unknown, transcript: string): string | null {
@@ -564,12 +575,15 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
     // Deterministic guard: a question that repeats the theme/verb pattern of the last two asked questions is replaced by the planned fixed question.
     const proposed = modelDecision.decision === "FOLLOW_UP" ? modelDecision.followUpQuestion : modelDecision.nextQuestion;
     const repetition = proposed ? repeatsRecentQuestion(proposed, input.askedQuestions, modelDecision.decision === "NEXT") : null;
-    const replacement = repetition ? fallbackQuestion(input) : null;
-    const repetitiveOutcome: RepetitionOutcome | null = replacement ? (modelDecision.decision === "FOLLOW_UP" ? "repetitive_follow_up" : "repetitive_next") : null;
+    const drifted = modelDecision.decision === "NEXT" && proposed !== null && !preservesPlannedCompetency(proposed, input.nextFixedQuestion);
+    const replacement = drifted || repetition ? fallbackQuestion(input) : null;
+    const guardOutcome: QuestionGuardOutcome | null = replacement
+      ? drifted ? "planned_question_drift" : modelDecision.decision === "FOLLOW_UP" ? "repetitive_follow_up" : "repetitive_next"
+      : null;
     const decision: typeof modelDecision = replacement ? { decision: "NEXT", followUpQuestion: null, nextQuestion: replacement, acknowledgement: null } : modelDecision;
     const bridged = await this.applyBridge(input, decision, deadlineAt);
-    if (repetitiveOutcome && this.config.diagnosticsEnabled) console.warn(JSON.stringify({ event: "interview_orchestration_repetition", reason: repetitiveOutcome, similarity: repetition }));
-    logOrchestrationDecision(decision.decision, parsed.decision, repetitiveOutcome ? "fallback" : "accepted", repetitiveOutcome ?? "model_decision", input.followUpUsed, decisionLatencyMs, attempts, hedge, corrective, corrective === "recovered" && firstRejection ? firstRejection : undefined, bridged.log, repetitiveOutcome ? undefined : anchorCheck);
+    if (guardOutcome && this.config.diagnosticsEnabled) console.warn(JSON.stringify({ event: "interview_orchestration_question_guard", reason: guardOutcome, ...(repetition ? { similarity: repetition } : {}) }));
+    logOrchestrationDecision(decision.decision, parsed.decision, guardOutcome ? "fallback" : "accepted", guardOutcome ?? "model_decision", input.followUpUsed, decisionLatencyMs, attempts, hedge, corrective, corrective === "recovered" && firstRejection ? firstRejection : undefined, bridged.log, guardOutcome ? undefined : anchorCheck);
     const totalCostUsd = costUsd === null && bridged.costUsd === null ? null : (costUsd ?? 0) + (bridged.costUsd ?? 0);
     return {
       ...bridged.result,

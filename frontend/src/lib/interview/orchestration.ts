@@ -1,7 +1,6 @@
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import type { InterviewConfig } from "./types";
 import { serializeNextTurnRequest } from "./next-turn-payload.mjs";
-import { firstUnaskedQuestion } from "./question-history.mjs";
 import { fallbackTurnDecision, parseTurnDecisionResponse, repeatTurnDecision, type ClarificationTurnDecision } from "./orchestration-policy.mjs";
 import type { ClarificationKind } from "./clarification-request.mjs";
 
@@ -29,7 +28,8 @@ export async function decideNextTurn(input: {
   signal: AbortSignal;
 }): Promise<TurnDecision> {
   const askedQuestions = [...new Set([...input.askedQuestions, input.currentQuestion])];
-  const fallbackQuestion = firstUnaskedQuestion(input.remainingFixedQuestions, askedQuestions);
+  // The room owns question order. A provider failure must not select a later "uncovered" topic and skip the plan.
+  const fallbackQuestion = input.nextFixedQuestion;
   const hint = input.clarificationHint ?? null;
   const fallback: TurnDecision = hint ? repeatTurnDecision("detector") : fallbackTurnDecision(fallbackQuestion, input.recentAcknowledgements);
   try {

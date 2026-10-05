@@ -122,14 +122,14 @@ const qaDirection = {
   priorityCompetencies: ["Automação com Playwright"], productTeamContext: "Equipe de produto", tailoredQuestions: tailored,
 };
 
-test("tailored questions replace the first technical slots and keep the rest of the bank", () => {
+test("tailored questions replace the first technical slots and run immediately after the introduction", () => {
   const questions = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: qaDirection });
   const bank = getQuestionBankForRole("QA Analyst");
   assert.equal(questions.length, 15);
-  assert.deepEqual([1, 2, 4].map((index) => questions[index].prompt), tailored);
-  assert.deepEqual([1, 2, 4].map((index) => questions[index].id), ["job-1", "job-2", "job-3"]);
+  assert.deepEqual(questions.slice(1, 4).map((question) => question.prompt), tailored);
+  assert.deepEqual(questions.slice(1, 4).map((question) => question.id), ["job-1", "job-2", "job-3"]);
   assert.ok(questions.every((question) => question.cue.trim().length > 0));
-  for (const index of [3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) assert.equal(questions[index].id, bank[index].id);
+  assert.deepEqual(questions.slice(4).map((question) => question.id), [bank[3].id, ...bank.slice(5).map((question) => question.id)]);
   assert.match(questions[0].prompt, /role description/u);
   assert.equal(new Set(questions.map((question) => question.prompt)).size, 15);
 });

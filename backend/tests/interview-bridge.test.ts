@@ -224,7 +224,7 @@ describe("decision call is unchanged by the bridge step", () => {
   it("keeps the decision system prompt identical to the checked-in fixture", async () => {
     let system = "";
     await new OpenRouterOrchestrationService(config, async (_url, options) => { system = JSON.parse(String(options?.body)).messages[0].content; return new Response("{}", { status: 400 }); }, null).decide(decisionInput);
-    expect(system).toBe(readFileSync(join(process.cwd(), "tests/fixtures/decision-system-prompt.txt"), "utf8"));
+    expect(system).toBe(readFileSync(join(process.cwd(), "tests/fixtures/decision-system-prompt.txt"), "utf8").trimEnd());
   });
 });
 
