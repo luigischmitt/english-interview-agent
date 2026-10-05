@@ -4,6 +4,7 @@ import { questionStems, repeatsRecentQuestion } from "./question-repetition.js";
 import { assignBridgeLeadIn, createBridgeService, evaluateBridge, pickFallbackTransition, type BridgeDropReason, type BridgeCallOutcome, type InterviewBridgeService } from "./interview-bridge-service.js";
 import { addOpenRouterUsage, emptyOpenRouterUsage, parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
 import type { ClarificationDecision, InterviewOrchestrationInput, InterviewOrchestrationResult, InterviewOrchestrationService } from "./types.js";
+import { pinnedOpenRouterFetch } from "./openrouter-routing.js";
 
 type OpenRouterResponse = {
   choices?: Array<{ message?: { content?: unknown } }>;
@@ -366,7 +367,7 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
   private readonly bridgeMode: "merged" | "separate" | "disabled";
 
   /** The separate service is kept behind a config flag for rollback; merged mode validates the decision acknowledgement. */
-  constructor(private readonly config: ThinkingConfig, fetchImplementation: typeof fetch = fetch, bridgeService?: InterviewBridgeService | null) {
+  constructor(private readonly config: ThinkingConfig, fetchImplementation: typeof fetch = pinnedOpenRouterFetch, bridgeService?: InterviewBridgeService | null) {
     this.fetchImplementation = fetchImplementation;
     this.bridgeMode = bridgeService === null ? "disabled" : bridgeService !== undefined ? "separate" : config.bridgeMode ?? "merged";
     this.bridgeService = bridgeService === undefined

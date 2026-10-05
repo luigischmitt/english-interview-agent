@@ -17,6 +17,7 @@ import {
   type InterviewTurnAnalysis,
   type InterviewTurnAnalysisInput,
 } from "./types.js";
+import { pinnedOpenRouterFetch } from "./openrouter-routing.js";
 
 type OpenRouterResponse = { provider?: unknown; choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown } }>; usage?: OpenRouterUsagePayload };
 
@@ -642,7 +643,7 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
   private readonly fetchImplementation: typeof fetch;
 
   constructor(private readonly options: { key: string; model: string; timeoutMs: number; turnTimeoutMs?: number; consolidationTimeoutMs?: number; fetchImplementation?: typeof fetch }) {
-    this.fetchImplementation = options.fetchImplementation ?? fetch;
+    this.fetchImplementation = options.fetchImplementation ?? pinnedOpenRouterFetch;
   }
 
   /** One privacy-routed structured call; returns the raw message content for validation. */

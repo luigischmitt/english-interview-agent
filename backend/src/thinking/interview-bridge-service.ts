@@ -2,6 +2,7 @@ import { defaultBridgeTimeoutMs, type ThinkingConfig } from "./config.js";
 import { containsNoiseToken, contentWords, normalizedWords, sequenceIndices, transcriptHasUsefulContent } from "./interview-text.js";
 import type { InterviewThinkingInput } from "./types.js";
 import { parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
+import { pinnedOpenRouterFetch } from "./openrouter-routing.js";
 
 /**
  * Second, small call that writes the spoken bridge said right before the interview question. The next-turn decision call
@@ -218,7 +219,7 @@ type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }>
 export class OpenRouterBridgeService implements InterviewBridgeService {
   private readonly fetchImplementation: typeof fetch;
 
-  constructor(private readonly config: ThinkingConfig, fetchImplementation: typeof fetch = fetch) {
+  constructor(private readonly config: ThinkingConfig, fetchImplementation: typeof fetch = pinnedOpenRouterFetch) {
     this.fetchImplementation = fetchImplementation;
   }
 

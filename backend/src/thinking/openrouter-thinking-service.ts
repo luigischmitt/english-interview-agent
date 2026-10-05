@@ -12,6 +12,7 @@ import {
   type ThinkingAssessment,
   type ThinkingService,
 } from "./types.js";
+import { pinnedOpenRouterFetch } from "./openrouter-routing.js";
 
 type OpenRouterThinkingServiceOptions = {
   key: string;
@@ -197,7 +198,7 @@ export class OpenRouterThinkingService implements ThinkingService {
   private readonly fetchImplementation: typeof fetch;
 
   constructor(private readonly options: OpenRouterThinkingServiceOptions) {
-    this.fetchImplementation = options.fetchImplementation ?? fetch;
+    this.fetchImplementation = options.fetchImplementation ?? pinnedOpenRouterFetch;
   }
 
   async assess(input: InterviewThinkingInput): Promise<ThinkingAssessment> {

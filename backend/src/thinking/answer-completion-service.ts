@@ -48,7 +48,7 @@ type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }>
 export class OpenRouterAnswerCompletionService implements AnswerCompletionService {
   private readonly fetchImplementation: typeof fetch;
 
-  constructor(private readonly config: AnswerCompletionConfig, fetchImplementation: typeof fetch = fetch) {
+  constructor(private readonly config: AnswerCompletionConfig, fetchImplementation: typeof fetch = pinnedOpenRouterFetch) {
     this.fetchImplementation = fetchImplementation;
   }
 
@@ -110,3 +110,4 @@ export class OpenRouterAnswerCompletionService implements AnswerCompletionServic
   }
 }
 import { parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
+import { pinnedOpenRouterFetch } from "./openrouter-routing.js";
