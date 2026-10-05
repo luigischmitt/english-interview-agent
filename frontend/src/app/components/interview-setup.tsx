@@ -9,6 +9,7 @@ import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { synthesizeInterviewerQuestion, warmUpInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
+import { inAppMicBody, inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
 import { RoleCombobox } from "@/components/ui/role-combobox";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import "./interview-setup.css";
@@ -47,6 +48,8 @@ export function InterviewSetup({
   const [voiceAttempt, setVoiceAttempt] = useState(0);
   const voiceState = useVoiceReadiness(config.playInterviewerAudio, voiceAttempt);
   const [roomOptionsOpen, setRoomOptionsOpen] = useState(false);
+  const inApp = useInAppBrowser();
+  const { copied, copy } = useCopyPageLink();
   const roomOptionsRef = useRef<HTMLElement>(null);
   const voiceBlocked = config.playInterviewerAudio && voiceState !== "ready";
 
@@ -233,6 +236,18 @@ export function InterviewSetup({
               <h2 id="interviewer-audio-title" className="ds-h2">Como o entrevistador fala</h2>
             </div>
             <p className="ds-body mt-2 max-w-2xl">Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.</p>
+
+            {inApp && (
+              <div className="isu-inapp mt-5" role="note" aria-labelledby="inapp-title">
+                <p id="inapp-title" className="ds-label">{inAppMicTitle(inApp)}</p>
+                <p className="ds-small mt-1">{inAppMicBody(inApp)} Se preferir, use “Somente texto”.</p>
+                <div className="mt-3 flex flex-col gap-2 min-[460px]:flex-row">
+                  {inApp.openUrl && <a href={inApp.openUrl} className="ds-btn ds-btn-soft">Abrir no {inApp.browserName}</a>}
+                  <button type="button" className="ds-btn ds-btn-soft" onClick={() => void copy()}>{copied ? "Link copiado" : "Copiar link"}</button>
+                </div>
+                <span className="sr-only" role="status">{copied ? "Link copiado" : ""}</span>
+              </div>
+            )}
 
             <fieldset className="mt-5 grid gap-3 sm:grid-cols-2">
               <legend className="sr-only">Como o entrevistador fala</legend>

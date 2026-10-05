@@ -286,3 +286,5 @@
   .mt-progress::-webkit-progress-value { transition: none; }
   .mt-cam-spinner { animation: none; }
 }
+
+.mt-toast-link { display: inline-flex; align-items: center; text-decoration: none; }

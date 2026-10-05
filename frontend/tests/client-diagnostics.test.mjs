@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createDiagnosticsReporter } from "../src/lib/interview/client-diagnostics.mjs";
-import { describeMedia, detectPlatform, errorNameOf, readAudioSessionType, setAudioSessionType } from "../src/lib/interview/client-environment.mjs";
+import { describeMedia, detectInAppBrowser, detectPlatform, isAndroid, openInSystemBrowserUrl, errorNameOf, readAudioSessionType, setAudioSessionType } from "../src/lib/interview/client-environment.mjs";
 import { synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
 
 function manualTimers() {
@@ -119,4 +119,40 @@ test("a throwing onDiagnostic never breaks playback", async () => {
     onDiagnostic: () => { throw new Error("nope"); },
   });
   assert.deepEqual(await playback.promise, { status: "completed" });
+});
+
+const uas = {
+  iosSafari: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+  iosChrome: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0.6478.153 Mobile/15E148 Safari/604.1",
+  androidChrome: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+  desktop: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  google: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) GSA/440.0.887766890 Mobile/15E148 Safari/604.1",
+  instagram: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/21F90 Instagram 340.0.0.24.90 (iPhone14,5; iOS 17_5; en_US; en; scale=3.00; 1170x2532; 612090390)",
+  facebook: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/21F90 [FBAN/FBIOS;FBAV/460.0.0.34.108;FBBV/590000000;FBDV/iPhone14,5]",
+  facebookAndroid: "Mozilla/5.0 (Linux; Android 13; SM-S911B Build/TP1A) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/126.0.0.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/460.0.0.40.108;]",
+  linkedin: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 LinkedInApp/9.30.1234",
+  tiktok: "Mozilla/5.0 (Linux; Android 13; SM-A536E Build/TP1A) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/126.0.0.0 Mobile Safari/537.36 BytedanceWebview/d8a21c6 musical_ly_33.1.0",
+  line: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/14.10.0",
+};
+
+test("detectInAppBrowser names in-app browsers and never flags regular browsers", () => {
+  assert.equal(detectInAppBrowser(uas.google), "google");
+  assert.equal(detectInAppBrowser(uas.instagram), "instagram");
+  assert.equal(detectInAppBrowser(uas.facebook), "facebook");
+  assert.equal(detectInAppBrowser(uas.facebookAndroid), "facebook");
+  assert.equal(detectInAppBrowser(uas.linkedin), "linkedin");
+  assert.equal(detectInAppBrowser(uas.tiktok), "tiktok");
+  assert.equal(detectInAppBrowser(uas.line), "line");
+  for (const regular of [uas.iosSafari, uas.iosChrome, uas.androidChrome, uas.desktop, "", undefined, null]) assert.equal(detectInAppBrowser(regular), null);
+});
+
+test("isAndroid and openInSystemBrowserUrl", () => {
+  assert.equal(isAndroid({ userAgent: uas.androidChrome }), true);
+  assert.equal(isAndroid({ userAgent: uas.iosSafari }), false);
+  const page = "https://app.example.com/interview?role=dev&x=1";
+  assert.equal(openInSystemBrowserUrl(page, "ios"), "x-safari-https://app.example.com/interview?role=dev&x=1");
+  assert.equal(openInSystemBrowserUrl(`${page}#top`, "android"), "intent://app.example.com/interview?role=dev&x=1#Intent;scheme=https;package=com.android.chrome;end");
+  assert.equal(openInSystemBrowserUrl(page, "desktop"), null);
+  assert.equal(openInSystemBrowserUrl("http://localhost:3000/", "ios"), null);
+  assert.equal(openInSystemBrowserUrl("not a url", "android"), null);
 });
