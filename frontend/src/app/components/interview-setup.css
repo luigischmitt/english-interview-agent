@@ -9,7 +9,10 @@
 .isu-root .ds-card:focus-within { position: relative; z-index: 5; }
 
 /* Summary panel. */
-.isu-aside { border-radius: var(--ds-r-panel); background: var(--ds-panel); color: var(--ds-on-panel); box-shadow: var(--ds-shadow-panel); }
+.isu-aside {
+  --mata-color: #6fc796; --mata-opacity: 0.22; --mata-size: auto 78%; --mata-pos: right bottom;
+  --mata-fade: linear-gradient(to top left, #000 0%, rgba(0,0,0,0.55) 40%, transparent 78%);
+  border-radius: var(--ds-r-panel); background: var(--ds-panel); color: var(--ds-on-panel); box-shadow: var(--ds-shadow-panel); }
 
 /* Mobile action bar: a material, not an opaque strip. */
 .isu-bar {

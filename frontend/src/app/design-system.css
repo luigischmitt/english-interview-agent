@@ -270,3 +270,24 @@ select.ds-field {
   .ds-seg-item { min-height: 2.75rem; }
   .ds-combo-option { min-height: 2.75rem; }
 }
+
+/*
+ * Tropical touches (static, decorative). .ds-mata: the landing engraving as a tinted, faded background layer behind the content
+ * of a panel (mask = engraving x fade, colour from --mata-color).
+ */
+.ds-mata { position: relative; isolation: isolate; }
+.ds-mata::before {
+  content: ""; position: absolute; inset: var(--mata-inset, 0); z-index: -1; pointer-events: none; border-radius: inherit;
+  background: var(--mata-color); opacity: var(--mata-opacity, 0.2);
+  -webkit-mask-image: url("/landing/mata-panel.webp"), var(--mata-fade);
+  mask-image: url("/landing/mata-panel.webp"), var(--mata-fade);
+  -webkit-mask-size: var(--mata-size, auto 100%), 100% 100%;
+  mask-size: var(--mata-size, auto 100%), 100% 100%;
+  -webkit-mask-position: var(--mata-pos, right bottom), 0 0;
+  mask-position: var(--mata-pos, right bottom), 0 0;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-composite: source-in; mask-composite: intersect;
+}
+:root {
+  --ds-leaf-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 14C2 7 6 3 14 2 14 9.500 10 13.500 3.500 13.500L2 14Z'/%3E%3C/svg%3E");
+}

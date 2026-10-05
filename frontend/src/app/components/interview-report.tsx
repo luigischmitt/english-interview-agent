@@ -131,11 +131,15 @@ function ReadyReport({ result, turns, azureSummary, coverage }: { result: Interv
         <AzureVoiceReport summary={azureSummary} coverage={coverage} title="Pontuação da fala" />
       </div>
 
+      <div className="rp-leaf" aria-hidden="true"><span /></div>
+
       <div className="ds-enter" style={enter(2)}>
         <MainPoints main={main} result={result} turns={turns} />
       </div>
 
-      <section className="rp-priorities ds-enter" style={enter(3)} aria-labelledby="priorities-title">
+      <div className="rp-leaf" aria-hidden="true"><span /></div>
+
+      <section className="rp-priorities ds-mata ds-enter" style={enter(3)} aria-labelledby="priorities-title">
         <p className="rp-eyebrow">Próximos passos</p>
         <h2 id="priorities-title" className="rp-priorities-title">Prioridades para praticar</h2>
         {main.priorities.length ? (

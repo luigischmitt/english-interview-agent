@@ -573,7 +573,7 @@ export function InterviewSetup({
 
         {/* Summary + primary action: sticky beside the form on desktop, recap in flow on mobile */}
         <div className="ds-enter lg:sticky lg:top-24" style={{ "--i": 4 } as CSSProperties}>
-          <aside className="isu-aside px-6 py-7 sm:px-8" aria-labelledby="session-preview-title">
+          <aside className="isu-aside ds-mata px-6 py-7 sm:px-8" aria-labelledby="session-preview-title">
             <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.08em] text-on-panel-accent">
               <Leaf className="size-3.5 text-[color:var(--ds-brand-warm)]" aria-hidden="true" />
               Sua sessão

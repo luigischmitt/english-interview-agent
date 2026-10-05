@@ -104,6 +104,10 @@
   opacity: 0;
   pointer-events: none;
 }
+/* Soft warm glow around the toucan. The avatar paints its own wall, so the glow is blended over it (multiply on light,
+   screen on graphite) instead of sitting behind it; it fades out well before the caption area and is under the caption/name chip. */
+.mt-interviewer::before { content: ""; position: absolute; left: 50%; top: 38%; z-index: 1; width: min(80%, 440px); aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(closest-side, #f0c27c, transparent 100%); mix-blend-mode: multiply; opacity: 0.4; pointer-events: none; }
+:root[data-color-scheme="dark"] .mt-interviewer::before { background: radial-gradient(closest-side, #e2bd78, transparent 100%); mix-blend-mode: screen; opacity: 0.16; }
 .mt-center { position: relative; z-index: 1; display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 18px; min-height: 0; }
 .mt-avatar { position: relative; display: inline-flex; width: 96px; height: 96px; align-items: center; justify-content: center; border-radius: 9999px; background: var(--mt-avatar); }
 .mt-avatar::before { content: ""; position: absolute; inset: -10px; border-radius: inherit; background: var(--mt-accent); opacity: 0; transform: scale(0.92); }
