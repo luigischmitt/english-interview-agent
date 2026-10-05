@@ -491,7 +491,7 @@ describe("OpenRouter next-turn orchestration", () => {
 });
 
 describe("POST /api/v1/thinking/next-turn", () => {
-  const fakeService = { decide: vi.fn(async () => ({ decision: "FOLLOW_UP" as const, followUpQuestion: followUp, nextQuestion: null, acknowledgement })) };
+  const fakeService = { decide: vi.fn(async (_request: InterviewOrchestrationInput) => ({ decision: "FOLLOW_UP" as const, followUpQuestion: followUp, nextQuestion: null, acknowledgement })) };
   const app = createApp({ speechConfig, orchestrationService: fakeService });
 
   it("validates request bounds and booleans", async () => {
