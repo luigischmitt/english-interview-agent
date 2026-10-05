@@ -90,14 +90,16 @@ export function missingSequenceNumbers(turns, analysesBySequence) {
  * consolidation fails does it fall back to the full report.
  * Returns { result, path, missingAtEnd, recoveredAtEnd }.
  */
-export async function resolveReportAtEnd({ turns, settled, analyze, consolidate, fullReport, finalAttemptMs = finalTurnAnalysisMs, signal, onEvent = () => {} }) {
+export async function resolveReportAtEnd({ turns, settled, analyze, consolidate, fullReport, finalAttemptMs = finalTurnAnalysisMs, signal, exhausted = new Set(), onEvent = () => {} }) {
   const analyses = new Map(await settled);
-  const missing = missingSequenceNumbers(turns, analyses);
-  const missingAtEnd = missing.length;
+  const allMissing = missingSequenceNumbers(turns, analyses);
+  const missingAtEnd = allMissing.length;
+  // A turn that already failed its automatic retry is not sent a third time: a bad turn costs at most one retry.
+  const missing = allMissing.filter((sequenceNumber) => !exhausted.has(sequenceNumber));
   let recoveredAtEnd = 0;
 
   // When more than half of the analyses are missing the provider is likely struggling; one full-report call beats N retries.
-  if (missingAtEnd > 0 && missingAtEnd * 2 <= turns.length && !signal?.aborted) {
+  if (missing.length > 0 && missing.length === missingAtEnd && missingAtEnd * 2 <= turns.length && !signal?.aborted) {
     const byKey = new Map(turns.map((turn) => [turn.sequenceNumber, turn]));
     await Promise.all(missing.map(async (sequenceNumber) => {
       const controller = new AbortController();

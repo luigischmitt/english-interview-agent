@@ -137,3 +137,10 @@ test("abort at the end skips the final attempts", async () => {
 test("the end-of-interview recovery deadline is 30 s, matching the backend turn analysis timeout", () => {
   assert.equal(finalTurnAnalysisMs, 30_000);
 });
+
+test("a turn that already failed its automatic retry is not re-sent at the end and goes straight to the fallback", async () => {
+  const { calls, run } = flow({ turns: [t(1), t(2), t(3)], settled: new Map([[1, analysis(1)], [2, analysis(2)]]), exhausted: new Set([3]) });
+  const out = await run();
+  assert.equal(out.path, "fallback"); assert.equal(out.result, "full");
+  assert.deepEqual(calls.analyze, []); assert.equal(calls.consolidate, 0);
+});

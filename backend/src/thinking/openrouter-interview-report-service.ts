@@ -1,5 +1,6 @@
 import { defaultInterviewConsolidationTimeoutMs, defaultInterviewReportTimeoutMs, defaultInterviewTurnAnalysisTimeoutMs, type ThinkingConfig } from "./config.js";
 import { ThinkingServiceError } from "./errors.js";
+import { isDegenerateProviderOutput } from "./report-degeneration.js";
 import { parseApprovedJobDirection } from "./job-direction-validation.js";
 import { analyzeEnglishEdit, checkGrammarRuleLabel, hasBrokenSentenceBoundary, isGenericExercise, isLikelyTranscriptionArtifactEdit, isOffQuestionIntegrationItem, isIdiomaticOnRewritten, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
 import {
@@ -16,7 +17,7 @@ import {
   type InterviewTurnAnalysisInput,
 } from "./types.js";
 
-type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }> };
+type OpenRouterResponse = { provider?: unknown; choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown } }> };
 
 const promptRules = {
   intro: "You write a practical final report for a technical job interview practice session conducted in English.",
@@ -613,11 +614,12 @@ function isAbortError(error: unknown): boolean {
 }
 
 /** `scope` is present only for the incremental routes; the full report keeps its original shape. */
-function logReportPhase(phase: "provider" | "validation", startedAt: number, turnCount: number, scope?: "turn" | "consolidate"): void {
+function logReportPhase(phase: "provider" | "validation", startedAt: number, turnCount: number, scope?: "turn" | "consolidate", extra?: Record<string, unknown>): void {
   console.info(JSON.stringify({
     event: "interview_report_phase_timing",
     phase,
     ...(scope ? { scope } : {}),
+    ...(extra ?? {}),
     durationMs: Math.max(0, Date.now() - startedAt),
     turnCount,
   }));
@@ -643,6 +645,23 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
 
   /** One privacy-routed structured call; returns the raw message content for validation. */
   private async requestStructured(request: StructuredRequest): Promise<unknown> {
+    const startedAt = Date.now();
+    const first = await this.requestStructuredOnce(request, []);
+    if (!isDegenerateProviderOutput(first.content, first.finishReason)) return first.content;
+    // Whitespace loop in JSON mode: retry once immediately, skipping the provider that produced it.
+    const ignored = first.provider ? [first.provider] : [];
+    const remaining = request.timeoutMs - (Date.now() - startedAt);
+    if (remaining <= 1000) invalidReportResponse();
+    const retryStartedAt = Date.now();
+    const second = await this.requestStructuredOnce({ ...request, timeoutMs: remaining }, ignored, { providerRetry: "degenerate_output", ignoredProvider: first.provider ?? null });
+    if (isDegenerateProviderOutput(second.content, second.finishReason)) {
+      logReportPhase("provider", retryStartedAt, request.turnCount, request.scope, { providerRetry: "degenerate_output_failed" });
+      invalidReportResponse();
+    }
+    return second.content;
+  }
+
+  private async requestStructuredOnce(request: StructuredRequest, ignoreProviders: string[], logExtra?: Record<string, unknown>): Promise<{ content: unknown; provider?: string; finishReason?: unknown }> {
     const { turnCount, scope } = request;
     const signal = AbortSignal.timeout(request.timeoutMs);
     const providerStartedAt = Date.now();
@@ -659,34 +678,35 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
           ],
           temperature: 0,
           max_tokens: request.maxTokens,
-          provider: { sort: "latency", require_parameters: true, data_collection: "deny" },
+          provider: { sort: "latency", require_parameters: true, data_collection: "deny", ...(ignoreProviders.length > 0 ? { ignore: ignoreProviders } : {}) },
           response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: true, schema: request.schema } },
         }),
         signal,
       });
     } catch (error) {
-      logReportPhase("provider", providerStartedAt, turnCount, scope);
+      logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra);
       if (signal.aborted || isAbortError(error)) throw new ThinkingServiceError("THINKING_TIMEOUT", 504, "The reasoning service timed out.", { cause: error });
       throw new ThinkingServiceError("THINKING_PROVIDER_UNAVAILABLE", 502, "The reasoning service is unavailable.", { cause: error });
     }
     if (response.status === 429) {
       await response.body?.cancel();
-      logReportPhase("provider", providerStartedAt, turnCount, scope);
+      logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra);
       throw new ThinkingServiceError("THINKING_RATE_LIMITED", 503, "The reasoning service is temporarily rate limited.");
     }
     if (!response.ok) {
       await response.body?.cancel();
-      logReportPhase("provider", providerStartedAt, turnCount, scope);
+      logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra);
       throw new ThinkingServiceError("THINKING_PROVIDER_UNAVAILABLE", 502, "The reasoning service is unavailable.");
     }
     let body: OpenRouterResponse;
     try { body = await response.json() as OpenRouterResponse; } catch (error) {
-      logReportPhase("provider", providerStartedAt, turnCount, scope);
+      logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra);
       if (signal.aborted || isAbortError(error)) throw new ThinkingServiceError("THINKING_TIMEOUT", 504, "The reasoning service timed out.", { cause: error });
       throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.", { cause: error });
     }
-    logReportPhase("provider", providerStartedAt, turnCount, scope);
-    return body.choices?.[0]?.message?.content;
+    logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra);
+    const choice = body.choices?.[0];
+    return { content: choice?.message?.content, provider: typeof body.provider === "string" ? body.provider : undefined, finishReason: choice?.finish_reason };
   }
 
   private validated<T>(turnCount: number, scope: "turn" | "consolidate" | undefined, validate: () => T): T {
