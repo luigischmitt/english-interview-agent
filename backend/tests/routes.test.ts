@@ -90,6 +90,7 @@ describe("backend routes", () => {
       mainInterviewEmphasis: "Arquitetura de APIs e confiabilidade.",
       priorityCompetencies: ["Sistemas distribuídos", "Observabilidade"],
       productTeamContext: "Plataforma de logística B2B em uma equipe multidisciplinar.",
+      suggestedFocus: "technical-depth",
     }));
     const testApp = createApp({ speechConfig, accessTokenVerifier: null, jobDirectionService: { analyze } });
     const jobDescription = "We are hiring a backend engineer to build distributed services, improve API reliability, and work with product on a logistics platform. " .repeat(2);
@@ -105,6 +106,7 @@ describe("backend routes", () => {
       mainInterviewEmphasis: "Arquitetura de APIs e confiabilidade.",
       priorityCompetencies: ["Sistemas distribuídos", "Observabilidade"],
       productTeamContext: "Plataforma de logística B2B em uma equipe multidisciplinar.",
+      suggestedFocus: "technical-depth",
     });
     expect(JSON.stringify(response.body)).not.toMatch(/question|pergunta|\?/iu);
     expect(analyze).toHaveBeenCalledWith({ jobDescription: jobDescription.trim(), roleContext: { targetRole: "Backend Engineer", seniority: "mid-level", focus: "technical-depth" } });
@@ -167,6 +169,7 @@ describe("backend routes", () => {
         mainInterviewEmphasis: "Arquitetura e confiabilidade.",
         priorityCompetencies: ["APIs"],
         productTeamContext: "Produto B2B para logística.",
+        suggestedFocus: "mixed",
       };
     });
     const verifier: AccessTokenVerifier = { async verify(token) { return { userId: token === "alice-token" ? "user-alice" : "user-bob" }; } };

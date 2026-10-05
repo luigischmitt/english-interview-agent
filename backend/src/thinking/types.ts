@@ -44,6 +44,11 @@ export type JobDirection = {
 
 export type ApprovedJobDirection = JobDirection;
 
+export type JobFocus = "technical-depth" | "communication" | "behavioral" | "mixed";
+
+/** Analysis result: the direction snapshot plus the practice focus used only to fill the setup (never persisted in the snapshot). */
+export type JobDirectionAnalysis = JobDirection & { suggestedFocus: JobFocus };
+
 export type JobDirectionInput = {
   jobDescription: string;
   roleContext: {
@@ -54,7 +59,7 @@ export type JobDirectionInput = {
 };
 
 export interface JobDirectionService {
-  analyze(input: JobDirectionInput): Promise<JobDirection>;
+  analyze(input: JobDirectionInput): Promise<JobDirectionAnalysis>;
 }
 
 export type InterviewReportInput = {

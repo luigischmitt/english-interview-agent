@@ -8,6 +8,7 @@ const limits = {
   productTeamContext: 280,
   competency: 100,
 };
+const focuses = ["technical-depth", "communication", "behavioral", "mixed"];
 const keys = ["targetRole", "suggestedSeniority", "mainInterviewEmphasis", "priorityCompetencies", "productTeamContext"];
 
 function isRecord(value) {
@@ -63,14 +64,52 @@ export async function requestJobDirection(jobDescription, roleContext, fetcher, 
     throw new JobDirectionRequestError(code, response.status);
   }
 
-  let result;
-  try { result = await response.json(); } catch { throw new JobDirectionRequestError("INVALID_RESPONSE", response.status); }
-  if (!isValidJobDirection(result)) throw new JobDirectionRequestError("INVALID_RESPONSE", response.status);
+  let body;
+  try { body = await response.json(); } catch { throw new JobDirectionRequestError("INVALID_RESPONSE", response.status); }
+  // The practice focus only fills the setup; it is not part of the approved snapshot. Absent for older backends.
+  const { suggestedFocus, ...result } = isRecord(body) ? body : {};
+  if (!isValidJobDirection(result) || (suggestedFocus !== undefined && !focuses.includes(suggestedFocus))) throw new JobDirectionRequestError("INVALID_RESPONSE", response.status);
   return {
     targetRole: result.targetRole.trim(),
     suggestedSeniority: result.suggestedSeniority,
     mainInterviewEmphasis: result.mainInterviewEmphasis.trim(),
     priorityCompetencies: result.priorityCompetencies.map((item) => item.trim()),
     productTeamContext: result.productTeamContext.trim(),
+    ...(suggestedFocus ? { suggestedFocus } : {}),
   };
+}
+
+/** Applies an analysis to the setup config: fills role, seniority and (when provided) focus; the snapshot excludes the focus. */
+export function applyJobAnalysis(config, analysis) {
+  const { suggestedFocus, ...direction } = analysis;
+  return {
+    ...config,
+    role: direction.targetRole,
+    seniority: direction.suggestedSeniority,
+    ...(suggestedFocus ? { focus: suggestedFocus } : {}),
+    jobDirection: direction,
+  };
+}
+
+/**
+ * Switches step 1 between "manual" and "auto" without losing the user's edits.
+ * Leaving auto parks the direction (it is not part of the config, so it is never started with); returning restores
+ * it, re-synced to the role and seniority as they are now.
+ */
+export function switchSetupMode(state, mode) {
+  if (state.mode === mode) return state;
+  if (mode === "manual") {
+    const { jobDirection, ...config } = state.config;
+    return { mode, config, parkedDirection: jobDirection ?? state.parkedDirection };
+  }
+  const parked = state.parkedDirection;
+  if (!parked) return { ...state, mode };
+  const role = state.config.role.trim();
+  const direction = { ...parked, targetRole: role || parked.targetRole, suggestedSeniority: state.config.seniority };
+  return { mode, config: { ...state.config, role: role || parked.targetRole, jobDirection: direction }, parkedDirection: undefined };
+}
+
+/** Starting from the automatic mode needs an analysis; manual never does. */
+export function setupModeBlocksStart(mode, jobDirection) {
+  return mode === "auto" && !jobDirection;
 }
