@@ -1,5 +1,6 @@
 import { defaultInterviewConsolidationTimeoutMs, defaultInterviewReportTimeoutMs, defaultInterviewTurnAnalysisTimeoutMs, type ThinkingConfig } from "./config.js";
 import { ThinkingServiceError } from "./errors.js";
+import { analyzeEnglishEdit, checkGrammarRuleLabel, isLikelyTranscriptionArtifactEdit, isOffQuestionIntegrationItem, suggestsFixingNames } from "./report-guards.js";
 import {
   communicationClarities,
   communicationObservationTypes,
@@ -18,15 +19,15 @@ type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }>
 
 const promptRules = {
   intro: "You write a practical final report for a technical job interview practice session conducted in English.",
-  technical: "Review each question and its answer as a separate pair. In technicalContent.strengths, state the relevant part the candidate actually answered; report at most 1 strength per answer and 2 in total, and each must be a real demonstrated competency (a decision, a piece of reasoning, or a result), never \"mentioned technology X\", \"worked on several projects\", or a bare list of tools. Report technical gaps sparingly: at most 1 per answer and 3 in total, and ONLY material ones, meaning something a real interviewer for that role and seniority would consider important to answer THAT question well (missing core reasoning, a wrong concept, or no result or trade-off when the question asks for one). If the answer covered the question reasonably, return no gaps; empty gaps is the expected outcome for a good answer. Never list optional details the candidate simply did not mention (for example how an API was integrated, how data was separated, or how conflicts were avoided, when the question did not ask), nitpicks, generic \"could have mentioned X\" items, or gaps about things outside the question. Do not demand more detail, criteria, process steps, checks, metrics, rollback steps, or trade-offs unless the question explicitly asks for them. If a concrete action or decision addresses the topic, do not claim in the summary that the topic was unanswered. Cite the matching sequenceNumber and a short exact excerpt from that answer for every item. A gap is about missing explanation, not proof that the candidate lacks knowledge. Never turn an English grammar, vocabulary, or phrasing error into a technical gap.",
+  technical: "Review each question and its answer as a separate pair. In technicalContent.strengths, state the relevant part the candidate actually answered; report at most 1 strength per answer and 2 in total, and each must be a real demonstrated competency (a decision, a piece of reasoning, or a result), never \"mentioned technology X\", \"worked on several projects\", or a bare list of tools. Report technical gaps sparingly: at most 1 per answer and 3 in total, and ONLY material ones, meaning something a real interviewer for that role and seniority would consider important to answer THAT question well (missing core reasoning, a wrong concept, or no result or trade-off when the question asks for one). If the answer covered the question reasonably, return no gaps; empty gaps is the expected outcome for a good answer. Never list optional details the candidate simply did not mention (for example how an API was integrated, how data was separated, or how conflicts were avoided, when the question did not ask), nitpicks, generic \"could have mentioned X\" items, or gaps about things outside the question. Do not demand more detail, criteria, process steps, checks, metrics, rollback steps, or trade-offs unless the question explicitly asks for them. If a concrete action or decision addresses the topic, do not claim in the summary that the topic was unanswered. Cite the matching sequenceNumber and a short exact excerpt from that answer for every item. A gap is about missing explanation, not proof that the candidate lacks knowledge. Gaps must be about what the question asked: never report how something was integrated, implemented or built as a gap unless the question asked for it (for example, a question about which technologies were used does not ask how an API was integrated), and never build a priority on such a point. Never say something was not explained when the answer gives a reason, an action or a source for it, even a brief one (for example, reading books and testing on real images is a reason); at most suggest more depth. Never turn an English grammar, vocabulary, or phrasing error into a technical gap.",
   second: "Address the candidate directly as \"você\" in the second person, never as \"o candidato\", \"a pessoa\" or \"the candidate\". Every explanation, suggestion, focus, exercise and summary must be written entirely in Portuguese (only quoted excerpts and corrected examples are English); never write an English sentence in a Portuguese field.",
   factual: "Report only facts and actions stated in the answer. Do not classify a named technology, library, method, or acronym unless the answer provides enough context to support that classification. Do not infer mastery, correctness, ownership, impact, or expertise from merely naming a tool. When the answer does not establish a claim, describe only what was mentioned and omit the claim.",
-  summary: "Make the technical summary concrete: name the projects, technologies, decisions, actions, and outcomes the candidate actually described. Do not say a topic went unanswered when the candidate gave a concrete action or decision that responds to it. Avoid generic summaries and avoid turning tool names into claims of proficiency.",
+  summary: "Make the technical summary concrete: name the technologies, decisions, actions, and outcomes the candidate actually described. Do not quote project, product or company names that look like speech-recognition mis-hearings (for example \"run shop\" or \"Russia\" for a project); describe the project generically instead (for example, \"um sistema com agente de IA no WhatsApp para fazendas\"). Do not say a topic went unanswered when the candidate gave a concrete action or decision that responds to it. Avoid generic summaries and avoid turning tool names into claims of proficiency.",
   language: "Write the report in Brazilian Portuguese with respectful, accessible language suitable for a B1/B2 learner. This includes the technical summary, strengths, gaps, focus descriptions, exercises, explanations, and suggestions. Do not treat minor imperfections as serious. Every Portuguese text must be correct, natural Brazilian Portuguese with proper accents, cedillas and spelling (for example você, não, também, prática, técnica, comunicação); never drop accents and never use Portuguese from Portugal.",
   audit: "Before drafting, silently audit every answer independently for real, clear Brazilian Portuguese speaker errors: articles; prepositions and verb/adjective collocations; tense choice against explicit time markers (for example, present perfect with last month); subject-verb agreement; countability and plural; word order; literal translations; and false cognates (for example, realize used to mean realizar). This checklist guides coverage; do not assume an error exists in every category.",
-  patterns: "For English patterns, report only errors that a proficient professional listener would notice as wrong or that affect meaning, intelligibility, or professional credibility. Cite the sequenceNumber and keep evidence as a short exact contiguous excerpt from that English answer. The suggestion MUST be written in Brazilian Portuguese; put any corrected English only in rephrasedExample, never in suggestion. Include a concrete, corrected English rephrasing grounded in that answer. The rephrasedExample must fix only the cited error and keep the candidate's own wording otherwise. Do NOT flag present versus past tense when describing a project or stack (for example \"I use Next.js for the frontend\") unless there is an explicit time marker or a clear inconsistency inside the same sentence. The rephrasedExample must be fully correct, natural English with no remaining error (for example \"to make the managers' lives easier\"); if you cannot give a clean correction, omit the item. Do NOT report: valid technical terms or jargon and their normal usage (deploy, commit, merge, rollback, endpoint, payload); stylistic rewording or preferences; synonyms or near-synonyms; punctuation, commas, or capitalization; filler words; or anything that could be a transcription artifact. Returning fewer items, or none, is correct when the answer has few real errors; never pad the list to reach a count, and report at most four, keeping only the most impactful. Order findings by impact on meaning, intelligibility, and professional credibility. Group occurrences by underlying pattern (one item per pattern, not per occurrence), and cite the clearest exact example. Do not repeat the same underlying error with slightly different wording. Describe minor patterns neutrally; do not overstate their seriousness, and do not report unusual but valid phrasing as an error.",
+  patterns: "For English patterns, report only errors that a proficient professional listener would notice as wrong or that affect meaning, intelligibility, or professional credibility. Cite the sequenceNumber and keep evidence as a short exact contiguous excerpt from that English answer. The suggestion MUST be written in Brazilian Portuguese; put any corrected English only in rephrasedExample, never in suggestion. Include a concrete, corrected English rephrasing grounded in that answer. The rephrasedExample must fix only the cited error and keep the candidate's own wording otherwise. Do NOT flag present versus past tense when describing a project or stack (for example \"I use Next.js for the frontend\") unless there is an explicit time marker or a clear inconsistency inside the same sentence. The rephrasedExample must be fully correct, natural English with no remaining error (for example \"to make the managers' lives easier\"); if you cannot give a clean correction, omit the item. Do NOT report: valid technical terms or jargon and their normal usage (deploy, commit, merge, rollback, endpoint, payload); stylistic rewording or preferences; synonyms or near-synonyms; punctuation, commas, or capitalization; filler words; or anything that could be a transcription artifact. Returning fewer items, or none, is correct when the answer has few real errors; never pad the list to reach a count, and report at most four, keeping only the most impactful. Order findings by impact on meaning, intelligibility, and professional credibility. Group occurrences by underlying pattern (one item per pattern, not per occurrence), and cite the clearest exact example. Do not repeat the same underlying error with slightly different wording. Cite the shortest clean excerpt that contains only the error (for example \"for interpret this natural language message\", not the whole sentence with a doubtful noun); if the excerpt contains a doubtful noun, a name or garbled words, omit the item. The rephrasedExample must not change, replace or add nouns, names or other content words: it may only fix grammar, articles, prepositions, verb forms and word order. Never \"correct\" a project or product name. The suggestion must state the actual rule in one short Portuguese sentence with a tiny example, and the rule must match the real change. Correct label and rule pairs: for + verb of purpose becomes to + base verb (\"Use to + verbo base para indicar finalidade: to interpret.\"); irregular past (\"Narrativa no passado: o passado de choose é chose.\"); countable singular noun needs an article (\"Use um artigo antes de substantivo contável singular: an index.\"); since/for with a state that continues up to now takes present perfect (\"Com since/for, use present perfect: I have lived here since 2019.\"). Never label a tense fix as \"concordância verbal\" or a to + verb fix as \"gerúndio\". Describe minor patterns neutrally; do not overstate their seriousness, and do not report unusual but valid phrasing as an error.",
   patternTypes: "Choose each pattern type by its definition, not by topic. GRAMMAR: tense or aspect (for example, present perfect with since/for: \"I live in Recife since 2019\"), subject-verb agreement (\"the servers was down\"), articles, prepositions of time or place, verb forms (-ing after prepositions such as before/after: \"after deploy the fix\"), and plurals. WORD_CHOICE: a real English word used with the wrong meaning or an unnatural collocation that changes or obscures the meaning (not a mere synonym). FALSE_COGNATE: only when a word is used with the meaning of a similar Portuguese word (for example, actually for atualmente, pretend for pretender, realize for realizar); never use it for grammar. STRUCTURE: sentence or answer organization that hurts clarity (run-on sentences, missing subject or verb, confusing order), never commas.",
-  whisper: "Whisper transcripts can contain recognition errors. Do not criticize isolated acronyms, names, technical terms, fillers, repeated syllables, phonetic fragments, or phrases that look incomplete or nonsensical. An English finding must be supported by a complete, understandable phrase with a clear language issue; when unsure whether the phrase was recognized correctly, omit it. Never cite a fragment that may be a recognition error as a technical gap, a priority or evidence for low clarity: a transcription error must never become the candidate's error. Before citing any excerpt, check that it is plausible: if it contains an implausible word, garbled syntax, a stutter or a likely mis-hearing (for example \"stained\" for trained, \"super base\" or \"Superbase\" for Supabase, \"Versal\" for Vercel, \"to hospital\" for to host), never use it as a technical gap, a strength or an English pattern. Never treat a mis-transcribed product or technology name as an error. Do not lower clarity because of garbled, incomplete or nonsensical fragments; judge clarity only from complete, understandable phrases.",
+  whisper: "Whisper transcripts can contain recognition errors. Do not criticize isolated acronyms, names, technical terms, fillers, repeated syllables, phonetic fragments, or phrases that look incomplete or nonsensical. An English finding must be supported by a complete, understandable phrase with a clear language issue; when unsure whether the phrase was recognized correctly, omit it. Never cite a fragment that may be a recognition error as a technical gap, a priority or evidence for low clarity: a transcription error must never become the candidate's error. Before citing any excerpt, check that it is plausible: if it contains an implausible word, garbled syntax, a stutter or a likely mis-hearing (for example \"stained\" for trained, \"super base\" or \"Superbase\" for Supabase, \"Versal\" for Vercel, \"to hospital\" for to host), never use it as a technical gap, a strength or an English pattern. Never treat a mis-transcribed product or technology name as an error. Never treat a mis-transcribed project name as an error either, and never use it in the summary. Do not lower clarity because of garbled, incomplete or nonsensical fragments; judge clarity only from complete, understandable phrases.",
   noInfer: "Do not infer vocal delivery, pronunciation, accent, fluency of speech, confidence, or pauses from text. Do not invent numeric scores, English levels, evidence, or facts.",
   concision: "Keep every user-facing text field concise and complete: summary 1–2 short sentences (about 15–30 words total), each explanation and suggestion one short sentence (about 8–18 words), each focus a short complete phrase (2–8 words), each exercise one actionable sentence (about 10–25 words), and each corrected example one complete English sentence. Stay comfortably below every field's character limit; never continue a sentence until it is cut off. End sentences with punctuation. Evidence fields are exact excerpts and do not need sentence punctuation.",
   priorities: "Prioritize up to three useful next steps, objective and non-redundant, and balance both areas: when the answers support it, include at least one TECHNICAL_CONTENT step and at least one ENGLISH_COMMUNICATION step. Build English steps from the most impactful validated patterns and technical steps from the most important explanation gaps. Each must be specific to one validated pattern or material gap (never a generic focus such as \"corrigir o uso de verbos\") and identify its area, sequenceNumber, a short exact answer excerpt supporting it, and a concrete practical exercise that names the structure to practice. Do not include internal rationale or interview questions.",
@@ -293,6 +294,7 @@ function invalidReportResponse(cause?: unknown): never {
 }
 
 type AnswerLookup = (sequenceNumber: unknown) => string | undefined;
+type QuestionLookup = AnswerLookup;
 type TechnicalItem = InterviewReport["technicalContent"]["strengths"][number];
 type PatternItem = InterviewReport["englishCommunication"]["patterns"][number];
 type PriorityItem = InterviewReport["priorities"][number];
@@ -303,8 +305,12 @@ function answerLookup(turns: InterviewReportInput["turns"]): AnswerLookup {
   return (sequenceNumber) => Number.isSafeInteger(sequenceNumber) ? turns.find((turn) => turn.sequenceNumber === sequenceNumber)?.answer : undefined;
 }
 
+function questionLookup(turns: InterviewReportInput["turns"]): QuestionLookup {
+  return (sequenceNumber) => Number.isSafeInteger(sequenceNumber) ? turns.find((turn) => turn.sequenceNumber === sequenceNumber)?.question : undefined;
+}
+
 /** Shared by the full report, per-answer analysis and consolidation re-validation. */
-function validateTechnicalItems(items: unknown[], answerFor: AnswerLookup, counts: MutableEvidenceCounts, maxAccepted: number, kind: "strength" | "gap"): TechnicalItem[] {
+function validateTechnicalItems(items: unknown[], answerFor: AnswerLookup, counts: MutableEvidenceCounts, maxAccepted: number, kind: "strength" | "gap", questionFor?: QuestionLookup): TechnicalItem[] {
   return items.flatMap((item) => {
     counts.candidates += 1;
     if (!isRecord(item) || Object.keys(item).some((key) => !["sequenceNumber", "evidence", "explanation"].includes(key))) {
@@ -317,6 +323,8 @@ function validateTechnicalItems(items: unknown[], answerFor: AnswerLookup, count
     if (!answer || !evidence) { counts.rejectionReasons.mismatch += 1; return []; }
     if (likelyTranscriptionArtifact(evidence)) { counts.rejectionReasons.artifact += 1; return []; }
     if (!explanation || (kind === "strength" && isTrivialStrength(explanation))) { counts.rejectionReasons.invalidFormat += 1; return []; }
+    // A gap about how something was integrated or implemented is unfair when the question never asked for it.
+    if (kind === "gap" && isOffQuestionIntegrationItem(explanation, questionFor?.(item.sequenceNumber))) { counts.rejectionReasons.mismatch += 1; return []; }
     if (counts.accepted >= maxAccepted) { counts.rejectionReasons.limit += 1; return []; }
     counts.accepted += 1;
     return [{ sequenceNumber: item.sequenceNumber as number, evidence, explanation }];
@@ -339,7 +347,13 @@ function validatePatternCandidates(items: unknown[], answerFor: AnswerLookup, co
     const suggestion = portugueseField(normalizeFeedbackSentence(item.suggestion, 200, 4));
     const rephrasedExample = normalizeFeedbackSentence(item.rephrasedExample, 200, 3);
     if (!suggestion || !rephrasedExample) { counts.rejectionReasons.invalidFormat += 1; return []; }
-    return [{ type: item.type as CommunicationObservationType, sequenceNumber: item.sequenceNumber as number, evidence, suggestion, rephrasedExample }];
+    // The "correction" replaces or invents content words: a mis-heard name or garbled phrase, not a candidate error.
+    const edit = analyzeEnglishEdit(evidence, rephrasedExample, answer);
+    const type = item.type as CommunicationObservationType;
+    if (suggestsFixingNames(suggestion) || isLikelyTranscriptionArtifactEdit(edit, type === "WORD_CHOICE" || type === "FALSE_COGNATE")) { counts.rejectionReasons.artifact += 1; return []; }
+    const finalSuggestion = type === "GRAMMAR" ? checkGrammarRuleLabel(suggestion, edit, rephrasedExample) : suggestion;
+    if (!finalSuggestion) { counts.rejectionReasons.invalidFormat += 1; return []; }
+    return [{ type, sequenceNumber: item.sequenceNumber as number, evidence, suggestion: finalSuggestion, rephrasedExample }];
   });
 }
 
@@ -357,7 +371,7 @@ function dedupePatterns(candidates: PatternItem[], counts: MutableEvidenceCounts
 }
 
 /** `isSupported` lets consolidation require a priority to build on a validated finding. */
-function validatePriorities(items: unknown[], answerFor: AnswerLookup, counts: MutableEvidenceCounts, isSupported?: (area: PriorityItem["area"], sequenceNumber: number) => boolean): PriorityItem[] {
+function validatePriorities(items: unknown[], answerFor: AnswerLookup, counts: MutableEvidenceCounts, isSupported?: (area: PriorityItem["area"], sequenceNumber: number) => boolean, questionFor?: QuestionLookup): PriorityItem[] {
   return items.flatMap((item) => {
     counts.candidates += 1;
     if (!isRecord(item) || Object.keys(item).some((key) => !["area", "sequenceNumber", "evidence", "focus", "exercise"].includes(key))) {
@@ -373,6 +387,7 @@ function validatePriorities(items: unknown[], answerFor: AnswerLookup, counts: M
       counts.rejectionReasons.invalidFormat += 1; return [];
     }
     if (isSupported && !isSupported(item.area as PriorityItem["area"], item.sequenceNumber as number)) { counts.rejectionReasons.mismatch += 1; return []; }
+    if (item.area === "TECHNICAL_CONTENT" && isOffQuestionIntegrationItem(`${item.focus} ${item.exercise}`, questionFor?.(item.sequenceNumber))) { counts.rejectionReasons.mismatch += 1; return []; }
     if (counts.accepted >= reportLimits.priorities) { counts.rejectionReasons.limit += 1; return []; }
     counts.accepted += 1;
     return [{ area: item.area as PriorityItem["area"], sequenceNumber: item.sequenceNumber as number, evidence, focus, exercise }];
@@ -439,11 +454,12 @@ function parseReport(value: unknown, input: InterviewReportInput): ParsedIntervi
   }
 
   const answerFor = answerLookup(input.turns);
+  const questionFor = questionLookup(input.turns);
   const counts = { technicalStrengths: newEvidenceCounts(), technicalGaps: newEvidenceCounts(), englishPatterns: newEvidenceCounts(), priorities: newEvidenceCounts() };
-  const strengths = validateTechnicalItems(technical.strengths, answerFor, counts.technicalStrengths, reportLimits.strengths, "strength");
-  const gaps = validateTechnicalItems(technical.gaps, answerFor, counts.technicalGaps, reportLimits.gaps, "gap");
+  const strengths = validateTechnicalItems(technical.strengths, answerFor, counts.technicalStrengths, reportLimits.strengths, "strength", questionFor);
+  const gaps = validateTechnicalItems(technical.gaps, answerFor, counts.technicalGaps, reportLimits.gaps, "gap", questionFor);
   const patterns = dedupePatterns(validatePatternCandidates(english.patterns, answerFor, counts.englishPatterns), counts.englishPatterns, reportLimits.patterns);
-  const parsedPriorities = validatePriorities(priorities, answerFor, counts.priorities);
+  const parsedPriorities = validatePriorities(priorities, answerFor, counts.priorities, undefined, questionFor);
   return buildParsed(counts, {
     technicalContent: { summary: technicalSummary(technical.summary), strengths, gaps },
     englishCommunication: { clarity: english.clarity as CommunicationClarity, evidenceStatus: englishEvidenceStatus(patterns.length, counts.englishPatterns.candidates), patterns },
@@ -459,11 +475,12 @@ function parseTurnAnalysis(value: unknown, turn: InterviewTurnAnalysisInput["tur
     || !Array.isArray(parsed.technicalGaps) || parsed.technicalGaps.length > maximumParsedOptionalItems
     || !Array.isArray(parsed.englishPatterns) || parsed.englishPatterns.length > maximumParsedOptionalItems) invalidReportResponse();
   const answerFor = answerLookup([turn]);
+  const questionFor = questionLookup([turn]);
   const counts = { technicalStrengths: newEvidenceCounts(), technicalGaps: newEvidenceCounts(), englishPatterns: newEvidenceCounts() };
   const analysis: InterviewTurnAnalysis = {
     sequenceNumber: turn.sequenceNumber,
     technicalStrengths: validateTechnicalItems(parsed.technicalStrengths, answerFor, counts.technicalStrengths, turnLimits.strengths, "strength"),
-    technicalGaps: validateTechnicalItems(parsed.technicalGaps, answerFor, counts.technicalGaps, turnLimits.gaps, "gap"),
+    technicalGaps: validateTechnicalItems(parsed.technicalGaps, answerFor, counts.technicalGaps, turnLimits.gaps, "gap", questionFor),
     englishPatterns: dedupePatterns(validatePatternCandidates(parsed.englishPatterns, answerFor, counts.englishPatterns), counts.englishPatterns, turnLimits.patterns),
   };
   return {
@@ -502,8 +519,9 @@ function revalidateTurnAnalyses(input: InterviewReportConsolidationInput) {
   for (const turn of input.turns) {
     const analysis = input.turnAnalyses.find((entry) => entry.sequenceNumber === turn.sequenceNumber);
     const answerFor = answerLookup([turn]);
+    const questionFor = questionLookup([turn]);
     strengthsByTurn.push(validateTechnicalItems(analysis?.technicalStrengths ?? [], answerFor, counts.technicalStrengths, Infinity, "strength"));
-    gapsByTurn.push(validateTechnicalItems(analysis?.technicalGaps ?? [], answerFor, counts.technicalGaps, Infinity, "gap"));
+    gapsByTurn.push(validateTechnicalItems(analysis?.technicalGaps ?? [], answerFor, counts.technicalGaps, Infinity, "gap", questionFor));
     patternsByTurn.push(validatePatternCandidates(analysis?.englishPatterns ?? [], answerFor, counts.englishPatterns));
   }
   // Interleave by rank so the cap keeps each answer's best item instead of only the first answers.
@@ -521,7 +539,7 @@ function parseConsolidation(value: unknown, input: InterviewReportConsolidationI
     TECHNICAL_CONTENT: new Set([...findings.strengths, ...findings.gaps].map((item) => item.sequenceNumber)),
     ENGLISH_COMMUNICATION: new Set(findings.patterns.map((item) => item.sequenceNumber)),
   };
-  const priorities = validatePriorities(parsed.priorities, answerLookup(input.turns), findings.counts.priorities, (area, sequenceNumber) => supported[area].has(sequenceNumber));
+  const priorities = validatePriorities(parsed.priorities, answerLookup(input.turns), findings.counts.priorities, (area, sequenceNumber) => supported[area].has(sequenceNumber), questionLookup(input.turns));
   return buildParsed(findings.counts, {
     technicalContent: { summary: technicalSummary(parsed.summary), strengths: findings.strengths, gaps: findings.gaps },
     englishCommunication: { clarity: parsed.clarity as CommunicationClarity, evidenceStatus: englishEvidenceStatus(findings.patterns.length, findings.counts.englishPatterns.candidates), patterns: findings.patterns },

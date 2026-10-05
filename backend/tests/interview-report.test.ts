@@ -202,7 +202,7 @@ describe("final interview report service", () => {
       sequenceNumber: 1,
       evidence: excerpt,
       suggestion: `Sugestão distinta ${index + 1} para esta resposta.`,
-      rephrasedExample: `I can express point ${index + 1} more clearly.`,
+      rephrasedExample: `${excerpt} today.`,
     }));
     const report = await makeService(async () => providerResponse(JSON.stringify({
       ...providerReport,
@@ -278,7 +278,7 @@ describe("final interview report service", () => {
     const patterns = [
       first,
       { ...first, evidence: " I build reliable services ", suggestion: " Mantenha o tempo presente para explicar o trabalho. " },
-      { ...first, evidence: "I design clear APIs" },
+      { ...first, evidence: "I design clear APIs", rephrasedExample: "I design clear APIs every day." },
       { ...first, evidence: "pfffff", suggestion: "Não corrija este ruído.", rephrasedExample: "This is not an English sentence." },
       { ...first, evidence: "I said TFFF", suggestion: "Não corrija este fragmento.", rephrasedExample: "This is not an English sentence." },
       { ...first, evidence: "I heard hahaha", suggestion: "Não corrija sílabas repetidas.", rephrasedExample: "This is not an English sentence." },
@@ -289,7 +289,7 @@ describe("final interview report service", () => {
       englishCommunication: { clarity: "MOSTLY_CLEAR", patterns },
     }))).generate({ ...input, turns });
 
-    expect(report.englishCommunication.patterns).toEqual([first, { ...first, evidence: "I design clear APIs" }]);
+    expect(report.englishCommunication.patterns).toEqual([first, { ...first, evidence: "I design clear APIs", rephrasedExample: "I design clear APIs every day." }]);
     expect(report.evidenceReview?.englishPatterns.rejectionReasons).toEqual({ mismatch: 0, invalidFormat: 0, artifact: 4, duplicate: 1, limit: 0 });
   });
 
@@ -340,7 +340,7 @@ describe("final interview report service", () => {
     const pattern = {
       type: "GRAMMAR", sequenceNumber: 1, evidence: "The service was slow",
       suggestion: longCompleteSuggestion,
-      rephrasedExample: "Because the service was slow, we added an index to the reports table.",
+      rephrasedExample: "Because the service was slow, we added an index.",
     };
     const invalidFragments = [
       { ...pattern, suggestion: "Because." },

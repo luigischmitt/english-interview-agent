@@ -92,7 +92,7 @@ export async function requestInterviewReport(config: InterviewConfig, turns: Int
   return data;
 }
 
-export const interviewTurnAnalysisTimeoutMs = 25_000;
+export const interviewTurnAnalysisTimeoutMs = 35_000;
 export const interviewConsolidationTimeoutMs = 30_000;
 
 /** Findings for one answer; the server re-validates them when consolidating. */

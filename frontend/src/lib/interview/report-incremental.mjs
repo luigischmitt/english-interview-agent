@@ -36,7 +36,7 @@ export async function collectTurnAnalyses(turns, pendingBySequence, { timeoutMs 
 /** Delay before the single background retry of a failed per-answer analysis. */
 export const turnAnalysisRetryDelayMs = 1_500;
 /** Deadline for each analysis re-requested at the end of the interview. */
-export const finalTurnAnalysisMs = 20_000;
+export const finalTurnAnalysisMs = 30_000;
 
 function abortableSleep(ms, signal) {
   return new Promise((resolve) => {
