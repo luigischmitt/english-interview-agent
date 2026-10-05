@@ -269,7 +269,7 @@ describe("final interview report service", () => {
     const patterns = evidence.map((item) => ({
       type: "GRAMMAR", sequenceNumber: 1, evidence: item,
       suggestion: "Mantenha esta frase no presente simples para descrever o trabalho.",
-      rephrasedExample: `${item}.`,
+      rephrasedExample: `${item.replace("I ", "I also ")}.`,
     }));
     const priorities = evidence.slice(0, 4).map((item, index) => ({
       area: "TECHNICAL_CONTENT", sequenceNumber: 1, evidence: item, focus: `Ação ${index + 1}`,

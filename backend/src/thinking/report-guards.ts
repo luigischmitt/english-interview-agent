@@ -144,6 +144,8 @@ export function isLikelyTranscriptionArtifactEdit(edit: EnglishEditAnalysis, swa
   const added = edit.addedContent.length;
   const changedContent = removed + added;
   if (edit.hasRepeatedToken && changedContent > 0) return true;
+  // Swapping a word for an acronym ("the gelsm" -> "the GLCM") fixes Whisper's spelling of a technical term, not the candidate.
+  if (removed >= 1 && edit.addedContent.some((token) => /^[A-Z][A-Z0-9]+$/u.test(token.original))) return true;
   if (removed >= 3) return true;
   // A mis-heard proper noun (capitalized in the middle of the answer) is never a candidate error.
   if (edit.removedProperNoun && added > 0) return true;
@@ -154,6 +156,8 @@ export function isLikelyTranscriptionArtifactEdit(edit: EnglishEditAnalysis, swa
 
 const claimsGerund = /ger[úu]ndio|\b-?ing\b/iu;
 const claimsAgreement = /concord[âa]ncia/iu;
+const claimsPreposition = /preposi[çc][ãa]o|preposi[çc][õo]es/iu;
+const prepositions = new Set(["in", "on", "at", "for", "to", "of", "with", "from", "by", "about", "into", "over", "under", "after", "before", "during", "since", "until", "through", "between", "within", "without", "across"]);
 const beOrAgreementForms = new Set(["is", "are", "was", "were", "am", "has", "have", "does", "do"]);
 
 /**
@@ -164,6 +168,17 @@ export function checkGrammarRuleLabel(suggestion: string, edit: EnglishEditAnaly
   const addedIng = [...edit.addedContent, ...edit.formChanges.map((change) => change.to)].some((token) => /ing$/u.test(token.lower));
   const agreementChange = [...edit.removedFunction, ...edit.addedFunction].some((token) => beOrAgreementForms.has(token.lower))
     || edit.formChanges.some(({ from, to }) => /^(?:s|es)$/u.test(to.lower.replace(from.lower, "")) || /^(?:s|es)$/u.test(from.lower.replace(to.lower, "")));
+  // "Use a preposição correta" is the wrong rule when no preposition changed and a verb merely became its -ing form.
+  const prepositionChange = [...edit.removedFunction, ...edit.addedFunction].some((token) => prepositions.has(token.lower));
+  const ingChange = edit.formChanges.find(({ from, to }) => /ing$/u.test(to.lower) && !/ing$/u.test(from.lower));
+  if (claimsPreposition.test(suggestion) && !prepositionChange && ingChange) {
+    const after = tokenize(rephrased);
+    const index = after.findIndex((token) => token.lower === ingChange.to.lower);
+    const previous = index > 0 ? after[index - 1]!.lower : undefined;
+    return previous && prepositions.has(previous)
+      ? `Use o gerúndio (${ingChange.to.lower}) como substantivo após a preposição ${previous}: ${previous} ${ingChange.to.lower}.`
+      : `Após preposição, use o gerúndio como substantivo: ${ingChange.to.lower}.`;
+  }
   const wrongGerund = claimsGerund.test(suggestion) && !addedIng;
   const wrongAgreement = claimsAgreement.test(suggestion) && !agreementChange;
   if (!wrongGerund && !wrongAgreement) return suggestion;
@@ -192,4 +207,64 @@ const integrationQuestion = /\b(?:integrat\w*|implement\w*|build\w*|built|how (?
 export function isOffQuestionIntegrationItem(text: string, question: string | undefined): boolean {
   if (!integrationClaim.test(text)) return false;
   return !(question && integrationQuestion.test(question));
+}
+
+/** A rephrase that equals the cited excerpt (ignoring case, punctuation and spacing) corrects nothing. */
+export function isRephraseUnchanged(excerpt: string, rephrased: string): boolean {
+  const normalize = (text: string) => expandContractions(tokenize(text).map((token) => token.lower)).join(" ");
+  return normalize(excerpt) === normalize(rephrased);
+}
+
+const contractionSuffixes: Record<string, string> = { ve: "have", m: "am", re: "are", ll: "will" };
+const pronounsBeforeIs = new Set(["it", "that", "what", "there", "he", "she", "here", "who", "where", "how", "this"]);
+const negativeStems: Record<string, string> = { don: "do", doesn: "does", didn: "did", isn: "is", aren: "are", wasn: "was", weren: "were", haven: "have", hasn: "has", hadn: "had", couldn: "could", wouldn: "would", shouldn: "should", won: "will", can: "can" };
+
+/** Spells contractions out ("I've" = "I have", "don't" = "do not"), so expanding one is never reported as a correction. */
+function expandContractions(words: string[]): string[] {
+  const expanded: string[] = [];
+  for (const [index, word] of words.entries()) {
+    const previous = words[index - 1];
+    if (word === "t" && previous && negativeStems[previous]) { expanded[expanded.length - 1] = negativeStems[previous]!; expanded.push("not"); continue; }
+    if (word === "s" && previous && pronounsBeforeIs.has(previous)) { expanded.push("is"); continue; }
+    if (contractionSuffixes[word] && previous) { expanded.push(contractionSuffixes[word]!); continue; }
+    if (word === "cannot") { expanded.push("can", "not"); continue; }
+    expanded.push(word);
+  }
+  return expanded;
+}
+
+const workOnNouns = /^(?:\S+\s+){0,2}?(?:project|product|feature|app|application|platform|system|codebase|website|service|team|solution)s?\b/iu;
+
+/** "work on a product/project" is already idiomatic; rewriting its "on" as "in" corrects nothing. */
+export function isIdiomaticOnRewritten(excerpt: string, rephrased: string): boolean {
+  const normalize = (text: string) => tokenize(text).map((token) => token.lower).join(" ");
+  const target = normalize(rephrased);
+  for (const match of excerpt.matchAll(/\bon\s+/giu)) {
+    if (!workOnNouns.test(excerpt.slice(match.index! + match[0].length))) continue;
+    const swapped = `${excerpt.slice(0, match.index)}in ${excerpt.slice(match.index! + match[0].length)}`;
+    if (normalize(swapped) === target) return true;
+  }
+  return false;
+}
+
+/** A "correction" that is itself wrong English, such as the Portuguese "para" calque "for to do". */
+export function isUngrammaticalRephrase(rephrased: string): boolean {
+  return /\bfor\s+to\s+\p{L}+/iu.test(rephrased);
+}
+
+/** A garbled excerpt: Whisper cut a sentence and restarted in lowercase ("a data. a little expensive project"). */
+export function hasBrokenSentenceBoundary(text: string): boolean {
+  return /[\p{L}\p{N}]{2,}[.!?]\s+\p{Ll}/u.test(text.replace(/\b(?:e\.g|i\.e|etc|vs)\./giu, ""));
+}
+
+const genericExercisePatterns = [
+  /^\s*pratique\s+explicar\s+como\s+(?:suas?|seus?)\s+(?:habilidades?|conhecimentos?|experi[êe]ncias?|compet[êe]ncias?)/iu,
+  /pratique\s+(?:a\s+)?(?:usar|utilizar|usa)\s+[^"“:]{0,60}\bcorret\w*\s+em\s+(?:suas?\s+)?frases/iu,
+  /resolvem\s+problemas\s+espec[íi]ficos\s+d[oa]\s+(?:cargo|vaga|posi[çc][ãa]o)/iu,
+  /^\s*pratique\s+(?:falar|responder|explicar|se\s+comunicar)\s+(?:com\s+mais\s+clareza|de\s+forma\s+(?:mais\s+)?clara|melhor)\b/iu,
+];
+
+/** A priority exercise that names no concrete structure or scenario (for example "Pratique explicar como suas habilidades...") is not actionable. */
+export function isGenericExercise(exercise: string): boolean {
+  return genericExercisePatterns.some((pattern) => pattern.test(exercise));
 }
