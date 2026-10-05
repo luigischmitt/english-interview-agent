@@ -9,7 +9,7 @@ import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { synthesizeInterviewerQuestion, warmUpInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
-import { inAppMicBody, inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
+import { inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
 import { RoleCombobox } from "@/components/ui/role-combobox";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import "./interview-setup.css";
@@ -240,7 +240,7 @@ export function InterviewSetup({
             {inApp && (
               <div className="isu-inapp mt-5" role="note" aria-labelledby="inapp-title">
                 <p id="inapp-title" className="ds-label">{inAppMicTitle(inApp)}</p>
-                <p className="ds-small mt-1">{inAppMicBody(inApp)} Se preferir, use “Somente texto”.</p>
+                <p className="ds-small mt-1">Você está no navegador do {inApp.appLabel}. Se ele ainda não pediu o microfone, {inApp.platform === "android" ? <>abra Configurações → Apps → {inApp.settingsName} → Permissões e ative o Microfone</> : <>abra os Ajustes do iPhone → {inApp.settingsName} e ative o Microfone</>}. Ou abra esta página no {inApp.browserName}. “Somente texto” funciona em qualquer caso.</p>
                 <div className="mt-3 flex flex-col gap-2 min-[460px]:flex-row">
                   {inApp.openUrl && <a href={inApp.openUrl} className="ds-btn ds-btn-soft">Abrir no {inApp.browserName}</a>}
                   <button type="button" className="ds-btn ds-btn-soft" onClick={() => void copy()}>{copied ? "Link copiado" : "Copiar link"}</button>

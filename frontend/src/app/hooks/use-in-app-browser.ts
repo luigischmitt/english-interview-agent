@@ -12,6 +12,18 @@ export type InAppBrowserInfo = {
   openUrl: string | null;
   /** Name of the host app, with its article, for "O navegador do ...". */
   appLabel: string;
+  /** The host app's name as it appears in the phone's settings list. */
+  settingsName: string;
+  platform: "ios" | "android" | "desktop";
+};
+
+const settingsNames: Record<InAppBrowser, string> = {
+  google: "Google",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  linkedin: "LinkedIn",
+  tiktok: "TikTok",
+  line: "LINE",
 };
 
 const appLabels: Record<InAppBrowser, string> = {
@@ -30,7 +42,7 @@ function snapshot(): InAppBrowserInfo | null {
   if (cached !== undefined) return cached;
   const app = detectInAppBrowser(navigator.userAgent);
   const platform = detectPlatform();
-  cached = app ? { app, browserName: platform === "android" ? "Chrome" : "Safari", openUrl: openInSystemBrowserUrl(window.location.href, platform), appLabel: appLabels[app] } : null;
+  cached = app ? { app, browserName: platform === "android" ? "Chrome" : "Safari", openUrl: openInSystemBrowserUrl(window.location.href, platform), appLabel: appLabels[app], settingsName: settingsNames[app], platform } : null;
   return cached;
 }
 
@@ -73,5 +85,14 @@ export function useCopyPageLink() {
   return { copied, copy };
 }
 
-export const inAppMicTitle = (info: InAppBrowserInfo) => `Abra no ${info.browserName} para usar o microfone`;
-export const inAppMicBody = (info: InAppBrowserInfo) => `O navegador do ${info.appLabel} não permite usar o microfone. Abra esta página no ${info.browserName} para responder por voz.`;
+export const inAppMicTitle = (info: InAppBrowserInfo) => `Libere o microfone para o ${info.settingsName}`;
+
+/**
+ * A web page can't open the phone's settings, so we spell out the path. In-app browsers ask for the mic only after the
+ * host app itself has microphone access; once it's on, the page asks normally.
+ */
+export const inAppMicSteps = (info: InAppBrowserInfo) => info.platform === "android"
+  ? `Abra Configurações → Apps → ${info.settingsName} → Permissões e ative o Microfone. Depois volte e toque em “Tentar novamente”.`
+  : `Abra os Ajustes do iPhone → ${info.settingsName} e ative o Microfone. Depois volte e toque em “Tentar novamente”.`;
+
+export const inAppMicBody = (info: InAppBrowserInfo) => `Você está no navegador do ${info.appLabel}. Para responder por voz aqui, ele precisa de acesso ao microfone. ${inAppMicSteps(info)} Ou abra esta página no ${info.browserName}.`;
