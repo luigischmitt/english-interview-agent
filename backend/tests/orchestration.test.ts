@@ -815,3 +815,71 @@ describe("OpenRouter next-turn corrective retry (ENG-104)", () => {
     vi.useRealTimers();
   });
 });
+
+describe("OpenRouter next-turn repetition guard", () => {
+  const frontBack = "How did you integrate the front end with the back end in that project?";
+  const repetitiveInput: InterviewOrchestrationInput = {
+    ...input,
+    currentQuestion: frontBack,
+    transcript: "I used REST endpoints between the React app and the Node API, and Supabase for the database.",
+    nextFixedQuestion: "How do you test your code before releasing it?",
+    remainingFixedQuestions: ["How do you test your code before releasing it?", "Tell me about a time you disagreed with a teammate."],
+    askedQuestions: ["Tell me about a recent project.", frontBack],
+  };
+  const nextDecision = (nextQuestion: string) => ({ decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: null });
+
+  it("replaces a NEXT that repeats the previous verb pattern with the planned fixed question", async () => {
+    const result = await service(async () => providerResponse(JSON.stringify(nextDecision("How did you integrate Supabase into your application?")))).decide({ ...repetitiveInput, followUpUsed: true });
+    expect(result).toMatchObject({ decision: "NEXT", nextQuestion: "How do you test your code before releasing it?", followUpQuestion: null });
+  });
+
+  it("keeps a NEXT that changes the competency", async () => {
+    const question = "What trade-off did you make when choosing Supabase?";
+    const result = await service(async () => providerResponse(JSON.stringify(nextDecision(question)))).decide({ ...repetitiveInput, followUpUsed: true });
+    expect(result).toMatchObject({ decision: "NEXT", nextQuestion: question });
+  });
+
+  it("treats a repetitive FOLLOW_UP as NEXT with the fixed question", async () => {
+    const raw = decision({ followUpQuestion: "How did you integrate Supabase with the React app?", anchor: "Supabase for the database" });
+    const result = await service(async () => providerResponse(JSON.stringify(raw))).decide(repetitiveInput);
+    expect(result).toMatchObject({ decision: "NEXT", nextQuestion: "How do you test your code before releasing it?", followUpQuestion: null });
+  });
+
+  it("keeps a FOLLOW_UP that digs into a different aspect of the same topic", async () => {
+    const question = "Why did you choose Supabase for the database?";
+    const raw = decision({ followUpQuestion: question, anchor: "Supabase for the database" });
+    const result = await service(async () => providerResponse(JSON.stringify(raw))).decide(repetitiveInput);
+    expect(result).toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: question });
+  });
+
+  it("logs a content-free repetitive_next / repetitive_follow_up outcome", async () => {
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "info").mockImplementation((line: string) => { logs.push(line); });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await service(async () => providerResponse(JSON.stringify(nextDecision("How did you integrate Supabase into your application?")))).decide({ ...repetitiveInput, followUpUsed: true });
+    await service(async () => providerResponse(JSON.stringify(decision({ followUpQuestion: "How did you integrate Supabase with the React app?", anchor: "Supabase for the database" })))).decide(repetitiveInput);
+    const entries = logs.map((line) => JSON.parse(line)).filter((entry) => entry.event === "interview_orchestration_decision");
+    expect(entries.map((entry) => entry.reason)).toEqual(["repetitive_next", "repetitive_follow_up"]);
+    expect(entries[1]).toMatchObject({ decision: "NEXT", requestedDecision: "FOLLOW_UP", outcome: "fallback" });
+    expect(logs.join("")).not.toMatch(/Supabase|React/);
+    spy.mockRestore();
+    vi.restoreAllMocks();
+  });
+
+  it("keeps the model question when no fixed alternative remains", async () => {
+    const question = "How did you integrate Supabase into your application?";
+    const result = await service(async () => providerResponse(JSON.stringify(nextDecision(question)))).decide({ ...repetitiveInput, followUpUsed: true, nextFixedQuestion: null, remainingFixedQuestions: [] });
+    expect(result).toMatchObject({ nextQuestion: question });
+  });
+
+  it("asks the model for a new competency and a different follow-up aspect in the decision prompt", async () => {
+    let system = "";
+    await service(async (_url, options) => { system = JSON.parse(String(options?.body)).messages[0].content; return new Response("{}", { status: 400 }); }).decide(repetitiveInput);
+    expect(system).toContain("must cover the topic and competency of the planned nextFixedQuestion");
+    expect(system).toContain("Never re-ask the same theme, action, or verb pattern");
+    expect(system).toContain("last two askedQuestions");
+    expect(system).toContain("must dig into a different aspect");
+    expect(system).toContain("depth, trade-offs, results, or failure");
+    expect(system).toContain("short natural spoken sentences");
+  });
+});
