@@ -83,7 +83,7 @@ function speechRequestFor(options, text) {
   const request = {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(options.requestBody ?? { text }),
+    body: JSON.stringify(options.requestBody ?? { text, ...(typeof options.speed === "number" && options.speed !== 1 ? { speed: options.speed } : {}) }),
   };
   return { request, key: JSON.stringify([options.endpoint, request.method, request.headers, request.body]) };
 }

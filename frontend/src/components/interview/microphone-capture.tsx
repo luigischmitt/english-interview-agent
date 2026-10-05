@@ -46,7 +46,7 @@ export type VoiceAssessmentState =
   | { status: "unavailable"; segmented?: boolean; reason?: string; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] }
   | { status: "available"; segmented: true; durationMs: number; scores: { accuracy: number | null; fluency: number | null; prosody: number | null }; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] };
 
-type AssessmentContext = { questionLabel: string; sequenceNumber: number };
+type AssessmentContext = { questionLabel: string; sequenceNumber: number; /** Answer window within the question; changes after a clarification request. */ round?: number };
 
 export type VoiceTranscriptionState =
   | { status: "idle" }

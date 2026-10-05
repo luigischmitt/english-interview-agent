@@ -12,6 +12,8 @@ export type SpeechPlaybackOptions = {
   endpoint: string;
   /** JSON request fields that affect synthesis; text is used when omitted. */
   requestBody?: Record<string, unknown>;
+  /** Interviewer speech rate sent to the speech API (1 is the default and is omitted from the request). */
+  speed?: number;
   /** Longest wait for the first audio (and for each later chunk) before playback ends as "unavailable" (default FIRST_AUDIO_TIMEOUT_MS = 20000). */
   firstAudioTimeoutMs?: number;
   /** prewarmInterviewerSpeech only: deadline for the speech request and complete audio response body. */

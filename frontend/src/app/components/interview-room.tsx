@@ -5,7 +5,11 @@ import { ArrowLeft, Check, CloudOff, LoaderCircle, Mic } from "lucide-react";
 import { inAppMicBody, inAppMicTitle, useInAppBrowser } from "../hooks/use-in-app-browser";
 import { MicrophoneCapture, micDeniedMessage, type MicControls, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
-import { buildPreviousAnswers, decideNextTurn, type TurnDecision } from "@/lib/interview/orchestration";
+import { buildPreviousAnswers, decideNextTurn, isClarificationTurn, type TurnDecision } from "@/lib/interview/orchestration";
+import { repeatTurnDecision } from "@/lib/interview/orchestration-policy.mjs";
+import { detectClarificationRequest } from "@/lib/interview/clarification-request.mjs";
+import { assessmentContextKey, composeClarificationTurn, planTurnAfterDecision, type ClarificationTurn } from "@/lib/interview/clarification-policy.mjs";
+import { firstUnaskedQuestion } from "@/lib/interview/question-history.mjs";
 import { createNextTurnPreparationRegistry } from "@/lib/interview/next-turn-preparation.mjs";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
@@ -30,15 +34,16 @@ import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTi
 import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/interview/opening-timing.mjs";
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 
-type AssessmentEntry = { questionLabel: string; sequenceNumber: number; state: VoiceAssessmentState };
+type AssessmentEntry = { questionLabel: string; sequenceNumber: number; round?: number; state: VoiceAssessmentState };
 
 function formatClock(seconds: number) {
   const safeSeconds = Math.max(0, seconds);
   return `${String(Math.floor(safeSeconds / 60)).padStart(2, "0")}:${String(safeSeconds % 60).padStart(2, "0")}`;
 }
 
-function assessmentSamples(entries: Record<string, AssessmentEntry>): AzureAssessmentSample[] {
-  return Object.values(entries).map(({ state }) => state.status === "available"
+/** Recordings of a clarification request ("can you repeat?") are not answers, so they never count in the voice scores. */
+function assessmentSamples(entries: Record<string, AssessmentEntry>, excluded: ReadonlySet<string>): AzureAssessmentSample[] {
+  return Object.values(entries).filter((entry) => !excluded.has(assessmentContextKey(entry))).map(({ state }) => state.status === "available"
     ? { status: "available", durationMs: state.durationMs, scores: state.scores }
     : state.status === "pending" ? { status: "pending" } : { status: "unavailable" });
 }
@@ -53,6 +58,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const [questionSequenceNumber, setQuestionSequenceNumber] = useState(1);
   const [followUpUsed, setFollowUpUsed] = useState(false);
   const [acknowledgement, setAcknowledgement] = useState<string | null>(null);
+  // What the interviewer says after a clarification request; the question itself (id, prompt, report pairing) never changes.
+  const [spokenTurn, setSpokenTurn] = useState<ClarificationTurn | null>(null);
+  const [clarifyRound, setClarifyRound] = useState(0);
+  const [excludedAssessments, setExcludedAssessments] = useState<ReadonlySet<string>>(() => new Set());
   const [phase, setPhase] = useState<InterviewPhase>("introducing");
   const [answers, setAnswers] = useState<InterviewAnswers>({});
   const [reportTurns, setReportTurns] = useState<InterviewReportTurnSource[]>([]);
@@ -81,7 +90,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const recentAcknowledgementsRef = useRef<string[]>([]);
   const voiceAssessmentsRef = useRef(voiceAssessments);
   const phaseRef = useRef(phase);
+  const clarificationCountsRef = useRef(new Map<string, number>());
+  const excludedAssessmentsRef = useRef<ReadonlySet<string>>(excludedAssessments);
   const currentQuestionIdRef = useRef(question.id);
+  // Identifies one answer window: it changes after a clarification so the microphone restarts for the same question.
+  const micTurnId = `${question.id}:${clarifyRound}`;
+  const micTurnIdRef = useRef(micTurnId);
   const elapsedSecondsRef = useRef(0);
   const handoffTimingRef = useRef<{ mark: (stage: string) => void; markPrepared: () => void } | null>(null);
   const openingTimingRef = useRef<{ mark: (stage: string) => void } | null>(null);
@@ -90,8 +104,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const closingUtterance = composeInterviewClosing();
   const currentUtterance = phase === "introducing"
     ? openingUtterance
-    : phase === "closing" ? closingUtterance : composeAcknowledgedQuestion(acknowledgement, question.prompt);
-  const stableQuestionCaption = phase === "introducing" || phase === "closing" ? currentUtterance : question.prompt;
+    : phase === "closing" ? closingUtterance
+      : spokenTurn ? composeAcknowledgedQuestion(spokenTurn.acknowledgement, spokenTurn.question) : composeAcknowledgedQuestion(acknowledgement, question.prompt);
+  const stableQuestionCaption = phase === "introducing" || phase === "closing" ? currentUtterance : spokenTurn?.question ?? question.prompt;
   const persistenceQuestion = { ...question, prompt: currentUtterance };
   const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId } = useInterviewPersistence(config, persistenceQuestion, questionSequenceNumber, phase);
   const { elapsed, seconds, remaining, timeLimitReached } = useInterviewSession(phase, durationMinutes);
@@ -99,7 +114,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   useLayoutEffect(() => {
     phaseRef.current = phase;
     currentQuestionIdRef.current = question.id;
-  }, [phase, question.id]);
+    micTurnIdRef.current = micTurnId;
+  }, [phase, question.id, micTurnId]);
   // One microphone for the whole interview; released when the interviewer closes (or the room unmounts).
   const [micDeviceId, setMicDeviceId] = useState<string | null>(config.microphoneDeviceId ?? null);
   const [micFallbackNotice, setMicFallbackNotice] = useState(false);
@@ -120,6 +136,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   };
   useEffect(() => { elapsedSecondsRef.current = seconds; }, [seconds]);
   useEffect(() => { voiceAssessmentsRef.current = voiceAssessments; }, [voiceAssessments]);
+  useEffect(() => { excludedAssessmentsRef.current = excludedAssessments; }, [excludedAssessments]);
 
   const onHandoffTimingEvent = useCallback((event: "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed" | "listening", details?: { speechEndToFinalizationMs?: number; preconnected?: boolean }) => {
     if (event === "listening") {
@@ -165,7 +182,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   const onFinalChunkStarted = useCallback(() => {
     if (!autoCaptureVoice || (phaseRef.current !== "introducing" && phaseRef.current !== "speaking")) return;
-    setPreconnectQuestionId(currentQuestionIdRef.current);
+    setPreconnectQuestionId(micTurnIdRef.current);
   }, [autoCaptureVoice]);
 
   const onInterviewerUtteranceReady = useCallback(() => {
@@ -185,16 +202,16 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     }
     transitionPhase("answering");
     setVoiceCaptureState("idle");
-    if (autoCaptureVoice) setAutoCaptureQuestionId(question.id);
-  }, [autoCaptureVoice, question.id]);
+    if (autoCaptureVoice) setAutoCaptureQuestionId(micTurnId);
+  }, [autoCaptureVoice, micTurnId]);
   const isInterviewerSpeaking = phase === "introducing" || phase === "speaking" || phase === "closing";
   const speechSegments = useMemo(
     () => splitInterviewerSpeech(currentUtterance),
     [currentUtterance],
   );
-  const { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted);
+  const { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted, spokenTurn?.speed ?? 1);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
-  const currentAssessmentSamples = assessmentSamples(voiceAssessments);
+  const currentAssessmentSamples = assessmentSamples(voiceAssessments, excludedAssessments);
   const currentAzureSummary = summarizeAzureAssessments(currentAssessmentSamples);
   const coverage = {
     available: currentAssessmentSamples.filter((entry) => entry.status === "available").length,
@@ -278,6 +295,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   /** Speech to pre-synthesize for a prepared decision, or null when the decision ends the interview or audio is off. */
   const utteranceForDecision = (decision: TurnDecision): string | null => {
     if (!config.playInterviewerAudio || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) return null;
+    if (isClarificationTurn(decision)) return null;
     if (decision.decision === "FOLLOW_UP") return composeAcknowledgedQuestion(decision.acknowledgement, decision.followUpQuestion);
     if (!decision.nextQuestion) return null;
     const matchedFixedIndex = questions.findIndex((plannedQuestion, index) => index > currentIndex && plannedQuestion.prompt === decision.nextQuestion);
@@ -292,6 +310,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (phaseRef.current !== "answering" || currentQuestionIdRef.current !== question.id) return;
     const answer = provisionalTranscript.trim();
     if (!answer || timeLimitReached || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) return;
+    // A request to repeat or explain is not an answer: nothing to prepare.
+    if (detectClarificationRequest(answer) !== null) return;
     const turns = appendInterviewReportPair(reportTurnsRef.current, {
       questionSequenceNumber,
       candidateSequenceNumber: questionSequenceNumber + 1,
@@ -325,24 +345,29 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     const generation = ++generationRef.current;
     const abortController = new AbortController();
     decisionAbortRef.current = abortController;
+    // "Can you repeat the question?" and similar are not answers: they are never reported, analyzed or persisted.
+    const clarificationHint = detectClarificationRequest(savedAnswer);
     const candidateSequenceNumber = questionSequenceNumber + 1;
-    setAnswers((current) => ({ ...current, [`${question.id}:${questionSequenceNumber}`]: savedAnswer }));
-    const candidateTurn: InterviewTurnInput = {
-      interviewId: sessionId ?? "",
-      sequenceNumber: candidateSequenceNumber,
-      speaker: "candidate",
-      content: savedAnswer,
-    };
-    enqueueTurn(candidateTurn);
     const submittedTurns = appendInterviewReportPair(reportTurnsRef.current, {
       questionSequenceNumber,
       candidateSequenceNumber,
       question: question.prompt,
       answer: savedAnswer,
     });
-    reportTurnsRef.current = submittedTurns;
-    setReportTurns(submittedTurns);
-    startTurnAnalysis({ sequenceNumber: questionSequenceNumber, question: question.prompt.trim(), answer: savedAnswer.trim() });
+    // Records the utterance as the candidate's answer once it is known to be one.
+    const commitAnswer = () => {
+      setAnswers((current) => ({ ...current, [`${question.id}:${questionSequenceNumber}`]: savedAnswer }));
+      enqueueTurn({ interviewId: sessionId ?? "", sequenceNumber: candidateSequenceNumber, speaker: "candidate", content: savedAnswer } satisfies InterviewTurnInput);
+      reportTurnsRef.current = submittedTurns;
+      setReportTurns(submittedTurns);
+      startTurnAnalysis({ sequenceNumber: questionSequenceNumber, question: question.prompt.trim(), answer: savedAnswer.trim() });
+    };
+    // The recording of a clarification request must not count in the pronunciation scores either.
+    const excludeClarificationAssessment = () => {
+      const next = new Set(excludedAssessmentsRef.current).add(assessmentContextKey({ sequenceNumber: questionSequenceNumber, round: clarifyRound }));
+      excludedAssessmentsRef.current = next;
+      setExcludedAssessments(next);
+    };
     setVoiceTranscription({ status: "idle" });
     setVoiceCaptureState("idle");
     setAnswerError(null);
@@ -350,58 +375,86 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
     // Too little time left for another question: skip the decision call and close.
     if (finishAfter || timeLimitReached || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) {
+      if (clarificationHint === null) commitAnswer();
+      else excludeClarificationAssessment();
       submitInFlightRef.current = false;
       transitionPhase("closing");
       return;
     }
 
     transitionPhase("advancing");
-    const decisionInput = buildDecisionInput(reportTurnsRef.current, savedAnswer);
+    const decisionInput = { ...buildDecisionInput(submittedTurns, savedAnswer), ...(clarificationHint ? { clarificationHint } : {}) };
     handoffTimingRef.current?.mark("decisionStarted");
-    // Use the decision prepared during the answer grace only for exactly this transcript and these inputs.
-    const discardedBefore = nextTurnPreparation.stats().discarded;
-    const prepared = nextTurnPreparation.take({ transcript: savedAnswer, inputKey: decisionInputKey(decisionInput) });
     let decision: TurnDecision | null = null;
-    if (prepared) {
-      const abortPrepared = () => prepared.controller.abort();
-      abortController.signal.addEventListener("abort", abortPrepared, { once: true });
-      decision = await prepared.promise;
-      abortController.signal.removeEventListener("abort", abortPrepared);
-      if (decision) {
-        handoffTimingRef.current?.markPrepared();
-        logPreparation("prepared_used");
-      } else {
-        nextTurnPreparation.release(prepared);
-        logPreparation("prepared_discarded", "unavailable");
+    if (clarificationHint === "repeat") {
+      // A pure repeat request needs no model call: replay the question locally.
+      nextTurnPreparation.abort();
+      decision = repeatTurnDecision("detector");
+    } else if (clarificationHint === null) {
+      // Use the decision prepared during the answer grace only for exactly this transcript and these inputs.
+      const discardedBefore = nextTurnPreparation.stats().discarded;
+      const prepared = nextTurnPreparation.take({ transcript: savedAnswer, inputKey: decisionInputKey(decisionInput) });
+      if (prepared) {
+        const abortPrepared = () => prepared.controller.abort();
+        abortController.signal.addEventListener("abort", abortPrepared, { once: true });
+        decision = await prepared.promise;
+        abortController.signal.removeEventListener("abort", abortPrepared);
+        if (decision) {
+          handoffTimingRef.current?.markPrepared();
+          logPreparation("prepared_used");
+        } else {
+          nextTurnPreparation.release(prepared);
+          logPreparation("prepared_discarded", "unavailable");
+        }
+      } else if (nextTurnPreparation.stats().discarded > discardedBefore) {
+        logPreparation("prepared_discarded", "mismatch");
       }
-    } else if (nextTurnPreparation.stats().discarded > discardedBefore) {
-      logPreparation("prepared_discarded", "mismatch");
+    } else {
+      nextTurnPreparation.abort();
     }
     decision ??= await decideNextTurn({ ...decisionInput, signal: abortController.signal });
     handoffTimingRef.current?.mark("decisionCompleted");
     if (!mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
     decisionAbortRef.current = null;
     submitInFlightRef.current = false;
+
+    const clarificationsSoFar = clarificationCountsRef.current.get(question.id) ?? 0;
+    const plan = planTurnAfterDecision({ decision, clarificationsSoFar, nextQuestion: firstUnaskedQuestion(decisionInput.remainingFixedQuestions, decisionInput.askedQuestions) });
+    const turn = plan.turn as TurnDecision;
+    if (plan.countsAsAnswer) commitAnswer();
+    else excludeClarificationAssessment();
+
     if (!hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) {
       transitionPhase("closing");
-    } else if (decision.decision === "FOLLOW_UP") {
-      if (decision.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, decision.acknowledgement].slice(-5);
-      setAcknowledgement(decision.acknowledgement);
-      setQuestion({ ...question, id: `${question.id}-follow-up`, prompt: decision.followUpQuestion, cue: "Uma pergunta curta para aprofundar sua resposta." });
+    } else if (isClarificationTurn(turn)) {
+      clarificationCountsRef.current.set(question.id, plan.clarificationsAfter);
+      // Content-free diagnostics only.
+      console.info(JSON.stringify({ event: "interview_clarification", kind: turn.decision, source: turn.clarification, countForQuestion: plan.clarificationsAfter }));
+      setSpokenTurn(composeClarificationTurn({ decision: turn.decision, clarificationText: turn.clarificationText, question: spokenTurn?.base ?? question.prompt }));
+      setClarifyRound((round) => round + 1);
+      setCaptionsPreference(true);
+      transitionPhase("speaking");
+    } else if (turn.decision === "FOLLOW_UP") {
+      if (turn.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, turn.acknowledgement].slice(-5);
+      setAcknowledgement(turn.acknowledgement);
+      setSpokenTurn(null);
+      setQuestion({ ...question, id: `${question.id}-follow-up`, prompt: turn.followUpQuestion, cue: "Uma pergunta curta para aprofundar sua resposta." });
       setFollowUpUsed(true);
       setQuestionSequenceNumber((sequence) => sequence + 2);
       transitionPhase("speaking");
     } else {
-      if (decision.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, decision.acknowledgement].slice(-5);
-      setAcknowledgement(decision.acknowledgement);
-      const matchedFixedIndex = decision.nextQuestion === null ? -1 : questions.findIndex((plannedQuestion, index) => index > currentIndex && plannedQuestion.prompt === decision.nextQuestion);
+      if (turn.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, turn.acknowledgement].slice(-5);
+      setAcknowledgement(turn.acknowledgement);
+      setSpokenTurn(null);
+      const nextQuestion = turn.nextQuestion;
+      const matchedFixedIndex = nextQuestion === null ? -1 : questions.findIndex((plannedQuestion, index) => index > currentIndex && plannedQuestion.prompt === nextQuestion);
       const nextIndex = matchedFixedIndex >= 0 ? matchedFixedIndex : currentIndex + 1;
-      if (!decision.nextQuestion || !canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, nextIndex, questions.length)) {
+      if (!nextQuestion || !canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, nextIndex, questions.length)) {
         transitionPhase("closing");
         return;
       }
       setCurrentIndex(nextIndex);
-      setQuestion({ ...questions[nextIndex], prompt: decision.nextQuestion });
+      setQuestion({ ...questions[nextIndex], prompt: nextQuestion });
       setFollowUpUsed(false);
       setQuestionSequenceNumber((sequence) => sequence + 2);
       transitionPhase("speaking");
@@ -448,6 +501,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       const nextIndex = currentIndex + 1;
       const skippedTurn = resolveSkippedQuestion(questions[nextIndex].prompt);
       setAcknowledgement(skippedTurn.acknowledgement);
+      setSpokenTurn(null);
       setCurrentIndex(nextIndex);
       setQuestion({ ...questions[nextIndex], prompt: skippedTurn.question });
       setFollowUpUsed(false);
@@ -479,9 +533,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     // Background turn analyses settle while pending voice assessments finish; both waits share the same clock.
     const settledAnalyses = settleTurnAnalyses(pairInterviewTurns(reportTurnsRef.current), turnAnalysesRef.current, { timeoutMs: turnAnalysisWaitMs });
     void (async () => {
-      await waitForPendingAssessments(() => Object.values(voiceAssessmentsRef.current).filter((entry) => entry.state.status === "pending").length);
+      await waitForPendingAssessments(() => Object.values(voiceAssessmentsRef.current).filter((entry) => entry.state.status === "pending" && !excludedAssessmentsRef.current.has(assessmentContextKey(entry))).length);
       const latestEntries = voiceAssessmentsRef.current;
-      const samples = assessmentSamples(latestEntries);
+      const samples = assessmentSamples(latestEntries, excludedAssessmentsRef.current);
       const turns = pairInterviewTurns(reportTurnsRef.current);
       if (turns.length === 0) {
         console.warn("[interview-report] unavailable", { category: "no_submitted_answers", durationMs: Date.now() - lifecycleStartedAt });
@@ -713,10 +767,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         </section>
 
         <MicrophoneCapture
-          key={question.id}
+          key={micTurnId}
           disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"}
           assessmentSockets={assessmentSockets}
-          assessmentContext={{ questionLabel: question.prompt, sequenceNumber: questionSequenceNumber }}
+          assessmentContext={{ questionLabel: question.prompt, sequenceNumber: questionSequenceNumber, round: clarifyRound }}
           onLevel={meter.push}
           onDeviceFallback={handleMicDeviceFallback}
           render={renderDock}
@@ -738,9 +792,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           onProvisionalAnswer={prepareFromProvisionalAnswer}
           onSpeechResumed={() => abortPreparation("speech_resumed")}
           onHandoffTimingEvent={onHandoffTimingEvent}
-          autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === question.id ? question.id : null}
+          autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === micTurnId ? micTurnId : null}
           micEngine={micEngine}
-          preconnectSignal={autoCaptureVoice && preconnectQuestionId === question.id ? question.id : null}
+          preconnectSignal={autoCaptureVoice && preconnectQuestionId === micTurnId ? micTurnId : null}
           onAssessmentChange={(attemptId, assessment, context) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { ...context, state: assessment } }))}
         />
 
