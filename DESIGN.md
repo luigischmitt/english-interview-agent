@@ -26,7 +26,7 @@ Source of truth in code: tokens in `frontend/src/app/globals.css` (`--ds-*`), pr
 
 ## Principles
 
-1. Calm under pressure. The product rehearses a stressful moment, so the interface is quiet: cream ground, one green, no decoration that competes with the candidate's words.
+1. Calm under pressure. The product rehearses a stressful moment, so the interface is quiet: cream ground, green for actions, a rare warm toucan accent, and no decoration that competes with the candidate's words.
 2. Depth from light, not lines. Soft two-layer shadows and tint changes separate surfaces; hard borders are the exception.
 3. Feedback is instant, motion is short. Press responds on pointer-down; nothing animates longer than 300ms.
 4. Precision over polish. Tracking, leading and contrast are chosen per size, not defaulted.
@@ -38,6 +38,7 @@ Source of truth in code: tokens in `frontend/src/app/globals.css` (`--ds-*`), pr
 | `--ds-ink` | `#0e2a1f` | Primary text, dark panels |
 | `--ds-green` | `#1f6b45` | Primary action, selected ring, links, focus |
 | `--ds-green-deep` | `#17563a` | Primary hover, text on tint |
+| `--ds-brand-warm` | `#ae6b30` | Decorative toucan and botanical detail; 3.6:1 minimum on app surfaces |
 | `--ds-cream` | `#f3f4ee` | Page background |
 | `--ds-surface` | `#fbfbf7` | Cards |
 | `--ds-field` | `#f1f3ec` | Inputs, option cards, quiet wells (hover `#e9ede3`) |
@@ -79,6 +80,7 @@ Graphite palette (neutral, not green-tinted; green is an accent; surfaces rise w
 | `--ds-text-2` / `-3` | `#a6aba5` / `#8d938d` | Secondary / tertiary text |
 | `--ds-green` | `#5fd08f` | Accent: links, eyebrows, icons, rings, bars |
 | `--ds-green-deep` | `#8fe3b2` | Text on tint |
+| `--ds-brand-warm` | `#e2bd78` | Decorative toucan and botanical detail; 7.6:1 minimum on app surfaces |
 | `--ds-green-solid` / hover / `--ds-on-green` | `#1f6b45` / `#27794f` / `#f3f4ee` | Filled buttons and badges |
 | `--ds-tint` / hover | `#1c3328` / `#234232` | Selected, success, soft button |
 | `--ds-error` / tint / ring | `#f2a893` / `#3a2119` / `#e0745a` | Error |
@@ -92,6 +94,7 @@ Rules for new CSS:
 - No hex or `rgba()` literals outside the token blocks in `globals.css`. Use a token, or `color-mix(in srgb, var(--ds-ink) 8%, transparent)` for a wash that adapts.
 - `--ds-ink`/`--ds-cream` are text and page, not "dark panel" and "light text": dark panels use `--ds-panel`/`--ds-on-panel`; a button on a panel uses `--ds-inverse-*`.
 - Text or an icon on a green fill uses `--ds-green-solid` + `--ds-on-green`; green as text, ring or decoration uses `--ds-green` (it is lighter in dark).
+- `--ds-brand-warm` is a small decorative accent for toucan plumage and botanical wayfinding details. It is not an action color or a replacement for green; never use it for text, status, or meaning that depends on color alone.
 - White surfaces are tokens too: `--ds-popover`, `--ds-thumb`, `--ds-field-focus`, `--ds-knob`, `--ds-radio-bg`.
 - Shadows are tokens (`--ds-shadow-*`); in dark they are hairline rings plus a short soft shadow.
 - Landing illustrations dim through `--ds-forest-filter` / `--ds-forest-opacity`.
