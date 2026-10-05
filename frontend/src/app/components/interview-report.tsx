@@ -106,6 +106,7 @@ function MainPoints({ main, result, turns }: { main: ReturnType<typeof deriveMai
                   <p className="ds-label"><span className="rp-tag" data-tone={item.kind}>{item.kind === "gap" ? "Para reforçar" : "Ponto forte"}</span> <span className="rp-where">resposta {answerOrdinalForSequence(turns, item.sequenceNumber) ?? "—"}</span></p>
                   <p className="rp-quote mt-2">“{item.evidence}”</p>
                   <p className="mt-1 text-sm leading-6">{item.explanation}</p>
+                  {item.vacancyCompetency && <p className="rp-hint mt-2">Prioridade da vaga avaliada nesta resposta: {item.vacancyCompetency}.</p>}
                 </li>
               ))}
             </ul>
@@ -145,6 +146,7 @@ function ReadyReport({ result, turns, azureSummary, coverage }: { result: Interv
                 <div className="min-w-0">
                   <p className="rp-priority-focus">{priority.focus}</p>
                   <p className="rp-priority-evidence">Baseado na resposta {answerOrdinalForSequence(turns, priority.sequenceNumber) ?? "—"}: “{priority.evidence}”</p>
+                  {priority.vacancyCompetency && <p className="rp-hint mt-1">Prioridade da vaga: {priority.vacancyCompetency}</p>}
                   <p className="rp-exercise"><Dumbbell className="size-4 shrink-0" aria-hidden="true" /><span><span className="font-semibold">Exercício:</span> {priority.exercise}</span></p>
                 </div>
               </li>
@@ -216,6 +218,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
   coverage: { available: number; pending: number; total: number };
   onLeave: () => void;
 }): ReactNode {
+  const reportDirection = reportState.result?.jobDirection ?? config.jobDirection;
   return (
     <section className="rp-root mx-auto w-full max-w-4xl" aria-labelledby="interview-complete-title">
       <header className="rp-hero ds-enter">
@@ -227,6 +230,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
           <div><dt>Tempo</dt><dd className="tabular-nums">{elapsed} / {totalClock}</dd></div>
           <div><dt>Respostas</dt><dd>{answerCount}</dd></div>
         </dl>
+        {reportDirection && <p className="rp-hint mt-3">Relatório direcionado para esta vaga: {reportDirection.mainInterviewEmphasis}</p>}
       </header>
 
       {persistenceMessage && <div role="status" className="rp-alert mt-5">{persistenceMessage}</div>}

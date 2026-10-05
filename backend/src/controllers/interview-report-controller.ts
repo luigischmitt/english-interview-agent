@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 
 import { ThinkingServiceError } from "../thinking/errors.js";
+import { parseApprovedJobDirection } from "../thinking/job-direction-validation.js";
 import type { InterviewReportConsolidationInput, InterviewReportInput, InterviewReportService, InterviewTurnAnalysis, InterviewTurnAnalysisInput } from "../thinking/types.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -51,17 +52,21 @@ function parseTurns(value: unknown): ReportTurn[] | null {
 }
 
 function parseInput(body: unknown): InterviewReportInput | null {
-  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turns"].includes(key))) return null;
+  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turns", "jobDirection"].includes(key))) return null;
   const roleContext = parseRoleContext(body.roleContext);
   const turns = parseTurns(body.turns);
-  return roleContext && turns ? { roleContext, turns } : null;
+  const jobDirection = body.jobDirection === undefined ? undefined : roleContext ? parseApprovedJobDirection(body.jobDirection, roleContext.targetRole, roleContext.seniority) : null;
+  if (body.jobDirection !== undefined && !jobDirection) return null;
+  return roleContext && turns ? { roleContext, turns, ...(jobDirection ? { jobDirection } : {}) } : null;
 }
 
 function parseTurnInput(body: unknown): InterviewTurnAnalysisInput | null {
-  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turn"].includes(key))) return null;
+  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turn", "jobDirection"].includes(key))) return null;
   const roleContext = parseRoleContext(body.roleContext);
   const turn = parseTurn(body.turn);
-  return roleContext && turn ? { roleContext, turn } : null;
+  const jobDirection = body.jobDirection === undefined ? undefined : roleContext ? parseApprovedJobDirection(body.jobDirection, roleContext.targetRole, roleContext.seniority) : null;
+  if (body.jobDirection !== undefined && !jobDirection) return null;
+  return roleContext && turn ? { roleContext, turn, ...(jobDirection ? { jobDirection } : {}) } : null;
 }
 
 /**
@@ -69,9 +74,11 @@ function parseTurnInput(body: unknown): InterviewTurnAnalysisInput | null {
  * individually against the matching answer by the service.
  */
 function parseConsolidationInput(body: unknown): InterviewReportConsolidationInput | null {
-  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turns", "turnAnalyses"].includes(key))) return null;
+  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turns", "turnAnalyses", "jobDirection"].includes(key))) return null;
   const roleContext = parseRoleContext(body.roleContext);
   const turns = parseTurns(body.turns);
+  const jobDirection = body.jobDirection === undefined ? undefined : roleContext ? parseApprovedJobDirection(body.jobDirection, roleContext.targetRole, roleContext.seniority) : null;
+  if (body.jobDirection !== undefined && !jobDirection) return null;
   if (!roleContext || !turns || !Array.isArray(body.turnAnalyses) || body.turnAnalyses.length !== turns.length) return null;
   const turnAnalyses: InterviewTurnAnalysis[] = [];
   for (const entry of body.turnAnalyses) {
@@ -82,7 +89,7 @@ function parseConsolidationInput(body: unknown): InterviewReportConsolidationInp
     if (!lists.every((list) => Array.isArray(list) && list.length <= 8)) return null;
     turnAnalyses.push(entry as InterviewTurnAnalysis);
   }
-  return { roleContext, turns, turnAnalyses };
+  return { roleContext, turns, turnAnalyses, ...(jobDirection ? { jobDirection } : {}) };
 }
 
 type ReportRoute<Input, Output> = {

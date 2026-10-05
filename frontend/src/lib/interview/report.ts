@@ -1,9 +1,13 @@
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { InterviewConfig, PersistenceResult } from "./types";
+import { buildInterviewReportRequest } from "./report-request.mjs";
+import type { JobDirection } from "./job-direction.mjs";
 import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";
 
 export type InterviewReport = {
+  /** Exact bounded setup snapshot used to direct this report; absent on legacy sessions. */
+  jobDirection?: JobDirection;
   /** Optional so previously persisted analysis JSON remains readable. */
   evidenceReview?: {
     technicalStrengths: InterviewReportEvidenceCounts;
@@ -13,15 +17,15 @@ export type InterviewReport = {
   };
   technicalContent: {
     summary: string;
-    strengths: Array<{ sequenceNumber: number; evidence: string; explanation: string }>;
-    gaps: Array<{ sequenceNumber: number; evidence: string; explanation: string }>;
+    strengths: Array<{ sequenceNumber: number; evidence: string; explanation: string; vacancyCompetency?: string }>;
+    gaps: Array<{ sequenceNumber: number; evidence: string; explanation: string; vacancyCompetency?: string }>;
   };
   englishCommunication: {
     clarity: "CLEAR" | "MOSTLY_CLEAR" | "UNCLEAR";
     evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT" | "NO_PATTERN_FOUND" | "CANDIDATES_REJECTED";
     patterns: Array<{ type: "GRAMMAR" | "WORD_CHOICE" | "FALSE_COGNATE" | "STRUCTURE"; sequenceNumber: number; evidence: string; suggestion: string; rephrasedExample: string }>;
   };
-  priorities: Array<{ area: "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION"; sequenceNumber: number; evidence: string; focus: string; exercise: string }>;
+  priorities: Array<{ area: "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION"; sequenceNumber: number; evidence: string; focus: string; exercise: string; vacancyCompetency?: string }>;
 };
 
 export type InterviewReportEvidenceCounts = {
@@ -79,10 +83,7 @@ export async function requestInterviewReport(config: InterviewConfig, turns: Int
   const response = await authorizedFetch(`${endpoint}/api/v1/thinking/report`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
-      turns,
-    }),
+    body: JSON.stringify(buildInterviewReportRequest(config, { turns })),
     signal: AbortSignal.timeout(interviewReportTimeoutMs),
   });
   const data = await response.json().catch(() => null) as (InterviewReportResult | { error?: { message?: string } } | null);
@@ -115,7 +116,7 @@ export async function requestInterviewTurnAnalysis(config: InterviewConfig, turn
   const response = await authorizedFetch(`${endpoint}/api/v1/thinking/report/turn`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus }, turn }),
+    body: JSON.stringify(buildInterviewReportRequest(config, { turn })),
     signal: withDeadline(interviewTurnAnalysisTimeoutMs, signal),
   });
   const data = await response.json().catch(() => null) as (InterviewTurnAnalysis | { error?: { message?: string } } | null);
@@ -130,7 +131,7 @@ export async function requestInterviewConsolidation(config: InterviewConfig, tur
   const response = await authorizedFetch(`${endpoint}/api/v1/thinking/report/consolidate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus }, turns, turnAnalyses }),
+    body: JSON.stringify(buildInterviewReportRequest(config, { turns, turnAnalyses })),
     signal: withDeadline(interviewConsolidationTimeoutMs),
   });
   const data = await response.json().catch(() => null) as (InterviewReportResult | { error?: { message?: string } } | null);
@@ -165,6 +166,7 @@ export async function saveInterviewFeedback(interviewId: string, azureSummary: A
       status: "ready",
       azure_summary: azureSummary,
       analysis: {
+        ...(result.jobDirection ? { jobDirection: result.jobDirection } : {}),
         evidenceReview: result.evidenceReview,
         technicalContent: result.technicalContent,
         englishCommunication: result.englishCommunication,

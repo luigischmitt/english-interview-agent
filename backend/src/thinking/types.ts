@@ -59,10 +59,14 @@ export interface JobDirectionService {
 
 export type InterviewReportInput = {
   roleContext: InterviewThinkingInput["roleContext"];
+  /** User-approved, bounded summary only. Raw job descriptions never enter report analysis. */
+  jobDirection?: ApprovedJobDirection;
   turns: Array<{ sequenceNumber: number; question: string; answer: string }>;
 };
 
 export type InterviewReport = {
+  /** Exact bounded setup snapshot used to direct this report; absent on legacy sessions. */
+  jobDirection?: ApprovedJobDirection;
   /** Safe aggregate counts only; optional for reports persisted before this field existed. */
   evidenceReview?: {
     technicalStrengths: InterviewReportEvidenceCounts;
@@ -72,8 +76,8 @@ export type InterviewReport = {
   };
   technicalContent: {
     summary: string;
-    strengths: Array<{ sequenceNumber: number; evidence: string; explanation: string }>;
-    gaps: Array<{ sequenceNumber: number; evidence: string; explanation: string }>;
+    strengths: Array<{ sequenceNumber: number; evidence: string; explanation: string; vacancyCompetency?: string }>;
+    gaps: Array<{ sequenceNumber: number; evidence: string; explanation: string; vacancyCompetency?: string }>;
   };
   englishCommunication: {
     clarity: CommunicationClarity;
@@ -92,6 +96,7 @@ export type InterviewReport = {
     evidence: string;
     focus: string;
     exercise: string;
+    vacancyCompetency?: string;
   }>;
 };
 
@@ -113,6 +118,7 @@ export type InterviewTurnAnalysis = {
 
 export type InterviewTurnAnalysisInput = {
   roleContext: InterviewThinkingInput["roleContext"];
+  jobDirection?: ApprovedJobDirection;
   turn: InterviewReportInput["turns"][number];
 };
 
