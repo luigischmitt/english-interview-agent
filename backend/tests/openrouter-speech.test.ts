@@ -20,12 +20,12 @@ describe("openrouter speech config", () => {
   it("parses openrouter with single-voice defaults", () => {
     const config = loadSpeechConfig({ SPEECH_PROVIDER: "openrouter", OPENROUTER_API_KEY: " key " });
     expect(config.provider).toBe("openrouter");
-    expect(config.interviewerVoice).toBe("af_heart");
+    expect(config.interviewerVoice).toBe("am_echo");
     expect(config.openRouter).toEqual({
       apiKey: "key",
       url: "https://openrouter.ai/api/v1/audio/speech",
       model: "hexgrad/kokoro-82m",
-      hedgeAfterMs: 1_500,
+      hedgeAfterMs: 2_000,
     });
   });
 

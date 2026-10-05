@@ -43,3 +43,25 @@ test("next-turn serialization bounds future questions and history while keeping 
   assert.equal(payload.previousAnswers[1].answer.length, 300);
   assert.equal(payload.previousAnswers[1].answer.endsWith("LAST_ANSWER_DETAIL"), true);
 });
+
+import { DEFAULT_INTERVIEWER_VOICE, INTERVIEWER_VOICE_OPTIONS, resolveInterviewerVoice } from "../src/lib/interview/voices.mjs";
+
+test("the next-turn request carries a selectable voice, defaulting to am_echo", () => {
+  const input = { config: { role: "Backend Engineer", seniority: "mid-level", focus: "mixed" }, currentQuestion: "Q?", transcript: "A", nextFixedQuestion: null, remainingFixedQuestions: [], followUpUsed: false, askedQuestions: [] };
+  assert.equal(JSON.parse(serializeNextTurnRequest(input)).voice, "am_echo");
+  assert.equal(JSON.parse(serializeNextTurnRequest({ ...input, config: { ...input.config, voice: "bm_george" } })).voice, "bm_george");
+  assert.equal(JSON.parse(serializeNextTurnRequest({ ...input, config: { ...input.config, voice: "af_bella+af_heart" } })).voice, "am_echo");
+  assert.equal(DEFAULT_INTERVIEWER_VOICE, "am_echo");
+  assert.equal(resolveInterviewerVoice("nope"), "am_echo");
+  assert.equal(INTERVIEWER_VOICE_OPTIONS.length, 20);
+});
+
+import { fetchSpeechBlob } from "../src/lib/interview/speech-playback.mjs";
+
+test("speech requests carry the chosen voice only when one is given", async () => {
+  const bodies = [];
+  const fetcher = async (_url, init) => { bodies.push(JSON.parse(init.body)); return new Response(new Blob(["x"]), { status: 200 }); };
+  await fetchSpeechBlob("Okay.", { endpoint: "/s1", fetcher, voice: "bm_lewis" });
+  await fetchSpeechBlob("Okay.", { endpoint: "/s2", fetcher });
+  assert.deepEqual(bodies, [{ text: "Okay.", voice: "bm_lewis" }, { text: "Okay." }]);
+});

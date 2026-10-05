@@ -1,8 +1,10 @@
 import type { RequestHandler } from "express";
 
 import { normalizeTextForSpeech } from "../speech/text-normalization.js";
+import { resolveVoice } from "../speech/voices.js";
 import { SpeechProviderUnavailableError } from "../speech/errors.js";
 import type { SpeechConfig } from "../speech/config.js";
+import type { SpeechCache, SpeechCacheResult } from "../speech/speech-cache.js";
 import type { SpeechDiagnostics, SpeechProvider, VoiceStatus } from "../speech/types.js";
 
 const maxTextLength = 2_000;
@@ -10,6 +12,8 @@ const maxTextLength = 2_000;
 type SpeechBody = {
   text?: unknown;
   speed?: unknown;
+  /** Optional; must be one of the selectable voices, otherwise the configured default is used. */
+  voice?: unknown;
 };
 
 function invalidSpeechRequest(responseMessage: string, response: Parameters<RequestHandler>[1]) {
@@ -21,11 +25,23 @@ function invalidSpeechRequest(responseMessage: string, response: Parameters<Requ
   });
 }
 
-function logSpeechTiming(status: "ok" | "error" | "aborted", provider: string, start: number, textLength: number, diagnostics?: SpeechDiagnostics): void {
-  console.info(JSON.stringify({ event: "speech_synthesis_timing", status, provider, durationMs: Math.max(0, Math.round(Date.now() - start)), textLength, ...(diagnostics?.hedge ? { hedge: diagnostics.hedge } : {}), ...(diagnostics?.voiceSource ? { voiceSource: diagnostics.voiceSource } : {}) }));
+type CacheInfo = Pick<SpeechCacheResult, "source" | "prefetched" | "leadMs" | "synthesisMs">;
+
+// Content-free: lengths, timings and outcomes only. `cache` is miss/hit/joined; `leadMs` is how long before the client's
+// request the server had started this synthesis (prefetch), and `savedMs` the part of the synthesis the client did not wait for.
+function logSpeechTiming(status: "ok" | "error" | "aborted", provider: string, start: number, textLength: number, diagnostics?: SpeechDiagnostics, cache?: CacheInfo): void {
+  const savedMs = cache?.leadMs !== undefined ? Math.round(cache.source === "hit" && cache.synthesisMs !== undefined ? Math.min(cache.leadMs, cache.synthesisMs) : cache.leadMs) : undefined;
+  console.info(JSON.stringify({
+    event: "speech_synthesis_timing", status, provider, durationMs: Math.max(0, Math.round(Date.now() - start)), textLength,
+    ...(diagnostics?.hedge ? { hedge: diagnostics.hedge } : {}),
+    ...(diagnostics?.voiceSource ? { voiceSource: diagnostics.voiceSource } : {}),
+    ...(cache ? { cache: cache.source, prefetched: cache.prefetched } : {}),
+    ...(cache?.leadMs !== undefined ? { leadMs: Math.round(cache.leadMs), savedMs } : {}),
+    ...(cache?.synthesisMs !== undefined ? { synthesisMs: Math.round(cache.synthesisMs) } : {}),
+  }));
 }
 
-export function createSpeechController(provider: SpeechProvider, config: SpeechConfig) {
+export function createSpeechController(provider: SpeechProvider, config: SpeechConfig, cache: SpeechCache | null = null) {
   const synthesize: RequestHandler = async (request, response) => {
     const body = request.body as SpeechBody;
     const text = typeof body?.text === "string" ? body.text.trim() : "";
@@ -73,19 +89,28 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
 
     const start = Date.now();
     let timingLogged = false;
+    let cacheInfo: CacheInfo | undefined;
     const logTiming = (status: "ok" | "error" | "aborted", diagnostics?: SpeechDiagnostics) => {
       if (timingLogged) return;
       timingLogged = true;
-      logSpeechTiming(status, provider.name, start, text.length, diagnostics);
+      logSpeechTiming(status, provider.name, start, text.length, diagnostics, cacheInfo);
     };
 
     try {
-      const speech = await provider.synthesize({
+      const synthesisRequest = {
         text: normalizeTextForSpeech(text),
-        voice: config.interviewerVoice,
+        voice: resolveVoice(body.voice, config.interviewerVoice),
         speed,
         format: config.format,
-      }, abortController.signal);
+      };
+      let speech;
+      if (cache) {
+        const result = await cache.synthesize(synthesisRequest, abortController.signal);
+        speech = result.speech;
+        cacheInfo = result;
+      } else {
+        speech = await provider.synthesize(synthesisRequest, abortController.signal);
+      }
       audio = speech.audio;
 
       if (abortController.signal.aborted || response.destroyed || response.writableEnded) {

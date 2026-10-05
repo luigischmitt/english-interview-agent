@@ -1,4 +1,5 @@
 import type { AudioFormat } from "./types.js";
+import { defaultInterviewerVoice } from "./voices.js";
 
 export type SpeechConfig = {
   provider: "fake" | "kokoro" | "openrouter" | "kokoro-openrouter";
@@ -11,6 +12,8 @@ export type SpeechConfig = {
   openRouter?: { apiKey: string; url: string; model: string; hedgeAfterMs: number };
   /** Only with SPEECH_PROVIDER=kokoro-openrouter: Kokoro first, OpenRouter as the hedge. */
   hybrid?: { hedgeAfterMs: number; openRouterVoice: string };
+  /** Server-side cache of finished audio, joined with in-flight syntheses and prefetched from next-turn decisions. Absent = off. */
+  cache?: { ttlMs: number; staticTtlMs: number; prefetch: boolean; prefetchChunks: number };
 };
 
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
@@ -27,7 +30,7 @@ function parsePositiveNumber(value: string | undefined, fallback: number): numbe
 }
 
 function parseHedgeAfterMs(value: string | undefined): number {
-  if (value === undefined || value.trim() === "") return 1_500;
+  if (value === undefined || value.trim() === "") return 2_000;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0 || parsed > 10_000) {
     throw new Error("OPENROUTER_SPEECH_HEDGE_AFTER_MS must be an integer between 0 and 10000.");
@@ -45,7 +48,26 @@ function parseHybridHedgeAfterMs(value: string | undefined): number {
 }
 
 const kokoroDefaultVoice = "af_bella+af_heart";
-const openRouterDefaultVoice = "af_heart";
+/** The default OpenRouter Kokoro voice (single voices only; blends are rejected upstream). Change the interviewer's voice here. */
+export const openRouterDefaultVoice = defaultInterviewerVoice;
+
+function parseIntegerInRange(name: string, value: string | undefined, fallback: number, minimum: number, maximum: number): number {
+  if (value === undefined || value.trim() === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}.`);
+  }
+  return parsed;
+}
+
+function loadCacheConfig(environment: NodeJS.ProcessEnv): NonNullable<SpeechConfig["cache"]> {
+  return {
+    ttlMs: parseIntegerInRange("SPEECH_CACHE_TTL_MS", environment.SPEECH_CACHE_TTL_MS, 60_000, 0, 600_000),
+    staticTtlMs: parseIntegerInRange("SPEECH_STATIC_CACHE_TTL_MS", environment.SPEECH_STATIC_CACHE_TTL_MS, 3_600_000, 0, 86_400_000),
+    prefetch: (environment.SPEECH_PREFETCH?.trim() || "1") !== "0",
+    prefetchChunks: parseIntegerInRange("SPEECH_PREFETCH_CHUNKS", environment.SPEECH_PREFETCH_CHUNKS, 1, 1, 4),
+  };
+}
 
 export function loadSpeechConfig(environment = process.env): SpeechConfig {
   const provider = environment.SPEECH_PROVIDER ?? "fake";
@@ -62,8 +84,10 @@ export function loadSpeechConfig(environment = process.env): SpeechConfig {
     throw new Error("KOKORO_URL is required when SPEECH_PROVIDER is 'kokoro-openrouter'.");
   }
 
-  const interviewerVoice = environment.INTERVIEWER_VOICE?.trim()
-    || (provider === "openrouter" ? openRouterDefaultVoice : kokoroDefaultVoice);
+  // With 'openrouter' the voice is OPENROUTER_SPEECH_VOICE (then INTERVIEWER_VOICE, then the default constant above).
+  const interviewerVoice = provider === "openrouter"
+    ? environment.OPENROUTER_SPEECH_VOICE?.trim() || environment.INTERVIEWER_VOICE?.trim() || openRouterDefaultVoice
+    : environment.INTERVIEWER_VOICE?.trim() || kokoroDefaultVoice;
   let openRouter: SpeechConfig["openRouter"];
   let hybridConfig: SpeechConfig["hybrid"];
   if (provider === "openrouter" || hybrid) {
@@ -74,11 +98,11 @@ export function loadSpeechConfig(environment = process.env): SpeechConfig {
     if (hybrid) {
       const openRouterVoice = environment.OPENROUTER_SPEECH_VOICE?.trim() || openRouterDefaultVoice;
       if (openRouterVoice.includes("+")) {
-        throw new Error("OPENROUTER_SPEECH_VOICE cannot be a voice blend; use a single voice such as 'af_heart'.");
+        throw new Error("OPENROUTER_SPEECH_VOICE cannot be a voice blend; use a single voice such as 'am_echo'.");
       }
       hybridConfig = { hedgeAfterMs: parseHybridHedgeAfterMs(environment.HYBRID_SPEECH_HEDGE_AFTER_MS), openRouterVoice };
     } else if (interviewerVoice.includes("+")) {
-      throw new Error("INTERVIEWER_VOICE cannot be a voice blend with SPEECH_PROVIDER 'openrouter'; use a single voice such as 'af_heart'.");
+      throw new Error("OPENROUTER_SPEECH_VOICE / INTERVIEWER_VOICE cannot be a voice blend with SPEECH_PROVIDER 'openrouter'; use a single voice such as 'am_michael'.");
     }
     openRouter = {
       apiKey,
@@ -98,5 +122,6 @@ export function loadSpeechConfig(environment = process.env): SpeechConfig {
     format: "mp3",
     ...(openRouter ? { openRouter } : {}),
     ...(hybridConfig ? { hybrid: hybridConfig } : {}),
+    cache: loadCacheConfig(environment),
   };
 }

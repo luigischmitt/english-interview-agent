@@ -1,7 +1,7 @@
 import type { InterviewConfig } from "./types";
 
 export function serializeNextTurnRequest(input: {
-  config: Pick<InterviewConfig, "role" | "seniority" | "focus" | "jobDirection">;
+  config: Pick<InterviewConfig, "role" | "seniority" | "focus" | "jobDirection" | "voice">;
   currentQuestion: string;
   transcript: string;
   nextFixedQuestion: string | null;

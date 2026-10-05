@@ -136,6 +136,28 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
     });
   }
 
+  private lastWarmAt = Number.NEGATIVE_INFINITY;
+
+  /**
+   * Opens a connection to the speech host ahead of the first synthesis (free HEAD request, no audio). Node's fetch keeps
+   * connections alive only for a few idle seconds, so this is called when a next-turn decision starts, a moment before
+   * the utterance is synthesized. Fire and forget; throttled.
+   */
+  warmConnection(): void {
+    const now = Date.now();
+    if (now - this.lastWarmAt < 1_500) return;
+    this.lastWarmAt = now;
+    let origin: string;
+    try { origin = new URL(this.url).origin; } catch { return; }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3_000);
+    timer.unref?.();
+    void this.fetchImplementation(origin, { method: "HEAD", signal: controller.signal })
+      .then((response) => response.body?.cancel().catch(() => undefined))
+      .catch(() => undefined)
+      .finally(() => clearTimeout(timer));
+  }
+
   // No network call: probing would spend paid requests, and failures already fall back to text.
   async health(): Promise<SpeechProviderHealth> {
     return { status: "ready" };
