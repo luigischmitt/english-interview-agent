@@ -1,5 +1,6 @@
 import type { ThinkingConfig } from "./config.js";
 import { ThinkingServiceError } from "./errors.js";
+import { parseOpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
 import {
   answerStatuses,
   communicationClarities,
@@ -21,6 +22,7 @@ type OpenRouterThinkingServiceOptions = {
 
 type OpenRouterResponse = {
   choices?: Array<{ message?: { content?: unknown } }>;
+  usage?: OpenRouterUsagePayload;
 };
 
 type ParsedAssessment = ThinkingAssessment;
@@ -199,6 +201,7 @@ export class OpenRouterThinkingService implements ThinkingService {
   }
 
   async assess(input: InterviewThinkingInput): Promise<ThinkingAssessment> {
+    const startedAt = Date.now();
     const signal = AbortSignal.timeout(this.options.timeoutMs);
     let response: Response;
     try {
@@ -223,6 +226,7 @@ export class OpenRouterThinkingService implements ThinkingService {
           ],
           temperature: 0,
           max_tokens: 500,
+          usage: { include: true },
           provider: { require_parameters: true, data_collection: "deny" },
           response_format: {
             type: "json_schema",
@@ -256,6 +260,8 @@ export class OpenRouterThinkingService implements ThinkingService {
       }
       throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.", { cause: error });
     }
+
+    console.info(JSON.stringify({ event: "interview_answer_assessment_timing", durationMs: Math.max(0, Date.now() - startedAt), ...parseOpenRouterUsage(body.usage) }));
 
     return parseAssessment(body.choices?.[0]?.message?.content, input.transcript);
   }

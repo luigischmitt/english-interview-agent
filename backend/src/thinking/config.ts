@@ -19,6 +19,8 @@ export type ThinkingConfig = {
   reportTimeoutMs?: number;
   /** Timeout of the small bridge call that follows a next-turn decision (300–5000 ms; defaults to 1800). */
   bridgeTimeoutMs?: number;
+  /** Merge bridge writing into the decision call by default; `separate` keeps the rollback path. */
+  bridgeMode?: "merged" | "separate";
   diagnosticsEnabled: boolean;
 };
 
@@ -51,6 +53,12 @@ function normalizeBridgeTimeout(value: string | undefined): number {
   return Number.isFinite(parsed) ? Math.min(5_000, Math.max(300, Math.round(parsed))) : defaultBridgeTimeoutMs;
 }
 
+function parseBridgeMode(value: string | undefined): "merged" | "separate" {
+  const mode = value?.trim().toLowerCase() || "merged";
+  if (mode !== "merged" && mode !== "separate") throw new Error("INTERVIEW_BRIDGE_MODE must be merged or separate.");
+  return mode;
+}
+
 export function loadThinkingConfig(environment = process.env): ThinkingConfig {
   const model = environment.INTERVIEW_REASONING_MODEL?.trim() || defaultThinkingModel;
   return {
@@ -61,6 +69,7 @@ export function loadThinkingConfig(environment = process.env): ThinkingConfig {
     orchestrationTimeoutMs: parsePositiveNumber(environment.INTERVIEW_ORCHESTRATION_TIMEOUT_MS, defaultOrchestrationTimeoutMs),
     orchestrationHedgeAfterMs: parseNonNegativeNumber(environment.INTERVIEW_ORCHESTRATION_HEDGE_AFTER_MS, defaultOrchestrationHedgeAfterMs),
     bridgeTimeoutMs: normalizeBridgeTimeout(environment.INTERVIEW_BRIDGE_TIMEOUT_MS),
+    bridgeMode: parseBridgeMode(environment.INTERVIEW_BRIDGE_MODE),
     reportTimeoutMs: parseReportTimeout(environment.INTERVIEW_REPORT_TIMEOUT_MS),
     diagnosticsEnabled: environment.INTERVIEW_REASONING_DIAGNOSTICS?.trim().toLowerCase() === "true",
   };

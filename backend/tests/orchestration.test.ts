@@ -28,7 +28,7 @@ const approvedDirection = {
 };
 
 function providerResponse(content: string, extras: Record<string, unknown> = {}, status = 200): Response {
-  return new Response(JSON.stringify({ choices: [{ message: { content } }], usage: { cost: 0.00004 }, model: "mistralai/mistral-small-3.2-24b-instruct", ...extras }), { status });
+  return new Response(JSON.stringify({ choices: [{ message: { content } }], usage: { prompt_tokens: 125, completion_tokens: 21, cost: 0.00004, prompt_tokens_details: { cached_tokens: 60 } }, model: "mistralai/mistral-small-3.2-24b-instruct", ...extras }), { status });
 }
 
 function service(fetchImplementation: typeof fetch) {
@@ -41,6 +41,7 @@ function decision(overrides: Record<string, unknown> = {}) {
 
 describe("OpenRouter next-turn orchestration", () => {
   it("prefers one grounded follow-up when the answer gives a useful thread", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     let init: RequestInit | undefined;
     const requestInput = { ...input, recentAcknowledgements: ["I see.", "Got it."] };
     const result = await service(async (_url, options) => { init = options; return providerResponse(JSON.stringify(decision())); }).decide(requestInput);
@@ -51,6 +52,7 @@ describe("OpenRouter next-turn orchestration", () => {
     expect(requestBody.model).toBe(defaultThinkingModel);
     expect(requestBody.provider).toEqual({ sort: "latency", require_parameters: true, data_collection: "deny" });
     expect(requestBody.max_tokens).toBe(320);
+    expect(requestBody.usage).toEqual({ include: true });
     expect(requestBody.response_format.json_schema.strict).toBe(true);
     expect(requestBody.response_format.json_schema.schema.required).toEqual(["decision", "followUpQuestion", "nextQuestion", "anchor", "acknowledgement", "clarificationText"]);
     expect(requestBody.messages[0].content).toContain("Decision policy:");
@@ -63,6 +65,9 @@ describe("OpenRouter next-turn orchestration", () => {
     expect(requestBody.messages[0].content).not.toContain("chain-of-thought");
     expect(JSON.parse(requestBody.messages[1].content)).toMatchObject({ askedQuestions: input.askedQuestions, currentQuestion: input.currentQuestion, transcript: input.transcript, remainingFixedQuestions: input.remainingFixedQuestions, recentAcknowledgements: requestInput.recentAcknowledgements });
     expect(requestBody.messages[0].content).toContain("Never repeat any recentAcknowledgements");
+    const log = JSON.parse(String(info.mock.calls[0]?.[0]));
+    expect(log).toMatchObject({ promptTokens: 125, completionTokens: 21, costUsd: 0.00004, cachedTokens: 60 });
+    expect(JSON.stringify(log)).not.toContain(input.transcript);
   });
 
   it("uses the approved direction as bounded context without replacing role-bank grounding", async () => {
@@ -329,7 +334,7 @@ describe("OpenRouter next-turn orchestration", () => {
       expect(acceptedLog).toMatchObject({
         event: "interview_orchestration_decision", decision: "FOLLOW_UP", requestedDecision: "FOLLOW_UP", outcome: "accepted", reason: "model_decision", followUpUsed: false,
       });
-      expect(Object.keys(acceptedLog).sort()).toEqual(["anchorCheck", "attempts", "bridge", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
+      expect(Object.keys(acceptedLog).sort()).toEqual(["anchorCheck", "attempts", "bridge", "cachedTokens", "completionTokens", "corrective", "costUsd", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "promptTokens", "reason", "requestedDecision"]);
       expect(JSON.stringify(acceptedLog)).not.toContain(input.transcript);
       expect(JSON.stringify(acceptedLog)).not.toContain(followUp);
       expect(JSON.stringify(acceptedLog)).not.toContain(anchor);
@@ -460,7 +465,7 @@ describe("OpenRouter next-turn orchestration", () => {
       const logs = info.mock.calls.map((call) => JSON.parse(String(call[0])));
       expect(logs.map((entry) => entry.reason)).toEqual(["model_decision", "invalid_json", "low_information", "credentials_missing"]);
       for (const entry of logs) {
-        expect(Object.keys(entry).sort()).toEqual(entry.decision === "FOLLOW_UP" ? ["anchorCheck", "attempts", "bridge", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"] : ["attempts", "bridge", "corrective", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "reason", "requestedDecision"]);
+        expect(Object.keys(entry).sort()).toEqual(entry.decision === "FOLLOW_UP" ? ["anchorCheck", "attempts", "bridge", "cachedTokens", "completionTokens", "corrective", "costUsd", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "promptTokens", "reason", "requestedDecision"] : ["attempts", "bridge", "cachedTokens", "completionTokens", "corrective", "costUsd", "decision", "event", "followUpUsed", "hedge", "latencyMs", "outcome", "promptTokens", "reason", "requestedDecision"]);
         expect(entry.event).toBe("interview_orchestration_decision");
       }
       expect(warn).not.toHaveBeenCalled();

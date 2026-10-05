@@ -11,6 +11,7 @@ import type { InterviewOrchestrationInput } from "../src/thinking/types.js";
 const runsPerCase = Math.max(1, Number(process.env.FOLLOWUP_EVAL_RUNS ?? 2) || 2);
 const costCapUsd = Number(process.env.FOLLOWUP_EVAL_COST_CAP_USD ?? 0.2) || 0.2;
 const printAccepted = process.env.FOLLOWUP_EVAL_PRINT_ACCEPTED === "true";
+const printFailures = process.env.FOLLOWUP_EVAL_PRINT_FAILURES === "true";
 
 async function main() {
   const config = { ...loadThinkingConfig(), diagnosticsEnabled: true };
@@ -43,6 +44,7 @@ async function main() {
   const latencies: number[] = [];
   const accepted: string[] = [];
   const acceptedBridges: string[] = [];
+  const failures: Array<{ id: string; run: number; expected: string; received: string; reason: string }> = [];
   const bridgeCounts = { grounded: 0, neutral: 0, dropped: 0 };
   const byDecision = {
     FOLLOW_UP: { runs: 0, grounded: 0, neutral: 0, dropped: 0 },
@@ -97,15 +99,23 @@ async function main() {
         if (result.decision === "REPEAT" || result.decision === "REPHRASE" || result.decision === "DEFINE") {
           expectedClarify.handled += 1;
           if (testCase.acceptable?.includes(result.decision)) expectedClarify.acceptableKind += 1;
-        } else expectedClarify.wrongMovedOn += 1;
+        } else {
+          expectedClarify.wrongMovedOn += 1;
+          failures.push({ id: testCase.id, run, expected: testCase.acceptable?.join("|") ?? "clarify", received: result.decision, reason: lastReason });
+        }
+        if ((result.decision === "REPEAT" || result.decision === "REPHRASE" || result.decision === "DEFINE") && !testCase.acceptable?.includes(result.decision)) {
+          failures.push({ id: testCase.id, run, expected: testCase.acceptable?.join("|") ?? "clarify", received: result.decision, reason: lastReason });
+        }
         continue;
       }
       if (testCase.expected === "follow_up") {
         expectedFollowUp.total += 1;
         if (result.decision === "FOLLOW_UP") { expectedFollowUp.accepted += 1; if (result.followUpQuestion) accepted.push(`${testCase.id}: ${result.followUpQuestion}`); }
+        else failures.push({ id: testCase.id, run, expected: "FOLLOW_UP", received: result.decision, reason: lastReason });
       } else {
         expectedNext.total += 1;
         if (result.decision === "NEXT") expectedNext.next += 1;
+        else failures.push({ id: testCase.id, run, expected: "NEXT", received: result.decision, reason: lastReason });
       }
       if (lastBridge === "grounded" || lastBridge === "neutral" || lastBridge === "dropped") bridgeCounts[lastBridge] += 1;
       if (result.decision !== "FOLLOW_UP" && result.decision !== "NEXT") continue;
@@ -198,6 +208,7 @@ async function main() {
     console.log("Sequence-mode bridges (local review only):");
     for (const line of sequenceBridges) console.log(line);
   }
+  if (printFailures) console.log("Failed expectations (fixture ids only):", JSON.stringify(failures, null, 2));
 }
 
 main().catch((error) => { console.error(error instanceof Error ? error.message : "Eval failed."); process.exitCode = 1; });

@@ -63,6 +63,7 @@ describe("thinking configuration", () => {
       orchestrationTimeoutMs: defaultOrchestrationTimeoutMs,
       orchestrationHedgeAfterMs: 2_500,
       bridgeTimeoutMs: 1_800,
+      bridgeMode: "merged",
       reportTimeoutMs: defaultInterviewReportTimeoutMs,
       diagnosticsEnabled: false,
     });
@@ -84,6 +85,7 @@ describe("thinking configuration", () => {
       orchestrationTimeoutMs: 6_000,
       orchestrationHedgeAfterMs: 2_500,
       bridgeTimeoutMs: 1_800,
+      bridgeMode: "merged",
       reportTimeoutMs: 45_000,
       diagnosticsEnabled: true,
     });
@@ -96,6 +98,12 @@ describe("thinking configuration", () => {
     expect(load("90000")).toBe(5_000);
     expect(load("abc")).toBe(1_800);
     expect(loadThinkingConfig({} as NodeJS.ProcessEnv).bridgeTimeoutMs).toBe(1_800);
+  });
+
+  it("loads merged bridge mode by default and validates the rollback mode", () => {
+    expect(loadThinkingConfig({} as NodeJS.ProcessEnv).bridgeMode).toBe("merged");
+    expect(loadThinkingConfig({ INTERVIEW_BRIDGE_MODE: " separate " } as NodeJS.ProcessEnv).bridgeMode).toBe("separate");
+    expect(() => loadThinkingConfig({ INTERVIEW_BRIDGE_MODE: "legacy" } as NodeJS.ProcessEnv)).toThrow("INTERVIEW_BRIDGE_MODE must be merged or separate.");
   });
 
   it("uses a trimmed report model override and otherwise falls back to the reasoning model", () => {

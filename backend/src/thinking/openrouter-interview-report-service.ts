@@ -2,6 +2,7 @@ import { defaultInterviewConsolidationTimeoutMs, defaultInterviewReportTimeoutMs
 import { ThinkingServiceError } from "./errors.js";
 import { isDegenerateProviderOutput } from "./report-degeneration.js";
 import { parseApprovedJobDirection } from "./job-direction-validation.js";
+import { parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
 import { analyzeEnglishEdit, checkGrammarRuleLabel, hasBrokenSentenceBoundary, isGenericExercise, isLikelyTranscriptionArtifactEdit, isOffQuestionIntegrationItem, isIdiomaticOnRewritten, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
 import {
   communicationClarities,
@@ -17,7 +18,7 @@ import {
   type InterviewTurnAnalysisInput,
 } from "./types.js";
 
-type OpenRouterResponse = { provider?: unknown; choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown } }> };
+type OpenRouterResponse = { provider?: unknown; choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown } }>; usage?: OpenRouterUsagePayload };
 
 const promptRules = {
   intro: "You write a practical final report for a technical job interview practice session conducted in English.",
@@ -614,7 +615,7 @@ function isAbortError(error: unknown): boolean {
 }
 
 /** `scope` is present only for the incremental routes; the full report keeps its original shape. */
-function logReportPhase(phase: "provider" | "validation", startedAt: number, turnCount: number, scope?: "turn" | "consolidate", extra?: Record<string, unknown>): void {
+function logReportPhase(phase: "provider" | "validation", startedAt: number, turnCount: number, scope?: "turn" | "consolidate", extra?: Record<string, unknown>, usage?: OpenRouterUsage): void {
   console.info(JSON.stringify({
     event: "interview_report_phase_timing",
     phase,
@@ -622,6 +623,7 @@ function logReportPhase(phase: "provider" | "validation", startedAt: number, tur
     ...(extra ?? {}),
     durationMs: Math.max(0, Date.now() - startedAt),
     turnCount,
+    ...(phase === "provider" ? usage ?? parseOpenRouterUsage(undefined) : {}),
   }));
 }
 
@@ -678,6 +680,7 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
           ],
           temperature: 0,
           max_tokens: request.maxTokens,
+          usage: { include: true },
           provider: { sort: "latency", require_parameters: true, data_collection: "deny", ...(ignoreProviders.length > 0 ? { ignore: ignoreProviders } : {}) },
           response_format: { type: "json_schema", json_schema: { name: request.schemaName, strict: true, schema: request.schema } },
         }),
@@ -704,7 +707,7 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
       if (signal.aborted || isAbortError(error)) throw new ThinkingServiceError("THINKING_TIMEOUT", 504, "The reasoning service timed out.", { cause: error });
       throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.", { cause: error });
     }
-    logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra);
+    logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra, parseOpenRouterUsage(body.usage));
     const choice = body.choices?.[0];
     return { content: choice?.message?.content, provider: typeof body.provider === "string" ? body.provider : undefined, finishReason: choice?.finish_reason };
   }

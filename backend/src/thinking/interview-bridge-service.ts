@@ -1,6 +1,7 @@
 import { defaultBridgeTimeoutMs, type ThinkingConfig } from "./config.js";
 import { containsNoiseToken, contentWords, normalizedWords, sequenceIndices, transcriptHasUsefulContent } from "./interview-text.js";
 import type { InterviewThinkingInput } from "./types.js";
+import { parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
 
 /**
  * Second, small call that writes the spoken bridge said right before the interview question. The next-turn decision call
@@ -33,6 +34,7 @@ export type BridgeResult = {
   transitionDropped?: boolean;
   latencyMs: number;
   costUsd: number | null;
+  usage: OpenRouterUsage;
 };
 
 export interface InterviewBridgeService {
@@ -207,7 +209,7 @@ export function evaluateBridge(raw: unknown, input: Pick<BridgeInput, "decision"
   return { bridge: spoken, leadInFollowed, transitionDropped: false };
 }
 
-type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }>; usage?: { cost?: unknown } };
+type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }>; usage?: OpenRouterUsagePayload };
 
 export class OpenRouterBridgeService implements InterviewBridgeService {
   private readonly fetchImplementation: typeof fetch;
@@ -218,7 +220,7 @@ export class OpenRouterBridgeService implements InterviewBridgeService {
 
   async write(input: BridgeInput): Promise<BridgeResult> {
     const start = Date.now();
-    const result = (outcome: BridgeCallOutcome, extras: Partial<BridgeResult> = {}): BridgeResult => ({ bridge: null, outcome, latencyMs: Math.max(0, Date.now() - start), costUsd: null, ...extras });
+    const result = (outcome: BridgeCallOutcome, extras: Partial<BridgeResult> = {}): BridgeResult => ({ bridge: null, outcome, latencyMs: Math.max(0, Date.now() - start), costUsd: null, usage: parseOpenRouterUsage(undefined), ...extras });
     if (!transcriptHasUsefulContent(input.transcript)) return result("skipped_low_info");
     const remainingMs = input.deadlineAt - start;
     if (remainingMs < minBridgeBudgetMs) return result("skipped_no_time");
@@ -239,6 +241,7 @@ export class OpenRouterBridgeService implements InterviewBridgeService {
           ],
           temperature: 0.2,
           max_tokens: 120,
+          usage: { include: true },
           provider: { sort: "latency", require_parameters: true, data_collection: "deny" },
           response_format: { type: "json_schema", json_schema: { name: "interview_bridge", strict: true, schema: bridgeSchema } },
         }),
@@ -249,15 +252,16 @@ export class OpenRouterBridgeService implements InterviewBridgeService {
         return result("error");
       }
       const body = await response.json() as OpenRouterResponse;
-      const costUsd = typeof body.usage?.cost === "number" && Number.isFinite(body.usage.cost) ? body.usage.cost : null;
+      const usage = parseOpenRouterUsage(body.usage);
+      const costUsd = usage.costUsd;
       const content = body.choices?.[0]?.message?.content;
       let value: unknown;
       try { value = typeof content === "string" ? JSON.parse(content) : undefined; } catch { value = undefined; }
-      if (typeof value !== "object" || value === null || Array.isArray(value) || Object.keys(value).some((key) => key !== "bridge") || !("bridge" in value)) return result("error", { costUsd });
+      if (typeof value !== "object" || value === null || Array.isArray(value) || Object.keys(value).some((key) => key !== "bridge") || !("bridge" in value)) return result("error", { costUsd, usage });
       const evaluation = evaluateBridge((value as { bridge: unknown }).bridge, input);
-      if ("dropReason" in evaluation) return result("dropped", { dropReason: evaluation.dropReason, costUsd });
-      if (evaluation.bridge === null) return result("generated", { costUsd });
-      return result("generated", { bridge: evaluation.bridge, leadInFollowed: evaluation.leadInFollowed, ...(evaluation.transitionDropped ? { transitionDropped: true } : {}), costUsd });
+      if ("dropReason" in evaluation) return result("dropped", { dropReason: evaluation.dropReason, costUsd, usage });
+      if (evaluation.bridge === null) return result("generated", { costUsd, usage });
+      return result("generated", { bridge: evaluation.bridge, leadInFollowed: evaluation.leadInFollowed, ...(evaluation.transitionDropped ? { transitionDropped: true } : {}), costUsd, usage });
     } catch {
       return result(timedOut ? "timeout" : "error");
     } finally {

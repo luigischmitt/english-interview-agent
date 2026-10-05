@@ -8,7 +8,7 @@ export type PreviousAnswer = { question: string; answer: string };
 
 /** Up to the last two question/answer pairs that precede the pair currently being answered. */
 export function buildPreviousAnswers(pairs: PreviousAnswer[]): PreviousAnswer[] {
-  return pairs.slice(-3, -1).map((pair) => ({ question: pair.question.slice(0, 500), answer: pair.answer.slice(0, 500) }));
+  return pairs.slice(-3, -1).map((pair) => ({ question: pair.question.slice(0, 500), answer: pair.answer.slice(-300) }));
 }
 
 export type TurnDecision = ClarificationTurnDecision | { decision: "FOLLOW_UP"; followUpQuestion: string; nextQuestion: null; acknowledgement: string | null } | { decision: "NEXT"; followUpQuestion: null; nextQuestion: string | null; acknowledgement: string | null };

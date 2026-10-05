@@ -10,7 +10,7 @@ import type { InterviewOrchestrationInput } from "../src/thinking/types.js";
 import type { SpeechConfig } from "../src/speech/config.js";
 
 const speechConfig: SpeechConfig = { provider: "fake", kokoroBaseUrl: "http://localhost:8888", kokoroTimeoutMs: 1000, interviewerVoice: "af_bella", defaultSpeed: 1, format: "mp3" };
-const config: ThinkingConfig = { openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs: 6000, bridgeTimeoutMs: 400, diagnosticsEnabled: true };
+const config: ThinkingConfig = { openRouterApiKey: "server-test-key", model: defaultThinkingModel, timeoutMs: defaultThinkingTimeoutMs, orchestrationTimeoutMs: 6000, bridgeTimeoutMs: 400, bridgeMode: "separate", diagnosticsEnabled: true };
 const transcript = "We moved the billing service from a monolith to separate services because deploys were slow. I led the plan and we did it service by service over four months.";
 const roleContext = { targetRole: "Backend Engineer" };
 const followUpQuestion = "How did you decide which service to move first?";
@@ -38,6 +38,7 @@ describe("interview bridge call", () => {
     const body = JSON.parse(String(init?.body));
     expect(body.model).toBe(defaultThinkingModel);
     expect(body.temperature).toBe(0.2);
+    expect(body.usage).toEqual({ include: true });
     expect(body.provider).toEqual({ sort: "latency", require_parameters: true, data_collection: "deny" });
     expect(body.response_format.json_schema.strict).toBe(true);
     expect(body.response_format.json_schema.schema.required).toEqual(["bridge"]);
@@ -224,7 +225,7 @@ describe("decision call is unchanged by the bridge step", () => {
   it("keeps the decision system prompt identical to the checked-in fixture", async () => {
     let system = "";
     await new OpenRouterOrchestrationService(config, async (_url, options) => { system = JSON.parse(String(options?.body)).messages[0].content; return new Response("{}", { status: 400 }); }, null).decide(decisionInput);
-    expect(system).toBe(readFileSync(join(process.cwd(), "tests/fixtures/decision-system-prompt.txt"), "utf8").trimEnd());
+    expect(system).toBe(readFileSync(join(process.cwd(), "tests/fixtures/decision-system-prompt.txt"), "utf8").trimEnd().replace(/\n/gu, " "));
   });
 });
 
