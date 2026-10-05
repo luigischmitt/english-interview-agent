@@ -233,6 +233,20 @@ function expandContractions(words: string[]): string[] {
   return expanded;
 }
 
+const workOnNouns = /^(?:\S+\s+){0,2}?(?:project|product|feature|app|application|platform|system|codebase|website|service|team|solution)s?\b/iu;
+
+/** "work on a product/project" is already idiomatic; rewriting its "on" as "in" corrects nothing. */
+export function isIdiomaticOnRewritten(excerpt: string, rephrased: string): boolean {
+  const normalize = (text: string) => tokenize(text).map((token) => token.lower).join(" ");
+  const target = normalize(rephrased);
+  for (const match of excerpt.matchAll(/\bon\s+/giu)) {
+    if (!workOnNouns.test(excerpt.slice(match.index! + match[0].length))) continue;
+    const swapped = `${excerpt.slice(0, match.index)}in ${excerpt.slice(match.index! + match[0].length)}`;
+    if (normalize(swapped) === target) return true;
+  }
+  return false;
+}
+
 /** A "correction" that is itself wrong English, such as the Portuguese "para" calque "for to do". */
 export function isUngrammaticalRephrase(rephrased: string): boolean {
   return /\bfor\s+to\s+\p{L}+/iu.test(rephrased);

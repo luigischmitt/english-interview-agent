@@ -34,4 +34,14 @@ describe("QA analyst calibration", () => {
     const [found] = patternsOf([{ type: "GRAMMAR", sequenceNumber: 5, evidence: "I'm working in a project", suggestion: "Use 'on' para projetos: I'm working on a project.", rephrasedExample: "I'm working on a project." }]);
     expect(found?.rephrasedExample).toBe("I'm working on a project.");
   });
+
+  it("does not move an idiomatic \"work on a product\" to \"in\"", () => {
+    const qaTurns = [{ sequenceNumber: 1, question: "Which part of your experience fits this role?", answer: "In my last job I worked as a QA analyst on a web product. I built the end to end test suite with Playwright." }];
+    const result = evaluateInterviewReportProviderOutput(JSON.stringify({
+      technicalContent: { summary: "Você descreveu testes com Playwright.", strengths: [], gaps: [] },
+      englishCommunication: { clarity: "CLEAR", patterns: [{ type: "GRAMMAR", sequenceNumber: 1, evidence: "I worked as a QA analyst on a web product", suggestion: "Use 'in' para indicar o local de trabalho.", rephrasedExample: "I worked as a QA analyst in a web product." }] },
+      priorities: [],
+    }), { roleContext, turns: qaTurns } as InterviewReportInput);
+    expect(result.report?.englishCommunication.patterns).toEqual([]);
+  });
 });

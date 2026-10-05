@@ -138,7 +138,7 @@ describe("consolidation service", () => {
     expect(bodies[0].max_tokens).toBeLessThanOrEqual(1_536);
     expectSpecificPriorityRules(bodies[0].messages[0].content);
     expect(bodies[0].messages[0].content).toContain('Address the candidate directly as "você"');
-    expect(Object.keys(bodies[0].response_format.json_schema.schema.properties).sort()).toEqual(["clarity", "priorities", "summary"]);
+    expect(Object.keys(bodies[0].response_format.json_schema.schema.properties).sort()).toEqual(["clarity", "coveredGapIndexes", "priorities", "summary"]);
     // ENG-113: the consolidation (which decides clarity) must carry the transcription-error guard.
     expect(bodies[0].messages[0].content).toContain("a transcription error must never become the candidate's error");
     expect(bodies[0].messages[0].content).toContain("Do not lower clarity because of garbled");
@@ -152,6 +152,17 @@ describe("consolidation service", () => {
     expect(result.evidenceReview?.englishPatterns).toMatchObject({ candidates: 1, accepted: 1, rejected: 0 });
     expect(result.evidenceReview?.priorities).toMatchObject({ candidates: 2, accepted: 2, rejected: 0 });
     expect(Object.keys(result.evidenceReview?.priorities.rejectionReasons ?? {}).sort()).toEqual(["artifact", "duplicate", "invalidFormat", "limit", "mismatch"]);
+  });
+
+  it("drops a gap that another answer covers, and the priority built on it", async () => {
+    const { bodies, fetchImplementation } = capture({ ...consolidationOutput, coveredGapIndexes: [0] });
+    const result = await makeService(fetchImplementation).consolidate(consolidationInput);
+    expect(JSON.parse(bodies[0].messages[1].content).validatedFindings.technicalGaps).toEqual([{ index: 0, ...gap4 }]);
+    expect(bodies[0].messages[0].content).toContain("coveredGapIndexes");
+    expect(result.technicalContent.gaps).toEqual([]);
+    expect(result.priorities.map((item) => item.area)).toEqual(["ENGLISH_COMMUNICATION"]);
+    expect(result.evidenceReview?.technicalGaps).toMatchObject({ candidates: 1, accepted: 0, rejected: 1 });
+    expect(result.evidenceReview?.priorities).toMatchObject({ candidates: 2, accepted: 1, rejected: 1 });
   });
 
   it("carries the snapshot through consolidation and ties priorities to validated vacancy links", async () => {
@@ -191,7 +202,7 @@ describe("consolidation service", () => {
     const result = await makeService(fetchImplementation).consolidate({ roleContext, turns, turnAnalyses: tampered });
     const sent = JSON.parse(bodies[0].messages[1].content).validatedFindings;
     expect(sent.technicalStrengths).toEqual([strength2]);
-    expect(sent.technicalGaps).toEqual([gap4]);
+    expect(sent.technicalGaps).toEqual([{ index: 0, ...gap4 }]);
     expect(sent.englishPatterns).toEqual([]);
     expect(result.technicalContent.strengths).toEqual([strength2]);
     expect(result.englishCommunication.patterns).toEqual([]);

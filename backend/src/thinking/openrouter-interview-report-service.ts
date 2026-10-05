@@ -1,7 +1,7 @@
 import { defaultInterviewConsolidationTimeoutMs, defaultInterviewReportTimeoutMs, defaultInterviewTurnAnalysisTimeoutMs, type ThinkingConfig } from "./config.js";
 import { ThinkingServiceError } from "./errors.js";
 import { parseApprovedJobDirection } from "./job-direction-validation.js";
-import { analyzeEnglishEdit, checkGrammarRuleLabel, hasBrokenSentenceBoundary, isGenericExercise, isLikelyTranscriptionArtifactEdit, isOffQuestionIntegrationItem, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
+import { analyzeEnglishEdit, checkGrammarRuleLabel, hasBrokenSentenceBoundary, isGenericExercise, isLikelyTranscriptionArtifactEdit, isOffQuestionIntegrationItem, isIdiomaticOnRewritten, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
 import {
   communicationClarities,
   communicationObservationTypes,
@@ -49,7 +49,8 @@ const turnAnalysisPrompt = [
 const consolidationPrompt = [
   "You finish the final report of a technical job interview practice session conducted in English. Each answer was already analyzed; the user message holds the role context, the question and answer pairs, and the validated findings (technicalStrengths, technicalGaps, englishPatterns).",
   promptRules.factual, promptRules.summary, promptRules.language, promptRules.second, promptRules.whisper, promptRules.noInfer, promptRules.concision,
-  "Return only: summary (an objective technical summary of 1–2 short sentences, using the answers and validated technical findings), clarity (the overall English clarity, judged from the answers and the validated English patterns), and priorities. Do not repeat or rewrite the findings.",
+  "Return only: summary (an objective technical summary of 1–2 short sentences, using the answers and validated technical findings), clarity (the overall English clarity, judged from the answers and the validated English patterns), coveredGapIndexes, and priorities. Do not repeat or rewrite the findings.",
+  "Each technical gap was found by reading one answer alone. In coveredGapIndexes list the index of every validated technicalGaps item whose missing point the candidate explicitly explains in another answer of this session (for example a gap \"did not explain how tests are maintained\" when a later answer describes page objects and fixtures). List only clear cases; return [] when none. Never build a priority on a covered gap.",
   promptRules.priorities,
   "Each priority must build on a validated finding: for area TECHNICAL_CONTENT use the sequenceNumber of a validated strength or gap, for ENGLISH_COMMUNICATION use the sequenceNumber of a validated English pattern, and quote a short exact excerpt from that answer. Return no priorities when there are no validated findings for the area.",
   promptRules.vacancy,
@@ -128,8 +129,8 @@ const turnAnalysisSchema = {
 
 const consolidationSchema = {
   type: "object", additionalProperties: false,
-  properties: { summary: summarySchema, clarity: claritySchema, priorities: prioritiesSchema },
-  required: ["summary", "clarity", "priorities"],
+  properties: { summary: summarySchema, clarity: claritySchema, coveredGapIndexes: { type: "array", maxItems: 12, items: { type: "integer" } }, priorities: prioritiesSchema },
+  required: ["summary", "clarity", "coveredGapIndexes", "priorities"],
 } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -358,7 +359,7 @@ function validatePatternCandidates(items: unknown[], answerFor: AnswerLookup, co
     if (likelyTranscriptionArtifact(evidence)) { counts.rejectionReasons.artifact += 1; return []; }
     const suggestion = portugueseField(normalizeFeedbackSentence(item.suggestion, 200, 4));
     const rephrasedExample = normalizeFeedbackSentence(item.rephrasedExample, 200, 3);
-    if (!suggestion || !rephrasedExample || isRephraseUnchanged(evidence, rephrasedExample) || isUngrammaticalRephrase(rephrasedExample)) { counts.rejectionReasons.invalidFormat += 1; return []; }
+    if (!suggestion || !rephrasedExample || isRephraseUnchanged(evidence, rephrasedExample) || isUngrammaticalRephrase(rephrasedExample) || isIdiomaticOnRewritten(evidence, rephrasedExample)) { counts.rejectionReasons.invalidFormat += 1; return []; }
     // The "correction" replaces or invents content words: a mis-heard name or garbled phrase, not a candidate error.
     const edit = analyzeEnglishEdit(evidence, rephrasedExample, answer);
     const type = item.type as CommunicationObservationType;
@@ -564,16 +565,26 @@ function revalidateTurnAnalyses(input: InterviewReportConsolidationInput) {
 }
 
 function parseConsolidation(value: unknown, input: InterviewReportConsolidationInput, findings: ReturnType<typeof revalidateTurnAnalyses>): ParsedInterviewReport {
-  const parsed = parseJsonRecord(value, ["summary", "clarity", "priorities"]);
+  const parsed = parseJsonRecord(value, ["summary", "clarity", "coveredGapIndexes", "priorities"]);
   if ((parsed.summary !== undefined && !boundedString(parsed.summary, 320)) || !communicationClarities.includes(parsed.clarity as CommunicationClarity)
     || !Array.isArray(parsed.priorities) || parsed.priorities.length > maximumParsedOptionalItems) invalidReportResponse();
+  // A gap read from one answer that another answer covers is not a gap; drop it and any priority built on its excerpt.
+  const covered = new Set(Array.isArray(parsed.coveredGapIndexes) ? parsed.coveredGapIndexes.filter((index): index is number => Number.isInteger(index)) : []);
+  const coveredGaps = findings.gaps.filter((_gap, index) => covered.has(index));
+  const gaps = findings.gaps.filter((_gap, index) => !covered.has(index));
+  findings.counts.technicalGaps.accepted -= coveredGaps.length;
+  findings.counts.technicalGaps.rejectionReasons.duplicate += coveredGaps.length;
+  const coveredEvidence = new Set(coveredGaps.map((gap) => `${gap.sequenceNumber}:${gap.evidence.trim().toLowerCase()}`));
+  const uncoveredPriorities = parsed.priorities.filter((item) => !(isRecord(item) && item.area === "TECHNICAL_CONTENT" && typeof item.evidence === "string"
+    && coveredEvidence.has(`${item.sequenceNumber}:${item.evidence.trim().toLowerCase()}`)));
   const supported = {
-    TECHNICAL_CONTENT: new Set([...findings.strengths, ...findings.gaps].map((item) => item.sequenceNumber)),
+    TECHNICAL_CONTENT: new Set([...findings.strengths, ...gaps].map((item) => item.sequenceNumber)),
     ENGLISH_COMMUNICATION: new Set(findings.patterns.map((item) => item.sequenceNumber)),
   };
-  const priorities = validatePriorities(parsed.priorities, answerLookup(input.turns), findings.counts.priorities, (area, sequenceNumber) => supported[area].has(sequenceNumber), questionLookup(input.turns), linkedCompetencies([...findings.strengths, ...findings.gaps]));
+  findings.counts.priorities.candidates += parsed.priorities.length - uncoveredPriorities.length;
+  const priorities = validatePriorities(uncoveredPriorities, answerLookup(input.turns), findings.counts.priorities, (area, sequenceNumber) => supported[area].has(sequenceNumber), questionLookup(input.turns), linkedCompetencies([...findings.strengths, ...gaps]));
   return buildParsed(findings.counts, {
-    technicalContent: { summary: technicalSummary(parsed.summary), strengths: findings.strengths, gaps: findings.gaps },
+    technicalContent: { summary: technicalSummary(parsed.summary), strengths: findings.strengths, gaps },
     englishCommunication: { clarity: parsed.clarity as CommunicationClarity, evidenceStatus: englishEvidenceStatus(findings.patterns.length, findings.counts.englishPatterns.candidates), patterns: findings.patterns },
     priorities,
   }, input.jobDirection);
@@ -740,7 +751,7 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
         roleContext: input.roleContext,
         ...(input.jobDirection ? { jobDirection: input.jobDirection } : {}),
         turns: input.turns,
-        validatedFindings: { technicalStrengths: findings.strengths, technicalGaps: findings.gaps, englishPatterns: findings.patterns },
+        validatedFindings: { technicalStrengths: findings.strengths, technicalGaps: findings.gaps.map((gap, index) => ({ index, ...gap })), englishPatterns: findings.patterns },
       },
       maxTokens: 700,
       timeoutMs: this.options.consolidationTimeoutMs ?? defaultInterviewConsolidationTimeoutMs,
