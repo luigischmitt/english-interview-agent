@@ -331,3 +331,21 @@ describe("selectable voices", () => {
     expect(provider.calls.map((call) => call.voice)).toEqual(["am_puck", "am_echo", "bf_emma"]);
   });
 });
+
+describe("static phrase prefetch", () => {
+  it("synthesizes the fixed phrases one at a time and never drops one at the in-flight cap", async () => {
+    const { InterviewerSpeechPrefetcher, staticSpeechTexts } = await import("../src/speech/interviewer-prefetcher.js");
+    let active = 0;
+    let peak = 0;
+    let calls = 0;
+    const events: string[] = [];
+    const provider = {
+      async synthesize() { calls += 1; active += 1; peak = Math.max(peak, active); await new Promise((resolve) => setTimeout(resolve, 5)); active -= 1; return { audio: Buffer.from([1]), contentType: "audio/mpeg" }; },
+    };
+    const cache = new SpeechCache({ provider: provider as never, ttlMs: 60_000, maxPrefetchInFlight: 1, onEvent: (event: { type: string }) => events.push(event.type) });
+    await new InterviewerSpeechPrefetcher({ cache, chunks: 1, voice: "am_echo", speed: 1, format: "mp3" } as never).prefetchStatic();
+    expect(peak).toBe(1);
+    expect(calls).toBe(staticSpeechTexts().length);
+    expect(events).not.toContain("prefetch_dropped");
+  });
+});

@@ -38,6 +38,6 @@ export function createSpeechServices(provider: SpeechProvider, config: SpeechCon
     })
     : null;
   // The fixed phrases (acknowledgements, the closing line) are synthesized once per process with the configured voice.
-  if (prefetcher && options.prefetchStaticOnStart !== false && process.env.SPEECH_PREFETCH_STATIC !== "0" && config.provider !== "fake") setTimeout(() => prefetcher.prefetchStatic(), 0).unref?.();
+  if (prefetcher && options.prefetchStaticOnStart !== false && process.env.SPEECH_PREFETCH_STATIC !== "0" && config.provider !== "fake") setTimeout(() => { void prefetcher.prefetchStatic(); }, 0).unref?.();
   return { cache, prefetcher };
 }
