@@ -53,3 +53,12 @@
 .isu-inapp { border-radius: var(--ds-r-card, 1rem); background: var(--ds-warning-tint); color: var(--ds-warning); padding: 1rem 1.125rem; }
 .isu-inapp .ds-label, .isu-inapp .ds-small { color: inherit; }
 .isu-inapp .ds-btn { text-decoration: none; }
+
+/* Microphone check: the fill is driven by a transform from a rAF loop (no layout), the rest is static. */
+.isu-mic { border-radius: var(--ds-r-xl); background: var(--ds-field); padding: 1rem; transition: background-color var(--ds-dur-slow) ease; }
+.isu-mic[data-heard="hearing"] { background: var(--ds-tint); }
+.isu-mic[data-heard="silent"] { background: var(--ds-error-tint); }
+.isu-mic select.ds-field { min-height: 2.75rem; width: 100%; text-overflow: ellipsis; background-color: var(--ds-popover); }
+.isu-mic-meter { position: relative; height: 0.5rem; overflow: hidden; border-radius: var(--ds-r-pill); background: color-mix(in srgb, var(--ds-ink) 10%, transparent); }
+.isu-mic-fill { position: absolute; inset: 0; border-radius: inherit; background: var(--ds-green); transform: scaleX(0); transform-origin: left; will-change: transform; }
+.isu-mic[data-heard="silent"] .isu-mic-fill { opacity: 0.5; }

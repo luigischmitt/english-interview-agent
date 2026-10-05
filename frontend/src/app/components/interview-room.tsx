@@ -12,6 +12,8 @@ import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairI
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import { appendInterviewReportPair, type AzureAssessmentSample, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
+import { useAudioInputs } from "../hooks/use-audio-inputs";
+import { storeMicrophoneDeviceId } from "@/lib/interview/mic-device.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 import { analyzeTurnWithRetry, resolveReportAtEnd, settleTurnAnalyses, turnAnalysisWaitMs } from "@/lib/interview/report-incremental.mjs";
@@ -99,7 +101,16 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     currentQuestionIdRef.current = question.id;
   }, [phase, question.id]);
   // One microphone for the whole interview; released when the interviewer closes (or the room unmounts).
-  const { engine: micEngine, state: micEngineState } = useMicEngine(phase !== "closing" && phase !== "ending");
+  const [micDeviceId, setMicDeviceId] = useState<string | null>(config.microphoneDeviceId ?? null);
+  const [micFallbackNotice, setMicFallbackNotice] = useState(false);
+  const handleMicDeviceFallback = useCallback(() => { setMicDeviceId(null); setMicFallbackNotice(true); }, []);
+  const { engine: micEngine, state: micEngineState } = useMicEngine(phase !== "closing" && phase !== "ending", { deviceId: config.microphoneDeviceId ?? null, onDeviceFallback: handleMicDeviceFallback });
+  const chooseMicrophone = (mic: MicControls, deviceId: string | null) => {
+    setMicDeviceId(deviceId);
+    setMicFallbackNotice(false);
+    try { storeMicrophoneDeviceId(window.localStorage, deviceId); } catch { /* Preference only. */ }
+    mic.switchDevice(deviceId);
+  };
   const transitionPhase = (nextPhase: InterviewPhase) => {
     if (nextPhase === "closing") handoffTimingRef.current = null;
     // A pre-opened transcription socket only lives until the answer window opens; any other transition cancels it.
@@ -595,11 +606,15 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             </>}>{inAppDenied && inApp ? <><strong>{inAppMicTitle(inApp)}.</strong> {inAppMicBody(inApp)}</> : mic.errorMessage}</Toast>
           )}
           {mic.micNotice && (
-            <Toast tone="warn" actions={<button type="button" className="mt-toast-btn" onClick={mic.retry}>Tentar de novo</button>}>
+            <Toast tone="warn" actions={<>
+              <button type="button" className="mt-toast-btn" onClick={mic.retry}>Tentar de novo</button>
+              <MicrophoneSwitcher currentDeviceId={micDeviceId} onChoose={(deviceId) => chooseMicrophone(mic, deviceId)} />
+            </>}>
               <strong>{mic.micNotice === "silent" ? "Não estamos recebendo áudio do seu microfone." : "Ainda não ouvimos sua voz."}</strong>{" "}
               {mic.micNotice === "silent" ? "Confira se o microfone certo está selecionado e se não está mudo. Fones Bluetooth às vezes levam alguns segundos para ativar o microfone." : "Fale normalmente perto do microfone ou tente de novo."}
             </Toast>
           )}
+          {micFallbackNotice && <Toast tone="warn" onDismiss={() => setMicFallbackNotice(false)}>Microfone escolhido indisponível — usando o padrão.</Toast>}
           {speechMessage && (
             // Replaying would be picked up by an open microphone, so the retry is offered only while it is idle.
             <Toast tone="warn" actions={phase === "answering" && voiceCaptureState === "idle" ? <button type="button" className="mt-toast-btn" onClick={retrySpeech}>{audioBlocked ? "Ouvir" : "Tentar de novo"}</button> : undefined}>{speechMessage}</Toast>
@@ -703,6 +718,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           assessmentSockets={assessmentSockets}
           assessmentContext={{ questionLabel: question.prompt, sequenceNumber: questionSequenceNumber }}
           onLevel={meter.push}
+          onDeviceFallback={handleMicDeviceFallback}
           render={renderDock}
           onTranscriptionChange={(transcription) => {
             setVoiceTranscription(transcription);
@@ -761,5 +777,22 @@ function EndCallDialog({ open, canFinish, onClose, onFinish, onLeave }: { open: 
         <button type="button" className="mt-dialog-btn" onClick={onClose} autoFocus={!canFinish}>Continuar na entrevista</button>
       </div>
     </dialog>
+  );
+}
+
+/** Compact input picker for the silent-microphone notice: choosing a device restarts the capture on it. */
+function MicrophoneSwitcher({ currentDeviceId, onChoose }: { currentDeviceId: string | null; onChoose: (deviceId: string | null) => void }) {
+  const { inputs } = useAudioInputs(true);
+  return (
+    <select
+      className="mt-toast-select"
+      aria-label="Trocar microfone"
+      value="__pick"
+      onChange={(event) => onChoose(event.target.value === "" ? null : event.target.value)}
+    >
+      <option value="__pick" disabled>Trocar microfone</option>
+      <option value="">Padrão do sistema{currentDeviceId === null ? " (atual)" : ""}</option>
+      {inputs.map((input) => <option key={input.deviceId} value={input.deviceId}>{input.label}{input.deviceId === currentDeviceId ? " (atual)" : ""}</option>)}
+    </select>
   );
 }

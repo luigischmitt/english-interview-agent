@@ -2,6 +2,7 @@ import { getSpeechThreshold } from "./vad-threshold.mjs";
 import { stopMediaStreamTracks } from "./session-policy.mjs";
 import { isHandoffTimingEnabled } from "./handoff-timing.mjs";
 import { errorNameOf, setAudioSessionType } from "./client-environment.mjs";
+import { buildAudioConstraints, classifyInputDevice, isDeviceUnavailableError, normalizeDeviceId } from "./mic-device.mjs";
 
 export const calibrationFrameCount = 5;
 export const defaultSpeechThreshold = 0.015;
@@ -17,6 +18,8 @@ const frameWatchdogMs = 1_000;
 const idleResumeDelayMs = 250;
 /** A refresh from an answer's first frames is accepted only when it is not contaminated by speech. */
 const contaminatedNoiseLevel = 0.025;
+/** One mic_level_check diagnostic (peak level only) this long after the first answer window opens. */
+const levelCheckDelayMs = 3_000;
 
 export function rootMeanSquare(samples) {
   let sum = 0;
@@ -32,8 +35,9 @@ function cancelledError() {
  * Browser dependencies of the engine. Everything touching globals is lazy so the module imports in Node.
  * @returns {import("./mic-engine.d.mts").MicEngineDeps}
  */
-export function createBrowserMicDeps({ onDiagnostic } = {}) {
+export function createBrowserMicDeps({ onDiagnostic, onDeviceFallback } = {}) {
   return {
+    onDeviceFallback,
     /** iOS: keep output on the speaker while capturing (WebKit Audio Session API; no-op where it does not exist). */
     prepareSession: () => { setAudioSessionType("play-and-record"); },
     restoreSession: () => { setAudioSessionType("auto"); },
@@ -59,9 +63,15 @@ export function createBrowserMicDeps({ onDiagnostic } = {}) {
  * message handler: never buffered, never forwarded, never persisted. `beginInterviewerSpeech` force-stops any capture.
  * Modes: discard (default) | calibrate (noise floor, interviewer silent) | hold (private engine only, bounded) | capture.
  * @param {import("./mic-engine.d.mts").MicEngineDeps} deps
+ * @param {{ deviceId?: string | null }} [options] The chosen input device (null = the browser default).
  * @returns {import("./mic-engine.d.mts").MicEngine}
  */
-export function createMicEngine(deps) {
+export function createMicEngine(deps, options = {}) {
+  let deviceId = normalizeDeviceId(options.deviceId);
+  let peakLevel = 0;
+  let levelCheckSent = false;
+  let levelCheckTimer = null;
+  let inputDeviceKind = "unknown";
   let state = "idle";
   let epoch = 0;
   let released = false;
@@ -100,6 +110,9 @@ export function createMicEngine(deps) {
     const current = graph;
     graph = null;
     if (!current) return;
+    clearLevelCheck();
+    levelCheckSent = false;
+    peakLevel = 0;
     current.track?.removeEventListener?.("ended", current.onEnded);
     current.track?.removeEventListener?.("mute", current.onMute);
     current.context?.removeEventListener?.("statechange", current.onContextState);
@@ -110,6 +123,36 @@ export function createMicEngine(deps) {
     if (context && context.state !== "closed") void Promise.resolve(context.close()).catch(() => {});
     for (const waiter of flushWaiters) waiter();
     flushWaiters.clear();
+  }
+
+  function clearLevelCheck() {
+    if (levelCheckTimer !== null) { deps.clearTimeout(levelCheckTimer); levelCheckTimer = null; }
+  }
+
+  /** Sends the loudest level of the first seconds of capture once per microphone (a number only, no audio). */
+  function armLevelCheck() {
+    if (levelCheckSent || levelCheckTimer !== null) return;
+    levelCheckTimer = deps.setTimeout(() => {
+      levelCheckTimer = null;
+      if (levelCheckSent || !graph) return;
+      levelCheckSent = true;
+      diagnose({ kind: "mic_level_check", peakLevel: Math.min(1, Math.round(peakLevel * 1_000) / 1_000), inputDeviceKind, micActive: true });
+    }, levelCheckDelayMs);
+  }
+
+  /** Opens the chosen device exactly; a missing/unplugged one falls back to the default input (and is reported). */
+  async function openStream() {
+    if (deviceId !== null) {
+      try {
+        return await deps.getUserMedia({ audio: buildAudioConstraints(deviceId) });
+      } catch (error) {
+        if (!isDeviceUnavailableError(error)) throw error;
+        deviceId = null;
+        diagnose({ kind: "mic_error", errorName: errorNameOf(error), inputDeviceKind: "unknown" });
+        try { deps.onDeviceFallback?.(); } catch { /* Notification only. */ }
+      }
+    }
+    return deps.getUserMedia({ audio: buildAudioConstraints(null) });
   }
 
   function finishCalibration(ok) {
@@ -129,6 +172,7 @@ export function createMicEngine(deps) {
   }
 
   function deliver(frame) {
+    if (frame.level > peakLevel) peakLevel = frame.level;
     if (refreshLevels) {
       refreshLevels.push(frame.level);
       if (refreshLevels.length === calibrationFrameCount) {
@@ -210,12 +254,13 @@ export function createMicEngine(deps) {
       try {
         if (!deps.isSupported()) throw new Error("unsupported");
         try { deps.prepareSession?.(); } catch { /* Best effort. */ }
-        stream = await deps.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+        stream = await openStream();
         if (myEpoch !== epoch) throw cancelledError();
         graph = await buildGraph(stream, myEpoch, (created) => { context = created; });
         lastError = null;
         setState("ready");
-        diagnose({ kind: "mic_open", micActive: true, micContextState: graph?.context?.state });
+        inputDeviceKind = classifyInputDevice(stream.getAudioTracks?.()[0]?.label);
+        diagnose({ kind: "mic_open", micActive: true, micContextState: graph?.context?.state, inputDeviceKind });
       } catch (error) {
         // A rejected/failed acquisition must not leave the page in the "play-and-record" audio session.
         if (!graph) { try { deps.restoreSession?.(); } catch { /* Best effort. */ } }
@@ -354,6 +399,9 @@ export function createMicEngine(deps) {
     get noiseFloor() { return noiseFloor ?? defaultSpeechThreshold; },
     get calibrated() { return noiseFloor !== null; },
     get capturing() { return mode === "capture"; },
+    get deviceId() { return deviceId; },
+    /** Chooses the input device for the next acquisition (null = default). Does not restart a running microphone. */
+    setDeviceId(next) { deviceId = normalizeDeviceId(next); },
     acquire,
     isHealthy,
     ensureRunning,
@@ -382,6 +430,7 @@ export function createMicEngine(deps) {
       finishCalibration(false);
       mode = "discard";
       clearWatchdog();
+      clearLevelCheck();
       sink = null;
       refreshLevels = null;
       held = [];
@@ -400,6 +449,7 @@ export function createMicEngine(deps) {
       rebuiltThisAnswer = false;
       armWatchdog();
       refreshLevels = [];
+      armLevelCheck();
       const replay = replayHeld && mode === "hold" ? held : [];
       held = [];
       mode = "capture";
@@ -415,6 +465,7 @@ export function createMicEngine(deps) {
     stopCapture() {
       if (mode === "capture" || mode === "hold") mode = "discard";
       clearWatchdog();
+      clearLevelCheck();
       sink = null;
       refreshLevels = null;
       held = [];
@@ -443,6 +494,7 @@ export function createMicEngine(deps) {
       finishCalibration(false);
       mode = "discard";
       clearWatchdog();
+      clearLevelCheck();
       if (idleResumeTimer !== null) { deps.clearTimeout(idleResumeTimer); idleResumeTimer = null; }
       rebuilding = null;
       sink = null;

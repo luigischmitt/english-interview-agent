@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft, ChevronDown, Check } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
@@ -10,6 +10,8 @@ import { synthesizeInterviewerQuestion, warmUpInterviewerSpeech } from "@/lib/in
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
 import { inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
+import { MicrophoneTest, type MicrophoneTestHandle } from "./microphone-test";
+import { readStoredMicrophoneDeviceId, storeMicrophoneDeviceId } from "@/lib/interview/mic-device.mjs";
 import { RoleCombobox } from "@/components/ui/role-combobox";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import "./interview-setup.css";
@@ -30,6 +32,7 @@ const focusLabels: Record<InterviewConfig["focus"], string> = {
   mixed: "Prática equilibrada",
 };
 
+const subscribeNever = () => () => {};
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const audioTestPhrase = "Hello, thanks for joining me today. Could you tell me about a recent project?";
 
@@ -51,6 +54,7 @@ export function InterviewSetup({
   const inApp = useInAppBrowser();
   const { copied, copy } = useCopyPageLink();
   const roomOptionsRef = useRef<HTMLElement>(null);
+  const micTestRef = useRef<MicrophoneTestHandle>(null);
   const voiceBlocked = config.playInterviewerAudio && voiceState !== "ready";
 
   const cancelAudioTest = () => {
@@ -61,6 +65,16 @@ export function InterviewSetup({
   useEffect(() => () => {
     audioTestRef.current?.cancel();
     audioTestRef.current = null;
+  }, []);
+
+  // The device chosen in an earlier session (this browser only); null on the server render, so hydration matches.
+  const storedMicrophoneId = useSyncExternalStore(subscribeNever, () => readStoredMicrophoneDeviceId(window.localStorage), () => null);
+  const [chosenMicrophoneId, setChosenMicrophoneId] = useState<string | null | undefined>(undefined);
+  const microphoneDeviceId = chosenMicrophoneId === undefined ? storedMicrophoneId : chosenMicrophoneId;
+
+  const chooseMicrophone = useCallback((deviceId: string | null) => {
+    setChosenMicrophoneId(deviceId);
+    storeMicrophoneDeviceId(window.localStorage, deviceId);
   }, []);
 
   const updateConfig = (field: keyof InterviewConfig, value: string) => {
@@ -125,7 +139,8 @@ export function InterviewSetup({
     }
     if (voiceBlocked) return;
     cancelAudioTest();
-    onStart({ ...config, role: config.role.trim() });
+    micTestRef.current?.stop();
+    onStart({ ...config, role: config.role.trim(), microphoneDeviceId });
   };
 
   const [cargoSummary, ...restSummary] = getInterviewSetupSummary(config, seniorityLabels, focusLabels);
@@ -312,13 +327,25 @@ export function InterviewSetup({
             )}
           </section>
 
-          {/* 3. Advanced: one level deeper, collapsed by default */}
-          <section ref={roomOptionsRef} className="ds-card ds-enter scroll-mb-28 scroll-mt-24" style={{ "--i": 2 } as CSSProperties} aria-labelledby="room-options-title">
-            <button type="button" className="isu-disclosure-button flex items-center gap-3 p-5 sm:px-7" aria-expanded={roomOptionsOpen} aria-controls="room-options-panel" onClick={toggleRoomOptions}>
+          {/* 3. Candidate microphone: optional check, placed right after the interviewer audio choice */}
+          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 2 } as CSSProperties} aria-labelledby="microphone-title">
+            <div className="flex items-center gap-3">
               <span className="ds-step" aria-hidden="true">3</span>
+              <h2 id="microphone-title" className="ds-h2">Seu microfone</h2>
+            </div>
+            <p className="ds-body mt-2 max-w-2xl">Se o navegador estiver usando o microfone errado, a entrevista não ouve você. Teste e escolha o certo. Você pode pular esta etapa.</p>
+            <div className="mt-5">
+              <MicrophoneTest ref={micTestRef} deviceId={microphoneDeviceId} onDeviceChange={chooseMicrophone} />
+            </div>
+          </section>
+
+          {/* 4. Advanced: one level deeper, collapsed by default */}
+          <section ref={roomOptionsRef} className="ds-card ds-enter scroll-mb-28 scroll-mt-24" style={{ "--i": 3 } as CSSProperties} aria-labelledby="room-options-title">
+            <button type="button" className="isu-disclosure-button flex items-center gap-3 p-5 sm:px-7" aria-expanded={roomOptionsOpen} aria-controls="room-options-panel" onClick={toggleRoomOptions}>
+              <span className="ds-step" aria-hidden="true">4</span>
               <span className="min-w-0 flex-1">
                 <span id="room-options-title" className="ds-h2 block">Preferências da sala</span>
-                <span className="ds-small block">Legendas das perguntas, câmera e microfone. Os padrões já funcionam bem.</span>
+                <span className="ds-small block">Legendas das perguntas, câmera e início da gravação. Os padrões já funcionam bem.</span>
               </span>
               <ChevronDown className="ds-chevron size-5 shrink-0 text-text-2" style={{ transform: roomOptionsOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
             </button>
@@ -338,7 +365,7 @@ export function InterviewSetup({
         </div>
 
         {/* Summary + primary action: sticky beside the form on desktop, recap in flow on mobile */}
-        <div className="ds-enter lg:sticky lg:top-24" style={{ "--i": 3 } as CSSProperties}>
+        <div className="ds-enter lg:sticky lg:top-24" style={{ "--i": 4 } as CSSProperties}>
           <aside className="isu-aside px-6 py-7 sm:px-8" aria-labelledby="session-preview-title">
             <p className="text-xs font-semibold tracking-[0.08em] text-on-panel-accent">Sua sessão</p>
             <h2

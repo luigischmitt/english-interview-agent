@@ -30,6 +30,14 @@ describe("sanitizeClientEvent", () => {
     expect(sanitizeClientEvent({ kind: "mic_error", errorName: "free text", inAppBrowser: "whatsapp" })).toEqual({ kind: "mic_error" });
   });
 
+  it("keeps inputDeviceKind and peakLevel on mic events but never a device label", () => {
+    expect(sanitizeClientEvent({ kind: "mic_open", micActive: true, inputDeviceKind: "continuity", label: "iPhone de Lucas", deviceId: "abc" }))
+      .toEqual({ kind: "mic_open", inputDeviceKind: "continuity", micActive: true });
+    expect(sanitizeClientEvent({ kind: "mic_level_check", peakLevel: 0.0421, inputDeviceKind: "builtin" }))
+      .toEqual({ kind: "mic_level_check", inputDeviceKind: "builtin", peakLevel: 0.042 });
+    expect(sanitizeClientEvent({ kind: "mic_level_check", peakLevel: 3, inputDeviceKind: "iPhone de Lucas" })).toEqual({ kind: "mic_level_check" });
+  });
+
   it("drops invalid enums, out-of-range numbers and wrong types", () => {
     expect(sanitizeClientEvent({ kind: "playback_error", errorName: "Some free text", platform: "windows", mediaVolume: 5, elapsedMs: -1, chunkIndex: "1", micActive: "yes", readyState: Number.NaN }))
       .toEqual({ kind: "playback_error" });

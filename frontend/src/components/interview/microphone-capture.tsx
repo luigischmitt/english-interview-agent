@@ -74,6 +74,8 @@ export type MicControls = {
   stop: () => void;
   discard: () => void;
   retry: () => void;
+  /** Reopens the microphone on another input (null = default) and restarts this answer's capture. */
+  switchDevice: (deviceId: string | null) => void;
 };
 
 type MicrophoneCaptureProps = {
@@ -93,6 +95,8 @@ type MicrophoneCaptureProps = {
   autoStartSignal?: string | null;
   /** Interview-long microphone owned by the room. Without it (or if it fails) each answer opens its own microphone. */
   micEngine?: MicEngine | null;
+  /** The chosen input could not be opened and the default one is being used instead. */
+  onDeviceFallback?: () => void;
   /** Question id: the interviewer is about to finish, so open the transcription socket now (no audio is sent until the answer window opens). */
   preconnectSignal?: string | null;
   assessmentSockets: AssessmentSocketRegistry;
@@ -150,7 +154,7 @@ function streamFailureMessage(reason: AnswerStreamFailure): string {
   return "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.";
 }
 
-export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, onDeviceFallback, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -177,6 +181,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
   const onHandoffTimingEventRef = useRef(onHandoffTimingEvent);
   const assessmentContextRef = useRef(assessmentContext);
   const micEngineRef = useRef(micEngine);
+  const onDeviceFallbackRef = useRef(onDeviceFallback);
   const lastAutoStartSignalRef = useRef<string | null>(null);
   const lastPreconnectSignalRef = useRef<string | null>(null);
   const handlersRef = useRef<{
@@ -195,7 +200,8 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     onHandoffTimingEventRef.current = onHandoffTimingEvent;
     assessmentContextRef.current = assessmentContext;
     micEngineRef.current = micEngine;
-  }, [assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+    onDeviceFallbackRef.current = onDeviceFallback;
+  }, [onDeviceFallback, assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
 
 
   /** Ends the answer window: audio stops flowing, timers stop, and a per-answer (private) microphone is released. The room's microphone stays open. */
@@ -441,7 +447,10 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
       }
       if (generationRef.current !== generation) { attempt?.stream.cancel(); return; }
       if (!engine) {
-        const own = createMicEngine(createBrowserMicDeps({ onDiagnostic: (event) => { if (event.kind === "mic_error") reportAudioDiagnostic(event); } }));
+        const own = createMicEngine(createBrowserMicDeps({
+          onDiagnostic: (event) => { if (event.kind === "mic_error") reportAudioDiagnostic(event); },
+          onDeviceFallback: () => { micEngineRef.current?.setDeviceId(null); onDeviceFallbackRef.current?.(); },
+        }), { deviceId: micEngineRef.current?.deviceId ?? null });
         ownedEngineRef.current = own;
         await own.acquire();
         engine = own;
@@ -511,6 +520,12 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     void startRecording(true, { reacquire });
   }, [cancelRecording, micNotice, startRecording]);
 
+  const switchDevice = useCallback((deviceId: string | null) => {
+    micEngineRef.current?.setDeviceId(deviceId);
+    cancelRecording();
+    void startRecording(true, { reacquire: true });
+  }, [cancelRecording, startRecording]);
+
   useEffect(() => {
     const nextSignal = nextAutoStartSignal(autoStartSignal, disabled, lastAutoStartSignalRef.current);
     if (nextSignal === null) return;
@@ -554,6 +569,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     stop: stopRecording,
     discard: cancelRecording,
     retry: retryCapture,
+    switchDevice,
   }} />;
 }
 

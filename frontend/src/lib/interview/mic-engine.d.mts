@@ -16,6 +16,8 @@ export type MicEngineDeps = {
   restoreSession?: () => void;
   /** Content-free mic_open / mic_close / audio_session diagnostics. */
   onDiagnostic?: (event: { kind: string; [field: string]: unknown }) => void;
+  /** The chosen input device could not be opened and the default input is being used instead. */
+  onDeviceFallback?: () => void;
   /** Content-free recovery diagnostics (reason only). */
   onRecovered?: (reason: string) => void;
 };
@@ -27,6 +29,10 @@ export type MicEngine = {
   readonly noiseFloor: number;
   readonly calibrated: boolean;
   readonly capturing: boolean;
+  /** The chosen input device id, or null for the browser default. */
+  readonly deviceId: string | null;
+  /** Chooses the device for the next acquisition; follow with ensureHealthy({ force: true }) to reopen now. */
+  setDeviceId(deviceId: string | null): void;
   acquire(): Promise<void>;
   isHealthy(): boolean;
   /** Resumes a suspended/interrupted AudioContext (rebuilding the graph if it will not run). No wait when running. */
@@ -45,5 +51,5 @@ export type MicEngine = {
 export const calibrationFrameCount: number;
 export const defaultSpeechThreshold: number;
 export function rootMeanSquare(samples: Float32Array): number;
-export function createBrowserMicDeps(options?: { onDiagnostic?: MicEngineDeps["onDiagnostic"] }): MicEngineDeps;
-export function createMicEngine(deps: MicEngineDeps): MicEngine;
+export function createBrowserMicDeps(options?: { onDiagnostic?: MicEngineDeps["onDiagnostic"]; onDeviceFallback?: () => void }): MicEngineDeps;
+export function createMicEngine(deps: MicEngineDeps, options?: { deviceId?: string | null }): MicEngine;

@@ -1,0 +1,18 @@
+export type InputDeviceKind = "builtin" | "external" | "continuity" | "bluetooth" | "virtual" | "unknown";
+export type SelectableInput = { deviceId: string; label: string };
+export const microphoneDeviceStorageKey: string;
+export const baseAudioConstraints: Readonly<MediaTrackConstraints>;
+export const inputDeviceKinds: InputDeviceKind[];
+export const testSignalLevel: number;
+export const testSilenceAfterMs: number;
+export const testRecentSignalMs: number;
+type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export function normalizeDeviceId(value: unknown): string | null;
+export function readStoredMicrophoneDeviceId(storage: StorageLike): string | null;
+export function storeMicrophoneDeviceId(storage: StorageLike, deviceId: string | null): boolean;
+export function buildAudioConstraints(deviceId?: string | null): MediaTrackConstraints;
+export function isDeviceUnavailableError(error: unknown): boolean;
+export function classifyInputDevice(label: unknown): InputDeviceKind;
+export function toSelectableInputs(devices: ArrayLike<Pick<MediaDeviceInfo, "kind" | "deviceId" | "label">> | null | undefined): SelectableInput[];
+export function rmsOf(samples: ArrayLike<number>): number;
+export function micTestStatus(input: { elapsedMs: number; lastSignalAtMs: number | null }): "hearing" | "silent" | "waiting";

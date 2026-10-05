@@ -5,13 +5,15 @@ export const maxClientEventsPerRequest = 20;
 /** Global safety valve against log flooding (events per minute, per process). */
 export const maxClientEventsPerMinute = 1_200;
 
-const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "playback_ended", "playback_error", "playback_timeout", "unlock", "mic_open", "mic_close", "mic_error", "audio_session"] as const;
+const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "playback_ended", "playback_error", "playback_timeout", "unlock", "mic_open", "mic_close", "mic_error", "mic_level_check", "audio_session"] as const;
 const errorNames = ["NotAllowedError", "NotSupportedError", "AbortError", "NotFoundError", "InvalidStateError", "EncodingError", "NotReadableError", "SecurityError", "OverconstrainedError", "TypeError", "Error", "MediaError", "other"] as const;
 const audioContextStates = ["suspended", "running", "closed", "interrupted", "none"] as const;
 const audioSessionTypes = ["auto", "playback", "transient", "transient-solo", "ambient", "play-and-record"] as const;
 const platforms = ["ios", "android", "desktop"] as const;
 const inAppBrowsers = ["google", "instagram", "facebook", "linkedin", "tiktok", "line", "twitter", "none"] as const;
 const outputs = ["element", "webaudio"] as const;
+/** Coarse device class derived on the client from the label; the label itself (may hold a personal name) is never sent. */
+const inputDeviceKinds = ["builtin", "external", "continuity", "bluetooth", "virtual", "unknown"] as const;
 
 const enumFields: Record<string, readonly string[]> = {
   kind: kinds,
@@ -22,6 +24,7 @@ const enumFields: Record<string, readonly string[]> = {
   platform: platforms,
   output: outputs,
   inAppBrowser: inAppBrowsers,
+  inputDeviceKind: inputDeviceKinds,
 };
 // Numeric fields with their inclusive [min, max] range.
 const numberFields: Record<string, readonly [number, number]> = {
@@ -32,6 +35,7 @@ const numberFields: Record<string, readonly [number, number]> = {
   mediaCurrentTimeMs: [0, 3_600_000],
   mediaDurationMs: [0, 3_600_000],
   readyState: [0, 4],
+  peakLevel: [0, 1],
 };
 const booleanFields = ["mediaMuted", "mediaPaused", "micActive", "pooled", "audioSessionPresent"] as const;
 

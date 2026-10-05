@@ -8,6 +8,8 @@ export type InterviewConfig = {
   showQuestionCaptions: boolean;
   candidateCameraEnabled: boolean;
   autoCaptureVoice: boolean;
+  /** Input device chosen on the setup (opaque browser id); absent means the browser default. */
+  microphoneDeviceId?: string | null;
 };
 
 export type InterviewQuestion = {
