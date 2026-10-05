@@ -128,7 +128,7 @@ export function ToucanAvatar({ state, speechFeed = null, candidateLevelRef, clas
           <path data-tc="skin" d={REST_SKIN_PATH} fill="var(--tc-body)" />
           <g data-tc="head">
             <circle cx="178" cy="78" r="40" fill="var(--tc-body)" />
-            <path d="M196,50 L211,52 L219,92 L229,110 L196,112Z" fill="var(--tc-body)" />
+            <path d="M186,40.5 C198,43 207,48 210,55 C214,66 221,82 222,96 C219,103 206,106 190,106 C176,100 174,70 186,40.5Z" fill="var(--tc-body)" />
             <path data-tc="bib" d={REST_BIB_PATH} fill="var(--tc-bib)" />
             <g transform="translate(190 66)">
               <circle r="11.5" fill="var(--tc-ring)" stroke="var(--tc-ringedge)" strokeWidth="1.5" />
