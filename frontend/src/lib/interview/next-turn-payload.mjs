@@ -1,3 +1,4 @@
+import { resolveInterviewerVoice } from "./voices.mjs";
 /** Keep the next-turn request on an explicit allowlist; raw job descriptions never enter orchestration. */
 export function serializeNextTurnRequest(input) {
   const hint = input.clarificationHint ?? null;
@@ -11,6 +12,8 @@ export function serializeNextTurnRequest(input) {
     recentAcknowledgements: input.recentAcknowledgements ?? [],
     previousAnswers: (input.previousAnswers ?? []).slice(-2).map((pair) => ({ question: pair.question.slice(0, 500), answer: pair.answer.slice(-300) })),
     ...(input.config.jobDirection ? { jobDirection: input.config.jobDirection } : {}),
+    // The server pre-synthesizes the next utterance as soon as it decides; it must use the voice this client will ask for.
+    voice: resolveInterviewerVoice(input.config.voice),
     ...(hint ? { clarificationHint: hint } : {}),
     roleContext: { targetRole: input.config.role, seniority: input.config.seniority, focus: input.config.focus },
   });

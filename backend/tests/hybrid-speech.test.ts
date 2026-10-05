@@ -334,7 +334,7 @@ describe("hybrid config and factory", () => {
 
   it("parses defaults", () => {
     const config = loadSpeechConfig(env);
-    expect(config).toMatchObject({ provider: "kokoro-openrouter", kokoroBaseUrl: "https://k.run.app", kokoroAuth: "none", interviewerVoice: "af_bella+af_heart", hybrid: { hedgeAfterMs: 2_500, openRouterVoice: "af_heart" } });
+    expect(config).toMatchObject({ provider: "kokoro-openrouter", kokoroBaseUrl: "https://k.run.app", kokoroAuth: "none", interviewerVoice: "af_bella+af_heart", hybrid: { hedgeAfterMs: 2_500, openRouterVoice: "am_echo" } });
     expect(createSpeechProvider(config).name).toBe("hybrid");
     const custom = loadSpeechConfig({ ...env, KOKORO_AUTH: "gcp-id-token", HYBRID_SPEECH_HEDGE_AFTER_MS: "0", OPENROUTER_SPEECH_VOICE: "af_bella" });
     expect(custom).toMatchObject({ kokoroAuth: "gcp-id-token", hybrid: { hedgeAfterMs: 0, openRouterVoice: "af_bella" } });
@@ -359,7 +359,7 @@ describe("hybrid config and factory", () => {
     try {
       const provider = createSpeechProvider(loadSpeechConfig({ ...env, OPENROUTER_SPEECH_URL: "https://or.test/speech" }));
       await provider.synthesize(req);
-      expect(bodies).toEqual({ "k.run.app": "af_bella+af_heart", "or.test": "af_heart" });
+      expect(bodies).toEqual({ "k.run.app": "af_bella+af_heart", "or.test": "am_echo" });
     } finally { vi.unstubAllGlobals(); }
   });
 });

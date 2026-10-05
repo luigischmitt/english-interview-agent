@@ -25,6 +25,8 @@ export function createAcknowledgementPlayer(options: {
   endpoint?: string;
   fetcher?: typeof fetch;
   phrases?: string[];
+  /** Voice id sent with each phrase request. */
+  voice?: string;
   loadBlob?: (phrase: string) => Promise<Blob>;
   makeAudio?: (url: string) => HTMLAudioElement;
   createObjectUrl?: (blob: Blob) => string;

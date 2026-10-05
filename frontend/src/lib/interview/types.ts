@@ -12,6 +12,8 @@ export type InterviewConfig = {
   autoCaptureVoice: boolean;
   /** Input device chosen on the setup (opaque browser id); absent means the browser default. */
   microphoneDeviceId?: string | null;
+  /** Interviewer voice (see lib/interview/voices.mjs); absent means the default, "am_echo". */
+  voice?: string;
   /** User-approved job summary handed to the room; raw job description is never included. */
   jobDirection?: JobDirection;
 };

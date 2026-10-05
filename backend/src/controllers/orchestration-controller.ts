@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import { clarificationHints, type ClarificationHint, type InterviewOrchestrationInput, type InterviewOrchestrationService } from "../thinking/types.js";
+import type { InterviewerSpeechPrefetcher } from "../speech/interviewer-prefetcher.js";
 import { parseApprovedJobDirection } from "../thinking/job-direction-validation.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,14 +43,18 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
   };
 }
 
-export function createOrchestrationController(service: InterviewOrchestrationService): RequestHandler {
+export function createOrchestrationController(service: InterviewOrchestrationService, speechPrefetcher: InterviewerSpeechPrefetcher | null = null): RequestHandler {
   return async (request, response) => {
     const input = parseInput(request.body);
     if (!input) {
       response.status(400).json({ error: { code: "INVALID_ORCHESTRATION_REQUEST", message: "currentQuestion, transcript, roleContext.targetRole, nextFixedQuestion, and followUpUsed are required within their length limits." } });
       return;
     }
+    // The voice is about to be needed: open the speech connection while the decision is made.
+    speechPrefetcher?.onTurnStarted();
     const result = await service.decide(input);
+    // Start synthesizing the question this very moment, before the response even reaches the client.
+    speechPrefetcher?.prefetchDecision(input, result, (request.body as { voice?: unknown } | undefined)?.voice);
     response.status(200).json(result);
   };
 }

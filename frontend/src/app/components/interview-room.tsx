@@ -28,7 +28,7 @@ import { CallDock, CandidateTile, InterviewerTile, Toast, useCandidateCamera, us
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
-import { createInterviewerAcknowledgements, prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
+import { createInterviewerAcknowledgements, prewarmInterviewerClosing, prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { isAcknowledgeableAnswer, stripLeadingAcknowledgement } from "@/lib/interview/acknowledgement.mjs";
 import { useMicEngine } from "../hooks/use-mic-engine";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
@@ -80,7 +80,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   // Receives each interviewer audio chunk (decoded for the avatar's beak lip-sync); it never touches playback.
   const speechFeed = useMemo(() => createSpeechFeed(), []);
   // The instant "Okay." / "Got it." (pre-synthesized, played from memory when the answer is considered finished).
-  const [acknowledgements] = useState(() => createInterviewerAcknowledgements(speechFeed.push));
+  const [acknowledgements] = useState(() => createInterviewerAcknowledgements(speechFeed.push, config.voice));
   const [acknowledgementPlaying, setAcknowledgementPlaying] = useState(false);
   const acknowledgedTurnRef = useRef<string | null>(null);
   // What the final answer of a turn got: whether an acknowledgement is going to be spoken (decides if the bridge keeps its own "Okay.").
@@ -225,7 +225,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     () => splitInterviewerSpeech(currentUtterance),
     [currentUtterance],
   );
-  const { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted, spokenTurn?.speed ?? 1, speechFeed.push, waitForAcknowledgement);
+  const { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted, spokenTurn?.speed ?? 1, speechFeed.push, waitForAcknowledgement, config.voice);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
   const currentAssessmentSamples = assessmentSamples(voiceAssessments, excludedAssessments);
   const currentAzureSummary = summarizeAzureAssessments(currentAssessmentSamples);
@@ -278,6 +278,15 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       assessmentSockets.closeAll();
     };
   }, [abortTurnAnalyses, acknowledgements, assessmentSockets, nextTurnPreparation]);
+
+  // At the start of the first answer, synthesize the predictable closing line so it is ready whenever the interview ends
+  // (once; the blob is retained and the backend keeps fixed phrases cached).
+  const closingPrewarmedRef = useRef(false);
+  useEffect(() => {
+    if (phase !== "answering" || closingPrewarmedRef.current || !config.playInterviewerAudio) return;
+    closingPrewarmedRef.current = true;
+    void prewarmInterviewerClosing(closingUtterance, config.voice);
+  }, [phase, config.playInterviewerAudio, config.voice, closingUtterance]);
 
   /** Inputs of the next-turn decision for an answer, given the report turns that already include that answer's pair. */
   const buildDecisionInput = (turns: InterviewReportTurnSource[], answer: string) => {
@@ -375,7 +384,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         if (signal.aborted) return null;
         const utterance = utteranceForDecision(decision, answer);
         if (utterance) {
-          const prewarm = prewarmInterviewerUtterance(utterance);
+          const prewarm = prewarmInterviewerUtterance(utterance, config.voice);
           onCleanup(() => prewarm.cancel());
         }
         return decision;
@@ -470,7 +479,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     submitInFlightRef.current = false;
     // Start synthesizing the next utterance this instant (a prepared one is already in flight and is joined, not repeated).
     const earlyUtterance = utteranceForDecision(decision, savedAnswer);
-    if (earlyUtterance) prewarmInterviewerUtterance(earlyUtterance);
+    if (earlyUtterance) prewarmInterviewerUtterance(earlyUtterance, config.voice);
 
     const clarificationsSoFar = clarificationCountsRef.current.get(question.id) ?? 0;
     const plan = planTurnAfterDecision({ decision, clarificationsSoFar, nextQuestion: decisionInput.nextFixedQuestion });

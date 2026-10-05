@@ -78,7 +78,7 @@ export function createAcknowledgementPlayer(options) {
   const schedule = options.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay));
   const unschedule = options.clearTimeout ?? ((id) => globalThis.clearTimeout(id));
   const maxPlayMs = options.maxPlayMs ?? 5_000;
-  const loadBlob = options.loadBlob ?? ((phrase) => fetchSpeechBlob(phrase, { endpoint: options.endpoint, fetcher: options.fetcher, timeoutMs: 20_000 }));
+  const loadBlob = options.loadBlob ?? ((phrase) => fetchSpeechBlob(phrase, { endpoint: options.endpoint, fetcher: options.fetcher, timeoutMs: 20_000, voice: options.voice }));
   const blobs = new Map();
   let preloading = null;
   let lastPhrase = null;
