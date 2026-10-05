@@ -236,6 +236,14 @@ function HomeView({
       <div className="mt-8 grid items-start gap-5 lg:mt-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:gap-6">
         {/* Primary action: the one thing to do here. */}
         <section className="shl-hero ds-enter p-6 sm:p-8" style={{ "--i": 0 } as CSSProperties} aria-labelledby="start-title">
+          <Image
+            src="/landing/footer-mata-alpha.png"
+            alt=""
+            aria-hidden="true"
+            fill
+            sizes="(max-width: 639px) 100vw, 60vw"
+            className="shl-hero-forest"
+          />
           <h2 id="start-title" className="text-balance font-[family-name:var(--font-display)] text-[clamp(1.875rem,1.4rem+1.6vw,2.375rem)] leading-[1.1] tracking-[-0.02em]">
             Prepare sua prática.
           </h2>
