@@ -2,18 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type Dimension = { label: string; value: number };
+type Dimension = { label: string; value: number; unit: "pct" | "azure" };
 
+const UNIT_TEXT = { pct: "% das respostas sem erro", azure: "Azure · 0–100" } as const;
+const UNIT_TIP = { pct: "% sem erro", azure: "Azure" } as const;
+
+// Same dimensions as the in-app progress radar. Example values, not real user data.
 const DIMENSIONS: Dimension[] = [
-  { label: "Artigos", value: 58 },
-  { label: "Preposições", value: 54 },
-  { label: "Tempos verbais", value: 66 },
-  { label: "Ritmo", value: 72 },
-  { label: "Falsos cognatos", value: 88 },
-  { label: "Pronúncia", value: 81 },
+  { label: "Gramática", value: 70, unit: "pct" },
+  { label: "Escolha de palavras", value: 85, unit: "pct" },
+  { label: "Falsos cognatos", value: 95, unit: "pct" },
+  { label: "Estrutura", value: 80, unit: "pct" },
+  { label: "Fluência", value: 78, unit: "azure" },
+  { label: "Precisão", value: 84, unit: "azure" },
 ];
 
-const TARGET_SCORE = 71;
+const TARGET_SCORE = 84;
 const RADAR_RADIUS = 130;
 const RADAR_CENTER = 150;
 const SCORE_ANIMATION_MS = 1400;
@@ -30,7 +34,7 @@ const AXIS_POINTS = DIMENSIONS.map((_, i) => radarPoint(i, DIMENSIONS.length, RA
 
 /**
  * Static demo of an English Interview Agent report, used on the public landing
- * page. The score and radar values are illustrative, not real user data.
+ * page. Every value is an illustrative example, not real user data.
  */
 export function ReportDemo() {
   const [displayScore, setDisplayScore] = useState(0);
@@ -87,23 +91,27 @@ export function ReportDemo() {
         <div className="flex flex-col gap-3">
           <span className="lp-badge">
             <i aria-hidden="true" />
-            Verificado
+            Exemplo
           </span>
           <p className="mt-2 text-xl font-semibold tracking-[-0.018em]">Rafael Menezes</p>
-          <div className="flex items-start gap-2">
-            <span className="lp-score" aria-label={`Nota ${TARGET_SCORE} de 100`}>{displayScore}</span>
-            <span className="lp-score-max">/100</span>
+          <p className="lp-report-meta">Backend Engineer · Sênior</p>
+          <div className="mt-2 md:mt-auto">
+            <p className="lp-score-label">Pontuação da fala · Azure</p>
+            <div className="flex items-start gap-2">
+              <span className="lp-score" aria-label={`Precisão ${TARGET_SCORE} de 100`}>{displayScore}</span>
+              <span className="lp-score-max">/100</span>
+            </div>
+            <p className="lp-report-meta">
+              Fluência <strong>78</strong> · Prosódia <strong>72</strong>
+            </p>
           </div>
-          <p className="lp-report-meta md:mt-auto">
-            Backend Sênior · Vaga em Berlim · 2026
-          </p>
         </div>
 
         <div className="relative flex justify-center pt-6">
           <div className="lp-radar-tip" style={{ opacity: hoveredDimension ? 1 : 0 }} aria-hidden="true">
-            {hoveredDimension ? `${hoveredDimension.label} · ${hoveredDimension.value}` : ""}
+            {hoveredDimension ? `${hoveredDimension.label} · ${hoveredDimension.value} (${UNIT_TIP[hoveredDimension.unit]})` : ""}
           </div>
-          <svg viewBox="0 0 300 300" width={280} height={280} className="block max-w-full overflow-visible" role="img" aria-label="Radar com seis dimensões do inglês: artigos, preposições, tempos verbais, ritmo, falsos cognatos e pronúncia.">
+          <svg viewBox="0 0 300 300" width={280} height={280} className="block max-w-full overflow-visible" role="img" aria-label="Radar de exemplo com seis dimensões: gramática, escolha de palavras, falsos cognatos e estrutura (percentual de respostas sem erro), fluência e precisão (pontuação Azure de 0 a 100).">
             {[130, 100, 70, 40].map((r) => (
               <circle key={r} cx={150} cy={150} r={r} fill="none" stroke="var(--ds-chart-ring)" strokeDasharray="3 4" />
             ))}
@@ -160,11 +168,15 @@ export function ReportDemo() {
         </div>
 
         <div className="lp-report-side">
-          <p className="text-sm font-semibold tracking-[-0.005em]">Relatório · Inglês sob pressão</p>
-          <p className="lp-report-meta">englishinterview.ai/r/rafael</p>
-          <p className="mt-4 text-[1.875rem] font-medium leading-none tracking-[-0.025em] md:mt-auto">Top 22%</p>
-          <p className="lp-report-meta">Ponto fraco: preposições</p>
-          <p className="lp-report-meta" style={{ fontSize: "0.8125rem" }}>Emitido por English Interview Agent</p>
+          <p className="text-sm font-semibold tracking-[-0.005em]">Ponto principal</p>
+          <p className="lp-fix">
+            <s>&ldquo;experience on backend&rdquo;</s>
+            <span aria-hidden="true">&rarr;</span>
+            <strong>&ldquo;experience in backend&rdquo;</strong>
+          </p>
+          <p className="lp-report-meta">Em inglês, experiência em uma área pede <em>in</em>, não <em>on</em>.</p>
+          <p className="mt-4 text-sm font-semibold tracking-[-0.005em] md:mt-auto">Prioridade 1 · Preposições</p>
+          <p className="lp-report-meta">Exercício: grave 3 respostas curtas sobre sua carreira usando &ldquo;in&rdquo;, &ldquo;on&rdquo; e &ldquo;at&rdquo; e confira cada uma.</p>
         </div>
       </div>
 
@@ -177,8 +189,9 @@ export function ReportDemo() {
             onMouseEnter={() => setHovered(i)}
             onMouseLeave={() => setHovered(null)}
           >
-            <span className="lp-dim-v">{d.value}</span>
+            <span className="lp-dim-v">{d.value}{d.unit === "pct" ? "%" : ""}</span>
             <span className="lp-dim-l">{d.label}</span>
+            <span className="lp-dim-u">{UNIT_TEXT[d.unit]}</span>
           </div>
         ))}
       </div>
