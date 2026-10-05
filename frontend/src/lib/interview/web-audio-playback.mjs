@@ -121,6 +121,8 @@ export function createWebAudioTrack(url, deps = {}) {
       if (paused || !source) return 0;
       return Math.min(buffer.duration, Math.max(0, context.currentTime - startedAt));
     },
+    /** Resolves the decoded AudioBuffer (decoding at most once): lets the avatar reuse it instead of decoding again. */
+    whenDecoded() { return decode(); },
     get preload() { return preload; },
     set preload(value) {
       preload = value;

@@ -1,0 +1,23 @@
+/*
+ * Toucan interviewer. Brand ("marca") palette only. The wall behind the bird follows the stage scheme
+ * (cream in light, graphite in dark, <html data-color-scheme>); the bird keeps its colors in both.
+ * The engine only writes SVG attributes (transform / path data); nothing here animates.
+ */
+.toucan {
+  --tc-wall-a: #f7f5ee; --tc-wall-b: #e6e3d6; --tc-floor: rgba(14, 42, 31, 0.15);
+  --tc-body: #0e2a1f; --tc-wing: #1f4d36; --tc-wing2: #173f2c; --tc-wingline: #f3ead6; --tc-bib: #f3ead6;
+  --tc-up: #e9cb8e; --tc-up-shade: #d9b673; --tc-low: #c2834f; --tc-tip: #0e2a1f;
+  --tc-ring: #58a39c; --tc-ringedge: #0a1f16; --tc-iris: #17342a;
+  --tc-feet: #e2cf9c; --tc-branch: #2b5a43; --tc-edge: rgba(14, 42, 31, 0.55);
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+:root[data-color-scheme="dark"] .toucan {
+  --tc-wall-a: #353a3e; --tc-wall-b: #1f2226; --tc-floor: rgba(0, 0, 0, 0.4);
+  --tc-branch: #3f7057; --tc-edge: rgba(0, 0, 0, 0.35);
+}
+.toucan svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+/* "D": an empty mouth, a faint wedge between the mandibles. */
+.toucan-wedge { fill: rgba(96, 62, 34, 0.3); }

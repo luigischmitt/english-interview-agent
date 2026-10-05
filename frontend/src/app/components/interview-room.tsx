@@ -23,6 +23,7 @@ import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-regi
 import { analyzeTurnWithRetry, resolveReportAtEnd, settleTurnAnalyses, turnAnalysisWaitMs } from "@/lib/interview/report-incremental.mjs";
 import { InterviewReport, type ReportState } from "./interview-report";
 import "./interview-room.css";
+import { createSpeechFeed, toucanStateFor } from "@/components/interview/toucan/toucan-engine.mjs";
 import { CallDock, CandidateTile, InterviewerTile, Toast, useCandidateCamera, useMicLevelMeter } from "./call-stage";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
@@ -204,12 +205,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     setVoiceCaptureState("idle");
     if (autoCaptureVoice) setAutoCaptureQuestionId(micTurnId);
   }, [autoCaptureVoice, micTurnId]);
+  // Receives each interviewer audio chunk (decoded for the avatar's beak lip-sync); it never touches playback.
+  const speechFeed = useMemo(() => createSpeechFeed(), []);
   const isInterviewerSpeaking = phase === "introducing" || phase === "speaking" || phase === "closing";
   const speechSegments = useMemo(
     () => splitInterviewerSpeech(currentUtterance),
     [currentUtterance],
   );
-  const { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted, spokenTurn?.speed ?? 1);
+  const { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted, spokenTurn?.speed ?? 1, speechFeed.push);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
   const currentAssessmentSamples = assessmentSamples(voiceAssessments, excludedAssessments);
   const currentAzureSummary = summarizeAzureAssessments(currentAssessmentSamples);
@@ -763,7 +766,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             capturing={capturing}
             detected={voiceCaptureState === "detected"}
           />
-          <InterviewerTile speaking={isInterviewerSpeaking} advancing={isAdvancing} caption={showInterviewerCaption ? interviewerCaption : null} />
+          <InterviewerTile
+            speaking={isInterviewerSpeaking}
+            advancing={isAdvancing}
+            caption={showInterviewerCaption ? interviewerCaption : null}
+            avatarState={toucanStateFor({ phase, audioPlaying: config.playInterviewerAudio && !speechMessage })}
+            speechFeed={speechFeed}
+            candidateLevelRef={meter.levelRef}
+          />
         </section>
 
         <MicrophoneCapture

@@ -4,7 +4,7 @@ import { fetchVoiceStatus, startVoiceReadinessPolling, type VoiceReadinessState 
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { installAudioUnlockOnFirstGesture, setAudioUnlockObserver, unlockSharedAudio } from "@/lib/interview/audio-unlock.mjs";
-import { playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech, warmUpInterviewerSpeech, type SpeechPlayback } from "@/lib/interview/speech-playback.mjs";
+import { playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech, warmUpInterviewerSpeech, type SpeechPlayback, type SpeechPlaybackOptions } from "@/lib/interview/speech-playback.mjs";
 
 export type SpeechTimingEvent = "synthesis-started" | "synthesis-completed" | "playback-started";
 
@@ -44,7 +44,7 @@ export function prewarmInterviewerUtterance(utterance: string) {
   return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 30_000 });
 }
 
-export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void, speed = 1) {
+export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void, speed = 1, onChunkAudio?: SpeechPlaybackOptions["onChunkAudio"]) {
   const [activeSegment, setActiveSegment] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
   // The browser refused to start audio without a tap; the room offers a button whose click unlocks and replays.
@@ -56,6 +56,9 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
   // Read through a ref so a new callback identity never restarts the utterance.
   const onFinalChunkStartedRef = useRef(onFinalChunkStarted);
   useEffect(() => { onFinalChunkStartedRef.current = onFinalChunkStarted; }, [onFinalChunkStarted]);
+  // The avatar's lip-sync feed; a ref, so it never restarts the utterance either.
+  const onChunkAudioRef = useRef(onChunkAudio);
+  useEffect(() => { onChunkAudioRef.current = onChunkAudio; }, [onChunkAudio]);
   useEffect(() => { segmentsRef.current = segments; }, [segments]);
   const cancelPlayback = useCallback(() => {
     playbackRef.current?.cancel();
@@ -78,6 +81,7 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
     onSynthesisCompleted: () => onTimingEvent?.("synthesis-completed"),
     onPlaybackStarted: () => onTimingEvent?.("playback-started"),
     onFinalChunkStarted: () => onFinalChunkStartedRef.current?.(),
+    onChunkAudio: (chunk) => onChunkAudioRef.current?.(chunk),
     onDiagnostic: reportAudioDiagnostic,
   }), [onTimingEvent, speed]);
 

@@ -526,15 +526,35 @@ export function playInterviewerSegments(segments, options) {
     const blob = await requests.entries[index].promise;
     if (index === 0) options.onSynthesisCompleted?.();
     if (cancelled) throw Object.assign(new Error("cancelled"), { isCancelled: true });
-    const item = { url: createObjectUrl(blob), audio: null };
+    const item = { url: createObjectUrl(blob), audio: null, playing: false };
     prepared.push(item);
     item.audio = makeAudio(item.url);
     try { item.audio.preload = "auto"; } catch { /* Best effort. */ }
+    announceChunkAudio(item, blob, index);
     return item;
+  };
+
+  // Hands the avatar what it needs to lip-sync this chunk: the blob (or, on the Web Audio path, the track's own
+  // decode), the chunk's playback position and whether it is the one playing. Observers can never affect playback.
+  const announceChunkAudio = (item, blob, index) => {
+    if (typeof options.onChunkAudio !== "function") return;
+    try {
+      const audio = item.audio;
+      options.onChunkAudio({
+        chunkIndex: index,
+        chunkCount: chunks.length,
+        endsWithQuestion: /\?["'”’)]*\s*$/u.test(chunks[index].text),
+        blob,
+        ...(typeof audio.whenDecoded === "function" ? { decodeAudio: () => audio.whenDecoded() } : {}),
+        clock: () => (item.audio && item.playing ? Number(item.audio.currentTime) || 0 : 0),
+        isPlaying: () => Boolean(item.audio && item.playing && !item.audio.paused && !item.audio.ended),
+      });
+    } catch { /* The lip-sync feed must never affect playback. */ }
   };
 
   const release = (item) => {
     const audio = item.audio;
+    item.playing = false;
     if (audio) {
       audio.pause();
       audio.removeAttribute?.("src");
@@ -581,6 +601,7 @@ export function playInterviewerSegments(segments, options) {
       audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("durationchange", onTimeUpdate);
       stopPlaying = null;
+      item.playing = false;
       settle(value);
     }
     stopPlaying = () => finish(resolve, "cancelled");
@@ -591,6 +612,7 @@ export function playInterviewerSegments(segments, options) {
     audio.addEventListener("durationchange", onTimeUpdate);
     if (chunk.sentences.length && !cancelled) options.onSegment?.(chunk.sentences[0]);
     diagnose("playback_start");
+    item.playing = true;
     Promise.resolve(audio.play()).then(
       () => diagnose("playback_play_resolved"),
       (error) => { diagnose("playback_error", { errorName: errorNameOf(error) }); finish(reject, error); },
