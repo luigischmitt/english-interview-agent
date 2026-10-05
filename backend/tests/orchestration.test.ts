@@ -371,17 +371,17 @@ describe("OpenRouter next-turn orchestration", () => {
     }
   });
 
-  it("skips a repeated immediate fixed question and falls back to the next distinct planned question", async () => {
+  it("keeps the immediate fixed question when its topic was covered instead of skipping ahead", async () => {
     const fallbackCandidates = ["How do you monitor production services?", "Tell me about a tradeoff you made under pressure."];
     const answer = { ...input, currentQuestion: "Tell me about a recent project.", nextFixedQuestion: fallbackCandidates[0], remainingFixedQuestions: fallbackCandidates, askedQuestions: ["Tell me about a recent project.", "You mentioned monitoring production services; how do you monitor a service in production?"] };
     const fetcher = vi.fn(async () => { throw new Error("provider unavailable"); });
-    await expect(service(fetcher).decide(answer)).resolves.toMatchObject({ decision: "NEXT", nextQuestion: fallbackCandidates[1] });
+    await expect(service(fetcher).decide(answer)).resolves.toMatchObject({ decision: "NEXT", nextQuestion: fallbackCandidates[0] });
   });
 
-  it("ends safely when every fixed fallback question repeats covered context", async () => {
+  it("keeps the mandatory fixed fallback when it is the last planned question", async () => {
     const repeated = "How do you monitor production services?";
     const answer = { ...input, currentQuestion: "Tell me about a recent project.", nextFixedQuestion: repeated, remainingFixedQuestions: [repeated], askedQuestions: ["Tell me about a recent project.", "You mentioned monitoring production services; how do you monitor a service in production?"] };
-    await expect(service(async () => { throw new Error("provider unavailable"); }).decide(answer)).resolves.toMatchObject({ decision: "NEXT", nextQuestion: null });
+    await expect(service(async () => { throw new Error("provider unavailable"); }).decide(answer)).resolves.toMatchObject({ decision: "NEXT", nextQuestion: repeated });
   });
 
   it.each([
@@ -874,8 +874,14 @@ describe("OpenRouter next-turn repetition guard", () => {
     expect(result).toMatchObject({ decision: "NEXT", nextQuestion: "How do you test your code before releasing it?", followUpQuestion: null });
   });
 
-  it("keeps a NEXT that changes the competency", async () => {
+  it("replaces a NEXT that abandons the mandatory planned competency", async () => {
     const question = "What trade-off did you make when choosing Supabase?";
+    const result = await service(async () => providerResponse(JSON.stringify(nextDecision(question)))).decide({ ...repetitiveInput, followUpUsed: true });
+    expect(result).toMatchObject({ decision: "NEXT", nextQuestion: repetitiveInput.nextFixedQuestion });
+  });
+
+  it("keeps a deeper NEXT that preserves the mandatory planned competency", async () => {
+    const question = "Which automated tests gave you confidence before releasing your code?";
     const result = await service(async () => providerResponse(JSON.stringify(nextDecision(question)))).decide({ ...repetitiveInput, followUpUsed: true });
     expect(result).toMatchObject({ decision: "NEXT", nextQuestion: question });
   });
@@ -893,14 +899,14 @@ describe("OpenRouter next-turn repetition guard", () => {
     expect(result).toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: question });
   });
 
-  it("logs a content-free repetitive_next / repetitive_follow_up outcome", async () => {
+  it("logs content-free drift and repetitive follow-up outcomes", async () => {
     const logs: string[] = [];
     const spy = vi.spyOn(console, "info").mockImplementation((line: string) => { logs.push(line); });
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await service(async () => providerResponse(JSON.stringify(nextDecision("How did you integrate Supabase into your application?")))).decide({ ...repetitiveInput, followUpUsed: true });
     await service(async () => providerResponse(JSON.stringify(decision({ followUpQuestion: "How did you integrate Supabase with the React app?", anchor: "Supabase for the database" })))).decide(repetitiveInput);
     const entries = logs.map((line) => JSON.parse(line)).filter((entry) => entry.event === "interview_orchestration_decision");
-    expect(entries.map((entry) => entry.reason)).toEqual(["repetitive_next", "repetitive_follow_up"]);
+    expect(entries.map((entry) => entry.reason)).toEqual(["planned_question_drift", "repetitive_follow_up"]);
     expect(entries[1]).toMatchObject({ decision: "NEXT", requestedDecision: "FOLLOW_UP", outcome: "fallback" });
     expect(logs.join("")).not.toMatch(/Supabase|React/);
     spy.mockRestore();
@@ -917,7 +923,9 @@ describe("OpenRouter next-turn repetition guard", () => {
     let system = "";
     await service(async (_url, options) => { system = JSON.parse(String(options?.body)).messages[0].content; return new Response("{}", { status: 400 }); }).decide(repetitiveInput);
     expect(system).toContain("must cover the topic and competency of the planned nextFixedQuestion");
-    expect(system).toContain("Never re-ask the same theme, action, or verb pattern");
+    expect(system).toContain("it is mandatory and you must not replace it");
+    expect(system).toContain("If an earlier answer already touched that topic");
+    expect(system).toContain("Never re-ask the same action or verb pattern");
     expect(system).toContain("last two askedQuestions");
     expect(system).toContain("must dig into a different aspect");
     expect(system).toContain("depth, trade-offs, results, or failure");

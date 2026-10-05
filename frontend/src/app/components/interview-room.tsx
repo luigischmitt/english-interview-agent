@@ -9,7 +9,7 @@ import { buildPreviousAnswers, decideNextTurn, isClarificationTurn, type TurnDec
 import { repeatTurnDecision } from "@/lib/interview/orchestration-policy.mjs";
 import { detectClarificationRequest } from "@/lib/interview/clarification-request.mjs";
 import { assessmentContextKey, composeClarificationTurn, planTurnAfterDecision, type ClarificationTurn } from "@/lib/interview/clarification-policy.mjs";
-import { firstUnaskedQuestion } from "@/lib/interview/question-history.mjs";
+import { selectNextPlannedQuestion } from "@/lib/interview/question-scheduling.mjs";
 import { createNextTurnPreparationRegistry } from "@/lib/interview/next-turn-preparation.mjs";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
@@ -26,7 +26,7 @@ import "./interview-room.css";
 import { createSpeechFeed, toucanStateFor } from "@/components/interview/toucan/toucan-engine.mjs";
 import { CallDock, CandidateTile, InterviewerTile, Toast, useCandidateCamera, useMicLevelMeter } from "./call-stage";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
-import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, canStartNextQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
+import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { createInterviewerAcknowledgements, prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { isAcknowledgeableAnswer, stripLeadingAcknowledgement } from "@/lib/interview/acknowledgement.mjs";
@@ -108,6 +108,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const micTurnId = `${question.id}:${clarifyRound}`;
   const micTurnIdRef = useRef(micTurnId);
   const elapsedSecondsRef = useRef(0);
+  // A planned question is considered used as soon as it is asked. Adapted wording keeps the same stable bank id.
+  const askedPlannedQuestionIdsRef = useRef<Set<string>>(new Set([questions[0].id]));
   const handoffTimingRef = useRef<{ mark: (stage: string) => void; markPrepared: () => void } | null>(null);
   const openingTimingRef = useRef<{ mark: (stage: string) => void } | null>(null);
   const listeningTimingRef = useRef<ReturnType<typeof createListeningHandoffTiming> | null>(null);
@@ -282,12 +284,13 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       ...turns.filter((turn): turn is InterviewReportTurnSource & { speaker: "interviewer"; content: string } => turn.speaker === "interviewer" && typeof turn.content === "string").map((turn) => turn.content),
       question.prompt,
     ])];
+    const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
     return {
       config,
       currentQuestion: question.prompt,
       transcript: answer,
-      nextFixedQuestion: currentIndex < questions.length - 1 ? questions[currentIndex + 1].prompt : null,
-      remainingFixedQuestions: questions.slice(currentIndex + 1).map((plannedQuestion) => plannedQuestion.prompt),
+      nextFixedQuestion: nextPlan.question?.prompt ?? null,
+      remainingFixedQuestions: nextPlan.remaining.map((plannedQuestion) => plannedQuestion.prompt),
       followUpUsed,
       askedQuestions,
       recentAcknowledgements: recentAcknowledgementsRef.current,
@@ -343,9 +346,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (isClarificationTurn(decision)) return null;
     if (decision.decision === "FOLLOW_UP") return composeAcknowledgedQuestion(spokenAcknowledgement(decision.acknowledgement, answer), decision.followUpQuestion);
     if (!decision.nextQuestion) return null;
-    const matchedFixedIndex = questions.findIndex((plannedQuestion, index) => index > currentIndex && plannedQuestion.prompt === decision.nextQuestion);
-    const nextIndex = matchedFixedIndex >= 0 ? matchedFixedIndex : currentIndex + 1;
-    if (!canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, nextIndex, questions.length)) return null;
+    const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
+    if (!nextPlan.question) return null;
     return composeAcknowledgedQuestion(spokenAcknowledgement(decision.acknowledgement, answer), decision.nextQuestion);
   };
 
@@ -470,7 +472,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (earlyUtterance) prewarmInterviewerUtterance(earlyUtterance);
 
     const clarificationsSoFar = clarificationCountsRef.current.get(question.id) ?? 0;
-    const plan = planTurnAfterDecision({ decision, clarificationsSoFar, nextQuestion: firstUnaskedQuestion(decisionInput.remainingFixedQuestions, decisionInput.askedQuestions) });
+    const plan = planTurnAfterDecision({ decision, clarificationsSoFar, nextQuestion: decisionInput.nextFixedQuestion });
     const turn = plan.turn as TurnDecision;
     if (plan.countsAsAnswer) commitAnswer();
     else excludeClarificationAssessment();
@@ -498,14 +500,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       setAcknowledgement(spokenAcknowledgement(turn.acknowledgement, savedAnswer));
       setSpokenTurn(null);
       const nextQuestion = turn.nextQuestion;
-      const matchedFixedIndex = nextQuestion === null ? -1 : questions.findIndex((plannedQuestion, index) => index > currentIndex && plannedQuestion.prompt === nextQuestion);
-      const nextIndex = matchedFixedIndex >= 0 ? matchedFixedIndex : currentIndex + 1;
-      if (!nextQuestion || !canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, nextIndex, questions.length)) {
+      const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
+      if (!nextQuestion || !nextPlan.question) {
         transitionPhase("closing");
         return;
       }
-      setCurrentIndex(nextIndex);
-      setQuestion({ ...questions[nextIndex], prompt: nextQuestion });
+      askedPlannedQuestionIdsRef.current.add(nextPlan.question.id);
+      setCurrentIndex(nextPlan.index);
+      setQuestion({ ...nextPlan.question, prompt: nextQuestion });
       setFollowUpUsed(false);
       setQuestionSequenceNumber((sequence) => sequence + 2);
       transitionPhase("speaking");
@@ -545,16 +547,17 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     advanceTimerRef.current = window.setTimeout(() => {
       advanceTimerRef.current = null;
       if (!mountedRef.current || generation !== generationRef.current) return;
-      if (!canStartNextQuestion(elapsedSecondsRef.current, durationMinutes, currentIndex + 1, questions.length)) {
+      const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
+      if (!nextPlan.question) {
         transitionPhase("closing");
         return;
       }
-      const nextIndex = currentIndex + 1;
-      const skippedTurn = resolveSkippedQuestion(questions[nextIndex].prompt);
+      const skippedTurn = resolveSkippedQuestion(nextPlan.question.prompt);
       setAcknowledgement(skippedTurn.acknowledgement);
       setSpokenTurn(null);
-      setCurrentIndex(nextIndex);
-      setQuestion({ ...questions[nextIndex], prompt: skippedTurn.question });
+      askedPlannedQuestionIdsRef.current.add(nextPlan.question.id);
+      setCurrentIndex(nextPlan.index);
+      setQuestion({ ...nextPlan.question, prompt: skippedTurn.question });
       setFollowUpUsed(false);
       setQuestionSequenceNumber((sequence) => sequence + 1);
       transitionPhase("speaking");

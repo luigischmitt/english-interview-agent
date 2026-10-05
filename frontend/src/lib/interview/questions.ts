@@ -17,7 +17,7 @@ export function getFixedInterviewQuestions(config: InterviewConfig): InterviewQu
       prompt: "Based on the role description you shared, which part of your experience would be most valuable in this position?",
       cue: "Give a concise example, then connect it to the role.",
     };
-    applyTailoredQuestions(questions, direction.tailoredQuestions);
+    return applyTailoredQuestions(questions, direction.tailoredQuestions);
   }
   return questions;
 }
@@ -25,7 +25,7 @@ export function getFixedInterviewQuestions(config: InterviewConfig): InterviewQu
 // Bank order: [introduction, t1, t2, ownership, t3, conflict, t4, ...]. Tailored questions take the first technical slots.
 const technicalSlots = [1, 2, 4];
 
-function applyTailoredQuestions(questions: InterviewQuestion[], tailored: string[] | undefined) {
+function applyTailoredQuestions(questions: InterviewQuestion[], tailored: string[] | undefined): InterviewQuestion[] {
   const used = new Set(questions.map((question) => question.prompt.trim().toLowerCase()));
   let slot = 0;
   (tailored ?? []).forEach((prompt) => {
@@ -35,4 +35,7 @@ function applyTailoredQuestions(questions: InterviewQuestion[], tailored: string
     used.add(key);
     slot += 1;
   });
+  // In a five-minute interview, keep all vacancy questions immediately after the introduction.
+  // Questions from the role bank retain their relative order after the tailored block.
+  return [questions[0], ...questions.slice(1).filter((question) => question.id.startsWith("job-")), ...questions.slice(1).filter((question) => !question.id.startsWith("job-"))];
 }
