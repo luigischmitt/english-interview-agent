@@ -30,3 +30,9 @@ test("invalid or mismatched direction is omitted for backward-compatible generic
   assert.equal(Object.hasOwn(withoutDirection, "job_direction"), false);
   assert.equal(Object.hasOwn(mismatched, "job_direction"), false);
 });
+
+test("tailored questions stay out of the stored direction (the asked questions are saved as turns)", () => {
+  const tailoredQuestions = ["How would you keep a Playwright suite reliable as the product grows?"];
+  const payload = buildInterviewSessionPayload({ ...config, jobDirection: { ...direction, tailoredQuestions } }, "user-1", "now");
+  assert.equal(Object.hasOwn(payload.job_direction, "tailoredQuestions"), false);
+});

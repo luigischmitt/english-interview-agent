@@ -40,6 +40,8 @@ export type JobDirection = {
   mainInterviewEmphasis: string;
   priorityCompetencies: string[];
   productTeamContext: string;
+  /** Up to three English interview questions tailored to the posting (optional; absent for older snapshots). */
+  tailoredQuestions?: string[];
 };
 
 export type ApprovedJobDirection = JobDirection;

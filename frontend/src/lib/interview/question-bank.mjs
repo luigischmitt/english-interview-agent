@@ -264,11 +264,34 @@ function normalizeRole(role) {
   return String(role ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+// Keyword fallback for titles outside the exact/alias lookup, most specific first. Patterns run on the lowercased title.
+const roleKeywordRules = [
+  [/\b(?:qa|sdet|quality|tester|testes?|testing|test (?:analyst|engineer|automation))\b/, "QA Automation Engineer"],
+  [/\b(?:security|seguran[cç]a)\b/, "Security Engineer"],
+  [/\b(?:machine learning|ml|mlops)\b/, "Machine Learning Engineer"],
+  [/\b(?:ai|ia)\b.*\b(?:engineer|engenheir[oa]|developer)\b/, "AI Engineer"],
+  [/\b(?:data scien\w*|cientista de dados)\b/, "Data Scientist"],
+  [/\b(?:data engineer\w*|engenheir[oa] de dados|analytics engineer)\b/, "Data Engineer"],
+  [/\b(?:data analyst|analista de dados|bi analyst|business intelligence|analista de bi)\b/, "Data Analyst"],
+  [/\b(?:sre|site reliability|confiabilidade)\b/, "Site Reliability Engineer"],
+  [/\b(?:devops|devsecops|platform engineer|infrastructure engineer|engenheir[oa] de plataforma|engenheir[oa] de infraestrutura)\b/, "DevOps Engineer"],
+  [/\b(?:cloud|nuvem)\b/, "Cloud Engineer"],
+  [/\b(?:ios|android|mobile|react native|flutter)\b/, "Mobile Engineer"],
+  [/\b(?:full[\s-]?stack)\b/, "Full-Stack Engineer"],
+  [/\b(?:front[\s-]?end|frontend)\b/, "Frontend Engineer"],
+  [/\b(?:back[\s-]?end|backend)\b/, "Backend Engineer"],
+  [/\b(?:engineering manager|gerente de engenharia)\b/, "Engineering Manager"],
+  [/\b(?:software|desenvolvedor[a]?|developer|programmer|programador[a]?)\b/, "Software Engineer"],
+];
+
 /** Returns the fixed question bank (templates with a {role} placeholder) for the typed role. */
 export function getQuestionBankForRole(role) {
   const normalized = normalizeRole(role);
   const alias = roleAliases[normalized];
-  return normalizedRoleBanks.get(alias ? normalizeRole(alias) : normalized) ?? genericQuestionBank;
+  const exact = normalizedRoleBanks.get(alias ? normalizeRole(alias) : normalized);
+  if (exact || !normalized) return exact ?? genericQuestionBank;
+  const keyword = roleKeywordRules.find(([pattern]) => pattern.test(normalized));
+  return keyword ? questionBanks[keyword[1]] : genericQuestionBank;
 }
 
 export const questionBankRoles = Object.keys(questionBanks);

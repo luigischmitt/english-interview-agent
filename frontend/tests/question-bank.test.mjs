@@ -94,3 +94,55 @@ test("mismatched or absent approved direction preserves the generic role opening
     priorityCompetencies: ["API reliability"], productTeamContext: "A product team",
   } })[0].prompt, expected);
 });
+
+test("role matching maps common title variants to the closest bank", () => {
+  const same = (variant, role) => assert.equal(getQuestionBankForRole(variant), getQuestionBankForRole(role), variant);
+  for (const variant of ["QA Analyst", "Quality Assurance Engineer", "Quality Assurance Analyst", "Test Analyst", "Test Automation Engineer", "Analista de QA", "Analista de Testes", "SDET"]) same(variant, "QA Automation Engineer");
+  same("Analista de Dados", "Data Analyst");
+  same("Cientista de Dados", "Data Scientist");
+  same("Engenheiro de Dados", "Data Engineer");
+  same("Desenvolvedor Backend", "Backend Engineer");
+  same("Desenvolvedor Frontend", "Frontend Engineer");
+  same("Desenvolvedor Full Stack", "Full-Stack Engineer");
+  same("iOS Developer", "Mobile Engineer");
+  same("Android Developer", "Mobile Engineer");
+  same("Platform Engineer", "DevOps Engineer");
+  same("Senior Java Developer", "Software Engineer");
+  assert.equal(getQuestionBankForRole("Product Manager"), genericQuestionBank);
+  assert.equal(getQuestionBankForRole("Tech Lead"), genericQuestionBank);
+});
+
+const tailored = [
+  "How would you structure a Playwright test suite so it stays reliable as the product grows?",
+  "How do you test REST APIs with Postman and keep the collections maintainable?",
+  "How would you run automated tests in GitHub Actions without slowing down the team?",
+];
+const qaDirection = {
+  targetRole: "QA Analyst", suggestedSeniority: "mid-level", mainInterviewEmphasis: "Automação de testes",
+  priorityCompetencies: ["Automação com Playwright"], productTeamContext: "Equipe de produto", tailoredQuestions: tailored,
+};
+
+test("tailored questions replace the first technical slots and keep the rest of the bank", () => {
+  const questions = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: qaDirection });
+  const bank = getQuestionBankForRole("QA Analyst");
+  assert.equal(questions.length, 15);
+  assert.deepEqual([1, 2, 4].map((index) => questions[index].prompt), tailored);
+  assert.deepEqual([1, 2, 4].map((index) => questions[index].id), ["job-1", "job-2", "job-3"]);
+  assert.ok(questions.every((question) => question.cue.trim().length > 0));
+  for (const index of [3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) assert.equal(questions[index].id, bank[index].id);
+  assert.match(questions[0].prompt, /role description/u);
+  assert.equal(new Set(questions.map((question) => question.prompt)).size, 15);
+});
+
+test("fewer tailored questions fill slots in order; none or a stale direction keeps the bank", () => {
+  const two = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: { ...qaDirection, tailoredQuestions: tailored.slice(0, 2) } });
+  assert.deepEqual([two[1].id, two[2].id, two[4].id], ["job-1", "job-2", getQuestionBankForRole("QA Analyst")[4].id]);
+  const legacy = { ...qaDirection, tailoredQuestions: undefined };
+  assert.equal(getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: legacy })[1].id, getQuestionBankForRole("QA Analyst")[1].id);
+  const edited = getFixedInterviewQuestions({ role: "Backend Engineer", seniority: "mid-level", jobDirection: qaDirection });
+  assert.equal(edited[1].id, getQuestionBankForRole("Backend Engineer")[1].id);
+  const reseniored = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "senior", jobDirection: qaDirection });
+  assert.equal(reseniored[1].id, getQuestionBankForRole("QA Analyst")[1].id);
+  const duplicated = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: { ...qaDirection, tailoredQuestions: [tailored[0], tailored[0].toUpperCase().replace("?", "?")] } });
+  assert.equal(new Set(duplicated.map((question) => question.prompt.toLowerCase())).size, 15);
+});

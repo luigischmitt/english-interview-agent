@@ -9,7 +9,21 @@ const limits = {
   competency: 100,
 };
 const focuses = ["technical-depth", "communication", "behavioral", "mixed"];
-const keys = ["targetRole", "suggestedSeniority", "mainInterviewEmphasis", "priorityCompetencies", "productTeamContext"];
+const keys = ["targetRole", "suggestedSeniority", "mainInterviewEmphasis", "priorityCompetencies", "productTeamContext", "tailoredQuestions"];
+export const maxTailoredQuestions = 3;
+const maxTailoredQuestionLength = 200;
+
+/** One spoken English question with a single trailing "?" (the backend also filters Portuguese and generic ones). */
+export function isValidTailoredQuestion(value) {
+  if (typeof value !== "string") return false;
+  const text = value.trim();
+  return text.length >= 15 && text.length <= maxTailoredQuestionLength && text.endsWith("?") && text.split("?").length === 2 && !/[\r\n]/.test(text);
+}
+
+function validTailoredQuestions(value) {
+  return Array.isArray(value) && value.length >= 1 && value.length <= maxTailoredQuestions && value.every(isValidTailoredQuestion)
+    && new Set(value.map((item) => item.trim().toLowerCase())).size === value.length;
+}
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -28,7 +42,8 @@ export function isValidJobDirection(value) {
     && value.priorityCompetencies.length >= 1
     && value.priorityCompetencies.length <= 5
     && value.priorityCompetencies.every((item) => validText(item, limits.competency))
-    && validText(value.productTeamContext, limits.productTeamContext);
+    && validText(value.productTeamContext, limits.productTeamContext)
+    && (value.tailoredQuestions === undefined || validTailoredQuestions(value.tailoredQuestions));
 }
 
 export class JobDirectionRequestError extends Error {
@@ -67,7 +82,9 @@ export async function requestJobDirection(jobDescription, roleContext, fetcher, 
   let body;
   try { body = await response.json(); } catch { throw new JobDirectionRequestError("INVALID_RESPONSE", response.status); }
   // The practice focus only fills the setup; it is not part of the approved snapshot. Absent for older backends.
-  const { suggestedFocus, ...result } = isRecord(body) ? body : {};
+  const { suggestedFocus, tailoredQuestions: rawTailored, ...result } = isRecord(body) ? body : {};
+  // Tailored questions are optional: invalid or duplicate ones are dropped instead of failing the whole analysis.
+  const tailoredQuestions = [...new Set((Array.isArray(rawTailored) ? rawTailored : []).filter(isValidTailoredQuestion).map((item) => item.trim()))].slice(0, maxTailoredQuestions);
   if (!isValidJobDirection(result) || (suggestedFocus !== undefined && !focuses.includes(suggestedFocus))) throw new JobDirectionRequestError("INVALID_RESPONSE", response.status);
   return {
     targetRole: result.targetRole.trim(),
@@ -75,6 +92,7 @@ export async function requestJobDirection(jobDescription, roleContext, fetcher, 
     mainInterviewEmphasis: result.mainInterviewEmphasis.trim(),
     priorityCompetencies: result.priorityCompetencies.map((item) => item.trim()),
     productTeamContext: result.productTeamContext.trim(),
+    ...(tailoredQuestions.length > 0 ? { tailoredQuestions } : {}),
     ...(suggestedFocus ? { suggestedFocus } : {}),
   };
 }

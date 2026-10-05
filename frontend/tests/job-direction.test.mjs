@@ -85,3 +85,17 @@ test("switching modes parks and restores the direction without losing edits", ()
   assert.equal(setupModeBlocksStart("auto", empty.config.jobDirection), true);
   assert.equal(setupModeBlocksStart("auto", direction), false);
 });
+
+test("tailored questions are optional, validated, kept through hand-off and filtered on request", async () => {
+  const good = "How would you structure a Playwright test suite so it stays reliable?";
+  const withQuestions = { ...direction, tailoredQuestions: [good] };
+  assert.equal(isValidJobDirection(withQuestions), true);
+  assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: [] }), false);
+  assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: ["Two? Questions?"] }), false);
+  assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: Array(4).fill(0).map((_, i) => `Question number ${i} about testing?`) }), false);
+  const parsed = parseRoomHandoff(serializeRoomHandoff({ ...config, jobDirection: withQuestions }, 1_000), 1_000);
+  assert.deepEqual(parsed.jobDirection.tailoredQuestions, [good]);
+  const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ ...direction, tailoredQuestions: [good, good, "bad", "Two? Questions?"] }) });
+  const result = await requestJobDirection(description, { targetRole: direction.targetRole }, fetcher);
+  assert.deepEqual(result.tailoredQuestions, [good]);
+});

@@ -34,10 +34,11 @@ describe("OpenRouter job direction service", () => {
     expect(messages[0]?.content).toContain("ENGLISH");
     expect(messages[0]?.content).toContain("Never write 'Não informado'");
     expect(messages[0]?.content).toContain("suggestedFocus");
-    expect(messages[0]?.content).toContain("Do not generate, suggest, quote, or display interview questions");
+    expect(messages[0]?.content).toContain("The only questions you may write are the tailoredQuestions field");
     expect(messages[1]?.content).toContain(input.jobDescription);
     const jsonSchema = (requestBody?.response_format as { json_schema: { schema: { required: string[]; properties: Record<string, { enum?: string[] }> } } }).json_schema.schema;
     expect(jsonSchema.required).toContain("suggestedFocus");
+    expect(jsonSchema.required).toContain("tailoredQuestions");
     expect(jsonSchema.properties.suggestedFocus?.enum).toEqual(["technical-depth", "communication", "behavioral", "mixed"]);
   });
 
@@ -79,5 +80,34 @@ describe("OpenRouter job direction service", () => {
 
     const unavailableService = new OpenRouterJobDirectionService({ key: "test-key", model: "mistral/test", timeoutMs: 1_000, fetchImplementation: async () => new Response("private provider body", { status: 503 }) });
     await expect(unavailableService.analyze(input)).rejects.toMatchObject({ code: "JOB_DIRECTION_PROVIDER_UNAVAILABLE", status: 502 });
+  });
+
+  it("keeps valid tailored questions and drops Portuguese, multi-question, long, generic and duplicate ones", async () => {
+    const good = "How would you structure a Playwright test suite so it stays reliable as the product grows?";
+    const service = new OpenRouterJobDirectionService({
+      key: "k", model: "m", timeoutMs: 1_000,
+      fetchImplementation: async () => providerResponse({
+        ...direction,
+        tailoredQuestions: [
+          good,
+          `  ${good.toUpperCase()} `,
+          "Como você automatizaria testes de API com Postman?",
+          "How do you test APIs? And how do you report bugs?",
+          "Tell me about yourself and your experience?",
+          `${"Why ".repeat(60)}?`,
+          "How do you run API tests in GitHub Actions without slowing down the pipeline?",
+          "What is your approach to flaky tests in CI?",
+        ],
+      }),
+    });
+    await expect(service.analyze(input)).resolves.toMatchObject({
+      tailoredQuestions: [good, "How do you run API tests in GitHub Actions without slowing down the pipeline?", "What is your approach to flaky tests in CI?"],
+    });
+  });
+
+  it("omits tailoredQuestions when none survive validation", async () => {
+    const service = new OpenRouterJobDirectionService({ key: "k", model: "m", timeoutMs: 1_000, fetchImplementation: async () => providerResponse({ ...direction, tailoredQuestions: ["Qual é a sua experiência com testes?", 42] }) });
+    const result = await service.analyze(input);
+    expect(result).not.toHaveProperty("tailoredQuestions");
   });
 });

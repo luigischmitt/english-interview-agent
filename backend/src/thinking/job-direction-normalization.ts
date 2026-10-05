@@ -68,3 +68,34 @@ export function normalizeProductTeamContext(value: string): string {
   if (!text || !/[\p{L}\p{N}]/u.test(text) || placeholderOnlyClause.test(text)) return neutralTeamContext;
   return /[.!]$/u.test(text) ? text : `${text}.`;
 }
+
+export const maxTailoredQuestions = 3;
+export const maxTailoredQuestionLength = 200;
+const portugueseQuestionHints = /[ãõç]|\b(?:você|voce|como|qual|quais|quando|para|uma|não|nao|sua|seu|pelo|pela|dos|das|que|mais|muito|também|tambem)\b/iu;
+const genericOpeners = /^\s*(?:tell me about yourself|walk me through your (?:resume|cv)|can you introduce yourself|do you have any questions|what questions do you have)/iu;
+
+/** One spoken-friendly English question: a single "?" at the end, bounded, single line, not Portuguese or a generic opener/closer. */
+export function isValidTailoredQuestion(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const text = value.trim();
+  return text.length >= 15 && text.length <= maxTailoredQuestionLength && text.endsWith("?")
+    && text.split("?").length === 2 && !/[\r\n]/u.test(text)
+    && !portugueseQuestionHints.test(text) && !genericOpeners.test(text);
+}
+
+/** Keeps the valid, de-duplicated questions (at most three) from an untrusted list. */
+export function normalizeTailoredQuestions(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (!isValidTailoredQuestion(value)) continue;
+    const text = value.trim().replace(/\s{2,}/gu, " ");
+    const key = text.toLocaleLowerCase("en-US");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(text);
+    if (result.length === maxTailoredQuestions) break;
+  }
+  return result;
+}

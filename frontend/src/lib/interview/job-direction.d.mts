@@ -6,8 +6,12 @@ export type JobDirection = {
   mainInterviewEmphasis: string;
   priorityCompetencies: string[];
   productTeamContext: string;
+  /** Up to three English questions tailored to the posting (optional). */
+  tailoredQuestions?: string[];
 };
 
+export const maxTailoredQuestions: number;
+export function isValidTailoredQuestion(value: unknown): value is string;
 export const jobDescriptionMinLength: number;
 export const jobDescriptionMaxLength: number;
 export function isValidJobDirection(value: unknown): value is JobDirection;
