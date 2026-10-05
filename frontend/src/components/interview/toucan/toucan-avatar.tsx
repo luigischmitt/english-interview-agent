@@ -104,7 +104,7 @@ export function ToucanAvatar({ state, speechFeed = null, candidateLevelRef, clas
           <radialGradient id={id("wall")} cx=".5" cy=".42" r=".75"><stop offset="0" style={{ stopColor: "var(--tc-wall-a)" }} /><stop offset="1" style={{ stopColor: "var(--tc-wall-b)" }} /></radialGradient>
           <radialGradient id={id("floor")} cx=".5" cy=".5" r=".5"><stop offset="0" style={{ stopColor: "var(--tc-floor)" }} /><stop offset="1" style={{ stopColor: "var(--tc-floor)", stopOpacity: 0 }} /></radialGradient>
           <clipPath id={id("eye")}><circle r="7" /></clipPath>
-          <clipPath id={id("up")}><path d="M196,52 C240,28 330,32 372,88 C330,80 268,86 206,92 C194,86 190,66 196,52Z" /></clipPath>
+          <clipPath id={id("up")}><path d="M211,52 C248,29 332,33 372,88 C330,80 272,86 219,92 C207,86 203,66 211,52Z" /></clipPath>
         </defs>
         <rect x="-400" y="-300" width="1200" height="900" fill={`url(#${id("wall")})`} />
         <ellipse cx="168" cy="246" rx="150" ry="13" fill={`url(#${id("floor")})`} />
@@ -128,6 +128,7 @@ export function ToucanAvatar({ state, speechFeed = null, candidateLevelRef, clas
           <path data-tc="skin" d={REST_SKIN_PATH} fill="var(--tc-body)" />
           <g data-tc="head">
             <circle cx="178" cy="78" r="40" fill="var(--tc-body)" />
+            <path d="M186,40.5 C198,43 207,48 210,55 C214,66 221,82 222,96 C219,103 206,106 190,106 C176,100 174,70 186,40.5Z" fill="var(--tc-body)" />
             <path data-tc="bib" d={REST_BIB_PATH} fill="var(--tc-bib)" />
             <g transform="translate(190 66)">
               <circle r="11.5" fill="var(--tc-ring)" stroke="var(--tc-ringedge)" strokeWidth="1.5" />
@@ -142,23 +143,23 @@ export function ToucanAvatar({ state, speechFeed = null, candidateLevelRef, clas
               <path data-tc="wedge" d="" className="toucan-wedge" />
               <g data-tc="mouth" />
               <g data-tc="lower">
-                <path d="M206,92 C261.8,86.6 317.6,81.2 358.8,86 C340,104 280,114 214,110 C198,106 198,98 206,92Z" fill="var(--tc-low)" />
-                <path d="M206,92 C261.8,86.6 317.6,81.2 358.8,86" fill="none" stroke="#8a5a36" strokeWidth="1.1" strokeLinecap="round" opacity=".8" />
-                <path d="M216,104 C260,106 316,100 350,90" fill="none" stroke="var(--tc-up-shade)" strokeWidth="2" strokeLinecap="round" opacity=".55" />
-                <path d="M214,111 C260,114 322,106 359,87" fill="none" stroke="var(--tc-edge)" strokeWidth="1.4" strokeLinecap="round" />
+                <path d="M219,92 C267,86.6 319,81.2 358.8,86 C340,104 286,114 227,110 C212,106 211,98 219,92Z" fill="var(--tc-low)" />
+                <path d="M219,92 C267,86.6 319,81.2 358.8,86" fill="none" stroke="#8a5a36" strokeWidth="1.1" strokeLinecap="round" opacity=".8" />
+                <path d="M229,104 C264,106 318,100 350,90" fill="none" stroke="var(--tc-up-shade)" strokeWidth="2" strokeLinecap="round" opacity=".55" />
+                <path d="M227,111 C264,114 322,106 359,87" fill="none" stroke="var(--tc-edge)" strokeWidth="1.4" strokeLinecap="round" />
               </g>
               <g data-tc="upper">
-                <path d="M196,52 C240,28 330,32 372,88 C330,80 268,86 206,92 C194,86 190,66 196,52Z" fill="var(--tc-up)" />
+                <path d="M211,52 C248,29 332,33 372,88 C330,80 272,86 219,92 C207,86 203,66 211,52Z" fill="var(--tc-up)" />
                 <g clipPath={`url(#${id("up")})`}>
-                  <path d="M190,70 C250,70 310,66 380,80 L380,104 L190,104Z" fill="var(--tc-up-shade)" />
+                  <path d="M203,70 C250,70 310,66 380,80 L380,104 L190,104Z" fill="var(--tc-up-shade)" />
                   <path d="M318,20 C346,54 330,80 312,108 L392,108 L392,20Z" fill="var(--tc-tip)" />
                 </g>
-                <path d="M214,89 C268,84 328,78 364,84" fill="none" stroke="var(--tc-edge)" strokeWidth="1.2" opacity=".8" />
-                <path d="M216,47 C262,39 318,45 348,64" fill="none" stroke="var(--tc-edge)" strokeWidth="1.6" strokeLinecap="round" opacity=".55" />
-                <path d="M214,57 C256,50 306,55 336,70" fill="none" stroke="#fff" strokeOpacity=".35" strokeWidth="2.4" strokeLinecap="round" />
-                <path d="M196,52 C240,28 330,32 372,88 C330,80 268,86 206,92 C194,86 190,66 196,52Z" fill="none" stroke="var(--tc-edge)" strokeWidth="1.8" strokeLinejoin="round" />
-                <ellipse cx="228" cy="62" rx="5.5" ry="2.5" transform="rotate(10 228 62)" fill="var(--tc-body)" opacity=".8" />
-                <path d="M222,57 C228,55 234,57 238,60" fill="none" stroke="var(--tc-edge)" strokeWidth="1.2" strokeLinecap="round" />
+                <path d="M227,89 C272,84 328,78 364,84" fill="none" stroke="var(--tc-edge)" strokeWidth="1.2" opacity=".8" />
+                <path d="M229,47 C266,39 318,45 348,64" fill="none" stroke="var(--tc-edge)" strokeWidth="1.6" strokeLinecap="round" opacity=".55" />
+                <path d="M227,57 C260,50 306,55 336,70" fill="none" stroke="#fff" strokeOpacity=".35" strokeWidth="2.4" strokeLinecap="round" />
+                <path d="M211,52 C248,29 332,33 372,88 C330,80 272,86 219,92 C207,86 203,66 211,52Z" fill="none" stroke="var(--tc-edge)" strokeWidth="1.8" strokeLinejoin="round" />
+                <ellipse cx="241" cy="62" rx="5.5" ry="2.5" transform="rotate(10 241 62)" fill="var(--tc-body)" opacity=".8" />
+                <path d="M235,57 C241,55 247,57 251,60" fill="none" stroke="var(--tc-edge)" strokeWidth="1.2" strokeLinecap="round" />
               </g>
             </g>
           </g>
