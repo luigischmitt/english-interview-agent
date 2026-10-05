@@ -42,6 +42,8 @@ export type JobDirection = {
   productTeamContext: string;
 };
 
+export type ApprovedJobDirection = JobDirection;
+
 export type JobDirectionInput = {
   jobDescription: string;
   roleContext: {
@@ -138,6 +140,8 @@ export type InterviewOrchestrationInput = InterviewThinkingInput & {
   askedQuestions?: string[];
   recentAcknowledgements?: string[];
   previousAnswers?: Array<{ question: string; answer: string }>;
+  /** User-approved structured summary only; raw job descriptions must never enter interview orchestration. */
+  jobDirection?: ApprovedJobDirection;
 };
 
 export type InterviewOrchestrationResult = {

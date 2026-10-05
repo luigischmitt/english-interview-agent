@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import { clarificationHints, type ClarificationHint, type InterviewOrchestrationInput, type InterviewOrchestrationService } from "../thinking/types.js";
+import { parseApprovedJobDirection } from "../thinking/job-direction-validation.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -26,6 +27,9 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
   if ((roleContext.seniority !== undefined && (typeof roleContext.seniority !== "string" || roleContext.seniority.length > 80))
     || (roleContext.focus !== undefined && (typeof roleContext.focus !== "string" || roleContext.focus.length > 80))) return null;
   const targetRole = roleContext.targetRole as string;
+  const roleSeniority = typeof roleContext.seniority === "string" ? roleContext.seniority.trim() : undefined;
+  const jobDirection = body.jobDirection === undefined ? undefined : parseApprovedJobDirection(body.jobDirection, targetRole.trim(), roleSeniority);
+  if (body.jobDirection !== undefined && !jobDirection) return null;
   return {
     currentQuestion: body.currentQuestion.trim(), transcript: body.transcript.trim(), nextFixedQuestion: body.nextFixedQuestion === null ? null : body.nextFixedQuestion.trim(), followUpUsed: body.followUpUsed,
     ...(body.clarificationHint ? { clarificationHint: body.clarificationHint as ClarificationHint } : {}),
@@ -33,7 +37,8 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
     ...(Array.isArray(body.askedQuestions) ? { askedQuestions: body.askedQuestions.map((question) => (question as string).trim()) } : {}),
     ...(Array.isArray(body.previousAnswers) ? { previousAnswers: body.previousAnswers.map((pair) => ({ question: (pair.question as string).trim(), answer: (pair.answer as string).trim() })) } : {}),
     ...(Array.isArray(body.recentAcknowledgements) ? { recentAcknowledgements: body.recentAcknowledgements.map((acknowledgement) => (acknowledgement as string).trim()) } : {}),
-    roleContext: { targetRole: targetRole.trim(), ...(typeof roleContext.seniority === "string" ? { seniority: roleContext.seniority.trim() } : {}), ...(typeof roleContext.focus === "string" ? { focus: roleContext.focus.trim() } : {}) },
+    ...(jobDirection ? { jobDirection } : {}),
+    roleContext: { targetRole: targetRole.trim(), ...(roleSeniority !== undefined ? { seniority: roleSeniority } : {}), ...(typeof roleContext.focus === "string" ? { focus: roleContext.focus.trim() } : {}) },
   };
 }
 

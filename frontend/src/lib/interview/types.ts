@@ -43,6 +43,8 @@ export type InterviewSession = {
   targetRole: string;
   seniority: string | null;
   focus: string | null;
+  /** User-approved structured summary only; never contains the original job description. */
+  jobDirection: JobDirection | null;
   durationMinutes: number | null;
   questionCount: number | null;
   status: InterviewSessionStatus;

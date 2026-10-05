@@ -1,5 +1,6 @@
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import type { InterviewConfig } from "./types";
+import { serializeNextTurnRequest } from "./next-turn-payload.mjs";
 import { firstUnaskedQuestion } from "./question-history.mjs";
 import { fallbackTurnDecision, parseTurnDecisionResponse, repeatTurnDecision, type ClarificationTurnDecision } from "./orchestration-policy.mjs";
 import type { ClarificationKind } from "./clarification-request.mjs";
@@ -36,18 +37,7 @@ export async function decideNextTurn(input: {
     const response = await authorizedFetch(`${baseUrl}/api/v1/thinking/next-turn`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        currentQuestion: input.currentQuestion,
-        transcript: input.transcript,
-        nextFixedQuestion: input.nextFixedQuestion,
-        remainingFixedQuestions: input.remainingFixedQuestions,
-        followUpUsed: input.followUpUsed,
-        askedQuestions: input.askedQuestions,
-        recentAcknowledgements: input.recentAcknowledgements ?? [],
-        previousAnswers: input.previousAnswers ?? [],
-        ...(hint ? { clarificationHint: hint } : {}),
-        roleContext: { targetRole: input.config.role, seniority: input.config.seniority, focus: input.config.focus },
-      }),
+      body: serializeNextTurnRequest(input),
       signal: AbortSignal.any([input.signal, AbortSignal.timeout(7_000)]),
     });
     if (!response.ok) return fallback;
