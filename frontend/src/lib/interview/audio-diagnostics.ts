@@ -1,7 +1,7 @@
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 
 import { createDiagnosticsReporter } from "./client-diagnostics.mjs";
-import { readAudioSessionType } from "./client-environment.mjs";
+import { detectInAppBrowser, readAudioSessionType } from "./client-environment.mjs";
 
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 
@@ -22,7 +22,8 @@ const micState: { micActive?: boolean; micContextState?: string } = {};
 /** Fire-and-forget, content-free; safe to pass as an `onDiagnostic` callback. */
 export const reportAudioDiagnostic = (event: AudioDiagnosticEvent) => {
   try {
-    reporter.report({ ...micState, audioSessionType: readAudioSessionType(), ...event });
+    const inApp = event.kind === "mic_error" || event.kind === "unlock" ? { inAppBrowser: detectInAppBrowser(typeof navigator === "undefined" ? "" : navigator.userAgent) ?? "none" } : {};
+    reporter.report({ ...micState, audioSessionType: readAudioSessionType(), ...inApp, ...event });
   } catch { /* Diagnostics never throw. */ }
 };
 

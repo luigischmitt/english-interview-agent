@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
+import { detectPlatform } from "@/lib/interview/client-environment.mjs";
 import { getAccessToken } from "@/lib/auth/backend-auth";
 import { buildStreamStartMessage, notifySessionExpired } from "@/lib/auth/access-token.mjs";
 import type { VoiceTranscription } from "@/lib/interview/transcription";
@@ -107,9 +109,12 @@ function getStreamUrl(): string {
   return url.toString();
 }
 
+/** Shown when the microphone was denied; the room swaps it for the in-app browser notice when that is the cause. */
+export const micDeniedMessage = () => `A permissão para o microfone foi negada. ${detectPlatform() === "ios" ? "No Safari, toque em “aA” na barra de endereço, abra Ajustes do site e permita o Microfone." : "Permita o microfone nas configurações do site (ícone ao lado do endereço) e tente novamente."}`;
+
 function microphoneError(error: unknown): string {
   if (error instanceof DOMException) {
-    if (error.name === "NotAllowedError" || error.name === "SecurityError") return "A permissão para o microfone foi negada. Permita o acesso e tente novamente.";
+    if (error.name === "NotAllowedError" || error.name === "SecurityError") return micDeniedMessage();
     if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") return "Nenhum microfone foi encontrado. Conecte um dispositivo e tente novamente.";
     if (error.name === "NotReadableError" || error.name === "TrackStartError") return "O microfone já está em uso. Libere o dispositivo e tente novamente.";
   }
@@ -436,7 +441,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
       }
       if (generationRef.current !== generation) { attempt?.stream.cancel(); return; }
       if (!engine) {
-        const own = createMicEngine(createBrowserMicDeps());
+        const own = createMicEngine(createBrowserMicDeps({ onDiagnostic: (event) => { if (event.kind === "mic_error") reportAudioDiagnostic(event); } }));
         ownedEngineRef.current = own;
         await own.acquire();
         engine = own;

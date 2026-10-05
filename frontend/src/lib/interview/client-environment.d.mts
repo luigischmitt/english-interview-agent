@@ -5,3 +5,7 @@ export function readAudioSessionType(nav?: NavigatorLike): string | undefined;
 export function setAudioSessionType(type: string, nav?: NavigatorLike): boolean;
 export function errorNameOf(error: unknown): string;
 export function describeMedia(media: unknown): Record<string, number | boolean>;
+export type InAppBrowser = "google" | "instagram" | "facebook" | "linkedin" | "tiktok" | "line";
+export function detectInAppBrowser(userAgent: unknown): InAppBrowser | null;
+export function isAndroid(nav?: NavigatorLike): boolean;
+export function openInSystemBrowserUrl(currentUrl: string, platform: string): string | null;

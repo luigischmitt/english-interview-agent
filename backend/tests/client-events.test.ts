@@ -24,6 +24,12 @@ describe("sanitizeClientEvent", () => {
     expect(event).toEqual({ kind: "playback_ended", errorName: "NotAllowedError", audioSessionType: "play-and-record", platform: "ios", chunkIndex: 2, mediaVolume: 1, mediaMuted: false });
   });
 
+  it("keeps mic_error with a whitelisted errorName and inAppBrowser only", () => {
+    expect(sanitizeClientEvent({ kind: "mic_error", errorName: "NotAllowedError", inAppBrowser: "google", message: "x" })).toEqual({ kind: "mic_error", errorName: "NotAllowedError", inAppBrowser: "google" });
+    expect(sanitizeClientEvent({ kind: "unlock", inAppBrowser: "none" })).toEqual({ kind: "unlock", inAppBrowser: "none" });
+    expect(sanitizeClientEvent({ kind: "mic_error", errorName: "free text", inAppBrowser: "whatsapp" })).toEqual({ kind: "mic_error" });
+  });
+
   it("drops invalid enums, out-of-range numbers and wrong types", () => {
     expect(sanitizeClientEvent({ kind: "playback_error", errorName: "Some free text", platform: "windows", mediaVolume: 5, elapsedMs: -1, chunkIndex: "1", micActive: "yes", readyState: Number.NaN }))
       .toEqual({ kind: "playback_error" });

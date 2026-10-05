@@ -1,7 +1,7 @@
 import { getSpeechThreshold } from "./vad-threshold.mjs";
 import { stopMediaStreamTracks } from "./session-policy.mjs";
 import { isHandoffTimingEnabled } from "./handoff-timing.mjs";
-import { setAudioSessionType } from "./client-environment.mjs";
+import { errorNameOf, setAudioSessionType } from "./client-environment.mjs";
 
 export const calibrationFrameCount = 5;
 export const defaultSpeechThreshold = 0.015;
@@ -217,6 +217,9 @@ export function createMicEngine(deps) {
         setState("ready");
         diagnose({ kind: "mic_open", micActive: true, micContextState: graph?.context?.state });
       } catch (error) {
+        // A rejected/failed acquisition must not leave the page in the "play-and-record" audio session.
+        if (!graph) { try { deps.restoreSession?.(); } catch { /* Best effort. */ } }
+        if (error?.isCancelled !== true && error?.message !== "unsupported") diagnose({ kind: "mic_error", errorName: errorNameOf(error) });
         if (!graph || graph.stream !== stream) {
           if (stream) deps.stopTracks(stream);
           if (context && context.state !== "closed") void Promise.resolve(context.close()).catch(() => {});

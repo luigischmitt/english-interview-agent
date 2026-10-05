@@ -349,3 +349,16 @@ test("a throwing diagnostics callback or session setup never breaks the micropho
   assert.equal(engine.state, "ready");
   engine.release();
 });
+
+test("a rejected getUserMedia restores the audio session and reports a content-free mic_error", async () => {
+  const deps = createFakeMicDeps({ rejectWith: Object.assign(new Error("secret message"), { name: "NotAllowedError" }) });
+  const calls = [];
+  const events = [];
+  deps.prepareSession = () => calls.push("prepare");
+  deps.restoreSession = () => calls.push("restore");
+  deps.onDiagnostic = (event) => events.push(event);
+  const engine = createMicEngine(deps);
+  await assert.rejects(engine.acquire(), /secret message/);
+  assert.deepEqual(calls, ["prepare", "restore"]);
+  assert.deepEqual(events, [{ kind: "mic_error", errorName: "NotAllowedError" }]);
+});

@@ -51,3 +51,32 @@ export function describeMedia(media) {
   };
   return Object.fromEntries(Object.entries(snapshot).filter(([, value]) => value !== undefined));
 }
+
+/** Tokens of in-app browsers (WebViews inside another app) that reject getUserMedia without ever prompting. */
+const inAppBrowserPatterns = [
+  ["google", /\bGSA\//u],
+  ["instagram", /Instagram/u],
+  ["facebook", /FBAN|FBAV|FB_IAB|FBIOS/u],
+  ["linkedin", /LinkedInApp/u],
+  ["tiktok", /musical_ly|TikTok|BytedanceWebview/u],
+  ["line", /\bLine\//u],
+];
+
+/** The in-app browser family named by a user agent ("google" | "instagram" | "facebook" | "linkedin" | "tiktok" | "line"), or null. */
+export function detectInAppBrowser(userAgent) {
+  if (typeof userAgent !== "string" || !userAgent) return null;
+  for (const [name, pattern] of inAppBrowserPatterns) if (pattern.test(userAgent)) return name;
+  return null;
+}
+
+export const isAndroid = (nav) => detectPlatform(nav) === "android";
+
+/** A link that asks the OS to open this https page in the system browser (Safari on iOS, Chrome on Android), or null. */
+export function openInSystemBrowserUrl(currentUrl, platform) {
+  let url;
+  try { url = new URL(currentUrl); } catch { return null; }
+  if (url.protocol !== "https:") return null;
+  if (platform === "ios") return `x-safari-https://${url.host}${url.pathname}${url.search}${url.hash}`;
+  if (platform === "android") return `intent://${url.host}${url.pathname}${url.search}#Intent;scheme=https;package=com.android.chrome;end`;
+  return null;
+}

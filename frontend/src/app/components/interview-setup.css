@@ -48,3 +48,8 @@
   .isu-voice[data-voice-state="warming"] .isu-voice-bar::after { animation: ds-fade 1.6s ease-in-out infinite alternate; transform: none; width: 55%; }
   .isu-voice[data-voice-state="ready"] .isu-voice-bar::after { animation: none; }
 }
+
+/* In-app browser notice: calm warning tint, no alarm. */
+.isu-inapp { border-radius: var(--ds-r-card, 1rem); background: var(--ds-warning-tint); color: var(--ds-warning); padding: 1rem 1.125rem; }
+.isu-inapp .ds-label, .isu-inapp .ds-small { color: inherit; }
+.isu-inapp .ds-btn { text-decoration: none; }
