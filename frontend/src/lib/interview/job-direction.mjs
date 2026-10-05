@@ -8,7 +8,22 @@ const limits = {
   productTeamContext: 280,
   competency: 100,
 };
-const keys = ["targetRole", "suggestedSeniority", "mainInterviewEmphasis", "priorityCompetencies", "productTeamContext"];
+const focuses = ["technical-depth", "communication", "behavioral", "mixed"];
+const keys = ["targetRole", "suggestedSeniority", "mainInterviewEmphasis", "priorityCompetencies", "productTeamContext", "tailoredQuestions"];
+export const maxTailoredQuestions = 3;
+const maxTailoredQuestionLength = 200;
+
+/** One spoken English question with a single trailing "?" (the backend also filters Portuguese and generic ones). */
+export function isValidTailoredQuestion(value) {
+  if (typeof value !== "string") return false;
+  const text = value.trim();
+  return text.length >= 15 && text.length <= maxTailoredQuestionLength && text.endsWith("?") && text.split("?").length === 2 && !/[\r\n]/.test(text);
+}
+
+function validTailoredQuestions(value) {
+  return Array.isArray(value) && value.length >= 1 && value.length <= maxTailoredQuestions && value.every(isValidTailoredQuestion)
+    && new Set(value.map((item) => item.trim().toLowerCase())).size === value.length;
+}
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -27,7 +42,8 @@ export function isValidJobDirection(value) {
     && value.priorityCompetencies.length >= 1
     && value.priorityCompetencies.length <= 5
     && value.priorityCompetencies.every((item) => validText(item, limits.competency))
-    && validText(value.productTeamContext, limits.productTeamContext);
+    && validText(value.productTeamContext, limits.productTeamContext)
+    && (value.tailoredQuestions === undefined || validTailoredQuestions(value.tailoredQuestions));
 }
 
 export class JobDirectionRequestError extends Error {
@@ -63,14 +79,55 @@ export async function requestJobDirection(jobDescription, roleContext, fetcher, 
     throw new JobDirectionRequestError(code, response.status);
   }
 
-  let result;
-  try { result = await response.json(); } catch { throw new JobDirectionRequestError("INVALID_RESPONSE", response.status); }
-  if (!isValidJobDirection(result)) throw new JobDirectionRequestError("INVALID_RESPONSE", response.status);
+  let body;
+  try { body = await response.json(); } catch { throw new JobDirectionRequestError("INVALID_RESPONSE", response.status); }
+  // The practice focus only fills the setup; it is not part of the approved snapshot. Absent for older backends.
+  const { suggestedFocus, tailoredQuestions: rawTailored, ...result } = isRecord(body) ? body : {};
+  // Tailored questions are optional: invalid or duplicate ones are dropped instead of failing the whole analysis.
+  const tailoredQuestions = [...new Set((Array.isArray(rawTailored) ? rawTailored : []).filter(isValidTailoredQuestion).map((item) => item.trim()))].slice(0, maxTailoredQuestions);
+  if (!isValidJobDirection(result) || (suggestedFocus !== undefined && !focuses.includes(suggestedFocus))) throw new JobDirectionRequestError("INVALID_RESPONSE", response.status);
   return {
     targetRole: result.targetRole.trim(),
     suggestedSeniority: result.suggestedSeniority,
     mainInterviewEmphasis: result.mainInterviewEmphasis.trim(),
     priorityCompetencies: result.priorityCompetencies.map((item) => item.trim()),
     productTeamContext: result.productTeamContext.trim(),
+    ...(tailoredQuestions.length > 0 ? { tailoredQuestions } : {}),
+    ...(suggestedFocus ? { suggestedFocus } : {}),
   };
+}
+
+/** Applies an analysis to the setup config: fills role, seniority and (when provided) focus; the snapshot excludes the focus. */
+export function applyJobAnalysis(config, analysis) {
+  const { suggestedFocus, ...direction } = analysis;
+  return {
+    ...config,
+    role: direction.targetRole,
+    seniority: direction.suggestedSeniority,
+    ...(suggestedFocus ? { focus: suggestedFocus } : {}),
+    jobDirection: direction,
+  };
+}
+
+/**
+ * Switches step 1 between "manual" and "auto" without losing the user's edits.
+ * Leaving auto parks the direction (it is not part of the config, so it is never started with); returning restores
+ * it, re-synced to the role and seniority as they are now.
+ */
+export function switchSetupMode(state, mode) {
+  if (state.mode === mode) return state;
+  if (mode === "manual") {
+    const { jobDirection, ...config } = state.config;
+    return { mode, config, parkedDirection: jobDirection ?? state.parkedDirection };
+  }
+  const parked = state.parkedDirection;
+  if (!parked) return { ...state, mode };
+  const role = state.config.role.trim();
+  const direction = { ...parked, targetRole: role || parked.targetRole, suggestedSeniority: state.config.seniority };
+  return { mode, config: { ...state.config, role: role || parked.targetRole, jobDirection: direction }, parkedDirection: undefined };
+}
+
+/** Starting from the automatic mode needs an analysis; manual never does. */
+export function setupModeBlocksStart(mode, jobDirection) {
+  return mode === "auto" && !jobDirection;
 }

@@ -14,6 +14,22 @@ export function getFixedInterviewQuestions(config: InterviewConfig): InterviewQu
       prompt: "Based on the role description you shared, which part of your experience would be most valuable in this position?",
       cue: "Give a concise example, then connect it to the role.",
     };
+    applyTailoredQuestions(questions, direction.tailoredQuestions);
   }
   return questions;
+}
+
+// Bank order: [introduction, t1, t2, ownership, t3, conflict, t4, ...]. Tailored questions take the first technical slots.
+const technicalSlots = [1, 2, 4];
+
+function applyTailoredQuestions(questions: InterviewQuestion[], tailored: string[] | undefined) {
+  const used = new Set(questions.map((question) => question.prompt.trim().toLowerCase()));
+  let slot = 0;
+  (tailored ?? []).forEach((prompt) => {
+    const key = prompt.trim().toLowerCase();
+    if (slot >= technicalSlots.length || used.has(key)) return;
+    questions[technicalSlots[slot]] = { id: `job-${slot + 1}`, prompt: prompt.trim(), cue: "Give a concrete example from your experience with this." };
+    used.add(key);
+    slot += 1;
+  });
 }

@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { OpenRouterJobDirectionService } from "./openrouter-job-direction-service.js";
 
 const direction = {
-  targetRole: "Senior Backend Engineer",
+  targetRole: "Backend Engineer",
   suggestedSeniority: "senior",
   mainInterviewEmphasis: "Arquitetura de APIs e decisões de confiabilidade.",
   priorityCompetencies: ["Sistemas distribuídos", "Observabilidade"],
   productTeamContext: "Plataforma B2B para logística; equipe de produto e engenharia.",
+  suggestedFocus: "technical-depth",
 };
 const input = {
   jobDescription: "We are hiring a backend engineer to build distributed services, improve API reliability, and work with product on a logistics platform. " .repeat(2),
@@ -30,14 +31,38 @@ describe("OpenRouter job direction service", () => {
     expect(requestBody?.response_format).toMatchObject({ type: "json_schema", json_schema: { strict: true, name: "job_interview_direction" } });
     const messages = requestBody?.messages as Array<{ role: string; content: string }>;
     expect(messages[0]?.content).toContain("untrusted data");
-    expect(messages[0]?.content).toContain("Do not generate, suggest, quote, or display interview questions");
+    expect(messages[0]?.content).toContain("ENGLISH");
+    expect(messages[0]?.content).toContain("Never write 'Não informado'");
+    expect(messages[0]?.content).toContain("suggestedFocus");
+    expect(messages[0]?.content).toContain("The only questions you may write are the tailoredQuestions field");
     expect(messages[1]?.content).toContain(input.jobDescription);
+    const jsonSchema = (requestBody?.response_format as { json_schema: { schema: { required: string[]; properties: Record<string, { enum?: string[] }> } } }).json_schema.schema;
+    expect(jsonSchema.required).toContain("suggestedFocus");
+    expect(jsonSchema.required).toContain("tailoredQuestions");
+    expect(jsonSchema.properties.suggestedFocus?.enum).toEqual(["technical-depth", "communication", "behavioral", "mixed"]);
+  });
+
+  it("normalizes a Portuguese title with seniority and strips placeholder context", async () => {
+    const service = new OpenRouterJobDirectionService({
+      key: "test-key", model: "mistral/test", timeoutMs: 1_000,
+      fetchImplementation: async () => providerResponse({ ...direction, targetRole: "Analista de Dados Sênior", suggestedSeniority: "senior", productTeamContext: "Plataforma de analytics para varejo. Não informado", suggestedFocus: "communication" }),
+    });
+    await expect(service.analyze(input)).resolves.toMatchObject({ targetRole: "Data Analyst", suggestedSeniority: "senior", productTeamContext: "Plataforma de analytics para varejo.", suggestedFocus: "communication" });
+  });
+
+  it("falls back to the setup focus when the provider omits the focus, and rejects titles that are only seniority", async () => {
+    const { suggestedFocus: _omitted, ...withoutFocus } = direction;
+    const lenient = new OpenRouterJobDirectionService({ key: "k", model: "m", timeoutMs: 1_000, fetchImplementation: async () => providerResponse(withoutFocus) });
+    await expect(lenient.analyze(input)).resolves.toMatchObject({ suggestedFocus: "technical-depth" });
+    const onlySeniority = new OpenRouterJobDirectionService({ key: "k", model: "m", timeoutMs: 1_000, fetchImplementation: async () => providerResponse({ ...direction, targetRole: "Senior" }) });
+    await expect(onlySeniority.analyze(input)).rejects.toMatchObject({ code: "JOB_DIRECTION_INVALID_PROVIDER_RESPONSE" });
   });
 
   it.each([
     ["extra field", { ...direction, interviewQuestions: ["Tell me about yourself?"] }],
     ["question-shaped content", { ...direction, mainInterviewEmphasis: "What would you build?" }],
     ["too many competencies", { ...direction, priorityCompetencies: Array(6).fill("Skill") }],
+    ["invalid focus", { ...direction, suggestedFocus: "everything" }],
     ["invalid seniority", { ...direction, suggestedSeniority: "principal" }],
     ["overlong context", { ...direction, productTeamContext: "x".repeat(281) }],
   ])("rejects malformed provider output (%s)", async (_case, content) => {
@@ -55,5 +80,34 @@ describe("OpenRouter job direction service", () => {
 
     const unavailableService = new OpenRouterJobDirectionService({ key: "test-key", model: "mistral/test", timeoutMs: 1_000, fetchImplementation: async () => new Response("private provider body", { status: 503 }) });
     await expect(unavailableService.analyze(input)).rejects.toMatchObject({ code: "JOB_DIRECTION_PROVIDER_UNAVAILABLE", status: 502 });
+  });
+
+  it("keeps valid tailored questions and drops Portuguese, multi-question, long, generic and duplicate ones", async () => {
+    const good = "How would you structure a Playwright test suite so it stays reliable as the product grows?";
+    const service = new OpenRouterJobDirectionService({
+      key: "k", model: "m", timeoutMs: 1_000,
+      fetchImplementation: async () => providerResponse({
+        ...direction,
+        tailoredQuestions: [
+          good,
+          `  ${good.toUpperCase()} `,
+          "Como você automatizaria testes de API com Postman?",
+          "How do you test APIs? And how do you report bugs?",
+          "Tell me about yourself and your experience?",
+          `${"Why ".repeat(60)}?`,
+          "How do you run API tests in GitHub Actions without slowing down the pipeline?",
+          "What is your approach to flaky tests in CI?",
+        ],
+      }),
+    });
+    await expect(service.analyze(input)).resolves.toMatchObject({
+      tailoredQuestions: [good, "How do you run API tests in GitHub Actions without slowing down the pipeline?", "What is your approach to flaky tests in CI?"],
+    });
+  });
+
+  it("omits tailoredQuestions when none survive validation", async () => {
+    const service = new OpenRouterJobDirectionService({ key: "k", model: "m", timeoutMs: 1_000, fetchImplementation: async () => providerResponse({ ...direction, tailoredQuestions: ["Qual é a sua experiência com testes?", 42] }) });
+    const result = await service.analyze(input);
+    expect(result).not.toHaveProperty("tailoredQuestions");
   });
 });

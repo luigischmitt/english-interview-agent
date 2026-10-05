@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CS
 import { ArrowUpRight, ArrowLeft, ChevronDown, Check, Leaf } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import type { JobDirection, JobSeniority } from "@/lib/interview/job-direction.mjs";
-import { isValidJobDirection, JobDirectionRequestError, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection } from "@/lib/interview/job-direction.mjs";
+import type { SetupMode } from "@/lib/interview/job-direction.mjs";
+import { applyJobAnalysis, isValidJobDirection, JobDirectionRequestError, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection, setupModeBlocksStart, switchSetupMode } from "@/lib/interview/job-direction.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { useSpeechWarmup, useVoiceReadiness } from "../hooks/use-speech-playback";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
@@ -52,7 +53,9 @@ export function InterviewSetup({
   const [jobDirectionError, setJobDirectionError] = useState("");
   const [jobDirectionEditNote, setJobDirectionEditNote] = useState("");
   const [jobDirectionValidationError, setJobDirectionValidationError] = useState("");
-  const [jobDirectionOpen, setJobDirectionOpen] = useState(false);
+  const [setupMode, setSetupMode] = useState<SetupMode>("manual");
+  // Direction kept aside while in manual mode, so switching modes never loses the user's edits.
+  const [parkedDirection, setParkedDirection] = useState<JobDirection | undefined>(undefined);
   const [showErrors, setShowErrors] = useState(false);
   const [audioTestStatus, setAudioTestStatus] = useState<{ kind: "idle" | "loading" | "success" | "error"; message?: string }>({ kind: "idle" });
   const audioTestRef = useRef<{ cancel: () => void } | null>(null);
@@ -64,6 +67,8 @@ export function InterviewSetup({
   const roomOptionsRef = useRef<HTMLElement>(null);
   const micTestRef = useRef<MicrophoneTestHandle>(null);
   const voiceBlocked = config.playInterviewerAudio && voiceState !== "ready";
+  const autoBlocked = setupModeBlocksStart(setupMode, config.jobDirection);
+  const startBlocked = voiceBlocked || autoBlocked;
 
   const cancelAudioTest = () => {
     audioTestRef.current?.cancel();
@@ -93,7 +98,8 @@ export function InterviewSetup({
         return {
           ...current,
           role: value,
-          ...(jobDirection ? { jobDirection: value.trim() ? { ...jobDirection, targetRole: value.trim() } : undefined } : {}),
+          // An emptied field keeps the direction while the person retypes; starting is blocked until the role matches it again.
+          ...(jobDirection && value.trim() ? { jobDirection: { ...jobDirection, targetRole: value.trim() } } : {}),
         };
       }
       if (field === "seniority") {
@@ -122,24 +128,42 @@ export function InterviewSetup({
         seniority: config.seniority,
         focus: config.focus,
       }, authorizedFetch, `${backendBaseUrl}/api/v1/thinking/job-direction`);
-      setConfig((current) => ({ ...current, role: direction.targetRole, seniority: direction.suggestedSeniority, jobDirection: direction }));
-      setJobDirectionOpen(true);
+      setConfig((current) => applyJobAnalysis(current, direction));
+      setShowErrors(false);
       setJobDirectionStatus("idle");
     } catch (error) {
       const code = error instanceof JobDirectionRequestError ? error.code : "REQUEST_FAILED";
       const message = code === "INVALID_INPUT" || code === "INVALID_JOB_DIRECTION_REQUEST"
         ? `Cole uma descrição com pelo menos ${jobDescriptionMinLength} caracteres para gerar o direcionamento.`
         : code === "JOB_DIRECTION_TIMEOUT"
-          ? "A análise demorou mais do que o esperado. Tente novamente ou continue sem direcionamento."
+          ? "A análise demorou mais do que o esperado. Tente novamente ou mude para “Manual”."
           : code === "JOB_DIRECTION_RATE_LIMITED"
-            ? "A análise está ocupada agora. Tente novamente ou continue sem direcionamento."
+            ? "A análise está ocupada agora. Tente novamente ou mude para “Manual”."
             : code === "JOB_DIRECTION_INSUFFICIENT_CONTENT"
-              ? "A descrição tem pouco conteúdo para identificar as prioridades da vaga. Cole mais detalhes e tente novamente, ou continue sem direcionamento."
-            : "Não foi possível analisar esta vaga agora. Tente novamente ou continue sem direcionamento.";
+              ? "A descrição tem pouco conteúdo para identificar as prioridades da vaga. Cole mais detalhes e tente novamente, ou mude para “Manual”."
+            : "Não foi possível analisar esta vaga agora. Tente novamente ou mude para “Manual”.";
       setJobDirectionError(message);
-      setJobDirectionOpen(true);
       setJobDirectionStatus("error");
     }
+  };
+
+  const changeSetupMode = (mode: SetupMode) => {
+    const next = switchSetupMode({ mode: setupMode, config, parkedDirection }, mode);
+    setSetupMode(next.mode);
+    setConfig(next.config);
+    setParkedDirection(next.parkedDirection);
+    setJobDirectionError("");
+    setJobDirectionEditNote("");
+    setJobDirectionValidationError("");
+  };
+
+  const clearAnalysis = () => {
+    setConfig((current) => ({ ...current, jobDirection: undefined }));
+    setParkedDirection(undefined);
+    setJobDescription("");
+    setJobDirectionError("");
+    setJobDirectionEditNote("");
+    setJobDirectionValidationError("");
   };
 
   const editJobDirection = (field: keyof JobDirection, value: string) => {
@@ -155,14 +179,6 @@ export function InterviewSetup({
     setConfig((current) => {
       const direction = current.jobDirection;
       if (!direction) return current;
-      if (field === "targetRole") {
-        const targetRole = normalizedValue.slice(0, 100);
-        return { ...current, role: targetRole, jobDirection: { ...direction, targetRole } };
-      }
-      if (field === "suggestedSeniority" && ["junior", "mid-level", "senior", "staff"].includes(normalizedValue)) {
-        const suggestedSeniority = normalizedValue as JobSeniority;
-        return { ...current, seniority: suggestedSeniority, jobDirection: { ...direction, suggestedSeniority } };
-      }
       if (field === "priorityCompetencies") {
         return { ...current, jobDirection: { ...direction, priorityCompetencies: normalizedValue.split(/\r?\n/u) } };
       }
@@ -227,11 +243,10 @@ export function InterviewSetup({
     if (config.jobDirection && (!isValidJobDirection(config.jobDirection)
       || config.jobDirection.targetRole.trim() !== config.role.trim()
       || config.jobDirection.suggestedSeniority !== config.seniority)) {
-      setJobDirectionValidationError("Complete os campos do direcionamento ou remova-o para continuar sem ele.");
-      setJobDirectionOpen(true);
+      setJobDirectionValidationError("Complete os campos do direcionamento ou mude para “Manual” para continuar sem ele.");
       return;
     }
-    if (voiceBlocked) return;
+    if (voiceBlocked || autoBlocked) return;
     cancelAudioTest();
     micTestRef.current?.stop();
     const jobDirection = config.jobDirection ? {
@@ -261,7 +276,9 @@ export function InterviewSetup({
   };
 
   const startLabel = config.playInterviewerAudio ? "Iniciar com áudio" : "Iniciar somente com texto";
-  const startHint = voiceState === "unavailable"
+  const startHint = autoBlocked
+    ? "Analise a vaga para continuar, ou mude para “Manual”."
+    : voiceState === "unavailable"
     ? "A voz não ficou pronta. Tente de novo acima ou escolha “Somente texto”."
     : "Aguarde a voz do entrevistador ficar pronta para iniciar com áudio.";
   const roleInvalid = showErrors && !config.role.trim();
@@ -280,7 +297,7 @@ export function InterviewSetup({
 
       <form id="interview-setup-form" onSubmit={handleSubmit} className="mt-8 grid items-start gap-6 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-8" noValidate>
         <div className="flex min-w-0 flex-col gap-5">
-          {/* 1. Essentials: what is being practiced */}
+          {/* 1. Essentials: what is being practiced, set manually or filled from a pasted job description */}
           <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 0 } as CSSProperties} aria-labelledby="interview-details-title">
             <div className="flex items-center gap-3">
               <span className="ds-step" aria-hidden="true">1</span>
@@ -289,47 +306,136 @@ export function InterviewSetup({
             <p className="ds-body mt-2">Você pode mudar essas opções a cada nova sessão.</p>
 
             <div className="mt-6 flex flex-col gap-6">
-              <div className="flex flex-col gap-2">
-                <label htmlFor="role-input" className="ds-label">
-                  Cargo para praticar <span className="text-danger" aria-hidden="true">*</span>
-                </label>
-                <RoleCombobox
-                  id="role-input"
-                  value={config.role}
-                  onChange={(role) => updateConfig("role", role)}
-                  placeholder="Escolha ou digite, ex.: Software Engineer"
-                  invalid={roleInvalid}
-                  describedBy={roleInvalid ? "role-error" : undefined}
+              <fieldset className="flex min-w-0 flex-col gap-2">
+                <legend className="ds-label mb-2">Como definir a entrevista</legend>
+                <SlidingSegmented
+                  name="setup-mode"
+                  ariaLabel="Como definir a entrevista"
+                  className="grid-cols-2"
+                  itemClassName="min-h-11"
+                  options={[{ value: "manual", label: "Manual" }, { value: "auto", label: "Automático pela vaga" }]}
+                  value={setupMode}
+                  onChange={(value) => changeSetupMode(value as SetupMode)}
                 />
-                {roleInvalid && (
-                  <span id="role-error" role="alert" className="ds-fade-in text-sm font-medium text-danger">Informe o cargo para o qual você quer praticar.</span>
-                )}
+              </fieldset>
+
+              {/* Automatic: paste the job description. The text stays in component memory only. */}
+              <div id="job-analysis-panel" className="ds-reveal" data-open={setupMode === "auto"} inert={setupMode !== "auto"}>
+                <div>
+                  <div className="-mx-1 px-1 pb-1">
+                    <label htmlFor="job-description" className="ds-label block">Descrição da vaga</label>
+                    <p className="ds-small mt-1">A IA identifica o cargo, a senioridade e o foco, e resume as prioridades. Depois você ajusta o que quiser.</p>
+                    <textarea
+                      id="job-description"
+                      className="textarea ds-field mt-2 min-h-40 w-full resize-y rounded-2xl text-sm leading-6"
+                      value={jobDescription}
+                      maxLength={jobDescriptionMaxLength}
+                      onChange={(event) => setJobDescription(event.target.value)}
+                      placeholder="Cole aqui a descrição da vaga…"
+                      aria-describedby="job-description-help job-description-count"
+                    />
+                    <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:justify-between">
+                      <p id="job-description-help" className="ds-small">O texto é enviado ao provedor de IA para análise e não é salvo pelo app.</p>
+                      <p id="job-description-count" className="ds-small tabular-nums">{jobDescription.length.toLocaleString("pt-BR")} / {jobDescriptionMaxLength.toLocaleString("pt-BR")}</p>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <button type="button" className="btn btn-sm ds-btn ds-btn-soft" onClick={() => void analyzeJobDescription()} disabled={jobDirectionStatus === "loading"}>
+                        {jobDirectionStatus === "loading" ? <><span className="loading loading-spinner loading-xs" aria-hidden="true" /> Analisando vaga…</> : config.jobDirection ? "Analisar novamente" : "Analisar vaga"}
+                      </button>
+                      {config.jobDirection && (
+                        <button type="button" className="btn btn-sm ds-btn ds-btn-quiet" onClick={clearAnalysis}>Limpar análise</button>
+                      )}
+                    </div>
+                    <div aria-live="polite">
+                      {jobDirectionError && (
+                        <div className="alert alert-warning mt-4" role="alert">
+                          <p>{jobDirectionError}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <fieldset className="flex min-w-0 flex-col gap-2">
-                <legend className="ds-label mb-2">Senioridade</legend>
-                <SlidingSegmented
-                  name="seniority"
-                  ariaLabel="Senioridade"
-                  className="grid-cols-2 min-[460px]:grid-cols-4"
-                  options={(Object.keys(seniorityLabels) as InterviewConfig["seniority"][]).map((value) => ({ value, label: seniorityLabels[value] }))}
-                  value={config.seniority}
-                  onChange={(value) => updateConfig("seniority", value)}
-                />
-              </fieldset>
+              {/* Role, seniority and focus: typed in manual mode, filled by the analysis (and still editable) in automatic mode. */}
+              {(setupMode === "manual" || config.jobDirection) && (
+                <div className="ds-fade-in flex flex-col gap-6">
+                  {setupMode === "auto" && (
+                    <p className="ds-small -mb-2" role="status">Preenchido a partir da vaga. Ajuste o que não estiver certo.</p>
+                  )}
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="role-input" className="ds-label">
+                      Cargo para praticar <span className="text-danger" aria-hidden="true">*</span>
+                    </label>
+                    <RoleCombobox
+                      id="role-input"
+                      value={config.role}
+                      onChange={(role) => updateConfig("role", role)}
+                      placeholder="Escolha ou digite, ex.: Software Engineer"
+                      invalid={roleInvalid}
+                      describedBy={roleInvalid ? "role-error" : undefined}
+                    />
+                    {roleInvalid && (
+                      <span id="role-error" role="alert" className="ds-fade-in text-sm font-medium text-danger">Informe o cargo para o qual você quer praticar.</span>
+                    )}
+                  </div>
 
-              <fieldset className="flex min-w-0 flex-col gap-2">
-                <legend className="ds-label mb-2">Foco da prática</legend>
-                <SlidingSegmented
-                  name="focus"
-                  ariaLabel="Foco da prática"
-                  className="grid-cols-1 min-[560px]:grid-cols-2"
-                  itemClassName="min-h-11"
-                  options={(Object.keys(focusLabels) as InterviewConfig["focus"][]).map((value) => ({ value, label: focusLabels[value] }))}
-                  value={config.focus}
-                  onChange={(value) => updateConfig("focus", value)}
-                />
-              </fieldset>
+                  <fieldset className="flex min-w-0 flex-col gap-2">
+                    <legend className="ds-label mb-2">Senioridade</legend>
+                    <SlidingSegmented
+                      name="seniority"
+                      ariaLabel="Senioridade"
+                      className="grid-cols-2 min-[460px]:grid-cols-4"
+                      options={(Object.keys(seniorityLabels) as InterviewConfig["seniority"][]).map((value) => ({ value, label: seniorityLabels[value] }))}
+                      value={config.seniority}
+                      onChange={(value) => updateConfig("seniority", value)}
+                    />
+                  </fieldset>
+
+                  <fieldset className="flex min-w-0 flex-col gap-2">
+                    <legend className="ds-label mb-2">Foco da prática</legend>
+                    <SlidingSegmented
+                      name="focus"
+                      ariaLabel="Foco da prática"
+                      className="grid-cols-1 min-[560px]:grid-cols-2"
+                      itemClassName="min-h-11"
+                      options={(Object.keys(focusLabels) as InterviewConfig["focus"][]).map((value) => ({ value, label: focusLabels[value] }))}
+                      value={config.focus}
+                      onChange={(value) => updateConfig("focus", value)}
+                    />
+                  </fieldset>
+                </div>
+              )}
+
+              {/* Direction summary from the analysis: editable, and the approved snapshot goes to the room and the report. */}
+              <div id="job-direction-panel" className="ds-reveal" data-open={setupMode === "auto" && !!config.jobDirection} inert={!(setupMode === "auto" && config.jobDirection)}>
+                <div>
+                  {config.jobDirection && (
+                    <fieldset className="-mx-1 rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-5" aria-labelledby="direction-found-title">
+                      <legend className="sr-only">Direcionamento da vaga</legend>
+                      <h3 id="direction-found-title" className="ds-label">Prioridades da vaga</h3>
+                      <p className="ds-small mt-1">Revise o resumo. Ele orienta as perguntas e o relatório; nenhuma pergunta foi gerada nesta etapa.</p>
+                      <div className="mt-4 grid gap-4">
+                        <div className="flex flex-col gap-2">
+                          <label htmlFor="direction-emphasis" className="ds-label">Principal ênfase da entrevista</label>
+                          <textarea id="direction-emphasis" rows={2} maxLength={240} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.mainInterviewEmphasis} onChange={(event) => editJobDirection("mainInterviewEmphasis", event.target.value)} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <label htmlFor="direction-competencies" className="ds-label">Competências prioritárias</label>
+                          <textarea id="direction-competencies" rows={Math.max(2, config.jobDirection.priorityCompetencies.length)} maxLength={5 * 101} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.priorityCompetencies.join("\n")} onChange={(event) => editJobDirection("priorityCompetencies", event.target.value)} aria-describedby="direction-competencies-help" />
+                          <p id="direction-competencies-help" className="ds-small">Uma competência por linha, até cinco.</p>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <label htmlFor="direction-context" className="ds-label">Contexto de produto e equipe</label>
+                          <textarea id="direction-context" rows={2} maxLength={280} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.productTeamContext} onChange={(event) => editJobDirection("productTeamContext", event.target.value)} />
+                        </div>
+                      </div>
+                      {jobDirectionEditNote && <p className="ds-small mt-3 text-warning" role="status">{jobDirectionEditNote}</p>}
+                      {jobDirectionValidationError && <p className="ds-small mt-3 text-error" role="alert">{jobDirectionValidationError}</p>}
+                    </fieldset>
+                  )}
+                </div>
+              </div>
 
               <fieldset className="flex min-w-0 flex-col gap-2">
                 <legend className="ds-label mb-2">Duração da sessão</legend>
@@ -342,83 +448,6 @@ export function InterviewSetup({
                   onChange={(value) => updateConfig("duration", value)}
                 />
               </fieldset>
-            </div>
-          </section>
-
-          {/* Optional job context. The pasted description stays in component memory only. */}
-          <section className="ds-card ds-enter overflow-hidden" style={{ "--i": 1 } as CSSProperties} aria-labelledby="job-direction-title">
-            <button type="button" className="isu-disclosure-button flex w-full items-center gap-3 p-5 text-left sm:px-7" aria-expanded={jobDirectionOpen} aria-controls="job-direction-panel" onClick={() => setJobDirectionOpen((open) => !open)}>
-              <span className="min-w-0 flex-1">
-                <span id="job-direction-title" className="ds-h2 block">Direcionamento da vaga <span className="ds-small font-normal">· opcional</span></span>
-                <span className="ds-small block">{config.jobDirection ? "Direcionamento pronto · cargo e foco atualizados." : "Use a descrição para ajustar o cargo e os temas de prática."}</span>
-              </span>
-              <ChevronDown className="ds-chevron size-5 shrink-0 text-text-2" style={{ transform: jobDirectionOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
-            </button>
-            <div id="job-direction-panel" hidden={!jobDirectionOpen} className="border-t border-base-300 px-5 pb-6 pt-5 sm:px-7">
-            <p className="ds-body max-w-2xl">Cole a descrição para identificar o papel, o nível provável e os temas mais relevantes para a entrevista. Você pode revisar e editar tudo antes de iniciar.</p>
-
-            <label htmlFor="job-description" className="ds-label mt-5 block">Descrição da vaga</label>
-            <textarea
-              id="job-description"
-              className="textarea ds-field mt-2 min-h-40 w-full resize-y rounded-2xl text-sm leading-6"
-              value={jobDescription}
-              maxLength={jobDescriptionMaxLength}
-              onChange={(event) => setJobDescription(event.target.value)}
-              placeholder="Cole aqui a descrição da vaga…"
-              aria-describedby="job-description-help job-description-count"
-            />
-            <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:justify-between">
-              <p id="job-description-help" className="ds-small">O texto é enviado ao provedor de IA para análise e não é salvo pelo app.</p>
-              <p id="job-description-count" className="ds-small tabular-nums">{jobDescription.length.toLocaleString("pt-BR")} / {jobDescriptionMaxLength.toLocaleString("pt-BR")}</p>
-            </div>
-            <button type="button" className="btn btn-sm ds-btn ds-btn-soft mt-4" onClick={() => void analyzeJobDescription()} disabled={jobDirectionStatus === "loading"}>
-              {jobDirectionStatus === "loading" ? <><span className="loading loading-spinner loading-xs" aria-hidden="true" /> Analisando descrição…</> : config.jobDirection ? "Analisar novamente" : "Gerar direcionamento"}
-            </button>
-            {jobDirectionError && (
-              <div className="alert alert-warning mt-4" role="alert">
-                <p>{jobDirectionError}</p>
-              </div>
-            )}
-
-            {config.jobDirection && (
-              <fieldset className="mt-6 rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-5" aria-labelledby="direction-found-title">
-                <legend className="sr-only">Direcionamento encontrado</legend>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                  <h3 id="direction-found-title" className="ds-label">Direcionamento encontrado</h3>
-                  <p className="ds-small mt-1">Revise os campos. Nenhuma pergunta de entrevista foi gerada nesta etapa.</p>
-                  </div>
-                  <button type="button" className="btn btn-sm ds-btn ds-btn-quiet" onClick={() => { setConfig((current) => ({ ...current, jobDirection: undefined })); setJobDescription(""); setJobDirectionError(""); setJobDirectionEditNote(""); setJobDirectionValidationError(""); setJobDirectionOpen(false); }}>Remover direcionamento</button>
-                </div>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <div className="flex flex-col gap-2">
-                    <label htmlFor="direction-role" className="ds-label">Cargo-alvo</label>
-                    <textarea id="direction-role" rows={1} maxLength={100} className="textarea ds-field w-full resize-y text-sm" value={config.jobDirection.targetRole} onChange={(event) => editJobDirection("targetRole", event.target.value)} />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <label htmlFor="direction-seniority" className="ds-label">Senioridade sugerida</label>
-                    <select id="direction-seniority" className="select ds-field w-full text-sm" value={config.jobDirection.suggestedSeniority} onChange={(event) => editJobDirection("suggestedSeniority", event.target.value)}>
-                      {(Object.keys(seniorityLabels) as JobSeniority[]).map((value) => <option key={value} value={value}>{seniorityLabels[value]}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-2 sm:col-span-2">
-                    <label htmlFor="direction-emphasis" className="ds-label">Principal ênfase da entrevista</label>
-                    <textarea id="direction-emphasis" rows={2} maxLength={240} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.mainInterviewEmphasis} onChange={(event) => editJobDirection("mainInterviewEmphasis", event.target.value)} />
-                  </div>
-                  <div className="flex flex-col gap-2 sm:col-span-2">
-                    <label htmlFor="direction-competencies" className="ds-label">Competências prioritárias</label>
-                    <textarea id="direction-competencies" rows={Math.max(2, config.jobDirection.priorityCompetencies.length)} maxLength={5 * 101} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.priorityCompetencies.join("\n")} onChange={(event) => editJobDirection("priorityCompetencies", event.target.value)} aria-describedby="direction-competencies-help" />
-                    <p id="direction-competencies-help" className="ds-small">Uma competência por linha, até cinco.</p>
-                  </div>
-                  <div className="flex flex-col gap-2 sm:col-span-2">
-                    <label htmlFor="direction-context" className="ds-label">Contexto de produto e equipe</label>
-                    <textarea id="direction-context" rows={2} maxLength={280} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.productTeamContext} onChange={(event) => editJobDirection("productTeamContext", event.target.value)} />
-                  </div>
-                </div>
-                {jobDirectionEditNote && <p className="ds-small mt-3 text-warning" role="status">{jobDirectionEditNote}</p>}
-                {jobDirectionValidationError && <p className="ds-small mt-3 text-error" role="alert">{jobDirectionValidationError}</p>}
-              </fieldset>
-            )}
             </div>
           </section>
 
@@ -564,10 +593,10 @@ export function InterviewSetup({
                 </div>
               ))}
             </dl>
-            <button type="submit" className="ds-btn ds-btn-cta mt-7 hidden lg:flex" disabled={voiceBlocked} aria-describedby={voiceBlocked ? "start-hint" : undefined}>
+            <button type="submit" className="ds-btn ds-btn-cta mt-7 hidden lg:flex" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint" : undefined}>
               {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
             </button>
-            {voiceBlocked && <p id="start-hint" className="ds-hint ds-fade-in mt-3 hidden text-on-panel-accent lg:block">{startHint}</p>}
+            {startBlocked && <p id="start-hint" className="ds-hint ds-fade-in mt-3 hidden text-on-panel-accent lg:block">{startHint}</p>}
             <button type="button" className="ds-btn ds-btn-quiet mt-2 hidden w-full text-on-panel-accent hover:text-[color:var(--ds-on-panel)] lg:flex" onClick={onBack}>
               Cancelar
             </button>
@@ -579,8 +608,8 @@ export function InterviewSetup({
 
         {/* Mobile: the primary action stays reachable */}
         <div className="isu-bar fixed inset-x-0 z-20 px-4 pb-3 pt-3 lg:hidden">
-          {voiceBlocked && <p className="ds-hint ds-fade-in mb-2 text-center text-text-2">{startHint}</p>}
-          <button type="submit" form="interview-setup-form" className="ds-btn ds-btn-cta-green" disabled={voiceBlocked}>
+          {startBlocked && <p className="ds-hint ds-fade-in mb-2 text-center text-text-2">{startHint}</p>}
+          <button type="submit" form="interview-setup-form" className="ds-btn ds-btn-cta-green" disabled={startBlocked}>
             {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
           </button>
         </div>

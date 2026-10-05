@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isValidJobDirection, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection } from "../src/lib/interview/job-direction.mjs";
+import { applyJobAnalysis, isValidJobDirection, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection, setupModeBlocksStart, switchSetupMode } from "../src/lib/interview/job-direction.mjs";
 import { parseRoomHandoff, serializeRoomHandoff } from "../src/lib/interview/room-handoff.mjs";
 
 const direction = {
@@ -49,4 +49,53 @@ test("handoff includes only the approved direction and drops it when role or sen
   assert.equal(JSON.stringify(handoff).includes(description), false);
   assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, role: "Different role" }, 1), 2).jobDirection, undefined);
   assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, seniority: "staff" }, 1), 2).jobDirection, undefined);
+});
+
+test("keeps the practice focus out of the snapshot and tolerates older backends without it", async () => {
+  const withFocus = await requestJobDirection(description, { targetRole: "" }, async () => new Response(JSON.stringify({ ...direction, suggestedFocus: "behavioral" }), { status: 200 }));
+  assert.equal(withFocus.suggestedFocus, "behavioral");
+  const applied = applyJobAnalysis({ ...config, jobDirection: undefined }, withFocus);
+  assert.equal(applied.focus, "behavioral");
+  assert.equal(applied.role, direction.targetRole);
+  assert.equal(applied.seniority, "senior");
+  assert.equal("suggestedFocus" in applied.jobDirection, false);
+  assert.equal(isValidJobDirection(applied.jobDirection), true);
+
+  const legacy = await requestJobDirection(description, { targetRole: "" }, async () => new Response(JSON.stringify(direction), { status: 200 }));
+  assert.equal(applyJobAnalysis(config, legacy).focus, config.focus);
+  await assert.rejects(requestJobDirection(description, { targetRole: "" }, async () => new Response(JSON.stringify({ ...direction, suggestedFocus: "everything" }), { status: 200 })), { code: "INVALID_RESPONSE" });
+});
+
+test("switching modes parks and restores the direction without losing edits", () => {
+  const auto = { mode: "auto", config, parkedDirection: undefined };
+  const manual = switchSetupMode(auto, "manual");
+  assert.equal(manual.config.jobDirection, undefined);
+  assert.equal(manual.config.role, config.role);
+  assert.deepEqual(manual.parkedDirection, direction);
+  assert.equal(setupModeBlocksStart("manual", undefined), false);
+
+  const edited = switchSetupMode({ ...manual, config: { ...manual.config, role: "Platform Engineer", seniority: "staff" } }, "auto");
+  assert.equal(edited.config.jobDirection.targetRole, "Platform Engineer");
+  assert.equal(edited.config.jobDirection.suggestedSeniority, "staff");
+  assert.equal(edited.config.jobDirection.mainInterviewEmphasis, direction.mainInterviewEmphasis);
+  assert.equal(edited.parkedDirection, undefined);
+
+  const empty = switchSetupMode({ mode: "manual", config: { ...config, jobDirection: undefined }, parkedDirection: undefined }, "auto");
+  assert.equal(empty.config.jobDirection, undefined);
+  assert.equal(setupModeBlocksStart("auto", empty.config.jobDirection), true);
+  assert.equal(setupModeBlocksStart("auto", direction), false);
+});
+
+test("tailored questions are optional, validated, kept through hand-off and filtered on request", async () => {
+  const good = "How would you structure a Playwright test suite so it stays reliable?";
+  const withQuestions = { ...direction, tailoredQuestions: [good] };
+  assert.equal(isValidJobDirection(withQuestions), true);
+  assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: [] }), false);
+  assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: ["Two? Questions?"] }), false);
+  assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: Array(4).fill(0).map((_, i) => `Question number ${i} about testing?`) }), false);
+  const parsed = parseRoomHandoff(serializeRoomHandoff({ ...config, jobDirection: withQuestions }, 1_000), 1_000);
+  assert.deepEqual(parsed.jobDirection.tailoredQuestions, [good]);
+  const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ ...direction, tailoredQuestions: [good, good, "bad", "Two? Questions?"] }) });
+  const result = await requestJobDirection(description, { targetRole: direction.targetRole }, fetcher);
+  assert.deepEqual(result.tailoredQuestions, [good]);
 });
