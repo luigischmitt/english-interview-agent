@@ -15,6 +15,8 @@ import { PageIntro } from "./shared";
 import { inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
 import { MicrophoneTest, type MicrophoneTestHandle } from "./microphone-test";
 import { readStoredMicrophoneDeviceId, storeMicrophoneDeviceId } from "@/lib/interview/mic-device.mjs";
+import { VoicePicker } from "./voice-picker";
+import { readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
 import { RoleCombobox } from "@/components/ui/role-combobox";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import "./interview-setup.css";
@@ -84,6 +86,19 @@ export function InterviewSetup({
   const storedMicrophoneId = useSyncExternalStore(subscribeNever, () => readStoredMicrophoneDeviceId(window.localStorage), () => null);
   const [chosenMicrophoneId, setChosenMicrophoneId] = useState<string | null | undefined>(undefined);
   const microphoneDeviceId = chosenMicrophoneId === undefined ? storedMicrophoneId : chosenMicrophoneId;
+
+  // The voice chosen in an earlier session (this browser only); the default on the server render, so hydration matches.
+  const storedVoice = useSyncExternalStore(subscribeNever, () => readStoredInterviewerVoice(window.localStorage), () => defaultInterviewConfig.voice ?? "");
+  const [chosenVoice, setChosenVoice] = useState<string | undefined>(undefined);
+  const voice = chosenVoice ?? storedVoice;
+
+  const chooseVoice = useCallback((next: string) => {
+    audioTestRef.current?.cancel();
+    audioTestRef.current = null;
+    setAudioTestStatus({ kind: "idle" });
+    setChosenVoice(next);
+    storeInterviewerVoice(window.localStorage, next);
+  }, []);
 
   const chooseMicrophone = useCallback((deviceId: string | null) => {
     setChosenMicrophoneId(deviceId);
@@ -212,6 +227,7 @@ export function InterviewSetup({
     const playback = synthesizeInterviewerQuestion(audioTestPhrase, {
       endpoint: `${backendBaseUrl}/api/v1/speech`,
       fetcher: authorizedFetch,
+      voice,
       onDiagnostic: reportAudioDiagnostic,
     });
     audioTestRef.current = playback;
@@ -256,10 +272,10 @@ export function InterviewSetup({
       priorityCompetencies: config.jobDirection.priorityCompetencies.map((item) => item.trim()),
       productTeamContext: config.jobDirection.productTeamContext.trim(),
     } : undefined;
-    onStart({ ...config, role: config.role.trim(), microphoneDeviceId, ...(jobDirection ? { jobDirection } : {}) });
+    onStart({ ...config, role: config.role.trim(), voice, microphoneDeviceId, ...(jobDirection ? { jobDirection } : {}) });
   };
 
-  const [cargoSummary, ...restSummary] = getInterviewSetupSummary(config, seniorityLabels, focusLabels);
+  const [cargoSummary, ...restSummary] = getInterviewSetupSummary({ ...config, voice }, seniorityLabels, focusLabels);
 
   const retryVoice = () => {
     warmUpInterviewerSpeech(`${backendBaseUrl}/api/v1/speech`, authorizedFetch);
@@ -552,14 +568,23 @@ export function InterviewSetup({
               <span className="ds-step" aria-hidden="true">4</span>
               <span className="min-w-0 flex-1">
                 <span id="room-options-title" className="ds-h2 block">Preferências da sala</span>
-                <span className="ds-small block">Legendas das perguntas, câmera e início da gravação. Os padrões já funcionam bem.</span>
+                <span className="ds-small block">Voz do entrevistador, legendas, câmera e início da gravação. Os padrões já funcionam bem.</span>
               </span>
               <ChevronDown className="ds-chevron size-5 shrink-0 text-text-2" style={{ transform: roomOptionsOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
             </button>
             <div id="room-options-panel" className="ds-reveal" data-open={roomOptionsOpen} inert={!roomOptionsOpen} onTransitionEnd={handleRevealEnd}>
               <div>
                 <div className="px-5 pb-6 sm:px-7">
-                  <p className="ds-body">Essas opções mudam o que aparece e quando o microfone começa a capturar.</p>
+                  <p className="ds-body">Essas opções mudam a voz, o que aparece e quando o microfone começa a capturar.</p>
+                  <div className="mt-5">
+                    <VoicePicker
+                      value={voice}
+                      onChange={chooseVoice}
+                      onSampleStart={() => { cancelAudioTest(); setAudioTestStatus({ kind: "idle" }); }}
+                      disabled={!config.playInterviewerAudio}
+                      disabledNote="Disponível com áudio. No modo somente texto o entrevistador não fala."
+                    />
+                  </div>
                   <div className="-mx-1 mt-4 grid gap-1 sm:grid-cols-2">
                     <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel="Sempre visível" onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
                     <SettingToggle id="candidate-camera" label="Prévia da câmera" description="Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />

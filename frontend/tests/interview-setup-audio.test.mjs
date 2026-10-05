@@ -31,10 +31,12 @@ test("session summary reports interviewer audio, captions, microphone, camera, d
     { label: "Foco", value: "Comunicação e clareza" },
     { label: "Duração", value: "Até 15 min" },
     { label: "Como o entrevistador fala", value: "Com áudio" },
+    { label: "Voz", value: "Echo" },
     { label: "Legendas das perguntas", value: "Ligadas" },
     { label: "Microfone", value: "Inicia após cada pergunta" },
     { label: "Câmera", value: "Desligada" },
   ]);
+  assert.equal(getInterviewSetupSummary({ ...baseConfig, voice: "bf_emma" }, {}, {}).find((row) => row.label === "Voz").value, "Emma");
 
   const textSummary = getInterviewSetupSummary({ ...baseConfig, role: " ", playInterviewerAudio: false, showQuestionCaptions: false, autoCaptureVoice: false, candidateCameraEnabled: true }, {}, {});
   assert.equal(textSummary[0].value, "Não selecionado");
@@ -43,4 +45,9 @@ test("session summary reports interviewer audio, captions, microphone, camera, d
   assert.equal(textSummary[6].value, "Início manual");
   assert.equal(textSummary[7].value, "Prévia local ligada");
   assert.equal(summary.some(({ label }) => label.toLowerCase().includes("minha fala")), false);
+});
+
+test("the voice row is left out in text-only mode", () => {
+  const summary = getInterviewSetupSummary({ ...baseConfig, voice: "bf_emma", playInterviewerAudio: false }, {}, {});
+  assert.equal(summary.some((row) => row.label === "Voz"), false);
 });

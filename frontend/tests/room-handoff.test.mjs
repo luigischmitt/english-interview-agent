@@ -16,6 +16,12 @@ test("round-trips a valid config", () => {
   assert.deepEqual(parseRoomHandoff(serializeRoomHandoff(config, 1000), 2000), config);
 });
 
+test("the chosen interviewer voice reaches the room; unknown voices are dropped", () => {
+  assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, voice: "bf_emma" }, 1), 2).voice, "bf_emma");
+  assert.equal("voice" in parseRoomHandoff(serializeRoomHandoff({ ...config, voice: "nope" }, 1), 2), false);
+  assert.equal("voice" in parseRoomHandoff(serializeRoomHandoff(config, 1), 2), false);
+});
+
 test("rejects missing, malformed, stale, future and incomplete payloads", () => {
   assert.equal(parseRoomHandoff(null), null);
   assert.equal(parseRoomHandoff("not json"), null);
