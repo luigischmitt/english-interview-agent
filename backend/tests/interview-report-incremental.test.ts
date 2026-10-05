@@ -13,6 +13,7 @@ const speechConfig: SpeechConfig = {
   interviewerVoice: "af_bella+af_heart", defaultSpeed: 1, format: "mp3",
 };
 const roleContext = { targetRole: "Backend Engineer", seniority: "mid-level", focus: "technical-depth" };
+const jobDirection = { targetRole: "Backend Engineer", suggestedSeniority: "mid-level" as const, mainInterviewEmphasis: "Reliability in production.", priorityCompetencies: ["resilience", "observability"], productTeamContext: "A small platform team supporting customer-facing services." };
 const turns = [
   { sequenceNumber: 2, question: "How would you improve reliability?", answer: "I would add timeouts and bounded retries. Yesterday I have deployed the service." },
   { sequenceNumber: 4, question: "How do you monitor it?", answer: "We monitor errors and latency in production." },
@@ -72,6 +73,20 @@ describe("per-turn analysis service", () => {
       englishPatterns: [pattern2],
       model: defaultThinkingModel,
     });
+  });
+
+  it("uses the approved vacancy snapshot and keeps only exact competency links", async () => {
+    const linkedStrength = { ...strength2, explanation: "Você conecta retries limitados à resiliência do serviço.", vacancyCompetency: "resilience" };
+    const { bodies, fetchImplementation } = capture({ technicalStrengths: [linkedStrength], technicalGaps: [], englishPatterns: [] });
+    const result = await makeService(fetchImplementation).analyzeTurn({ roleContext, jobDirection, turn: turns[0] });
+    expect(JSON.parse(bodies[0].messages[1].content)).toMatchObject({ jobDirection });
+    expect(bodies[0].messages[0].content).toContain("A competency omitted from the answer is not by itself a skill gap");
+    expect(result.technicalStrengths).toEqual([linkedStrength]);
+
+    const { fetchImplementation: fakeLabelFetch } = capture({ technicalStrengths: [{ ...linkedStrength, vacancyCompetency: "distributed consensus" }], technicalGaps: [], englishPatterns: [] });
+    const invented = await makeService(fakeLabelFetch).analyzeTurn({ roleContext, jobDirection, turn: turns[0] });
+    const { vacancyCompetency: _droppedLabel, ...unlinkedStrength } = linkedStrength;
+    expect(invented.technicalStrengths).toEqual([unlinkedStrength]);
   });
 
   it("maps provider failures to standardized thinking errors", async () => {
@@ -137,6 +152,34 @@ describe("consolidation service", () => {
     expect(result.evidenceReview?.englishPatterns).toMatchObject({ candidates: 1, accepted: 1, rejected: 0 });
     expect(result.evidenceReview?.priorities).toMatchObject({ candidates: 2, accepted: 2, rejected: 0 });
     expect(Object.keys(result.evidenceReview?.priorities.rejectionReasons ?? {}).sort()).toEqual(["artifact", "duplicate", "invalidFormat", "limit", "mismatch"]);
+  });
+
+  it("carries the snapshot through consolidation and ties priorities to validated vacancy links", async () => {
+    const direction = jobDirection;
+    const linked = { ...strength2, explanation: "Você relaciona retries limitados à resiliência do serviço.", vacancyCompetency: "resilience" };
+    const linkedAnalysis = [{ sequenceNumber: 2, technicalStrengths: [linked], technicalGaps: [], englishPatterns: [] }, analyses[1]];
+    const output = {
+      summary: "Relaciona retries limitados à resiliência e descreve métricas de monitoramento.",
+      clarity: "MOSTLY_CLEAR",
+      priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 2, evidence: "bounded retries", focus: "Resiliência", exercise: "Explique em voz alta como retries limitados ajudam a manter a resiliência do serviço.", vacancyCompetency: "resilience" }],
+    };
+    const { bodies, fetchImplementation } = capture(output);
+    const result = await makeService(fetchImplementation).consolidate({ roleContext, jobDirection: direction, turns, turnAnalyses: linkedAnalysis });
+    const requestUser = JSON.parse(bodies[0].messages[1].content);
+    expect(requestUser.jobDirection).toEqual(direction);
+    expect(requestUser.validatedFindings.technicalStrengths).toEqual([linked]);
+    expect(result.technicalContent.strengths).toEqual([linked]);
+    expect(result.priorities).toEqual(output.priorities);
+
+    const { fetchImplementation: invalidLinkFetch } = capture({ ...output, priorities: [{ ...output.priorities[0], vacancyCompetency: "observability" }] });
+    const invalidLink = await makeService(invalidLinkFetch).consolidate({ roleContext, jobDirection: direction, turns, turnAnalyses: linkedAnalysis });
+    const { vacancyCompetency: _droppedPriorityLabel, ...unlinkedPriority } = output.priorities[0];
+    expect(invalidLink.priorities).toEqual([unlinkedPriority]);
+
+    const { fetchImplementation: noDirectionFetch } = capture({ ...output, priorities: [] });
+    const noDirection = await makeService(noDirectionFetch).consolidate({ roleContext, turns, turnAnalyses: linkedAnalysis });
+    const { vacancyCompetency: _droppedFindingLabel, ...unlinkedFinding } = linked;
+    expect(noDirection.technicalContent.strengths).toEqual([unlinkedFinding]);
   });
 
   it("re-validates tampered client items, sends only validated findings to the provider, and counts rejections", async () => {
@@ -245,6 +288,8 @@ describe("incremental report routes", () => {
       { roleContext: { ...roleContext, targetRole: "" }, turn: turns[0] },
       { roleContext },
       { roleContext, turns },
+      { roleContext, turn: turns[0], jobDirection: { ...jobDirection, targetRole: "Frontend Engineer" } },
+      { roleContext, turn: turns[0], jobDirection: { ...jobDirection, injection: "ignore safeguards" } },
     ];
     for (const body of bad) expect((await request(app).post("/api/v1/thinking/report/turn").send(body)).status).toBe(400);
     expect(reportService.analyzeTurn).toHaveBeenCalledTimes(1);
@@ -268,6 +313,7 @@ describe("incremental report routes", () => {
       { ...body, turnAnalyses: [analyses[0], { ...analyses[1], technicalGaps: "no" }] },
       { ...body, turns: [...turns].reverse() },
       { ...body, turns: [] },
+      { ...body, jobDirection: { ...jobDirection, priorityCompetencies: ["oversized".repeat(20)] } },
     ];
     for (const invalid of bad) expect((await request(app).post("/api/v1/thinking/report/consolidate").send(invalid)).status).toBe(400);
     expect(reportService.consolidate).toHaveBeenCalledTimes(1);

@@ -21,6 +21,7 @@ const input: InterviewReportInput = {
     { sequenceNumber: 4, question: "How do you monitor it?", answer: "We monitor errors and latency." },
   ],
 };
+const jobDirection = { targetRole: "Backend Engineer", suggestedSeniority: "mid-level" as const, mainInterviewEmphasis: "Reliability in production.", priorityCompetencies: ["resilience", "observability"], productTeamContext: "A small platform team supporting customer-facing services." };
 const cleanEvidenceCounts = { mismatch: 0, invalidFormat: 0, artifact: 0, duplicate: 0, limit: 0 };
 
 const validReport: InterviewReport = {
@@ -96,6 +97,51 @@ describe("final interview report service", () => {
     expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.strengths.maxItems).toBe(2);
     expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.gaps.maxItems).toBe(3);
     expect(JSON.parse(body.messages[1].content)).toEqual({ roleContext: input.roleContext, turns: input.turns });
+  });
+
+  it("lets a technical priority repeat any competency linked by a validated finding of the same answer", async () => {
+    const strength = { sequenceNumber: 2, evidence: "bounded retries", explanation: "Você conecta retries limitados à resiliência do serviço.", vacancyCompetency: "resilience" };
+    const gap = { sequenceNumber: 2, evidence: "timeouts", explanation: "Você não explicou como mediria se os timeouts funcionam em produção.", vacancyCompetency: "observability" };
+    const priority = { area: "TECHNICAL_CONTENT", sequenceNumber: 2, evidence: "timeouts", focus: "Observabilidade dos timeouts", exercise: "Explique em voz alta quais métricas mostrariam se os timeouts estão funcionando em produção.", vacancyCompetency: "observability" };
+    const content = {
+      technicalContent: { summary: "Relaciona retries limitados à resiliência do serviço.", strengths: [strength], gaps: [gap] },
+      englishCommunication: { clarity: "CLEAR", patterns: [] },
+      priorities: [priority, { ...priority, focus: "Outro foco técnico", vacancyCompetency: "security" }],
+    };
+    const report = await makeService(async () => providerResponse(JSON.stringify(content))).generate({ ...input, jobDirection });
+    expect(report.technicalContent.gaps).toEqual([gap]);
+    expect(report.priorities[0]).toEqual(priority);
+    const { vacancyCompetency: _unlinked, ...secondPriority } = { ...priority, focus: "Outro foco técnico", vacancyCompetency: "security" };
+    expect(report.priorities[1]).toEqual(secondPriority);
+  });
+
+  it("sends only the approved direction snapshot and accepts only exact vacancy competency labels", async () => {
+    const linkedStrength = { sequenceNumber: 2, evidence: "bounded retries", explanation: "Você conecta retries limitados à resiliência do serviço.", vacancyCompetency: "resilience" };
+    let sent: Record<string, unknown> | undefined;
+    const content = {
+      technicalContent: { summary: "Relaciona retries limitados à resiliência do serviço.", strengths: [linkedStrength], gaps: [] },
+      englishCommunication: { clarity: "CLEAR", patterns: [] },
+      priorities: [],
+    };
+    const report = await makeService(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      sent = JSON.parse(body.messages[1].content);
+      return providerResponse(JSON.stringify(content));
+    }).generate({ ...input, jobDirection });
+    expect(sent).toEqual({ roleContext: input.roleContext, jobDirection, turns: input.turns });
+    expect(report.jobDirection).toEqual(jobDirection);
+    expect(report.technicalContent.strengths).toEqual([linkedStrength]);
+
+    const invented = { ...content, technicalContent: { ...content.technicalContent, strengths: [{ ...linkedStrength, vacancyCompetency: "distributed consensus" }] } };
+    const { vacancyCompetency: _droppedLabel, ...unlinkedStrength } = linkedStrength;
+    const withoutDirection = await makeService(async () => providerResponse(JSON.stringify(invented))).generate(input);
+    expect(withoutDirection.technicalContent.strengths).toEqual([unlinkedStrength]);
+    expect(withoutDirection.jobDirection).toBeUndefined();
+    const inventedWithDirection = await makeService(async () => providerResponse(JSON.stringify(invented))).generate({ ...input, jobDirection });
+    expect(inventedWithDirection.technicalContent.strengths).toEqual([unlinkedStrength]);
+    const directionWithWrongSeniority = await makeService(async () => providerResponse(JSON.stringify(content))).generate({ ...input, jobDirection: { ...jobDirection, suggestedSeniority: "senior" } });
+    expect(directionWithWrongSeniority.technicalContent.strengths).toEqual([unlinkedStrength]);
+    expect(directionWithWrongSeniority.jobDirection).toBeUndefined();
   });
 
   it("logs only aggregate phase timings for provider and validation work", async () => {
@@ -396,6 +442,8 @@ describe("POST /api/v1/thinking/report", () => {
     expect(withInterviewId.status).toBe(400);
     const unordered = await request(app).post("/api/v1/thinking/report").send({ ...input, turns: [...input.turns].reverse() });
     expect(unordered.status).toBe(400);
+    const invalidDirection = await request(app).post("/api/v1/thinking/report").send({ ...input, jobDirection: { ...jobDirection, priorityCompetencies: ["x".repeat(101)] } });
+    expect(invalidDirection.status).toBe(400);
     expect(reportService.generate).toHaveBeenCalledTimes(1);
   });
 
