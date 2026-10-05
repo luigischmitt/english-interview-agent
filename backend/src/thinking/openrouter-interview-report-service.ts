@@ -1,7 +1,7 @@
 import { defaultInterviewConsolidationTimeoutMs, defaultInterviewReportTimeoutMs, defaultInterviewTurnAnalysisTimeoutMs, type ThinkingConfig } from "./config.js";
 import { ThinkingServiceError } from "./errors.js";
 import { parseApprovedJobDirection } from "./job-direction-validation.js";
-import { analyzeEnglishEdit, checkGrammarRuleLabel, hasBrokenSentenceBoundary, isGenericExercise, isLikelyTranscriptionArtifactEdit, isOffQuestionIntegrationItem, isRephraseUnchanged, suggestsFixingNames } from "./report-guards.js";
+import { analyzeEnglishEdit, checkGrammarRuleLabel, hasBrokenSentenceBoundary, isGenericExercise, isLikelyTranscriptionArtifactEdit, isOffQuestionIntegrationItem, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
 import {
   communicationClarities,
   communicationObservationTypes,
@@ -358,7 +358,7 @@ function validatePatternCandidates(items: unknown[], answerFor: AnswerLookup, co
     if (likelyTranscriptionArtifact(evidence)) { counts.rejectionReasons.artifact += 1; return []; }
     const suggestion = portugueseField(normalizeFeedbackSentence(item.suggestion, 200, 4));
     const rephrasedExample = normalizeFeedbackSentence(item.rephrasedExample, 200, 3);
-    if (!suggestion || !rephrasedExample || isRephraseUnchanged(evidence, rephrasedExample)) { counts.rejectionReasons.invalidFormat += 1; return []; }
+    if (!suggestion || !rephrasedExample || isRephraseUnchanged(evidence, rephrasedExample) || isUngrammaticalRephrase(rephrasedExample)) { counts.rejectionReasons.invalidFormat += 1; return []; }
     // The "correction" replaces or invents content words: a mis-heard name or garbled phrase, not a candidate error.
     const edit = analyzeEnglishEdit(evidence, rephrasedExample, answer);
     const type = item.type as CommunicationObservationType;

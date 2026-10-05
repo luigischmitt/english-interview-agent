@@ -144,6 +144,8 @@ export function isLikelyTranscriptionArtifactEdit(edit: EnglishEditAnalysis, swa
   const added = edit.addedContent.length;
   const changedContent = removed + added;
   if (edit.hasRepeatedToken && changedContent > 0) return true;
+  // Swapping a word for an acronym ("the gelsm" -> "the GLCM") fixes Whisper's spelling of a technical term, not the candidate.
+  if (removed >= 1 && edit.addedContent.some((token) => /^[A-Z][A-Z0-9]+$/u.test(token.original))) return true;
   if (removed >= 3) return true;
   // A mis-heard proper noun (capitalized in the middle of the answer) is never a candidate error.
   if (edit.removedProperNoun && added > 0) return true;
@@ -209,8 +211,31 @@ export function isOffQuestionIntegrationItem(text: string, question: string | un
 
 /** A rephrase that equals the cited excerpt (ignoring case, punctuation and spacing) corrects nothing. */
 export function isRephraseUnchanged(excerpt: string, rephrased: string): boolean {
-  const normalize = (text: string) => tokenize(text).map((token) => token.lower).join(" ");
+  const normalize = (text: string) => expandContractions(tokenize(text).map((token) => token.lower)).join(" ");
   return normalize(excerpt) === normalize(rephrased);
+}
+
+const contractionSuffixes: Record<string, string> = { ve: "have", m: "am", re: "are", ll: "will" };
+const pronounsBeforeIs = new Set(["it", "that", "what", "there", "he", "she", "here", "who", "where", "how", "this"]);
+const negativeStems: Record<string, string> = { don: "do", doesn: "does", didn: "did", isn: "is", aren: "are", wasn: "was", weren: "were", haven: "have", hasn: "has", hadn: "had", couldn: "could", wouldn: "would", shouldn: "should", won: "will", can: "can" };
+
+/** Spells contractions out ("I've" = "I have", "don't" = "do not"), so expanding one is never reported as a correction. */
+function expandContractions(words: string[]): string[] {
+  const expanded: string[] = [];
+  for (const [index, word] of words.entries()) {
+    const previous = words[index - 1];
+    if (word === "t" && previous && negativeStems[previous]) { expanded[expanded.length - 1] = negativeStems[previous]!; expanded.push("not"); continue; }
+    if (word === "s" && previous && pronounsBeforeIs.has(previous)) { expanded.push("is"); continue; }
+    if (contractionSuffixes[word] && previous) { expanded.push(contractionSuffixes[word]!); continue; }
+    if (word === "cannot") { expanded.push("can", "not"); continue; }
+    expanded.push(word);
+  }
+  return expanded;
+}
+
+/** A "correction" that is itself wrong English, such as the Portuguese "para" calque "for to do". */
+export function isUngrammaticalRephrase(rephrased: string): boolean {
+  return /\bfor\s+to\s+\p{L}+/iu.test(rephrased);
 }
 
 /** A garbled excerpt: Whisper cut a sentence and restarted in lowercase ("a data. a little expensive project"). */
