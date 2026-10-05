@@ -41,10 +41,10 @@ const impact = q(
 );
 
 // Interleaves eight role-specific questions with the five shared behavioral ones.
-function buildBank(technical) {
+function buildBank(technical, behavioral = { ownership, impact }) {
   if (technical.length !== 8) throw new Error("Each role needs exactly 8 technical questions.");
   const [t1, t2, t3, t4, t5, t6, t7, t8] = technical;
-  return [introduction, t1, t2, ownership, t3, conflict, t4, failure, t5, t6, feedback, t7, impact, t8, closing];
+  return [introduction, t1, t2, behavioral.ownership, t3, conflict, t4, failure, t5, t6, feedback, t7, behavioral.impact, t8, closing];
 }
 
 const technicalByRole = {
@@ -220,6 +220,203 @@ const technicalByRole = {
   ],
 };
 
+// Junior technical questions: fundamentals and own experience. No large-scale design, leadership, or org-level strategy.
+const juniorTechnicalByRole = {
+  "Software Engineer": [
+    q("project-built", "Can you walk me through a project you built and the part you were responsible for?", "Describe the goal, your part, and the tools you used."),
+    q("debugging-bug", "Tell me about a bug you fixed. How did you find the cause?", "Explain your steps from the symptom to the fix."),
+    q("testing-code", "How do you test your code before you ask someone to review it?", "Mention the kinds of tests you write and one example."),
+    q("git-workflow", "How do you use Git and pull requests when you work with other developers?", "Describe branches, commits, and how you respond to review comments."),
+    q("explain-concept", "Can you explain a programming concept you use often, like an API or a database index, in simple words?", "Pick one concept and explain it with a short example."),
+    q("learning-tool", "Tell me about a time you had to learn a new tool or library to finish a task. How did you do it?", "Explain how you learned and how you applied it."),
+    q("reading-code", "How do you start when you have to read and understand code written by someone else?", "Describe where you look first and how you ask questions."),
+    q("simple-trade-off", "Tell me about a simple technical decision you made, like choosing between two libraries. Why did you choose one?", "Name the options and the reason behind your choice."),
+  ],
+  "Frontend Engineer": [
+    q("ui-project", "Can you describe a web interface you built and the part you were responsible for?", "Describe the goal, your part, and the technologies you used."),
+    q("html-css-basics", "How do you build a layout that works well on both a phone and a desktop screen?", "Mention flexible layouts, breakpoints, and testing on devices."),
+    q("browser-debugging", "Tell me about a bug you fixed in the browser. How did you find it?", "Mention the browser tools you used and the fix."),
+    q("javascript-concept", "Can you explain a JavaScript or React concept you use often, like state or props, in simple words?", "Pick one concept and explain it with a short example."),
+    q("basic-accessibility", "What basic things do you do to make a page easier to use for everyone?", "Give simple practices like labels, contrast, and keyboard use."),
+    q("component-reuse", "Tell me about a component you created and reused. What did you learn?", "Explain what the component did and why it was reusable."),
+    q("working-with-design", "How do you handle a design that you do not fully understand?", "Show how you ask questions and confirm details early."),
+    q("learning-framework", "Tell me about a time you had to learn a new library or framework quickly. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "Backend Engineer": [
+    q("api-built", "Can you describe an API you built and the endpoints you were responsible for?", "Describe the purpose, the endpoints, and the technologies you used."),
+    q("sql-basics", "How would you explain what a database index is and why it helps?", "Use a simple example and mention one trade-off."),
+    q("backend-bug", "Tell me about a bug you fixed in a backend service. How did you find the cause?", "Mention logs, tests, and the final fix."),
+    q("http-basics", "What happens when a client sends a request to your API and gets a response?", "Walk through the request in simple, ordered steps."),
+    q("api-testing", "How do you test an endpoint you just wrote?", "Mention unit tests, manual calls, and edge cases."),
+    q("error-handling", "How do you handle errors in your API so other developers understand what went wrong?", "Talk about status codes and clear messages."),
+    q("git-and-review", "How do you use pull requests and code review when you work with a team?", "Describe how you share changes and respond to feedback."),
+    q("learning-backend", "Tell me about a time you had to learn something new for a backend task. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "Full-Stack Engineer": [
+    q("full-stack-project", "Can you describe a web application you built, from the screen to the database?", "Follow the flow in order and mention your part."),
+    q("full-stack-bug", "Tell me about a bug you fixed that involved both the front end and the back end. How did you find it?", "Explain how you traced the problem step by step."),
+    q("simple-api-use", "How does your front end talk to your back end in a project you built?", "Mention requests, responses, and handling errors."),
+    q("database-basics", "How did you decide how to store the data in a project you built?", "Describe the tables or collections and why you chose them."),
+    q("testing-code", "How do you test a feature you built before you share it?", "Mention the kinds of tests you write and one example."),
+    q("git-workflow", "How do you use Git and pull requests when you work with other developers?", "Describe branches, commits, and how you respond to review comments."),
+    q("learning-tool", "Tell me about a time you had to learn a new tool or framework to finish a task. How did you do it?", "Explain how you learned and how you applied it."),
+    q("asking-help", "When do you ask a teammate for help, and how do you ask?", "Show that you try first and then ask a clear question."),
+  ],
+  "Mobile Engineer": [
+    q("mobile-project", "Can you describe a mobile app you built and the part you were responsible for?", "Describe the goal, your part, and the tools you used."),
+    q("mobile-bug", "Tell me about a bug or crash you fixed in a mobile app. How did you find the cause?", "Mention logs, the debugger, and the final fix."),
+    q("screen-layout", "How do you build a screen that looks good on different phone sizes?", "Mention flexible layouts and testing on devices."),
+    q("app-lifecycle", "Can you explain in simple words what happens when a user opens, leaves, and returns to your app?", "Describe the main states and what you save."),
+    q("mobile-testing", "How do you test your app before you share it with others?", "Mention emulators, real devices, and simple automated tests."),
+    q("mobile-api", "How does your app get data from a server, and what do you show while it loads?", "Mention requests, loading states, and errors."),
+    q("git-workflow", "How do you use Git and pull requests when you work with other developers?", "Describe branches, commits, and how you respond to review comments."),
+    q("learning-tool", "Tell me about a time you had to learn a new tool or platform feature for a task. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "DevOps Engineer": [
+    q("devops-project", "Can you describe a pipeline or automation you set up and what it did?", "Describe the goal, the steps, and the tools you used."),
+    q("ci-basics", "What is a CI pipeline, and why is it useful for a team?", "Explain it in simple words with a short example."),
+    q("docker-basics", "How would you explain what a container is to a developer who has never used one?", "Use a simple comparison and one practical benefit."),
+    q("linux-troubleshooting", "A service is not responding on a server. What are the first things you check?", "Walk through simple checks like logs, status, and resources."),
+    q("scripting", "Tell me about a script you wrote to automate a task. What did it save?", "Explain the task and the time or errors you saved."),
+    q("git-workflow", "How do you use Git and pull requests when you work with other developers?", "Describe branches, commits, and how you respond to review comments."),
+    q("devops-bug", "Tell me about a build or deployment problem you fixed. How did you find the cause?", "Mention logs, the steps you tried, and the fix."),
+    q("learning-tool", "Tell me about a time you had to learn a new tool, like Terraform or Kubernetes. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "Site Reliability Engineer": [
+    q("sre-basics", "In simple words, what does it mean for a service to be reliable?", "Mention availability, speed, and what users notice."),
+    q("monitoring-basics", "What is the difference between logs and metrics, and when do you use each one?", "Give a simple example of each."),
+    q("troubleshooting-steps", "A service is slow, and you get an alert. What are your first steps?", "Walk through simple checks in a clear order."),
+    q("script-automation", "Tell me about a script or small tool you wrote to automate a manual task. What changed?", "Explain the task and the time or errors you saved."),
+    q("incident-learning", "Tell me about a problem in a system you worked on, even a small one. What did you learn?", "Describe what happened, your role, and the lesson."),
+    q("linux-basics", "Which Linux commands do you use to understand what is happening on a server?", "Name a few commands and what each one tells you."),
+    q("runbook-reading", "How would you use a runbook or documentation when you are on call for the first time?", "Show that you follow steps and ask for help early."),
+    q("learning-tool", "Tell me about a time you had to learn a new monitoring or infrastructure tool. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "Cloud Engineer": [
+    q("cloud-project", "Can you describe something you built or deployed in the cloud and your part in it?", "Describe the goal, the services, and your contribution."),
+    q("cloud-basics", "How would you explain the difference between a virtual machine and a managed service?", "Use a simple example and one trade-off."),
+    q("iam-basics", "What does least privilege mean, and how did you apply it in a cloud account?", "Explain it simply with a short example."),
+    q("cloud-troubleshooting", "A cloud application stopped working after a change. What do you check first?", "Walk through simple checks like logs, settings, and permissions."),
+    q("iac-basics", "What is a simple cloud resource you created with infrastructure as code, and how did you do it?", "Name the tool and describe what you created."),
+    q("cost-awareness", "How do you avoid spending more than you need when you create cloud resources?", "Mention small sizes, cleaning up, and budgets."),
+    q("git-workflow", "How do you use Git and pull requests when you work with other engineers?", "Describe branches, commits, and how you respond to review comments."),
+    q("learning-tool", "Tell me about a time you had to learn a new cloud service quickly. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "Data Engineer": [
+    q("pipeline-built", "Can you describe a data pipeline or script you built and what it did?", "Describe the source, the steps, and the result."),
+    q("sql-explain", "Can you explain a SQL query you wrote that joined two tables?", "Describe the goal, the join, and how you checked the result."),
+    q("data-cleaning", "How do you handle missing or duplicate values when you prepare data?", "Give a simple approach and a short example."),
+    q("data-quality-checks", "How do you check that the data your job loaded is correct?", "Mention simple checks like counts and null values."),
+    q("pipeline-bug", "Tell me about a data job that failed. How did you find the cause?", "Mention logs, the data, and the fix."),
+    q("etl-basics", "What is the difference between ETL and ELT, in simple words?", "Explain both with a short example."),
+    q("git-workflow", "How do you use Git and pull requests when you work with other engineers?", "Describe branches, commits, and how you respond to review comments."),
+    q("learning-tool", "Tell me about a time you had to learn a new data tool. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "Data Scientist": [
+    q("analysis-project", "Can you describe a data science project you worked on and your part in it?", "Describe the question, the data, your method, and the result."),
+    q("data-cleaning", "How do you clean and prepare data before you train a model?", "Give a simple approach and a short example."),
+    q("overfitting-basics", "What is overfitting, and how did you check for it in a project?", "Explain it simply, then give one practical method."),
+    q("metric-choice", "How did you choose a metric to evaluate a model in one of your projects?", "Link the metric to the problem you were solving."),
+    q("simple-model", "Can you explain a simple model you used, like linear regression, in plain words?", "Use a short example and avoid heavy math."),
+    q("explaining-results", "How do you explain your results to someone who is not technical?", "Use plain words, an example, and the main takeaway."),
+    q("analysis-mistake", "Tell me about a mistake you found in an analysis. How did you fix it?", "Explain what went wrong and what you changed."),
+    q("learning-tool", "Tell me about a time you had to learn a new library or technique. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "Data Analyst": [
+    q("analysis-project", "Can you describe an analysis you did and the question you wanted to answer?", "Describe the question, the data, and the result."),
+    q("sql-explain", "Can you explain a simple SQL query you wrote, step by step?", "Describe the goal, the tables, and how you checked the result."),
+    q("data-cleaning", "How do you clean a dataset that has missing values or duplicates?", "Give a simple approach and a short example."),
+    q("spreadsheet-skills", "Which tools do you use for analysis, like Excel, SQL, or Python, and what do you use each for?", "Give a short example for each tool."),
+    q("chart-choice", "How do you choose a chart to show your results clearly?", "Link the chart to the message you want to show."),
+    q("explaining-findings", "How do you explain your findings to someone who is not technical?", "Start with the main point, then give one piece of evidence."),
+    q("data-check", "How do you check that your numbers are correct before you share them?", "Mention simple checks and what you do when something looks wrong."),
+    q("learning-tool", "Tell me about a time you had to learn a new tool, like Power BI or Tableau. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "Machine Learning Engineer": [
+    q("ml-project", "Can you describe a machine learning project you built and your part in it?", "Describe the problem, the data, your model, and the result."),
+    q("train-test-split", "Why do we split data into training and test sets?", "Explain it simply and mention what could go wrong."),
+    q("data-preparation", "How do you prepare data before you train a model?", "Give a simple approach and a short example."),
+    q("model-metric", "How did you decide whether your model was good enough in a project?", "Link the metric to the problem you were solving."),
+    q("ml-bug", "Tell me about a problem you had while training or running a model. How did you fix it?", "Describe the symptom, your steps, and the fix."),
+    q("simple-deploy", "How did you share a model you built with others, for example as a simple API or a notebook?", "Describe the steps and one lesson you learned."),
+    q("git-workflow", "How do you use Git and pull requests when you work with other engineers?", "Describe branches, commits, and how you respond to review comments."),
+    q("learning-tool", "Tell me about a time you had to learn a new ML library or technique. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "AI Engineer": [
+    q("ai-project", "Can you describe an AI feature or project you built and your part in it?", "Describe the goal, the model you used, and the result."),
+    q("prompt-basics", "How do you write a prompt that gives a clear and useful answer from a language model?", "Mention clear instructions, examples, and testing."),
+    q("llm-wrong-answers", "A language model gives a wrong answer in your app. What do you do?", "Walk through simple checks and improvements."),
+    q("rag-basics", "Can you explain in simple words what retrieval-augmented generation is?", "Use a short example of searching documents first."),
+    q("api-usage", "How do you call a model API from your code and handle errors?", "Mention keys, requests, retries, and limits."),
+    q("ai-testing", "How do you test that an AI feature works well for a few real examples?", "Describe a small set of test cases and what you check."),
+    q("git-workflow", "How do you use Git and pull requests when you work with other developers?", "Describe branches, commits, and how you respond to review comments."),
+    q("learning-tool", "Tell me about a time you had to learn a new AI tool or library quickly. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "AI Deployment Engineer": [
+    q("deploy-project", "Can you describe something you set up or deployed for a user or a customer and your part in it?", "Describe the goal, the steps, and the result."),
+    q("customer-question", "A customer asks for something you do not fully understand. What do you do?", "Show how you ask clear questions and confirm."),
+    q("setup-troubleshooting", "A setup does not work on a customer's machine. How do you find the problem?", "Walk through simple checks, from logs to settings."),
+    q("explaining-simply", "How do you explain a technical concept to someone who is not technical?", "Use plain words and a short example."),
+    q("api-integration", "How did you connect one tool to another with an API in a project you worked on?", "Describe the steps, the data, and any issue you solved."),
+    q("documentation", "How do you write instructions so that someone else can follow your setup?", "Mention clear steps, examples, and testing the guide."),
+    q("learning-tool", "Tell me about a time you had to learn a new tool quickly to help a user. How did you do it?", "Explain how you learned and how you applied it."),
+    q("asking-help", "When do you ask a teammate for help, and how do you ask?", "Show that you try first and then ask a clear question."),
+  ],
+  "QA Automation Engineer": [
+    q("test-case", "How do you write a good test case for a new feature?", "Mention the steps, the expected result, and edge cases."),
+    q("bug-report", "How do you report a bug so that a developer can understand and fix it quickly?", "Mention steps to reproduce, expected result, actual result, and evidence."),
+    q("automation-first", "Tell me about a test you automated. What tools did you use?", "Describe the test, the tool, and the result."),
+    q("manual-vs-automated", "How do you decide whether to test something manually or automate it?", "Mention repeated checks, stability, and effort."),
+    q("bug-found", "Tell me about a bug you found. How did you find it?", "Explain what you tried and what the bug affected."),
+    q("test-types", "What is the difference between a unit test, an API test, and a UI test?", "Give a simple example of each."),
+    q("working-with-devs", "How do you talk with a developer who disagrees that something is a bug?", "Show how you stay calm and use evidence."),
+    q("learning-tool", "Tell me about a time you had to learn a new testing tool, like Playwright or Cypress. How did you do it?", "Explain how you learned and how you applied it."),
+  ],
+  "Security Engineer": [
+    q("security-basics", "In simple words, what are some common web security risks, like SQL injection or cross-site scripting?", "Pick one or two risks and explain each with an example."),
+    q("password-storage", "How should an application store user passwords, and why?", "Mention hashing, salting, and never storing plain text."),
+    q("security-project", "Tell me about a security task you did, like fixing a vulnerability or scanning a project. What happened?", "Describe the issue, your steps, and the result."),
+    q("least-privilege", "What does least privilege mean, and where have you applied it?", "Explain it simply with a short example."),
+    q("vulnerability-report", "You find a security issue in a project. How do you report it clearly?", "Describe what, where, impact, and how to reproduce it."),
+    q("dependency-risks", "How do you check that the libraries used in a project are safe?", "Mention updates, scanners, and reading alerts."),
+    q("security-learning", "What is something recent you learned about security, and how did you learn it?", "Give a specific resource or practice you tried."),
+    q("asking-help", "When do you ask a teammate for help, and how do you ask?", "Show that you try first and then ask a clear question."),
+  ],
+  "Engineering Manager": [
+    q("team-project", "Can you describe a team project you worked on and your part in it?", "Describe the goal, your part, and how the team worked together."),
+    q("planning-tasks", "How do you plan and organize your own tasks during a week?", "Mention priorities, estimates, and updating others."),
+    q("status-updates", "How do you give a clear status update to your team when a task is late?", "Show how you share the problem early and propose a next step."),
+    q("helping-teammate", "Tell me about a time you helped a teammate finish something. What did you do?", "Describe the situation, your help, and the result."),
+    q("receiving-feedback", "How do you react when a teammate or lead gives you tough feedback?", "Show openness and one concrete change you made."),
+    q("asking-help", "When do you ask for help, and how do you ask?", "Show that you try first and then ask a clear question."),
+    q("learning-process", "Tell me about a time you had to learn a new tool or process for your team. How did you do it?", "Explain how you learned and how you applied it."),
+    q("team-communication", "How do you make sure you and your teammates understand a task in the same way?", "Mention asking questions and confirming in writing."),
+  ],
+};
+
+const genericJuniorTechnical = [
+  q("project-built", "Can you walk me through a project you built and the part you were responsible for?", "Describe the goal, your part, and the tools you used."),
+  q("debugging-bug", "Tell me about a problem you fixed. How did you find the cause?", "Explain your steps from the symptom to the fix."),
+  q("simple-trade-off", "Tell me about a simple decision you made, like choosing between two tools. Why did you choose one?", "Name the options and the reason behind your choice."),
+  q("quality-check", "How do you check your work before you share it with others?", "Give two or three concrete habits and one example."),
+  q("learning-tool", "Tell me about a time you had to learn a new tool or skill to finish a task. How did you do it?", "Explain how you learned and how you applied it."),
+  q("organizing-tasks", "You have several tasks and not enough time. How do you decide what to do first?", "Mention deadlines, importance, and telling others."),
+  q("asking-help", "When do you ask a teammate for help, and how do you ask?", "Show that you try first and then ask a clear question."),
+  q("reading-others-work", "How do you start when you have to understand work that someone else did?", "Describe where you look first and how you ask questions."),
+];
+
+// Behavioral variants for juniors: project participation instead of ownership, and impact on a small scale.
+const juniorOwnership = q(
+  "ownership",
+  "Can you describe a project you worked on from start to finish, including your part and the result?",
+  "Set the context, explain your contribution, and finish with the outcome.",
+);
+const juniorImpact = q(
+  "impact",
+  "How do you know when the work you delivered was useful to your team or to users?",
+  "Use a specific result or signal rather than only describing activity.",
+);
+
 const genericTechnical = [
   q("system-design", "How would you design a simple system that many people use at the same time?", "Clarify requirements, outline the main parts, then discuss trade-offs."),
   q("problem-solving", "What is a difficult problem you solved when the path forward was unclear?", "Focus on how you investigated the problem and what you learned."),
@@ -237,7 +434,12 @@ const questionBanks = Object.fromEntries(
   Object.entries(technicalByRole).map(([role, technical]) => [role, buildBank(technical)]),
 );
 
-const normalizedRoleBanks = new Map(Object.entries(questionBanks).map(([role, bank]) => [normalizeRole(role), bank]));
+const juniorBehavioral = { ownership: juniorOwnership, impact: juniorImpact };
+const juniorQuestionBanks = Object.fromEntries(
+  Object.entries(juniorTechnicalByRole).map(([role, technical]) => [role, buildBank(technical, juniorBehavioral)]),
+);
+export const genericJuniorQuestionBank = buildBank(genericJuniorTechnical, juniorBehavioral);
+
 
 // Common variants candidates type instead of the listed role name.
 const roleAliases = {
@@ -284,14 +486,17 @@ const roleKeywordRules = [
   [/\b(?:software|desenvolvedor[a]?|developer|programmer|programador[a]?)\b/, "Software Engineer"],
 ];
 
-/** Returns the fixed question bank (templates with a {role} placeholder) for the typed role. */
-export function getQuestionBankForRole(role) {
+/** Returns the fixed question bank (templates with a {role} placeholder) for the typed role and seniority. */
+export function getQuestionBankForRole(role, seniority) {
+  const junior = String(seniority ?? "").trim().toLowerCase() === "junior";
+  const banks = junior ? juniorQuestionBanks : questionBanks;
+  const fallback = junior ? genericJuniorQuestionBank : genericQuestionBank;
   const normalized = normalizeRole(role);
   const alias = roleAliases[normalized];
-  const exact = normalizedRoleBanks.get(alias ? normalizeRole(alias) : normalized);
-  if (exact || !normalized) return exact ?? genericQuestionBank;
+  const key = alias ?? [...Object.keys(questionBanks)].find((name) => normalizeRole(name) === normalized);
+  if (key || !normalized) return key ? banks[key] : fallback;
   const keyword = roleKeywordRules.find(([pattern]) => pattern.test(normalized));
-  return keyword ? questionBanks[keyword[1]] : genericQuestionBank;
+  return keyword ? banks[keyword[1]] : fallback;
 }
 
 export const questionBankRoles = Object.keys(questionBanks);

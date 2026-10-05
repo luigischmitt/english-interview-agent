@@ -7,7 +7,7 @@ export function getFixedInterviewQuestions(config: InterviewConfig): InterviewQu
   const role = config.role || "this role";
   // A role typed in Portuguese is never spliced into an English sentence ("strong fit for Analista de Dados").
   const spokenRole = roleForSpeech(role);
-  const questions = getQuestionBankForRole(config.role).map((question) => ({ ...question, prompt: question.prompt.replace("{role}", spokenRole) }));
+  const questions = getQuestionBankForRole(config.role, config.seniority).map((question) => ({ ...question, prompt: question.prompt.replace("{role}", spokenRole) }));
   const direction = config.jobDirection;
   if (questions[0] && isValidJobDirection(direction)
     && direction.targetRole.trim() === role.trim()
