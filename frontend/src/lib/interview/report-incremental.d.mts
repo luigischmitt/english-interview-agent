@@ -28,5 +28,6 @@ export function resolveReportAtEnd<T extends { sequenceNumber: number }, A, R>(o
   fullReport: () => Promise<R>;
   finalAttemptMs?: number;
   signal?: AbortSignal;
+  exhausted?: Set<number>;
   onEvent?: (event: string, details: Record<string, number>) => void;
 }): Promise<{ result: R; path: "incremental" | "fallback"; missingAtEnd: number; recoveredAtEnd: number }>;

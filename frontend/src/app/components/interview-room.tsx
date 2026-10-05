@@ -95,6 +95,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const reportStartedRef = useRef(createOnceGate());
   const reportPersistenceSignatureRef = useRef("");
   const reportTurnsRef = useRef(reportTurns);
+  const exhaustedTurnAnalysesRef = useRef(new Set<number>());
   const turnAnalysesRef = useRef(new Map<number, Promise<InterviewTurnAnalysis | null>>());
   const turnAnalysisRetriesRef = useRef(0);
   const turnAnalysisAbortsRef = useRef(new Set<AbortController>());
@@ -256,7 +257,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     })
       .then((analysis) => {
         if (analysis) console.info("[interview-report] turn_analysis_ready", { durationMs: Date.now() - startedAt });
-        else if (!controller.signal.aborted) console.warn("[interview-report] turn_analysis_failed", { durationMs: Date.now() - startedAt, retried: turnAnalysisRetriesRef.current });
+        else if (!controller.signal.aborted) { exhaustedTurnAnalysesRef.current.add(turn.sequenceNumber); console.warn("[interview-report] turn_analysis_failed", { durationMs: Date.now() - startedAt, retried: turnAnalysisRetriesRef.current }); }
         return analysis;
       })
       .finally(() => { turnAnalysisAbortsRef.current.delete(controller); }));
@@ -609,6 +610,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           turns,
           settled: settledAnalyses,
           signal: endAbort.signal,
+          exhausted: exhaustedTurnAnalysesRef.current,
           analyze: (turn, signal) => requestInterviewTurnAnalysis(config, turn, signal),
           consolidate: (analyses) => requestInterviewConsolidation(config, turns, analyses),
           fullReport: () => {
