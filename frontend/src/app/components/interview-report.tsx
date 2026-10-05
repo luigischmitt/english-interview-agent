@@ -5,6 +5,7 @@ import { emptyEnglishEvidenceMessage, emptyReportEvidenceMessage, partialEvidenc
 import { clarityHelp, englishPatternsHelp, technicalContentHelp } from "@/lib/interview/report-metric-copy.mjs";
 import type { AzureMetricSummary } from "@/lib/interview/report-metrics.mjs";
 import type { InterviewConfig } from "@/lib/interview/types";
+import { deriveMainPoints, toSecondPerson } from "@/lib/interview/report-main-points.mjs";
 import { AzureVoiceReport } from "./azure-voice-report";
 import "./interview-report.css";
 
@@ -77,15 +78,68 @@ function EvidenceList({ items, turns, empty, counts, tone }: { items: { sequence
   );
 }
 
+function MainPoints({ main, result, turns }: { main: ReturnType<typeof deriveMainPoints>; result: InterviewReportResult; turns: Turns }) {
+  return (
+    <section className="ds-card rp-card" aria-labelledby="main-points-title">
+      <h2 id="main-points-title" className="ds-h2">Pontos principais</h2>
+      <div className="rp-cols">
+        <div>
+          <h3 className="rp-subtitle">Inglês</h3>
+          {main.english.length ? (
+            <ul className="rp-list">
+              {main.english.map((pattern, index) => (
+                <li key={`${pattern.sequenceNumber}-${pattern.type}-${index}`} className="rp-item">
+                  <p className="ds-label"><span className="rp-tag">{patternLabel(pattern.type)}</span> <span className="rp-where">resposta {answerOrdinalForSequence(turns, pattern.sequenceNumber) ?? "—"}</span></p>
+                  <p lang="en" className="rp-fix mt-2"><span className="rp-fix-from">“{pattern.evidence}”</span><span aria-hidden="true" className="rp-fix-arrow"> → </span><span className="sr-only"> corrigido para </span><span className="rp-fix-to">“{pattern.rephrasedExample}”</span></p>
+                  <p className="rp-hint mt-2">{pattern.suggestion}</p>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="ds-body">{emptyEnglishEvidenceMessage(result.englishCommunication.evidenceStatus, result.evidenceReview?.englishPatterns)}</p>}
+        </div>
+        <div>
+          <h3 className="rp-subtitle">Técnico</h3>
+          {main.technical.length ? (
+            <ul className="rp-list">
+              {main.technical.map((item, index) => (
+                <li key={`${item.sequenceNumber}-${item.kind}-${index}`} className="rp-item" data-tone={item.kind === "gap" ? "gap" : "good"}>
+                  <p className="ds-label"><span className="rp-tag" data-tone={item.kind}>{item.kind === "gap" ? "Para reforçar" : "Ponto forte"}</span> <span className="rp-where">resposta {answerOrdinalForSequence(turns, item.sequenceNumber) ?? "—"}</span></p>
+                  <p className="rp-quote mt-2">“{item.evidence}”</p>
+                  <p className="mt-1 text-sm leading-6">{item.explanation}</p>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="ds-body">Nenhum ponto técnico relevante foi apontado com segurança nesta sessão.</p>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ReadyReport({ result, turns, azureSummary, coverage }: { result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number } }) {
+  const main = deriveMainPoints(result);
   return (
     <div className="rp-stack">
-      <section className="rp-priorities ds-enter" style={enter(0)} aria-labelledby="priorities-title">
-        <p className="rp-eyebrow">Comece por aqui</p>
+      <section className="ds-card rp-card ds-enter" style={enter(0)} aria-labelledby="summary-title">
+        <h2 id="summary-title" className="ds-h2">Resumo</h2>
+        <p className="rp-summary">{main.summary}</p>
+        <p className="rp-hint mt-2">Clareza geral em inglês: <span className="rp-clarity-value">{clarityLabel(result.englishCommunication.clarity)}</span></p>
+      </section>
+
+      <div className="ds-enter" style={enter(1)}>
+        <AzureVoiceReport summary={azureSummary} coverage={coverage} title="Pontuação da fala" />
+      </div>
+
+      <div className="ds-enter" style={enter(2)}>
+        <MainPoints main={main} result={result} turns={turns} />
+      </div>
+
+      <section className="rp-priorities ds-enter" style={enter(3)} aria-labelledby="priorities-title">
+        <p className="rp-eyebrow">Próximos passos</p>
         <h2 id="priorities-title" className="rp-priorities-title">Prioridades para praticar</h2>
-        {result.priorities.length ? (
+        {main.priorities.length ? (
           <ol className="rp-priority-list">
-            {result.priorities.map((priority, index) => (
+            {main.priorities.map((priority, index) => (
               <li key={`${priority.sequenceNumber}-${index}`} className="rp-priority">
                 <span className="rp-priority-num" aria-hidden="true">{index + 1}</span>
                 <div className="min-w-0">
@@ -97,53 +151,52 @@ function ReadyReport({ result, turns, azureSummary, coverage }: { result: Interv
             ))}
           </ol>
         ) : <p className="rp-priority-empty">{emptyReportEvidenceMessage(result.evidenceReview?.priorities)}</p>}
-        {partialEvidenceReviewNote(result.evidenceReview?.priorities) && <p className="rp-priority-empty mt-3">{partialEvidenceReviewNote(result.evidenceReview?.priorities)}</p>}
       </section>
 
-      <p className="ds-small ds-enter" style={enter(1)}>Abaixo, três áreas avaliadas separadamente: o que você disse, como disse em inglês e sinais da sua voz.</p>
+      <details className="rp-more ds-enter" style={enter(4)}>
+        <summary>Ver análise completa</summary>
+        <div className="rp-stack mt-4">
+          <section className="ds-card rp-card" aria-labelledby="technical-report-title">
+            <AreaHeader step={1} id="technical-report-title" title="Conteúdo técnico" help={technicalContentHelp} />
+            <div className="rp-cols">
+              <div>
+                <h3 className="rp-subtitle">O que correspondeu à pergunta</h3>
+                <EvidenceList items={result.technicalContent.strengths} turns={turns} tone="good" empty={emptyReportEvidenceMessage(result.evidenceReview?.technicalStrengths)} counts={result.evidenceReview?.technicalStrengths} />
+              </div>
+              <div>
+                <h3 className="rp-subtitle">O que precisava de mais explicação</h3>
+                <EvidenceList items={result.technicalContent.gaps} turns={turns} tone="gap" empty={emptyReportEvidenceMessage(result.evidenceReview?.technicalGaps)} counts={result.evidenceReview?.technicalGaps} />
+              </div>
+            </div>
+          </section>
 
-      <section className="ds-card rp-card ds-enter" style={enter(2)} aria-labelledby="technical-report-title">
-        <AreaHeader step={1} id="technical-report-title" title="Conteúdo técnico" help={technicalContentHelp} />
-        <p className="rp-summary">{result.technicalContent.summary}</p>
-        <div className="rp-cols">
-          <div>
-            <h3 className="rp-subtitle">O que correspondeu à pergunta</h3>
-            <EvidenceList items={result.technicalContent.strengths} turns={turns} tone="good" empty={emptyReportEvidenceMessage(result.evidenceReview?.technicalStrengths)} counts={result.evidenceReview?.technicalStrengths} />
-          </div>
-          <div>
-            <h3 className="rp-subtitle">O que precisava de mais explicação</h3>
-            <EvidenceList items={result.technicalContent.gaps} turns={turns} tone="gap" empty={emptyReportEvidenceMessage(result.evidenceReview?.technicalGaps)} counts={result.evidenceReview?.technicalGaps} />
-          </div>
+          <section className="ds-card rp-card" aria-labelledby="english-report-title">
+            <AreaHeader step={2} id="english-report-title" title="Comunicação em inglês" help={englishPatternsHelp} />
+            <div className="rp-clarity">
+              <p className="ds-label">Clareza geral: <span className="rp-clarity-value">{clarityLabel(result.englishCommunication.clarity)}</span></p>
+              <p className="rp-hint mt-1">{clarityHelp}</p>
+            </div>
+            {result.englishCommunication.patterns.length ? (
+              <ul className="rp-list mt-5">
+                {result.englishCommunication.patterns.map((pattern, index) => (
+                  <li key={`${pattern.sequenceNumber}-${pattern.type}-${index}`} className="rp-item">
+                    <p className="ds-label"><span className="rp-tag">{patternLabel(pattern.type)}</span> <span className="rp-where">resposta {answerOrdinalForSequence(turns, pattern.sequenceNumber) ?? "—"}</span></p>
+                    <p className="rp-quote mt-2">Trecho: “{pattern.evidence}”</p>
+                    <p className="mt-1 text-sm leading-6">Sugestão: {toSecondPerson(pattern.suggestion)}</p>
+                    <p className="rp-rephrase">
+                      <Quote className="size-4 shrink-0" aria-hidden="true" />
+                      <span><span className="rp-rephrase-label">Exemplo</span> <span lang="en" className="rp-rephrase-text">“{pattern.rephrasedExample}”</span></span>
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="ds-body mt-4">{emptyEnglishEvidenceMessage(result.englishCommunication.evidenceStatus, result.evidenceReview?.englishPatterns)}</p>}
+            <EvidenceCountNote counts={result.evidenceReview?.englishPatterns} />
+          </section>
+
+          <CapturedAnswers turns={turns} />
         </div>
-      </section>
-
-      <section className="ds-card rp-card ds-enter" style={enter(3)} aria-labelledby="english-report-title">
-        <AreaHeader step={2} id="english-report-title" title="Comunicação em inglês" help={englishPatternsHelp} />
-        <div className="rp-clarity">
-          <p className="ds-label">Clareza geral: <span className="rp-clarity-value">{clarityLabel(result.englishCommunication.clarity)}</span></p>
-          <p className="rp-hint mt-1">{clarityHelp}</p>
-        </div>
-        {result.englishCommunication.patterns.length ? (
-          <ul className="rp-list mt-5">
-            {result.englishCommunication.patterns.map((pattern, index) => (
-              <li key={`${pattern.sequenceNumber}-${pattern.type}-${index}`} className="rp-item">
-                <p className="ds-label"><span className="rp-tag">{patternLabel(pattern.type)}</span> <span className="rp-where">resposta {answerOrdinalForSequence(turns, pattern.sequenceNumber) ?? "—"}</span></p>
-                <p className="rp-quote mt-2">Trecho: “{pattern.evidence}”</p>
-                <p className="mt-1 text-sm leading-6">Sugestão: {pattern.suggestion}</p>
-                <p className="rp-rephrase">
-                  <Quote className="size-4 shrink-0" aria-hidden="true" />
-                  <span><span className="rp-rephrase-label">Exemplo</span> <span lang="en" className="rp-rephrase-text">“{pattern.rephrasedExample}”</span></span>
-                </p>
-              </li>
-            ))}
-          </ul>
-        ) : <p className="ds-body mt-4">{emptyEnglishEvidenceMessage(result.englishCommunication.evidenceStatus, result.evidenceReview?.englishPatterns)}</p>}
-        <EvidenceCountNote counts={result.evidenceReview?.englishPatterns} />
-      </section>
-
-      <div className="ds-enter" style={enter(4)}>
-        <AzureVoiceReport summary={azureSummary} coverage={coverage} step={3} />
-      </div>
+      </details>
     </div>
   );
 }

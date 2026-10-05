@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app.js";
 import { defaultThinkingModel } from "../src/thinking/config.js";
-import { OpenRouterInterviewReportService } from "../src/thinking/openrouter-interview-report-service.js";
-import { expectPrecisionRules } from "./report-prompt-assertions.js";
+import { OpenRouterInterviewReportService, hasMissingPortugueseAccents, repairPortugueseAccents } from "../src/thinking/openrouter-interview-report-service.js";
+import { expectConciseTechnicalRules, expectPortugueseQualityRules, expectRealReportCalibrationRules, expectSpecificPriorityRules, expectPrecisionRules } from "./report-prompt-assertions.js";
 import type { InterviewReportConsolidationInput, InterviewTurnAnalysis } from "../src/thinking/types.js";
 import type { SpeechConfig } from "../src/speech/config.js";
 
@@ -61,6 +61,9 @@ describe("per-turn analysis service", () => {
     });
     expect(bodies[0].max_tokens).toBeLessThanOrEqual(2_048);
     expectPrecisionRules(bodies[0].messages[0].content);
+    expectConciseTechnicalRules(bodies[0].messages[0].content);
+    expectPortugueseQualityRules(bodies[0].messages[0].content);
+    expectRealReportCalibrationRules(bodies[0].messages[0].content);
     expect(JSON.parse(bodies[0].messages[1].content)).toEqual({ roleContext, turns: [turns[0]] });
     expect(result).toEqual({
       sequenceNumber: 2,
@@ -118,6 +121,8 @@ describe("consolidation service", () => {
       response_format: { type: "json_schema", json_schema: { name: "interview_report_consolidation", strict: true } },
     });
     expect(bodies[0].max_tokens).toBeLessThanOrEqual(1_536);
+    expectSpecificPriorityRules(bodies[0].messages[0].content);
+    expect(bodies[0].messages[0].content).toContain('Address the candidate directly as "você"');
     expect(Object.keys(bodies[0].response_format.json_schema.schema.properties).sort()).toEqual(["clarity", "priorities", "summary"]);
     // ENG-113: the consolidation (which decides clarity) must carry the transcription-error guard.
     expect(bodies[0].messages[0].content).toContain("a transcription error must never become the candidate's error");
@@ -185,9 +190,9 @@ describe("consolidation service", () => {
     }));
     const { fetchImplementation } = capture({ summary: "Resumo técnico completo e objetivo.", clarity: "CLEAR", priorities: [] });
     const result = await makeService(fetchImplementation).consolidate({ roleContext, turns: manyTurns, turnAnalyses: perTurn as InterviewTurnAnalysis[] });
-    expect(result.technicalContent.strengths).toHaveLength(8);
-    expect(result.evidenceReview?.technicalStrengths.rejectionReasons?.limit).toBe(10);
-    expect(result.englishCommunication.patterns).toHaveLength(8);
+    expect(result.technicalContent.strengths).toHaveLength(2);
+    expect(result.evidenceReview?.technicalStrengths.rejectionReasons?.limit).toBe(16);
+    expect(result.englishCommunication.patterns).toHaveLength(4);
     expect(result.englishCommunication.evidenceStatus).toBe("SUFFICIENT");
     const reasons = result.evidenceReview?.englishPatterns.rejectionReasons;
     expect(reasons?.duplicate).toBeGreaterThanOrEqual(1);
@@ -294,5 +299,34 @@ describe("incremental report routes", () => {
       await request(app).post("/api/v1/thinking/report/consolidate").send({ roleContext, turns: [secret], turnAnalyses: [{ sequenceNumber: 2, technicalStrengths: [], technicalGaps: [], englishPatterns: [] }] });
       expect(JSON.stringify(spies.map((spy) => spy.mock.calls))).not.toContain(sentinel);
     } finally { spies.forEach((spy) => spy.mockRestore()); }
+  });
+});
+
+describe("Portuguese accent repair", () => {
+  it("restores accents in very common words without touching English or accented text", () => {
+    expect(repairPortugueseAccents("Voce nao explicou a comunicacao tecnica; pratica tambem.")).toBe("Você não explicou a comunicação técnica; prática também.");
+    expect(repairPortugueseAccents("Use \"the servers was\" como exemplo de solucao e decisoes.")).toBe("Use \"the servers was\" como exemplo de solução e decisões.");
+    expect(repairPortugueseAccents("Você já explicou a prática com clareza.")).toBe("Você já explicou a prática com clareza.");
+    expect(hasMissingPortugueseAccents("Pratique mais a explicação.")).toBe(false);
+    expect(hasMissingPortugueseAccents("Nao ha problema.")).toBe(true);
+  });
+
+  it("repairs accents in explanation, suggestion, focus, exercise and summary before returning", async () => {
+    const turns = [{ sequenceNumber: 1, question: "Q?", answer: "I deployed the service and we use queue for jobs." }];
+    const analysis = {
+      sequenceNumber: 1,
+      technicalStrengths: [{ sequenceNumber: 1, evidence: "we use queue for jobs", explanation: "Voce explicou o uso de fila para processar trabalhos." }],
+      technicalGaps: [],
+      englishPatterns: [{ type: "GRAMMAR", sequenceNumber: 1, evidence: "we use queue for jobs", suggestion: "Inclua o artigo antes de queue nesta frase.", rephrasedExample: "We use a queue for jobs." }],
+    };
+    const { fetchImplementation } = capture({
+      summary: "Voce descreveu o deploy e a fila de trabalhos.", clarity: "CLEAR",
+      priorities: [{ area: "ENGLISH_COMMUNICATION", sequenceNumber: 1, evidence: "we use queue for jobs", focus: "Artigos com substantivos", exercise: "Reescreva tres frases usando artigos e leia em voz alta." }],
+    });
+    const result = await makeService(fetchImplementation).consolidate({ roleContext, turns, turnAnalyses: [analysis] as InterviewTurnAnalysis[] });
+    expect(result.technicalContent.summary).toBe("Você descreveu o deploy e a fila de trabalhos.");
+    expect(result.technicalContent.strengths[0]?.explanation).toBe("Você explicou o uso de fila para processar trabalhos.");
+    expect(result.priorities[0]?.exercise).toBe("Reescreva tres frases usando artigos e leia em voz alta.");
+    expect(result.englishCommunication.patterns[0]?.rephrasedExample).toBe("We use a queue for jobs.");
   });
 });

@@ -72,6 +72,17 @@
 .rp-back { width: 100%; }
 @media (min-width: 640px) { .rp-foot { flex-direction: row; align-items: center; justify-content: space-between; } .rp-back { width: auto; padding-inline: 1.75rem; } }
 
+/* Main points and disclosure. */
+.rp-fix { font-size: 0.9375rem; line-height: 1.5; overflow-wrap: anywhere; }
+.rp-fix-from { color: var(--ds-text-2); text-decoration: line-through; text-decoration-thickness: 1px; }
+.rp-fix-arrow { color: var(--ds-text-2); }
+.rp-fix-to { font-weight: 600; color: var(--ds-green-deep); }
+.rp-tag[data-tone="gap"] { background: var(--ds-warning-tint); color: var(--ds-warning); }
+.rp-more > summary { cursor: pointer; width: fit-content; max-width: 100%; border-radius: var(--ds-r-pill); box-shadow: inset 0 0 0 1.5px var(--ds-line-strong); padding: 0.625rem 1.125rem; font-size: 0.9375rem; font-weight: 600; color: var(--ds-green-deep); }
+.rp-more > summary:hover { background: var(--ds-tint); }
+.rp-more > summary:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
+.rp-more[open] > summary { margin-bottom: 0.25rem; }
+
 @media (prefers-reduced-motion: reduce) {
   .rp-bar::after { animation: ds-fade 1.6s ease-in-out infinite alternate; width: 55%; }
 }

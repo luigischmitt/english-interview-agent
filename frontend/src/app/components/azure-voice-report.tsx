@@ -21,12 +21,12 @@ function Metric({ dimension, metric }: { dimension: AzureReportDimension; metric
   );
 }
 
-export function AzureVoiceReport({ summary, coverage, step }: { summary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; step?: number }) {
+export function AzureVoiceReport({ summary, coverage, step, title = "Sinais vocais" }: { summary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; step?: number; title?: string }) {
   return (
     <section className="ds-card rp-card" aria-labelledby="voice-report-title">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {step !== undefined && <span className="ds-step" aria-hidden="true">{step}</span>}
-        <h2 id="voice-report-title" className="ds-h2">Sinais vocais</h2>
+        <h2 id="voice-report-title" className="ds-h2">{title}</h2>
         <span className="rp-badge">Experimental · Azure</span>
       </div>
       <p className="rp-hint mt-2">{azureReportIntro}</p>

@@ -1,4 +1,4 @@
-import { expectPrecisionRules } from "./report-prompt-assertions.js";
+import { expectConciseTechnicalRules, expectRealReportCalibrationRules, expectSpecificPriorityRules, expectPrecisionRules } from "./report-prompt-assertions.js";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
@@ -80,21 +80,21 @@ describe("final interview report service", () => {
     expect(body.messages[0].content).toContain("tense choice against explicit time markers");
     expect(body.messages[0].content).toContain("subject-verb agreement; countability and plural; word order; literal translations; and false cognates");
     expectPrecisionRules(body.messages[0].content);
-    expect(body.messages[0].content).toContain("Group occurrences only when they are genuinely the same underlying error pattern");
+    expect(body.messages[0].content).toContain("Group occurrences by underlying pattern (one item per pattern, not per occurrence)");
     expect(body.messages[0].content).toContain("Never turn an English grammar, vocabulary, or phrasing error into a technical gap");
-    expect(body.messages[0].content).toContain("For an open-ended question, if the answer gives one or more concrete actions or decisions that reasonably respond to it");
-    expect(body.messages[0].content).toContain("Add a technical gap only when the answer omits a subpart explicitly named or directly asked in the question");
-    expect(body.messages[0].content).toContain("Never call optional elaboration a gap: do not demand more detail, criteria, process steps, checks, metrics, rollback steps, or trade-offs unless the question explicitly asks for them");
+    expectConciseTechnicalRules(body.messages[0].content);
+    expectRealReportCalibrationRules(body.messages[0].content);
+    expectSpecificPriorityRules(body.messages[0].content);
     expect(body.messages[0].content).toContain("If a concrete action or decision addresses the topic, do not claim in the summary that the topic was unanswered");
     expect(body.messages[0].content).toContain("MUST be written in Brazilian Portuguese");
     expect(body.messages[0].content).toContain("The suggestion MUST be written in Brazilian Portuguese; put any corrected English only in rephrasedExample");
     const schema = body.response_format.json_schema.schema.properties;
     const englishPatternSchema = schema.englishCommunication as { properties: { patterns: { maxItems: number; items: { properties: { suggestion: { description: string }; rephrasedExample: { description: string } } } } } };
-    expect(englishPatternSchema.properties.patterns.maxItems).toBe(8);
+    expect(englishPatternSchema.properties.patterns.maxItems).toBe(4);
     expect(englishPatternSchema.properties.patterns.items.properties.suggestion.description).toContain("MUST be written in Brazilian Portuguese");
     expect(englishPatternSchema.properties.patterns.items.properties.rephrasedExample.description).toContain("complete English sentence");
-    expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.strengths.maxItems).toBe(8);
-    expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.gaps.maxItems).toBe(8);
+    expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.strengths.maxItems).toBe(2);
+    expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.gaps.maxItems).toBe(3);
     expect(JSON.parse(body.messages[1].content)).toEqual({ roleContext: input.roleContext, turns: input.turns });
   });
 
@@ -190,7 +190,7 @@ describe("final interview report service", () => {
     expect(report.technicalContent.strengths).toEqual(validReport.technicalContent.strengths);
   });
 
-  it("keeps eight distinct English findings", async () => {
+  it("keeps only the four most impactful distinct English findings", async () => {
     const answer = "I build reliable services. I design clear APIs. I deploy tested changes. I explain technical choices. I review code carefully. I monitor service health. I document useful decisions. I support production systems.";
     const turns = [{ sequenceNumber: 1, question: "Tell me about your work.", answer }];
     const evidence = [
@@ -209,8 +209,8 @@ describe("final interview report service", () => {
       englishCommunication: { clarity: "MOSTLY_CLEAR", patterns },
     }))).generate({ ...input, turns });
 
-    expect(report.englishCommunication.patterns).toHaveLength(8);
-    expect(report.englishCommunication.patterns.map((pattern) => pattern.evidence)).toEqual(evidence);
+    expect(report.englishCommunication.patterns).toHaveLength(4);
+    expect(report.englishCommunication.patterns.map((pattern) => pattern.evidence)).toEqual(evidence.slice(0, 4));
   });
 
   it("counts valid items beyond category limits without breaking evidence totals", async () => {
@@ -242,13 +242,13 @@ describe("final interview report service", () => {
     const report = await makeService(async () => providerResponse(JSON.stringify(providerOutput))).generate({ ...input, turns });
     const counts = report.evidenceReview;
 
-    expect(report.technicalContent.strengths).toHaveLength(8);
-    expect(report.technicalContent.gaps).toHaveLength(8);
-    expect(report.englishCommunication.patterns).toHaveLength(8);
+    expect(report.technicalContent.strengths).toHaveLength(2);
+    expect(report.technicalContent.gaps).toHaveLength(3);
+    expect(report.englishCommunication.patterns).toHaveLength(4);
     expect(report.priorities).toHaveLength(3);
-    expect(counts?.technicalStrengths).toMatchObject({ candidates: 9, accepted: 8, rejected: 1, rejectionReasons: { limit: 1 } });
-    expect(counts?.technicalGaps).toMatchObject({ candidates: 9, accepted: 8, rejected: 1, rejectionReasons: { limit: 1 } });
-    expect(counts?.englishPatterns).toMatchObject({ candidates: 10, accepted: 8, rejected: 2, rejectionReasons: { limit: 2 } });
+    expect(counts?.technicalStrengths).toMatchObject({ candidates: 9, accepted: 2, rejected: 7, rejectionReasons: { limit: 7 } });
+    expect(counts?.technicalGaps).toMatchObject({ candidates: 9, accepted: 3, rejected: 6, rejectionReasons: { limit: 6 } });
+    expect(counts?.englishPatterns).toMatchObject({ candidates: 10, accepted: 4, rejected: 6, rejectionReasons: { limit: 6 } });
     expect(counts?.priorities).toMatchObject({ candidates: 4, accepted: 3, rejected: 1, rejectionReasons: { limit: 1 } });
     for (const category of Object.values(counts ?? {})) {
       if (typeof category !== "object" || !category || !("rejected" in category)) continue;

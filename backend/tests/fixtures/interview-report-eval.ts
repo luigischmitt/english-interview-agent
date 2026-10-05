@@ -260,10 +260,9 @@ export const interviewReportEvalFixtures = [
         { type: "GRAMMAR", sequenceNumber: 1, evidence: "have presented it last month", suggestion: "Com um período encerrado como last month, use simple past em vez de present perfect.", rephrasedExample: "I presented it last month." },
         { type: "FALSE_COGNATE", sequenceNumber: 2, evidence: "realized a staged migration", suggestion: "Use o verbo que significa executar uma migração; realized significa perceber ou compreender.", rephrasedExample: "We carried out a staged migration in two steps." },
         { type: "WORD_CHOICE", sequenceNumber: 2, evidence: "discussed about the rollback", suggestion: "Retire a preposição após o verbo discuss, que recebe o assunto diretamente.", rephrasedExample: "We discussed the rollback." },
-        { type: "WORD_CHOICE", sequenceNumber: 2, evidence: "responsible of the change", suggestion: "Use a colocação responsible for para indicar responsabilidade por algo.", rephrasedExample: "I was responsible for the change." },
       ],
       evidenceStatus: "SUFFICIENT",
-      optionalItems: { candidates: 6, accepted: 6, rejected: 0 },
+      optionalItems: { candidates: 6, accepted: 5, rejected: 1 },
     }),
   },
   {
