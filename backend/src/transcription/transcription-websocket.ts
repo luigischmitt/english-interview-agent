@@ -271,6 +271,8 @@ export function attachTranscriptionWebSocket(
     let lastProvisional = "";
     // Semantic end-of-answer check (question and transcript are never logged; only counts, verdict and latency are).
     let interviewerQuestion: string | null = null;
+    // Question for Whisper vocabulary biasing only; independent of the semantic end check. Never logged.
+    let whisperQuestion: string | null = null;
     let semanticAbort: AbortController | null = null;
     let semanticChecks = 0;
     let semanticVerdict: SemanticVerdict = "none";
@@ -339,7 +341,7 @@ export function attachTranscriptionWebSocket(
     // Hedge outcome of the call whose result (or failure) is being reported.
     let activeHedge: { outcome: HedgeOutcome } = { outcome: "not_needed" };
     const hedged = (audio: Buffer, signal: AbortSignal, hedge: { outcome: HedgeOutcome }) => hedgedTranscribe({
-      start: (callSignal) => transcriptionService.transcribe(audio, "whisper-large-v3-turbo", "wav", callSignal),
+      start: (callSignal) => transcriptionService.transcribe(audio, "whisper-large-v3-turbo", "wav", callSignal, { question: whisperQuestion }),
       hedgeAfterMs: limits.hedgeAfterMs,
       tryReserve: () => finalQueue.reserve(),
       signal,
@@ -579,7 +581,7 @@ export function attachTranscriptionWebSocket(
               const timingSlot = await acquireTimingRecoverySlot(abortController.signal);
               if (!timingSlot) return null;
               try {
-                return await transcriptionService.transcribe(assessmentAudio, "whisper-large-v3-turbo", "wav", abortController.signal);
+                return await transcriptionService.transcribe(assessmentAudio, "whisper-large-v3-turbo", "wav", abortController.signal, { question: whisperQuestion });
               } finally {
                 timingSlot();
               }
@@ -799,6 +801,7 @@ export function attachTranscriptionWebSocket(
           if (parsedEngine === undefined) logStreamDiagnostic({ status: "invalid_message", field: "start.transcriptionEngine" });
           requestedEngine = parsedEngine ?? null;
           captionsEnabled = streaming !== null && message.captions === true;
+          whisperQuestion = sanitizeQuestion(message.question);
           interviewerQuestion = streaming?.answerCompletion ? sanitizeQuestion(message.question) : null;
           if (streaming) {
             const sessionCallbacks = {
@@ -844,7 +847,7 @@ export function attachTranscriptionWebSocket(
                 logStreamDiagnostic({ status: "incremental_whisper_unavailable", reason: failure });
               },
             };
-            streamSession = new IncrementalWhisperSession({ service: transcriptionService, speechThreshold: session.config.speechThreshold, ...streaming.incrementalWhisper, ...sessionCallbacks });
+            streamSession = new IncrementalWhisperSession({ service: transcriptionService, speechThreshold: session.config.speechThreshold, question: whisperQuestion, ...streaming.incrementalWhisper, ...sessionCallbacks });
             streamSession.open();
           }
           send(socket, {

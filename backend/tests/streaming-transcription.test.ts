@@ -926,7 +926,7 @@ describe("versioned transcription WebSocket", () => {
       socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
       await expect(complete).resolves.toMatchObject({ status: "complete", transcript: "I led the migration and reduced the release risk.", durationMs: 12_000 });
       expect(transcribe).toHaveBeenCalledTimes(1);
-      expect(transcribe).toHaveBeenCalledWith(expect.any(Buffer), "whisper-large-v3-turbo", "wav", expect.any(AbortSignal));
+      expect(transcribe).toHaveBeenCalledWith(expect.any(Buffer), "whisper-large-v3-turbo", "wav", expect.any(AbortSignal), expect.objectContaining({ question: null }));
       expect(capturedWav?.subarray(0, 4).toString()).toBe("RIFF");
       expect(capturedWav?.readUInt32LE(40)).toBe(120 * frameBytes);
     } finally {

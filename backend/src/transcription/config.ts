@@ -26,6 +26,8 @@ export type TranscriptionConfig = {
   maxPrepares: number;
   semanticEndEnabled: boolean;
   semanticEndTimeoutMs: number;
+  /** Send a vocabulary/context `prompt` with every Whisper request. `TRANSCRIPTION_WHISPER_PROMPT=off` disables it. */
+  whisperPromptEnabled: boolean;
 };
 
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
@@ -98,5 +100,6 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     maxPrepares: parseIntegerInRange(environment.TRANSCRIPTION_MAX_PREPARES, 2, 0, 5, "Max prepares"),
     semanticEndEnabled: environment.TRANSCRIPTION_SEMANTIC_END_ENABLED?.trim().toLowerCase() !== "false",
     semanticEndTimeoutMs: parseIntegerInRange(environment.TRANSCRIPTION_SEMANTIC_END_TIMEOUT_MS, 1_500, 200, 5_000, "Semantic end timeout"),
+    whisperPromptEnabled: environment.TRANSCRIPTION_WHISPER_PROMPT?.trim().toLowerCase() !== "off",
   };
 }

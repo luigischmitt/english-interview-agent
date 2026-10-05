@@ -60,6 +60,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `AZURE_SPEECH_ASSESSMENT_ENABLED` | `false` | Set to `true` to enable optional experimental pronunciation signals. Requires Azure Speech key and region. |
 | `AZURE_SPEECH_ASSESSMENT_TIMEOUT_MS` | `15000` | Positive per-block deadline shared by ffmpeg conversion and one Azure scripted assessment request. |
 | `OPENROUTER_API_KEY` | — | OpenRouter key. Enables the two Whisper transcription choices and stays server-side. |
+| `TRANSCRIPTION_WHISPER_PROMPT` | `on` | `on` or `off`. When on, every Whisper request carries a `prompt` (vocabulary biasing): a short tech glossary (Supabase, Vercel, Next.js, ...), the interviewer question from the stream `start` message and, for incremental segments, the last ~200 characters of the transcript so far, capped at 800 characters. Never logged. If OpenRouter rejects the field with a 400 mentioning `prompt`, the request is retried once without it and the prompt is disabled for the process. A transcript that merely echoes the prompt is treated as empty. Set `off` to roll back. |
 | `TRANSCRIPTION_TIMEOUT_MS` | `55000` | Overall OpenRouter time budget for the final Whisper transcription, including bounded 429 and transient-failure retries. |
 | `TRANSCRIPTION_STREAM_MAX_DURATION_MS` | `180000` | Maximum duration for one PCM WebSocket response. Must be a positive integer. |
 | `TRANSCRIPTION_STREAM_MAX_BYTES` | `6291456` | Maximum in-memory PCM bytes per response (6 MiB by default). |
