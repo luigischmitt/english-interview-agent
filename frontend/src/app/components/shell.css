@@ -133,10 +133,21 @@
 @media (hover: hover) and (pointer: fine) { .shl-signout .btn:hover:not(:disabled) { background: var(--ds-hover-wash); color: var(--ds-ink); } }
 
 /* ---- Home. ---- */
-.shl-hero { border-radius: var(--ds-r-panel); background: var(--ds-panel); color: var(--ds-on-panel); box-shadow: var(--ds-shadow-panel); }
+.shl-hero { position: relative; isolation: isolate; overflow: hidden; border-radius: var(--ds-r-panel); background: var(--ds-panel); color: var(--ds-on-panel); box-shadow: var(--ds-shadow-panel); }
+.shl-hero-forest {
+  position: absolute;
+  z-index: -1;
+  object-fit: cover;
+  object-position: right bottom;
+  opacity: 0.12;
+  pointer-events: none;
+  mask-image: linear-gradient(90deg, transparent 18%, var(--ds-on-panel) 82%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 18%, var(--ds-on-panel) 82%);
+}
 .shl-hero .ds-btn-cta { width: auto; padding: 0 1.75rem; }
 .shl-hero-muted { color: color-mix(in srgb, var(--ds-on-panel) 74%, transparent); }
 .shl-hero-facts > div { display: flex; flex-direction: column; gap: 0.125rem; border-radius: var(--ds-r-lg); background: var(--ds-panel-wash-faint); padding: 0.75rem 1rem; }
+@media (max-width: 639px) { .shl-hero-forest { opacity: 0.08; } }
 
 .shl-icon-tile { display: grid; width: 2.5rem; height: 2.5rem; flex: none; place-items: center; border-radius: var(--ds-r-md); background: var(--ds-tint); color: var(--ds-green); }
 .shl-well { border-radius: var(--ds-r-xl); background: var(--ds-field); padding: 1rem 1.125rem; }
