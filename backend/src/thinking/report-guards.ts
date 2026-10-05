@@ -268,3 +268,27 @@ const genericExercisePatterns = [
 export function isGenericExercise(exercise: string): boolean {
   return genericExercisePatterns.some((pattern) => pattern.test(exercise));
 }
+
+const fillerWords = new Set(["um", "uh", "uhm", "er", "erm", "ah", "eh", "hmm", "mm", "huh", "well", "so", "like", "yeah", "yes", "no", "okay", "ok", "oh", "sorry", "please"]);
+/** Whole-answer phrases that carry no technical or language content (normalized: lowercase, no punctuation). */
+const noContentAnswer = new RegExp(`^(?:(?:well|so|um|uh|hmm|sorry|okay|ok|yeah|yes|no)\\s+)*(?:`
+  + "i (?:do not|don t|dont|really do not|really don t) know(?: (?:the answer|about (?:that|it)|sorry))?|i have no idea|no idea|i m not sure|i am not sure|i not know|pass|skip|next question|"
+  + "thank you(?: very much| so much)?|thanks(?: a lot)?|that s all|that is all|nothing else|i have nothing (?:else )?to add|"
+  + "(?:can|could|would) you (?:please )?(?:repeat|rephrase|say|ask|explain)(?: that| it| the question| this)?(?: again| please| one more time)?|"
+  + "i (?:did not|didn t|do not|don t|could not|couldn t) (?:understand|catch|hear|get)(?: that| it| you| the question| what you said)?|what do you mean(?: by that)?|pardon(?: me)?|come again|sorry what|what was the question"
+  + ")(?:\\s+(?:sorry|please|thanks|thank you))*$", "u");
+
+/**
+ * True when an answer has nothing to analyze: a clarification request, "I don't know", thanks, only fillers, or fewer
+ * than four meaningful words. Deterministic; used to skip the per-answer model call. Never inspects meaning beyond that.
+ */
+export function isLowContentAnswer(answer: string): boolean {
+  const normalized = answer.toLocaleLowerCase("en-US").replace(/['’`]/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  if (normalized.length === 0) return true;
+  const words = normalized.split(" ");
+  if (words.filter((word) => !fillerWords.has(word)).length < minimumAnalyzableWords) return true;
+  return words.length <= 12 && noContentAnswer.test(normalized);
+}
+
+/** Fewer meaningful words than this leave nothing to analyze ("I used AWS."); the shortest real error samples have five. */
+const minimumAnalyzableWords = 4;
