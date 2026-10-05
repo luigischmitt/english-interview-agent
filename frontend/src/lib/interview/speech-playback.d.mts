@@ -80,14 +80,18 @@ export const autoplayBlockedMessage: string;
 export const AUTOPLAY_BLOCKED_REASON: "autoplay_blocked";
 export const minimumChunkCharacters: number;
 export const finalChunkLeadMs: number;
+/** Chunk 0 is requested alone; once it settles the remaining chunks start, at most this many in flight. */
 export const maxConcurrentChunkRequests: number;
 export const maximumChunkCharacters: number;
 export const firstChunkSplitThreshold: number;
 export const firstChunkPartMinimum: number;
+export const firstChunkSentenceMaximum: number;
+export const mergeBelowCharacters: number;
 /**
- * Groups sentences into synthesis chunks; sentences under ~40 characters merge with the next (never past ~140 characters).
- * Only the first sentence may be split (over 70 characters, at its first clause boundary). `text` is what is synthesized,
- * `sentences` are the whole caption sentences, `units` pair each spoken piece with its caption.
+ * Groups sentences into synthesis chunks. The first chunk is the first sentence (<= 70 characters) or its head up to the first
+ * clause break (>= 25 characters); later chunks end only at sentence ends (short sentences merge, up to 180 characters; a
+ * longer single sentence is split at a clause break). `text` is what is synthesized, `sentences` are the whole caption
+ * sentences, `units` pair each spoken piece with its caption.
  */
 export function groupInterviewerSentences(segments: string[]): { text: string; sentences: string[]; units: { text: string; caption: string }[] }[];
 export function playInterviewerSegments(segments: string[], options: SpeechPlaybackOptions): SpeechPlayback;
