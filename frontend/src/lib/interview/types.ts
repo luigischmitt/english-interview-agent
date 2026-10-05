@@ -1,3 +1,5 @@
+import type { JobDirection } from "./job-direction.mjs";
+
 export type InterviewConfig = {
   role: string;
   seniority: string;
@@ -10,6 +12,8 @@ export type InterviewConfig = {
   autoCaptureVoice: boolean;
   /** Input device chosen on the setup (opaque browser id); absent means the browser default. */
   microphoneDeviceId?: string | null;
+  /** User-approved job summary handed to the room; raw job description is never included. */
+  jobDirection?: JobDirection;
 };
 
 export type InterviewQuestion = {

@@ -34,6 +34,27 @@ export interface ThinkingService {
   assess(input: InterviewThinkingInput): Promise<ThinkingAssessment>;
 }
 
+export type JobDirection = {
+  targetRole: string;
+  suggestedSeniority: "junior" | "mid-level" | "senior" | "staff";
+  mainInterviewEmphasis: string;
+  priorityCompetencies: string[];
+  productTeamContext: string;
+};
+
+export type JobDirectionInput = {
+  jobDescription: string;
+  roleContext: {
+    targetRole: string;
+    seniority?: string;
+    focus?: string;
+  };
+};
+
+export interface JobDirectionService {
+  analyze(input: JobDirectionInput): Promise<JobDirection>;
+}
+
 export type InterviewReportInput = {
   roleContext: InterviewThinkingInput["roleContext"];
   turns: Array<{ sequenceNumber: number; question: string; answer: string }>;

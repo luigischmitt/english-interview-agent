@@ -17,6 +17,10 @@ import type {
   SynthesizedSpeech,
 } from "../src/speech/types.js";
 import type { TranscriptionService } from "../src/transcription/types.js";
+import type { JobDirectionService } from "../src/thinking/types.js";
+import { ThinkingServiceError } from "../src/thinking/errors.js";
+import { JobDirectionUserLimit } from "../src/thinking/job-direction-user-limit.js";
+import type { AccessTokenVerifier } from "../src/auth/access-token-verifier.js";
 
 const speechConfig: SpeechConfig = {
   provider: "fake",
@@ -77,6 +81,127 @@ describe("backend routes", () => {
     expect(response.status).toBe(200);
     expect(response.body.transcript).toBe("I led the migration.");
     expect(response.body.provider).toBe("azure");
+  });
+
+  it("analyzes a bounded job description without creating interview questions", async () => {
+    const analyze = vi.fn<JobDirectionService["analyze"]>(async () => ({
+      targetRole: "Senior Backend Engineer",
+      suggestedSeniority: "senior",
+      mainInterviewEmphasis: "Arquitetura de APIs e confiabilidade.",
+      priorityCompetencies: ["Sistemas distribuídos", "Observabilidade"],
+      productTeamContext: "Plataforma de logística B2B em uma equipe multidisciplinar.",
+    }));
+    const testApp = createApp({ speechConfig, accessTokenVerifier: null, jobDirectionService: { analyze } });
+    const jobDescription = "We are hiring a backend engineer to build distributed services, improve API reliability, and work with product on a logistics platform. " .repeat(2);
+    const response = await request(testApp).post("/api/v1/thinking/job-direction").send({
+      jobDescription,
+      roleContext: { targetRole: "Backend Engineer", seniority: "mid-level", focus: "technical-depth" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      targetRole: "Senior Backend Engineer",
+      suggestedSeniority: "senior",
+      mainInterviewEmphasis: "Arquitetura de APIs e confiabilidade.",
+      priorityCompetencies: ["Sistemas distribuídos", "Observabilidade"],
+      productTeamContext: "Plataforma de logística B2B em uma equipe multidisciplinar.",
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(/question|pergunta|\?/iu);
+    expect(analyze).toHaveBeenCalledWith({ jobDescription: jobDescription.trim(), roleContext: { targetRole: "Backend Engineer", seniority: "mid-level", focus: "technical-depth" } });
+  });
+
+  it.each([
+    ["short", "Short job post."],
+    ["overlong", "x".repeat(20_001)],
+  ])("rejects a %s job description before calling the model", async (_kind, jobDescription) => {
+    const analyze = vi.fn<JobDirectionService["analyze"]>();
+    const testApp = createApp({ speechConfig, accessTokenVerifier: null, jobDirectionService: { analyze } });
+    const response = await request(testApp).post("/api/v1/thinking/job-direction").send({ jobDescription, roleContext: { targetRole: "Engineer" } });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("INVALID_JOB_DIRECTION_REQUEST");
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it("reports long but repetitive text as insufficient content", async () => {
+    const analyze = vi.fn<JobDirectionService["analyze"]>();
+    const testApp = createApp({ speechConfig, accessTokenVerifier: null, jobDirectionService: { analyze } });
+    const response = await request(testApp).post("/api/v1/thinking/job-direction").send({
+      jobDescription: `${"Backend engineer ".repeat(10)} 1234567890`,
+      roleContext: { targetRole: "" },
+    });
+    expect(response.status).toBe(422);
+    expect(response.body.error.code).toBe("JOB_DIRECTION_INSUFFICIENT_CONTENT");
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it("returns a safe retryable timeout response from the job direction endpoint", async () => {
+    const analyze = vi.fn<JobDirectionService["analyze"]>(async () => {
+      throw new ThinkingServiceError("JOB_DIRECTION_TIMEOUT", 504, "A análise da vaga demorou mais do que o esperado.");
+    });
+    const testApp = createApp({ speechConfig, accessTokenVerifier: null, jobDirectionService: { analyze } });
+    const response = await request(testApp).post("/api/v1/thinking/job-direction").send({
+      jobDescription: "We need a backend engineer to build APIs and distributed services, improve reliability, and collaborate with product on a logistics platform. ".repeat(2),
+      roleContext: { targetRole: "Engineer" },
+    });
+    expect(response.status).toBe(504);
+    expect(response.body.error.code).toBe("JOB_DIRECTION_TIMEOUT");
+    expect(response.body.error.message).not.toContain("description");
+  });
+
+  it("limits parallel and rapid job direction calls per verified user, not by request-body identity", async () => {
+    let now = 20_000;
+    let calls = 0;
+    let markFirstStarted!: () => void;
+    let finishFirst!: () => void;
+    const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+    const firstWait = new Promise<void>((resolve) => { finishFirst = resolve; });
+    const analyze = vi.fn<JobDirectionService["analyze"]>(async () => {
+      calls += 1;
+      if (calls === 1) {
+        markFirstStarted();
+        await firstWait;
+      }
+      return {
+        targetRole: "Backend Engineer",
+        suggestedSeniority: "senior",
+        mainInterviewEmphasis: "Arquitetura e confiabilidade.",
+        priorityCompetencies: ["APIs"],
+        productTeamContext: "Produto B2B para logística.",
+      };
+    });
+    const verifier: AccessTokenVerifier = { async verify(token) { return { userId: token === "alice-token" ? "user-alice" : "user-bob" }; } };
+    const jobDirectionUserLimit = new JobDirectionUserLimit({ cooldownMs: 5_000, now: () => now });
+    const testApp = createApp({ speechConfig, accessTokenVerifier: verifier, jobDirectionUserLimit, jobDirectionService: { analyze } });
+    const body = {
+      jobDescription: "We need a backend engineer to build APIs and distributed services, improve reliability, and collaborate with product on a logistics platform. ".repeat(2),
+      roleContext: { targetRole: "Backend Engineer", seniority: "mid-level", focus: "technical-depth" },
+    };
+
+    const firstRequest = request(testApp).post("/api/v1/thinking/job-direction").set("authorization", "Bearer alice-token").send(body).then((response) => response);
+    await firstStarted;
+    const duplicate = await request(testApp).post("/api/v1/thinking/job-direction").set("authorization", "Bearer alice-token").send(body);
+    expect(duplicate.status).toBe(429);
+    expect(duplicate.body.error.code).toBe("JOB_DIRECTION_RATE_LIMITED");
+    expect(duplicate.headers["retry-after"]).toBe("1");
+
+    const spoof = await request(testApp).post("/api/v1/thinking/job-direction").set("authorization", "Bearer alice-token").send({ ...body, userId: "user-bob" });
+    expect(spoof.status).toBe(400);
+    expect(analyze).toHaveBeenCalledOnce();
+
+    const differentUser = await request(testApp).post("/api/v1/thinking/job-direction").set("authorization", "Bearer bob-token").send(body);
+    expect(differentUser.status).toBe(200);
+    expect(analyze).toHaveBeenCalledTimes(2);
+
+    finishFirst();
+    expect((await firstRequest).status).toBe(200);
+    now += 4_999;
+    const cooldown = await request(testApp).post("/api/v1/thinking/job-direction").set("authorization", "Bearer alice-token").send(body);
+    expect(cooldown.status).toBe(429);
+    expect(cooldown.headers["retry-after"]).toBe("1");
+    now += 1;
+    const afterCooldown = await request(testApp).post("/api/v1/thinking/job-direction").set("authorization", "Bearer alice-token").send(body);
+    expect(afterCooldown.status).toBe(200);
+    expect(analyze).toHaveBeenCalledTimes(3);
   });
 
   it("lists only the transcription providers configured on the server", async () => {

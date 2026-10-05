@@ -12,7 +12,11 @@ function bearerToken(request: Request): string | null {
 /** Rejects requests without a valid Supabase access token. A null verifier means authentication is disabled. */
 export function requireAccessToken(verifier: AccessTokenVerifier | null, isPublic: (request: Request) => boolean = () => false): RequestHandler {
   return async (request, response, next) => {
-    if (!verifier || isPublic(request)) return next();
+    if (isPublic(request)) return next();
+    if (!verifier) {
+      response.locals.authenticatedUser = { userId: "local-development" };
+      return next();
+    }
     const route = request.originalUrl.split("?")[0] ?? "";
     try {
       const token = bearerToken(request);
@@ -21,7 +25,7 @@ export function requireAccessToken(verifier: AccessTokenVerifier | null, isPubli
         response.status(401).json({ error: { code: "UNAUTHENTICATED", message: "Sua sessão expirou. Entre novamente." } });
         return;
       }
-      await verifier.verify(token);
+      response.locals.authenticatedUser = await verifier.verify(token);
       next();
     } catch (error) {
       const reason = error instanceof AuthError ? error.reason : "malformed";

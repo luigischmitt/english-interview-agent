@@ -15,7 +15,9 @@ import { loadThinkingConfig, type ThinkingConfig } from "./thinking/config.js";
 import { createThinkingService } from "./thinking/openrouter-thinking-service.js";
 import { createOrchestrationService } from "./thinking/openrouter-orchestration-service.js";
 import { createInterviewReportService } from "./thinking/openrouter-interview-report-service.js";
-import type { InterviewOrchestrationService, InterviewReportService, ThinkingService } from "./thinking/types.js";
+import { createJobDirectionService } from "./thinking/openrouter-job-direction-service.js";
+import { JobDirectionUserLimit } from "./thinking/job-direction-user-limit.js";
+import type { InterviewOrchestrationService, InterviewReportService, JobDirectionService, ThinkingService } from "./thinking/types.js";
 import { loadTranscriptionConfig, type TranscriptionConfig } from "./transcription/config.js";
 import { createTranscriptionService } from "./transcription/create-transcription-service.js";
 import { createPronunciationAssessmentService } from "./transcription/create-pronunciation-assessment-service.js";
@@ -36,13 +38,15 @@ type AppDependencies = {
   thinkingService?: ThinkingService | null;
   orchestrationService?: InterviewOrchestrationService;
   reportService?: InterviewReportService | null;
+  jobDirectionService?: JobDirectionService | null;
+  jobDirectionUserLimit?: JobDirectionUserLimit;
   /** Omit for the environment default; pass null to disable authentication. */
   accessTokenVerifier?: AccessTokenVerifier | null;
   /** Receives one JSON line per accepted client audio diagnostic (defaults to console.info). */
   clientEventLogger?: (line: string) => void;
 };
 
-export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, accessTokenVerifier, clientEventLogger }: AppDependencies = {}) {
+export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, jobDirectionService, jobDirectionUserLimit, accessTokenVerifier, clientEventLogger }: AppDependencies = {}) {
   const resolvedSpeechConfig = speechConfig ?? loadSpeechConfig();
   const resolvedSpeechProvider = speechProvider ?? createSpeechProvider(resolvedSpeechConfig);
   const resolvedTranscriptionService = transcriptionService
@@ -51,6 +55,8 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
   const resolvedThinkingService = thinkingService === undefined ? createThinkingService(resolvedThinkingConfig) : thinkingService;
   const resolvedOrchestrationService = orchestrationService ?? createOrchestrationService(resolvedThinkingConfig);
   const resolvedReportService = reportService === undefined ? createInterviewReportService(resolvedThinkingConfig) : reportService;
+  const resolvedJobDirectionService = jobDirectionService === undefined ? createJobDirectionService(resolvedThinkingConfig) : jobDirectionService;
+  const resolvedJobDirectionUserLimit = jobDirectionUserLimit ?? new JobDirectionUserLimit();
   const app = express();
 
   app.use(
@@ -66,7 +72,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
 
   const verifier = accessTokenVerifier === undefined ? defaultAccessTokenVerifier : accessTokenVerifier;
   app.use("/api/v1", requireAccessToken(verifier, (request) => request.method === "GET" && request.path === "/speech/health"));
-  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, clientEventLogger));
+  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, resolvedJobDirectionService, resolvedJobDirectionUserLimit, clientEventLogger));
   app.use(notFoundHandler);
   app.use(errorHandler);
 
