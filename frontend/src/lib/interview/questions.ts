@@ -9,10 +9,9 @@ export function getFixedInterviewQuestions(config: InterviewConfig): InterviewQu
   if (questions[0] && isValidJobDirection(direction)
     && direction.targetRole.trim() === role.trim()
     && direction.suggestedSeniority === config.seniority) {
-    const competency = direction.priorityCompetencies[0].trim();
     questions[0] = {
       ...questions[0],
-      prompt: `What experience with ${competency} would help you succeed in this role?`,
+      prompt: "Based on the role description you shared, which part of your experience would be most valuable in this position?",
       cue: "Give a concise example, then connect it to the role.",
     };
   }

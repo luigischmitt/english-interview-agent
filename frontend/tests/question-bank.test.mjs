@@ -59,31 +59,31 @@ test("only the introduction uses the {role} placeholder", () => {
   }
 });
 
-test("approved job direction tailors only the opening question and keeps the role bank intact", () => {
+test("approved job direction uses a fixed English opening and keeps the role bank intact", () => {
   const config = {
     role: "Backend Engineer", seniority: "mid-level", jobDirection: {
       targetRole: "Backend Engineer", suggestedSeniority: "mid-level", mainInterviewEmphasis: "Reliable API design",
-      priorityCompetencies: ["API reliability"], productTeamContext: "A payments product team",
+      priorityCompetencies: ["comunicação interpessoal"], productTeamContext: "Uma equipe de pagamentos",
     },
   };
   const questions = getFixedInterviewQuestions(config);
-  assert.match(questions[0].prompt, /API reliability/u);
-  assert.match(questions[0].prompt, /succeed in this role/u);
+  assert.equal(questions[0].prompt, "Based on the role description you shared, which part of your experience would be most valuable in this position?");
+  assert.doesNotMatch(questions[0].prompt, /comunicação interpessoal|pagamentos/u);
+  assert.match(questions[0].prompt, /role description/u);
   assert.equal(questions[0].prompt.split("?").length - 1, 1);
   assert.equal(questions[0].prompt.length <= 220, true);
   assert.deepEqual(questions.slice(1).map(({ id, prompt }) => ({ id, prompt })), getQuestionBankForRole("Backend Engineer").slice(1).map(({ id, prompt }) => ({ id, prompt })));
 });
 
-test("directed opening stays short with an abstract competency at the maximum allowed length", () => {
-  const competency = "cross-functional communication and stakeholder alignment".padEnd(100, "x");
+test("directed opening stays short regardless of the maximum-length Portuguese direction fields", () => {
   const questions = getFixedInterviewQuestions({
     role: "R".repeat(100), seniority: "staff", jobDirection: {
-      targetRole: "R".repeat(100), suggestedSeniority: "staff", mainInterviewEmphasis: "Cross-functional work",
-      priorityCompetencies: [competency], productTeamContext: "Distributed product team",
+      targetRole: "R".repeat(100), suggestedSeniority: "staff", mainInterviewEmphasis: "Experiência com " + "gestão técnica ".repeat(14),
+      priorityCompetencies: ["comunicação e alinhamento com partes interessadas".padEnd(100, "x")], productTeamContext: "Equipe distribuída ".repeat(14),
     },
   });
-  assert.match(questions[0].prompt, /cross-functional communication/u);
   assert.ok(questions[0].prompt.length <= 220);
+  assert.doesNotMatch(questions[0].prompt, /partes interessadas|gestão técnica|Equipe distribuída/u);
   assert.equal(questions[0].prompt.split("?").length - 1, 1);
 });
 
