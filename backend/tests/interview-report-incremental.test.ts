@@ -89,6 +89,39 @@ describe("per-turn analysis service", () => {
     expect(invented.technicalStrengths).toEqual([unlinkedStrength]);
   });
 
+  it("skips the provider for answers with no analyzable content and returns an ordinary empty analysis", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const fetchImplementation = vi.fn<typeof fetch>(async () => providerResponse({ technicalStrengths: [], technicalGaps: [], englishPatterns: [] }));
+      const service = makeService(fetchImplementation);
+      for (const answer of ["I don't know.", "Thank you.", "Can you repeat the question, please?", "Um... yeah, uh.", "I used AWS."]) {
+        const result = await service.analyzeTurn({ roleContext, turn: { sequenceNumber: 6, question: "How do you deploy?", answer } });
+        expect(result).toEqual({ sequenceNumber: 6, technicalStrengths: [], technicalGaps: [], englishPatterns: [], model: defaultThinkingModel });
+      }
+      expect(fetchImplementation).not.toHaveBeenCalled();
+      const events = timingEvents(info);
+      expect(events).toHaveLength(5);
+      for (const event of events) expect(Object.keys(event).sort()).toEqual(["durationMs", "event", "phase", "scope", "skipped", "turnCount"]);
+      expect(events[0]).toMatchObject({ phase: "skipped", scope: "turn", skipped: "low_content", turnCount: 1 });
+      expect(JSON.stringify(info.mock.calls)).not.toContain("know");
+
+      // A short answer with a real error still reaches the provider.
+      await service.analyzeTurn({ roleContext, turn: { sequenceNumber: 6, question: "How do you deploy?", answer: "He don't check the cache." } });
+      expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    } finally { info.mockRestore(); }
+  });
+
+  it("asks for at most one strength, one gap and two English patterns per answer with a bounded output", async () => {
+    const { bodies, fetchImplementation } = capture({ technicalStrengths: [], technicalGaps: [], englishPatterns: [] });
+    await makeService(fetchImplementation).analyzeTurn({ roleContext, turn: turns[0] });
+    const schema = bodies[0].response_format.json_schema.schema.properties;
+    expect([schema.technicalStrengths.maxItems, schema.technicalGaps.maxItems, schema.englishPatterns.maxItems]).toEqual([1, 1, 2]);
+    expect(bodies[0].max_tokens).toBeLessThanOrEqual(600);
+    expect(bodies[0].max_tokens).toBeGreaterThanOrEqual(450);
+    // Static rules first, identical between calls (prompt caching); the answer lives only in the user message.
+    expect(bodies[0].messages[0].content).not.toContain(turns[0].answer);
+  });
+
   it("maps provider failures to standardized thinking errors", async () => {
     const call = (fetchImplementation: typeof fetch) => makeService(fetchImplementation).analyzeTurn({ roleContext, turn: turns[0] });
     await expect(call(async () => new Response("", { status: 429 }))).rejects.toMatchObject({ code: "THINKING_RATE_LIMITED", status: 503 });

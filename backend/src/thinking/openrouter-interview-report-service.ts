@@ -3,7 +3,7 @@ import { ThinkingServiceError } from "./errors.js";
 import { isDegenerateProviderOutput } from "./report-degeneration.js";
 import { parseApprovedJobDirection } from "./job-direction-validation.js";
 import { parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
-import { analyzeEnglishEdit, checkGrammarRuleLabel, hasBrokenSentenceBoundary, isGenericExercise, isLikelyTranscriptionArtifactEdit, isOffQuestionIntegrationItem, isIdiomaticOnRewritten, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
+import { analyzeEnglishEdit, checkGrammarRuleLabel, isLowContentAnswer, hasBrokenSentenceBoundary, isGenericExercise, isLikelyTranscriptionArtifactEdit, isOffQuestionIntegrationItem, isIdiomaticOnRewritten, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
 import {
   communicationClarities,
   communicationObservationTypes,
@@ -45,7 +45,7 @@ const systemPrompt = Object.values(promptRules).join(" ");
 const turnAnalysisPrompt = [
   "You analyze one answer from a technical job interview practice session conducted in English. A later step consolidates the per-answer analyses into the final report.",
   promptRules.technical, promptRules.factual, promptRules.language, promptRules.second, promptRules.audit, promptRules.patterns, promptRules.patternTypes, promptRules.whisper, promptRules.noInfer, promptRules.concision, promptRules.untrusted,
-  "The user message holds exactly one question and answer pair. Return technicalStrengths (the technicalContent.strengths rules), technicalGaps (the technicalContent.gaps rules) and englishPatterns (the English patterns rules) for that pair only, citing its sequenceNumber. Return at most 1 strength, 1 material gap and 3 English patterns, keeping the highest-impact ones; empty arrays are valid and expected when nothing material applies. Do not write a summary or priorities.",
+  "The user message holds exactly one question and answer pair. Return technicalStrengths (the technicalContent.strengths rules), technicalGaps (the technicalContent.gaps rules) and englishPatterns (the English patterns rules) for that pair only, citing its sequenceNumber. Return at most 1 strength, 1 material gap and 2 English patterns, keeping the highest-impact ones; empty arrays are valid and expected when nothing material applies. Do not write a summary or priorities.",
   promptRules.vacancy,
 ].join(" ");
 
@@ -118,15 +118,30 @@ const schema = {
 } as const;
 
 /** Per-answer limits keep one call small; the consolidated report keeps only the most impactful items. */
-const turnLimits = { strengths: 1, gaps: 1, patterns: 3 } as const;
+const turnLimits = { strengths: 1, gaps: 1, patterns: 2 } as const;
 const reportLimits = { strengths: 2, gaps: 3, patterns: 4, priorities: 3 } as const;
+
+/** Per-answer items are asked to be short (one sentence of 8–18 words); the parsers still accept the wider report limits. */
+const turnTechnicalItemSchema = {
+  ...technicalItemSchema,
+  properties: { ...technicalItemSchema.properties, evidence: { type: "string", minLength: 1, maxLength: 120 }, explanation: { type: "string", minLength: 1, maxLength: 140 } },
+} as const;
+const turnPatternItemSchema = {
+  ...patternItemSchema,
+  properties: {
+    ...patternItemSchema.properties,
+    evidence: { type: "string", minLength: 1, maxLength: 120 },
+    suggestion: { ...patternItemSchema.properties.suggestion, maxLength: 150 },
+    rephrasedExample: { ...patternItemSchema.properties.rephrasedExample, maxLength: 160 },
+  },
+} as const;
 
 const turnAnalysisSchema = {
   type: "object", additionalProperties: false,
   properties: {
-    technicalStrengths: { type: "array", maxItems: turnLimits.strengths, items: technicalItemSchema },
-    technicalGaps: { type: "array", maxItems: turnLimits.gaps, items: technicalItemSchema },
-    englishPatterns: { type: "array", maxItems: turnLimits.patterns, items: patternItemSchema },
+    technicalStrengths: { type: "array", maxItems: turnLimits.strengths, items: turnTechnicalItemSchema },
+    technicalGaps: { type: "array", maxItems: turnLimits.gaps, items: turnTechnicalItemSchema },
+    englishPatterns: { type: "array", maxItems: turnLimits.patterns, items: turnPatternItemSchema },
   }, required: ["technicalStrengths", "technicalGaps", "englishPatterns"],
 } as const;
 
@@ -616,7 +631,7 @@ function isAbortError(error: unknown): boolean {
 }
 
 /** `scope` is present only for the incremental routes; the full report keeps its original shape. */
-function logReportPhase(phase: "provider" | "validation", startedAt: number, turnCount: number, scope?: "turn" | "consolidate", extra?: Record<string, unknown>, usage?: OpenRouterUsage): void {
+function logReportPhase(phase: "provider" | "validation" | "skipped", startedAt: number, turnCount: number, scope?: "turn" | "consolidate", extra?: Record<string, unknown>, usage?: OpenRouterUsage): void {
   console.info(JSON.stringify({
     event: "interview_report_phase_timing",
     phase,
@@ -750,13 +765,21 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
 
   /** Adds content-free rejection counts for offline benchmarking; the route does not expose them. */
   async analyzeTurnDetailed(input: InterviewTurnAnalysisInput): Promise<{ analysis: InterviewTurnAnalysis; evidenceReview: TurnEvidenceReview }> {
+    // No analyzable content (clarification request, filler, "I don't know", a few words): nothing to find, so no provider call.
+    if (isLowContentAnswer(input.turn.answer)) {
+      logReportPhase("skipped", Date.now(), 1, "turn", { skipped: "low_content" });
+      return {
+        analysis: { sequenceNumber: input.turn.sequenceNumber, technicalStrengths: [], technicalGaps: [], englishPatterns: [] },
+        evidenceReview: { technicalStrengths: finalizeEvidenceCounts(newEvidenceCounts()), technicalGaps: finalizeEvidenceCounts(newEvidenceCounts()), englishPatterns: finalizeEvidenceCounts(newEvidenceCounts()) },
+      };
+    }
     input = this.approvedDirection(input);
     const content = await this.requestStructured({
       schemaName: "interview_turn_analysis",
       schema: turnAnalysisSchema,
       system: turnAnalysisPrompt,
       user: { roleContext: input.roleContext, ...(input.jobDirection ? { jobDirection: input.jobDirection } : {}), turns: [input.turn] },
-      maxTokens: 900,
+      maxTokens: 600,
       timeoutMs: this.options.turnTimeoutMs ?? defaultInterviewTurnAnalysisTimeoutMs,
       turnCount: 1,
       scope: "turn",
