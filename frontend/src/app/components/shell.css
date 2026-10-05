@@ -43,6 +43,7 @@
 .shl-nav-item:active { transform: scale(0.97); }
 .shl-nav-item[aria-current="page"] { color: var(--ds-ink); font-weight: 600; }
 .shl-nav-item[aria-current="page"] svg { color: var(--ds-green); }
+.shl-nav-item[data-home-item="true"][aria-current="page"] svg { color: var(--ds-brand-warm); }
 .shl-nav-item:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
 
 .shl-collapse {
@@ -99,6 +100,7 @@
 .shl-mobile-item:active { transform: scale(0.97); }
 .shl-mobile-item[aria-current="page"] { color: var(--ds-ink); font-weight: 600; }
 .shl-mobile-item[aria-current="page"] svg { color: var(--ds-green); }
+.shl-mobile-item[data-home-item="true"][aria-current="page"] svg { color: var(--ds-brand-warm); }
 .shl-mobile-item:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
 
 /* ---- Topbar: translucent, wayfinding on the left, account on the right. ---- */

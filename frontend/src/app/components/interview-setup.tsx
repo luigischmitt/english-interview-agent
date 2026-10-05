@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
-import { ArrowUpRight, ArrowLeft, ChevronDown, Check } from "lucide-react";
+import { ArrowUpRight, ArrowLeft, ChevronDown, Check, Leaf } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { useSpeechWarmup, useVoiceReadiness } from "../hooks/use-speech-playback";
@@ -367,7 +367,10 @@ export function InterviewSetup({
         {/* Summary + primary action: sticky beside the form on desktop, recap in flow on mobile */}
         <div className="ds-enter lg:sticky lg:top-24" style={{ "--i": 4 } as CSSProperties}>
           <aside className="isu-aside px-6 py-7 sm:px-8" aria-labelledby="session-preview-title">
-            <p className="text-xs font-semibold tracking-[0.08em] text-on-panel-accent">Sua sessão</p>
+            <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.08em] text-on-panel-accent">
+              <Leaf className="size-3.5 text-[color:var(--ds-brand-warm)]" aria-hidden="true" />
+              Sua sessão
+            </p>
             <h2
               id="session-preview-title"
               key={cargoSummary.value}

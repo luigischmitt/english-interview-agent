@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Target } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Leaf, Target } from "lucide-react";
 import { minAnswersForProfile, minSessionsForTrends, voiceDimensionCopy } from "@/lib/interview/progress-insights.mjs";
 import type {
   ProgressCommonError,
@@ -121,7 +121,10 @@ export function ProgressHero({ insights }: { insights: ProgressInsights }) {
               <Radar dimensions={dimensions} activeKey={activeKey} onActive={setHovered} />
             </>
           ) : (
-            <div className="pg-radar-empty"><p>{radarEmptyMessage(insights)}</p></div>
+            <div className="pg-radar-empty">
+              {insights.sessionCount === 0 && <Leaf className="pg-growth-mark size-5" aria-hidden="true" />}
+              <p>{radarEmptyMessage(insights)}</p>
+            </div>
           )}
         </div>
 

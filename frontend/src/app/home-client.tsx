@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   Check,
   Home,
+  Leaf,
   LineChart,
   PanelLeftClose,
   PanelLeftOpen,
@@ -112,6 +113,7 @@ function Navigation({
         type="button"
         aria-label={label}
         aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
+        data-home-item={id === "home" ? "true" : undefined}
         onClick={() => onNavigate(id)}
         className={`shl-nav-item ${sidebarExpanded ? "gap-3 px-3.5" : "justify-center px-0"}`}
       >
@@ -176,6 +178,7 @@ function Navigation({
               <button
                 type="button"
                 aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
+                data-home-item={id === "home" ? "true" : undefined}
                 onClick={() => onNavigate(id)}
                 className="shl-mobile-item"
               >
@@ -258,6 +261,10 @@ function HomeView({
             <div><dt className="shl-hero-muted text-xs">Foco</dt><dd className="font-medium">Escolha na configuração</dd></div>
             <div><dt className="shl-hero-muted text-xs">Sala</dt><dd className="font-medium">Você responde no seu ritmo e escolhe quando ver as legendas.</dd></div>
           </dl>
+          <p className="mt-5 flex items-center gap-2 text-xs font-medium tracking-[0.01em] shl-hero-muted">
+            <Leaf className="size-3.5 shrink-0 text-[color:var(--ds-brand-warm)]" aria-hidden="true" />
+            Feito no Brasil, para vaga lá fora
+          </p>
         </section>
 
         {/* Optional: a single warm-up question. */}
