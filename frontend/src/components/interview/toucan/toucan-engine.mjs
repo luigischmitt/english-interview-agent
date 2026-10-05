@@ -287,7 +287,7 @@ export function createSpeechFeed({ decode = decodeBlobToBuffer, rng = Math.rando
 
 /* ----------------------------------------------------------------- shape */
 
-const E0 = [[206, 92], [268, 86], [330, 80], [372, 88]];
+const E0 = [[219, 92], [272, 86], [330, 80], [372, 88]];
 // The mouth ("D", an empty mouth: a faint wedge between the mandibles) follows the first 16% of the upper edge curve.
 function subdivide(t) {
   const l = (a, b) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -297,8 +297,8 @@ function subdivide(t) {
   return [p0, q0, r0, l(r0, r1)];
 }
 const MOUTH_TOP = subdivide(0.16);
-const BIB_POINTS = [[168, 82], [180, 98], [198, 96], [207, 96], [211, 114], [212, 140], [208, 160], [205, 180], [195, 196], [180, 212], [166, 200], [150, 186], [146, 158], [143, 128], [150, 100], [168, 82]];
-export const BIB_PATH_REST = "M168,82C180,98 198,96 207,96C211,114 212,140 208,160C205,180 195,196 180,212C166,200 150,186 146,158C143,128 150,100 168,82Z";
+const BIB_POINTS = [[168, 82], [180, 98], [198, 96], [220, 98], [222, 114], [216, 140], [208, 160], [205, 180], [195, 196], [180, 212], [166, 200], [150, 186], [146, 158], [143, 128], [150, 100], [168, 82]];
+export const BIB_PATH_REST = "M168,82C180,98 198,96 220,98C222,114 216,140 208,160C205,180 195,196 180,212C166,200 150,186 146,158C143,128 150,100 168,82Z";
 
 const f2 = (v) => v.toFixed(2);
 const rot = (x, y, a, cx, cy) => {
@@ -340,12 +340,12 @@ function bibPath({ H, B }, p) {
   return `M${P(0)}C${P(1)} ${P(2)} ${P(3)}C${P(4)} ${P(5)} ${P(6)}C${P(7)} ${P(8)} ${P(9)}C${P(10)} ${P(11)} ${P(12)}C${P(13)} ${P(14)} ${P(15)}Z`;
 }
 
-/** Mouth wedge path for a given opening (0..1.15), hinged at (210, 94). Empty when the beak is (almost) closed. */
+/** Mouth wedge path for a given opening (0..1.15), hinged at (223, 94). Empty when the beak is (almost) closed. */
 export function mouthWedgePath(mouth) {
   if (mouth < 0.03) return "";
   const th = (mouth * JAW.maxAngle * Math.PI) / 180;
   const cs = Math.cos(th); const sn = Math.sin(th);
-  const R = (q) => { const dx = q[0] - 210; const dy = q[1] - 94; return [210 + dx * cs - dy * sn, 94 + dx * sn + dy * cs]; };
+  const R = (q) => { const dx = q[0] - 223; const dy = q[1] - 94; return [223 + dx * cs - dy * sn, 94 + dx * sn + dy * cs]; };
   const P = (q) => `${f2(q[0])} ${f2(q[1])}`;
   const top = MOUTH_TOP;
   const bot = top.map(R);
@@ -558,13 +558,13 @@ export function createToucanEngine({ root, rng = Math.random, reducedMotion = ()
     attr(el.tail, "transform", `rotate(${f2(tl + p.bT)} 125 205)`);
     attr(el.skin, "d", skinPath(tf));
     // Beak: the lower mandible hinges at the gape (max ~10 deg: slim wedge); the upper lifts a touch.
-    attr(el.beak, "transform", `rotate(${f2(-S.turn.x * 3.5)} 206 90)`);
-    const ang = `rotate(${f2(mouth * JAW.maxAngle)} 210 94)`;
+    attr(el.beak, "transform", `rotate(${f2(-S.turn.x * 3.5)} 219 90)`);
+    const ang = `rotate(${f2(mouth * JAW.maxAngle)} 223 94)`;
     attr(el.lower, "transform", ang);
     attr(el.mouth, "transform", ang);
     attr(el.wedge, "d", mouthWedgePath(mouth));
     const up = mouth * 1.1 + S.lift.x;
-    attr(el.upper, "transform", `rotate(${f2(-up)} 200 74) translate(0 ${f2(-up * 0.3)})`);
+    attr(el.upper, "transform", `rotate(${f2(-up)} 213 74) translate(0 ${f2(-up * 0.3)})`);
     attr(el.bib, "d", bibPath(tf, p));
     // Eye.
     const px = (S.lookX.x + sacc.x) * 3;
