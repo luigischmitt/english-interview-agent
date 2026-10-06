@@ -46,6 +46,16 @@ describe("English pattern artifact guard", () => {
     expect(result.report?.englishCommunication.patterns).toEqual([pattern("GRAMMAR", 4, "I choose To use the GLCM", "Use o passado do verbo: o passado de choose é chose.", "I chose to use the GLCM.")]);
   });
 
+  it("keeps comparative fixes and replaces a contradictory rule explanation", () => {
+    const comparativeTurns = [{ sequenceNumber: 1, question: "What improved?", answer: "This data is more fast, more easier for him." }];
+    const result = evaluateInterviewReportProviderOutput(JSON.stringify({
+      technicalContent: { summary: "Você descreveu uma melhoria no acesso aos dados.", strengths: [], gaps: [] },
+      englishCommunication: { clarity: "MOSTLY_CLEAR", patterns: [pattern("GRAMMAR", 1, "This data is more fast, more easier for him", "Use more com adjetivos no comparativo.", "This data is faster and easier for him.")] },
+      priorities: [],
+    }), { roleContext, turns: comparativeTurns } as InterviewReportInput);
+    expect(result.report?.englishCommunication.patterns[0]?.suggestion).toBe("Use o comparativo sem more antes de formas em -er: faster e easier.");
+  });
+
   it("keeps a correct label untouched and drops a wrong label without a generable rule", () => {
     const ok = patternsOf([pattern("GRAMMAR", 4, "I choose To use the GLCM", "Use o passado simples porque a ação já aconteceu.", "I chose to use the GLCM.")]);
     expect(ok.report?.englishCommunication.patterns).toHaveLength(1);

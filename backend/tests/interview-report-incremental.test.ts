@@ -111,11 +111,11 @@ describe("per-turn analysis service", () => {
     } finally { info.mockRestore(); }
   });
 
-  it("asks for at most one strength, one gap and two English patterns per answer with a bounded output", async () => {
+  it("asks for at most one strength, one gap and three English patterns per answer with a bounded output", async () => {
     const { bodies, fetchImplementation } = capture({ technicalStrengths: [], technicalGaps: [], englishPatterns: [] });
     await makeService(fetchImplementation).analyzeTurn({ roleContext, turn: turns[0] });
     const schema = bodies[0].response_format.json_schema.schema.properties;
-    expect([schema.technicalStrengths.maxItems, schema.technicalGaps.maxItems, schema.englishPatterns.maxItems]).toEqual([1, 1, 2]);
+    expect([schema.technicalStrengths.maxItems, schema.technicalGaps.maxItems, schema.englishPatterns.maxItems]).toEqual([1, 1, 3]);
     expect(bodies[0].max_tokens).toBeLessThanOrEqual(600);
     expect(bodies[0].max_tokens).toBeGreaterThanOrEqual(450);
     // Static rules first, identical between calls (prompt caching); the answer lives only in the user message.
@@ -281,7 +281,7 @@ describe("consolidation service", () => {
     const result = await makeService(fetchImplementation).consolidate({ roleContext, turns: manyTurns, turnAnalyses: perTurn as InterviewTurnAnalysis[] });
     expect(result.technicalContent.strengths).toHaveLength(2);
     expect(result.evidenceReview?.technicalStrengths.rejectionReasons?.limit).toBe(16);
-    expect(result.englishCommunication.patterns).toHaveLength(4);
+    expect(result.englishCommunication.patterns).toHaveLength(3);
     expect(result.englishCommunication.evidenceStatus).toBe("SUFFICIENT");
     const reasons = result.evidenceReview?.englishPatterns.rejectionReasons;
     expect(reasons?.duplicate).toBeGreaterThanOrEqual(1);
