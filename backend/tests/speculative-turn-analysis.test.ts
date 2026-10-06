@@ -14,16 +14,44 @@ describe("speculative turn analysis", () => {
     expect(body.provider.data_collection).toBe("deny");
   });
 
-  it("rejects an anchor absent from the snapshot", async () => {
+  it("drops only a follow-up whose anchor is absent from the snapshot", async () => {
     const fetcher = response({ revision: 2, followUpAction: "REPLACE", followUpQuestion: "Why did Redis help?", followUpAnchor: "Redis", fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null });
-    await expect(new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze(input)).resolves.toBeNull();
+    await expect(new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze(input)).resolves.toEqual({
+      revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null,
+    });
+  });
+
+  it("drops a follow-up that asks about a different detail than its literal anchor", async () => {
+    const fetcher = response({ revision: 2, followUpAction: "REPLACE", followUpQuestion: "Why did you choose Redis for this project?", followUpAnchor: "Kafka pipeline", fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null });
+    await expect(new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze(input)).resolves.toMatchObject({ followUpAction: "NONE", fixedAction: "KEEP" });
   });
 
   it("never allows SKIP for a job question and never calls after follow-up use", async () => {
     const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "SKIP", adaptedFixedQuestion: null, fixedEvidenceAnchor: "Kafka pipeline" });
     const service = new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher);
-    await expect(service.analyze({ ...input, firstFixedType: "job" })).resolves.toBeNull();
+    await expect(service.analyze({ ...input, firstFixedType: "job" })).resolves.toMatchObject({ fixedAction: "KEEP" });
     await expect(service.analyze({ ...input, followUpUsed: true })).resolves.toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("repairs harmless provider field mistakes without losing a grounded follow-up", async () => {
+    const fetcher = response({
+      revision: 3,
+      followUpAction: "REPLACE",
+      followUpQuestion: "How did the Kafka pipeline reduce latency?",
+      followUpAnchor: "kafka pipeline",
+      fixedAction: "KEEP",
+      adaptedFixedQuestion: input.firstFixedQuestion,
+      fixedEvidenceAnchor: null,
+    });
+    await expect(new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze(input)).resolves.toEqual({
+      revision: 2,
+      followUpAction: "REPLACE",
+      followUpQuestion: "How did the Kafka pipeline reduce latency?",
+      followUpAnchor: "Kafka pipeline",
+      fixedAction: "KEEP",
+      adaptedFixedQuestion: null,
+      fixedEvidenceAnchor: null,
+    });
   });
 });

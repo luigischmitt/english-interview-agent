@@ -495,7 +495,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         if (speculative.enabled) speculativeEnabledRef.current = true;
         if (signal.aborted || speculativeCallsRef.current.revision !== revision) return null;
         let decision: TurnDecision;
-        if (!speculative.enabled) decision = await decideNextTurn({ ...input, signal });
+        // A malformed, timed-out or unavailable short analysis must not silently erase every follow-up.
+        // Recover inside the existing preparation window; closing still never waits and keeps the fixed fallback.
+        if (!speculative.enabled || speculative.analysis === null) decision = await decideNextTurn({ ...input, signal });
         else if ((speculative.analysis?.followUpAction === "REPLACE" || speculative.analysis?.followUpAction === "KEEP") && speculative.analysis.followUpQuestion && speculative.analysis.followUpAnchor) {
           speculativeCandidateRef.current = { question: speculative.analysis.followUpQuestion, anchor: speculative.analysis.followUpAnchor };
           setFollowUpCandidateUpdate({ type: "follow-up-candidate", turnId: speculativeTurnIdRef.current, revision, question: speculative.analysis.followUpQuestion, anchor: speculative.analysis.followUpAnchor });
