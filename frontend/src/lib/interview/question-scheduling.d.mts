@@ -7,3 +7,9 @@ export function selectNextPlannedQuestion(input: {
   elapsedSeconds: number;
   durationMinutes: number;
 }): { question: InterviewQuestion | null; index: number; remaining: InterviewQuestion[] };
+export function selectNextPlannedQuestions(input: {
+  questions: InterviewQuestion[];
+  askedQuestionIds: Iterable<string>;
+  elapsedSeconds: number;
+  durationMinutes: number;
+}, count?: number): InterviewQuestion[];

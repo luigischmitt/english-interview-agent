@@ -45,6 +45,11 @@ export function prewarmInterviewerUtterance(utterance: string, voice?: string) {
   return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 30_000, voice });
 }
 
+/** Predictable transition/question chunks survive long answers and still share the normal voice/speed cache key. */
+export function prewarmFixedInterviewerUtterance(utterance: string, voice?: string) {
+  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 4 * 60_000, voice });
+}
+
 /**
  * Synthesizes the closing line while the candidate is still answering, so it is ready if this turns out to be the last one.
  * The audio is retained for the rest of a typical interview; the backend also keeps fixed phrases cached for an hour.

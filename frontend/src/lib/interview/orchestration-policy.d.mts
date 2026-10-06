@@ -3,6 +3,7 @@ export const maxAcknowledgementLength: 220;
 export function acknowledgementKey(value: string): string;
 
 export function pickFallbackTransition(recentAcknowledgements?: string[]): string;
+export function pickFixedHandoffTransition(recentAcknowledgements?: string[]): string;
 
 export function fallbackTurnDecision(
   nextQuestion: string | null,

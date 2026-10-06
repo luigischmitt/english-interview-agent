@@ -21,3 +21,9 @@ export function selectNextPlannedQuestion({ questions, askedQuestionIds, elapsed
   const question = remaining[0] ?? null;
   return { question, index: question ? questions.findIndex((candidate) => candidate.id === question.id) : -1, remaining };
 }
+
+/** The two deterministic questions whose audio can be prepared while the candidate answers. */
+export function selectNextPlannedQuestions(input, count = 2) {
+  const plan = selectNextPlannedQuestion(input);
+  return plan.question ? plan.remaining.slice(0, Math.max(0, count)) : [];
+}

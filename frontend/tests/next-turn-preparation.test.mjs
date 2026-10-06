@@ -108,6 +108,31 @@ test("pre-synthesized speech is reused by an identical playback without a second
   clearRetainedSpeechBlobs();
 });
 
+test("separately prepared transition and fixed question are reused by combined playback", async () => {
+  clearRetainedSpeechBlobs();
+  const calls = [];
+  const fetcher = speechFetcher(calls);
+  const options = { endpoint: "/fixed", fetcher, retainMs: 240_000, voice: "am_echo" };
+  await Promise.all([
+    prewarmInterviewerSpeech(["Let's move to a different topic."], options).promise,
+    prewarmInterviewerSpeech(["How did you monitor the service in production?"], options).promise,
+  ]);
+  const playback = playInterviewerSegments(["Let's move to a different topic.", "How did you monitor the service in production?"], { ...options, makeAudio: () => new FakeAudio(), createObjectUrl: () => "blob:x", revokeObjectUrl() {}, ...stubTimers });
+  assert.deepEqual(await playback.promise, { status: "completed", voice: "network" });
+  assert.equal(calls.length, 2);
+  clearRetainedSpeechBlobs();
+});
+
+test("a voice change uses a distinct prepared-audio key", async () => {
+  clearRetainedSpeechBlobs();
+  const calls = [];
+  const fetcher = speechFetcher(calls);
+  await prewarmInterviewerSpeech(["How did you monitor it?"], { endpoint: "/voice", fetcher, retainMs: 240_000, voice: "am_echo" }).promise;
+  await prewarmInterviewerSpeech(["How did you monitor it?"], { endpoint: "/voice", fetcher, retainMs: 240_000, voice: "af_heart" }).promise;
+  assert.equal(calls.length, 2);
+  clearRetainedSpeechBlobs();
+});
+
 test("cancelling a prewarm aborts the request, but not when a playback has attached", async () => {
   clearRetainedSpeechBlobs();
   let aborted = 0;
