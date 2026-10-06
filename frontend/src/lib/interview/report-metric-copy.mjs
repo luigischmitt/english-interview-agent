@@ -5,8 +5,8 @@ export const azureMetricCopy = {
     help: "Mede o quanto os sons de cada palavra se aproximam da pronúncia esperada pelo Azure. Não mede vocabulário, gramática nem sotaque.",
   },
   fluency: {
-    label: "Fluência",
-    help: "Mede o ritmo da fala dentro dos trechos avaliados, como pausas e interrupções entre palavras. Pausas entre trechos e o tempo para começar a responder não entram no cálculo.",
+    label: "Ritmo da fala",
+    help: "É um sinal do ritmo dentro dos trechos avaliados, como pausas e interrupções entre palavras — não uma nota de fluência geral. Pausas entre trechos e o tempo para começar a responder não entram no cálculo.",
   },
   prosody: {
     label: "Prosódia",

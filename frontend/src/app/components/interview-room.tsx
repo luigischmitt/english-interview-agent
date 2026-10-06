@@ -267,7 +267,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     () => splitInterviewerSpeech(currentUtterance),
     [currentUtterance],
   );
-  const { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted, spokenTurn?.speed ?? 1, speechFeed.push, waitForAcknowledgement, config.voice);
+  const waitBeforeInterviewerPlayback = useCallback(async () => {
+    if (phaseRef.current === "introducing") await new Promise((resolve) => window.setTimeout(resolve, 2_200));
+    await waitForAcknowledgement();
+  }, [waitForAcknowledgement]);
+  const { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted, spokenTurn?.speed ?? 1, speechFeed.push, waitBeforeInterviewerPlayback, config.voice);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
   const currentAssessmentSamples = assessmentSamples(voiceAssessments, excludedAssessments);
   const currentAzureSummary = summarizeAzureAssessments(currentAssessmentSamples);
@@ -427,6 +431,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     const willPlay = outcome?.turn === micTurnIdRef.current ? outcome.willPlay : acknowledgementApplies(answer) && acknowledgements.loadedCount > 0;
     return text && willPlay ? stripLeadingAcknowledgement(text) : text;
   };
+  const organicNextAcknowledgement = (text: string | null, answer: string): string | null => {
+    const bridge = spokenAcknowledgement(text, answer);
+    return bridge && /^(?:let'?s|now i'?d like|let me|i'?d like|next,|thanks for that)/iu.test(bridge.trim())
+      ? `I understand. ${bridge}`
+      : bridge;
+  };
 
   const logPreparation = useCallback((outcome: "prepared_used" | "prepared_discarded", reason?: string) => {
     // Content-free counts only.
@@ -448,7 +458,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (!decision.nextQuestion) return null;
     const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
     if (!nextPlan.question) return null;
-    return composeAcknowledgedQuestion(spokenAcknowledgement(decision.acknowledgement, answer), decision.nextQuestion);
+    return composeAcknowledgedQuestion(organicNextAcknowledgement(decision.acknowledgement, answer), decision.nextQuestion);
   };
 
   /** The backend expects this to be the final answer: decide and pre-synthesize the next turn during its grace window. */
@@ -676,7 +686,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       transitionPhase("speaking");
     } else if (turn.decision === "FOLLOW_UP") {
       if (turn.acknowledgement) recentAcknowledgementsRef.current = [...recentAcknowledgementsRef.current, turn.acknowledgement].slice(-5);
-      setAcknowledgement(spokenAcknowledgement(turn.acknowledgement, savedAnswer));
+      setAcknowledgement(organicNextAcknowledgement(turn.acknowledgement, savedAnswer));
       setSpokenTurn(null);
       setQuestion({ ...question, id: `${question.id}-follow-up`, prompt: turn.followUpQuestion, cue: "Uma pergunta curta para aprofundar sua resposta." });
       setFollowUpUsed(true);

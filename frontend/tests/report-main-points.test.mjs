@@ -75,7 +75,7 @@ test("gaps come first and strengths fill the remaining technical slots", () => {
 });
 
 test("minimal or malformed legacy data does not throw", () => {
-  assert.deepEqual(deriveMainPoints({}), { english: [], technical: [], priorities: [], summary: "" });
+  assert.deepEqual(deriveMainPoints({}), { english: [], technical: [], priorities: [], summary: "Nesta sessão, não houve evidência técnica suficiente para gerar um resumo confiável." });
 });
 
 test("drops patterns with a wrong rule label or a request to fix a mis-heard name, and run shop evidence", () => {

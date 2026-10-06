@@ -23,10 +23,10 @@ test("the opening is one concise, natural sentence for every seniority and focus
     for (const [focusValue, clause] of Object.entries(focusClauses)) {
       const config = { role: "Backend Engineer", seniority: seniorityValue, focus: focusValue, duration: "10" };
       const opening = composeContextualOpening(config, question);
-      assert.equal(opening, `We have about 10 minutes for your ${seniorityLabel} Backend Engineer role${clause}. ${question}`);
+      assert.equal(opening, `Hi, I'm TUC, and I'll be your interviewer today. We have about 10 minutes for your ${seniorityLabel} Backend Engineer role${clause}. ${question}`);
       const prefix = opening.slice(0, -question.length).trim();
-      assert.equal(splitInterviewerSpeech(prefix).length, 1);
-      assert.ok(prefix.split(/\s+/u).length <= 17, `${seniorityValue}/${focusValue} prefix was too long`);
+      assert.equal(splitInterviewerSpeech(prefix).length, 2);
+      assert.ok(prefix.split(/\s+/u).length <= 28, `${seniorityValue}/${focusValue} prefix was too long`);
       assert.ok(!opening.includes("balanced practice") && !opening.includes("focusing on"));
     }
   }
@@ -35,20 +35,20 @@ test("the opening is one concise, natural sentence for every seniority and focus
 test("the opening never duplicates seniority already in the role, English or Portuguese", () => {
   const question = "Tell me about a project.";
   const open = (role, seniority = "senior") => composeContextualOpening({ role, seniority, focus: "mixed", duration: "5" }, question);
-  assert.equal(open("Senior Backend Engineer"), `We have about 5 minutes for your Senior Backend Engineer role. ${question}`);
-  assert.equal(open("Staff Software Engineer", "senior"), `We have about 5 minutes for your Staff Software Engineer role. ${question}`);
-  assert.equal(open("Lead Data Analyst", "mid-level"), `We have about 5 minutes for your Lead Data Analyst role. ${question}`);
-  assert.equal(open("Data Analyst", "junior"), `We have about 5 minutes for your junior Data Analyst role. ${question}`);
-  assert.equal(open("Backend Engineer role"), `We have about 5 minutes for your senior Backend Engineer role. ${question}`);
+  assert.equal(open("Senior Backend Engineer"), `Hi, I'm TUC, and I'll be your interviewer today. We have about 5 minutes for your Senior Backend Engineer role. ${question}`);
+  assert.equal(open("Staff Software Engineer", "senior"), `Hi, I'm TUC, and I'll be your interviewer today. We have about 5 minutes for your Staff Software Engineer role. ${question}`);
+  assert.equal(open("Lead Data Analyst", "mid-level"), `Hi, I'm TUC, and I'll be your interviewer today. We have about 5 minutes for your Lead Data Analyst role. ${question}`);
+  assert.equal(open("Data Analyst", "junior"), `Hi, I'm TUC, and I'll be your interviewer today. We have about 5 minutes for your junior Data Analyst role. ${question}`);
+  assert.equal(open("Backend Engineer role"), `Hi, I'm TUC, and I'll be your interviewer today. We have about 5 minutes for your senior Backend Engineer role. ${question}`);
 });
 
 test("a Portuguese role is never spliced into the English opening", () => {
   const question = "Tell me about a project.";
   for (const role of ["Analista de Dados Sênior", "Desenvolvedor Backend", "Engenheira de Software Pleno", "Gerente de Produto", "Arquiteto de Soluções"]) {
     const opening = composeContextualOpening({ role, seniority: "senior", focus: "mixed", duration: "5" }, question);
-    assert.equal(opening, `We have about 5 minutes for this role. ${question}`, role);
+    assert.equal(opening, `Hi, I'm TUC, and I'll be your interviewer today. We have about 5 minutes for this role. ${question}`, role);
   }
-  assert.equal(composeContextualOpening({ role: "", seniority: "senior", focus: "mixed", duration: "5" }, question), `We have about 5 minutes for this role. ${question}`);
+  assert.equal(composeContextualOpening({ role: "", seniority: "senior", focus: "mixed", duration: "5" }, question), `Hi, I'm TUC, and I'll be your interviewer today. We have about 5 minutes for this role. ${question}`);
   assert.equal(looksPortuguese("Data Analyst"), false);
   assert.equal(looksPortuguese("Product Manager"), false);
   assert.equal(hasSeniorityWord("Sênior"), true);
@@ -64,7 +64,7 @@ test("the Portuguese role is also kept out of role-fit questions", () => {
 
 test("unknown opening labels use a safe generic fallback without leaking identifiers", () => {
   const opening = composeContextualOpening({ role: "Backend Engineer", seniority: "principal-engineer", focus: "technical-depth-plus", duration: "10" }, "Tell me about a project.");
-  assert.equal(opening, "We have about 10 minutes for your Backend Engineer role. Tell me about a project.");
+  assert.equal(opening, "Hi, I'm TUC, and I'll be your interviewer today. We have about 10 minutes for your Backend Engineer role. Tell me about a project.");
   assert.ok(!opening.includes("principal-engineer"));
   assert.ok(!opening.includes("technical-depth-plus"));
 });

@@ -49,7 +49,7 @@ const leadingAcknowledgement = /^(?:okay|ok|alright|all right|got it|gotcha|than
 
 // Whole leading sentences that only acknowledge (no content about the answer). They must end the sentence, so
 // "Thanks for explaining the retry logic, ..." and "That makes sense because ..." are kept.
-const acknowledgementSentence = /^(?:thanks|thank you)(?: so much| a lot)?(?: for (?:that|this|sharing(?: that| this)?|the (?:example|details?|context|answer|explanation)|your (?:answer|example|explanation|time)))?\s*[.!]\s*|^(?:that|this) makes sense\s*[.!]\s*|^that'?s (?:helpful|great|clear|good|interesting)\s*[.!]\s*|^(?:let'?s|let us) (?:move on|continue|keep going)\s*[.!]\s*|^moving on\s*[.!]\s*/iu;
+const acknowledgementSentence = /^(?:thanks|thank you)(?: so much| a lot)?(?: for (?:that|this|sharing(?: that| this)?|the (?:example|details?|context|answer|explanation)|your (?:answer|example|explanation|time)))?\s*[.!]\s*|^(?:that|this) makes sense\s*[.!]\s*|^(?:i understand|that'?s (?:helpful|great|clear|good|interesting))\s*[.!]\s*|^(?:let'?s|let us) (?:move on|continue|keep going)\s*[.!]\s*|^moving on\s*[.!]\s*/iu;
 
 /**
  * Removes pure acknowledgement words and whole acknowledgement-only sentences from the start of a bridge
