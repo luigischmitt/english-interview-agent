@@ -58,7 +58,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
   const resolvedReportService = reportService === undefined ? createInterviewReportService(resolvedThinkingConfig) : reportService;
   const resolvedJobDirectionService = jobDirectionService === undefined ? createJobDirectionService(resolvedThinkingConfig) : jobDirectionService;
   const resolvedJobDirectionUserLimit = jobDirectionUserLimit ?? new JobDirectionUserLimit();
-  const speculativeService = resolvedThinkingConfig.openRouterApiKey ? new SpeculativeTurnAnalysisService({ apiKey: resolvedThinkingConfig.openRouterApiKey, model: resolvedThinkingConfig.model, timeoutMs: 2_700 }) : null;
+  const speculativeService = resolvedThinkingConfig.openRouterApiKey ? new SpeculativeTurnAnalysisService({ apiKey: resolvedThinkingConfig.openRouterApiKey, model: resolvedThinkingConfig.model, timeoutMs: 5_000 }) : null;
   const app = express();
 
   app.use(

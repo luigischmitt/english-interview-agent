@@ -280,6 +280,16 @@ function hasValidAnchorWordCount(anchor: string, minimum: number, maximum: numbe
   return token.length >= 3 && !lowInformationWords.has(token) && !followUpStopWords.has(token) && !nonTechnicalSingleWords.has(token);
 }
 
+/** Shared guard for speculative candidates: the literal anchor and the question must describe the same answer detail. */
+export function isGroundedFollowUp(question: string, anchor: string, transcript: string): boolean {
+  return anchor.length <= maxAnchorLength
+    && !containsNoiseToken(anchor)
+    && !containsNoiseToken(question)
+    && hasValidAnchorWordCount(anchor, 1, maxAnchorWords)
+    && hasExactAnchorMention(transcript, anchor)
+    && anchorGrounding(question, anchor, transcript) !== null;
+}
+
 /** Longest transcript the model may treat as a clarification request on its own (without a detector hint). */
 const maxModelClarificationWords = 25;
 const clarificationExplanationLimit = 160;
