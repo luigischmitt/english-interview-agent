@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, CloudOff, LoaderCircle, Mic } from "lucide-react";
 import { inAppMicBody, inAppMicTitle, useInAppBrowser } from "../hooks/use-in-app-browser";
-import { MicrophoneCapture, micDeniedMessage, type MicControls, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
+import { MicrophoneCapture, micDeniedMessage, type FollowUpCandidateStatus, type FollowUpCandidateUpdate, type MicControls, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { buildPreviousAnswers, decideNextTurn, isClarificationTurn, type TurnDecision } from "@/lib/interview/orchestration";
 import { pickFixedHandoffTransition, repeatTurnDecision } from "@/lib/interview/orchestration-policy.mjs";
@@ -36,9 +36,10 @@ import { composeAcknowledgedQuestion, composeContextualOpening, composeInterview
 import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTimingEnabled } from "@/lib/interview/handoff-timing.mjs";
 import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/interview/opening-timing.mjs";
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
-import { requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
+import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; round?: number; state: VoiceAssessmentState };
+type PreparedTurn = { decision: TurnDecision; turnId: string; revision: number; transcript: string; anchor: string | null };
 
 function formatClock(seconds: number) {
   const safeSeconds = Math.max(0, seconds);
@@ -78,12 +79,16 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const [reportState, setReportState] = useState<ReportState>({ status: "idle" });
   const [feedbackSyncMessage, setFeedbackSyncMessage] = useState<string | null>(null);
   const [assessmentSockets] = useState(() => new AssessmentSocketRegistry());
-  const [nextTurnPreparation] = useState(() => createNextTurnPreparationRegistry<TurnDecision>());
+  const [nextTurnPreparation] = useState(() => createNextTurnPreparationRegistry<PreparedTurn>());
   const [fixedHandoffPreparation] = useState(() => createFixedHandoffPreparationRegistry());
   const fixedHandoffTurnIdRef = useRef<string | null>(null);
   const speculativeCallsRef = useRef({ turn: "", count: 0, revision: 0 });
   const speculativeAttemptedRef = useRef(false);
   const speculativeCandidateRef = useRef<{ question: string; anchor: string } | null>(null);
+  const speculativeTurnIdRef = useRef("");
+  const speculativeEnabledRef = useRef(false);
+  const candidateCompatibilityRef = useRef(new Map<string, FollowUpCandidateStatus["status"]>());
+  const [followUpCandidateUpdate, setFollowUpCandidateUpdate] = useState<FollowUpCandidateUpdate | null>(null);
   // Receives each interviewer audio chunk (decoded for the avatar's beak lip-sync); it never touches playback.
   const speechFeed = useMemo(() => createSpeechFeed(), []);
   // The instant "Okay." / "Got it." (pre-synthesized, played from memory when the answer is considered finished).
@@ -119,6 +124,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   // A planned question is considered used as soon as it is asked. Adapted wording keeps the same stable bank id.
   const askedPlannedQuestionIdsRef = useRef<Set<string>>(new Set([questions[0].id]));
   const handoffTimingRef = useRef<{ mark: (stage: string) => void; markPrepared: () => void } | null>(null);
+  const handoffAudioMarksRef = useRef<{ confirmationAt: number | null; firstAudioAt: number | null }>({ confirmationAt: null, firstAudioAt: null });
   const openingTimingRef = useRef<{ mark: (stage: string) => void } | null>(null);
   const listeningTimingRef = useRef<ReturnType<typeof createListeningHandoffTiming> | null>(null);
   const openingUtterance = composeContextualOpening(config, question.prompt);
@@ -158,7 +164,17 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   useEffect(() => { elapsedSecondsRef.current = seconds; }, [seconds]);
   useEffect(() => { voiceAssessmentsRef.current = voiceAssessments; }, [voiceAssessments]);
   useEffect(() => { excludedAssessmentsRef.current = excludedAssessments; }, [excludedAssessments]);
-  useEffect(() => { speculativeAttemptedRef.current = false; speculativeCandidateRef.current = null; }, [micTurnId]);
+  useEffect(() => {
+    speculativeAttemptedRef.current = false;
+    speculativeCandidateRef.current = null;
+    speculativeTurnIdRef.current = globalThis.crypto?.randomUUID?.() ?? `turn_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
+    candidateCompatibilityRef.current.clear();
+  }, [micTurnId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void requestSpeculativeHandoffStatus(controller.signal).then((enabled) => { speculativeEnabledRef.current = enabled; });
+    return () => controller.abort();
+  }, []);
 
   const onHandoffTimingEvent = useCallback((event: "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed" | "listening", details?: { speechEndToFinalizationMs?: number; preconnected?: boolean }) => {
     if (event === "listening") {
@@ -167,6 +183,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       return;
     }
     if (event === "finalizing") {
+      handoffAudioMarksRef.current = { confirmationAt: null, firstAudioAt: null };
       handoffTimingRef.current = null;
       if (!isHandoffTimingEnabled()) return;
       const timing = createInterviewHandoffTiming({
@@ -183,11 +200,16 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       "transcription-completed": "transcriptionCompleted",
     } as const;
     handoffTimingRef.current?.mark(stageByEvent[event]);
+    if (event === "transcription-completed") handoffAudioMarksRef.current.confirmationAt = performance.now();
   }, []);
 
   const onSpeechTimingEvent = useCallback((event: SpeechTimingEvent) => {
     // The interviewer is audible: no microphone frame may be captured or sent until the next answer window.
-    if (event === "playback-started") micEngine.beginInterviewerSpeech();
+    if (event === "playback-started") {
+      micEngine.beginInterviewerSpeech();
+      const marks = handoffAudioMarksRef.current;
+      if (marks.confirmationAt !== null && marks.firstAudioAt === null) marks.firstAudioAt = performance.now();
+    }
     if (phaseRef.current === "introducing" && isOpeningTimingEnabled()) {
       openingTimingRef.current ??= createOpeningSpeechTiming({
         onComplete: (metrics) => console.info(JSON.stringify({ event: "interview_opening_timing", ...metrics })),
@@ -203,6 +225,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   }, [micEngine]);
 
   const onFinalChunkStarted = useCallback(() => {
+    const marks = handoffAudioMarksRef.current;
+    if (marks.confirmationAt !== null && marks.firstAudioAt !== null) {
+      const now = performance.now();
+      console.info(JSON.stringify({ event: "interview_question_start_timing", confirmationToFirstAudioMs: Math.max(0, Math.round(marks.firstAudioAt - marks.confirmationAt)), confirmationToQuestionStartMs: Math.max(0, Math.round(now - marks.confirmationAt)), transitionDurationMs: Math.max(0, Math.round(now - marks.firstAudioAt)) }));
+      handoffAudioMarksRef.current = { confirmationAt: null, firstAudioAt: null };
+    }
     // The opening's synthesis is done: now is the quiet moment to synthesize the acknowledgements (one request at a time).
     void acknowledgements.preload();
     if (!autoCaptureVoice || (phaseRef.current !== "introducing" && phaseRef.current !== "speaking")) return;
@@ -452,11 +480,13 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           previousCandidate: speculativeCandidateRef.current,
           roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
         }, signal) : { enabled: true, analysis: null };
+        if (speculative.enabled) speculativeEnabledRef.current = true;
         if (signal.aborted || speculativeCallsRef.current.revision !== revision) return null;
         let decision: TurnDecision;
         if (!speculative.enabled) decision = await decideNextTurn({ ...input, signal });
         else if ((speculative.analysis?.followUpAction === "REPLACE" || speculative.analysis?.followUpAction === "KEEP") && speculative.analysis.followUpQuestion && speculative.analysis.followUpAnchor) {
           speculativeCandidateRef.current = { question: speculative.analysis.followUpQuestion, anchor: speculative.analysis.followUpAnchor };
+          setFollowUpCandidateUpdate({ type: "follow-up-candidate", turnId: speculativeTurnIdRef.current, revision, question: speculative.analysis.followUpQuestion, anchor: speculative.analysis.followUpAnchor });
           decision = { decision: "FOLLOW_UP", followUpQuestion: speculative.analysis.followUpQuestion, nextQuestion: null, acknowledgement: null };
         }
         else {
@@ -472,7 +502,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           onCleanup(() => prewarm.cancel());
           if (speculative.enabled && !await prewarm.promise) return null;
         }
-        return decision;
+        return { decision, turnId: speculativeTurnIdRef.current, revision, transcript: answer, anchor: decision.decision === "FOLLOW_UP" ? speculativeCandidateRef.current?.anchor ?? null : null };
       },
     });
   };
@@ -557,12 +587,17 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       // Use the decision prepared during the answer grace only for exactly this transcript and these inputs.
       const discardedBefore = nextTurnPreparation.stats().discarded;
       const prepared = speculativeAttemptedRef.current
-        ? nextTurnPreparation.takeReady({ transcript: savedAnswer, inputKey: decisionInputKey(decisionInput) })
+        ? nextTurnPreparation.takeAnyReady({ accept: (value) => {
+          if (value.turnId !== speculativeTurnIdRef.current) return false;
+          if (value.transcript.trim() === savedAnswer.trim()) return true;
+          if (!speculativeEnabledRef.current || value.decision.decision !== "FOLLOW_UP" || !value.anchor || !savedAnswer.includes(value.anchor)) return false;
+          return candidateCompatibilityRef.current.get(`${value.turnId}:${value.revision}`) === "OPEN";
+        } })
         : nextTurnPreparation.take({ transcript: savedAnswer, inputKey: decisionInputKey(decisionInput) });
       if (prepared) {
         const abortPrepared = () => prepared.controller.abort();
         abortController.signal.addEventListener("abort", abortPrepared, { once: true });
-        decision = await prepared.promise;
+        decision = (await prepared.promise)?.decision ?? null;
         abortController.signal.removeEventListener("abort", abortPrepared);
         if (decision) {
           handoffTimingRef.current?.markPrepared();
@@ -579,9 +614,17 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       finishFixedPreparation("discarded");
       fixedPreparationSettled = true;
     }
+    if (!decision && clarificationHint === null && speculativeEnabledRef.current) {
+      // The feature's hard deadline: closing never waits for an unfinished model or synthesis request.
+      const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
+      const prepared = fixedHandoffPreparation.peek();
+      decision = { decision: "NEXT", followUpQuestion: null, nextQuestion: nextPlan.question?.prompt ?? null, acknowledgement: nextPlan.question ? prepared?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) : null };
+      console.info(JSON.stringify({ event: "interview_speculative_handoff", outcome: "fixed_fallback", reason: "speculative_not_ready" }));
+    }
     decision ??= await decideNextTurn({ ...decisionInput, signal: abortController.signal });
     if (!fixedPreparationSettled) {
       const prepared = fixedHandoffPreparation.peek();
+      if (decision.decision === "NEXT" && prepared?.questions[0]?.prompt && decision.nextQuestion === prepared.questions[0].prompt) decision = { ...decision, acknowledgement: prepared.transition };
       const usesPreparedFixed = decision.decision === "NEXT"
         && Boolean(prepared?.questions[0]?.prompt)
         && decision.nextQuestion === prepared?.questions[0]?.prompt
@@ -982,7 +1025,13 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             setVoiceCaptureState(state);
           }}
           onProvisionalAnswer={prepareFromProvisionalAnswer}
-          onSpeechResumed={() => abortPreparation("speech_resumed")}
+          followUpCandidate={followUpCandidateUpdate}
+          onFollowUpCandidateStatus={(status) => {
+            if (status.turnId !== speculativeTurnIdRef.current) return;
+            candidateCompatibilityRef.current.set(`${status.turnId}:${status.revision}`, status.status);
+            console.info(JSON.stringify({ event: "interview_speculative_compatibility", revision: status.revision, status: status.status }));
+          }}
+          onSpeechResumed={() => { if (!speculativeEnabledRef.current) abortPreparation("speech_resumed"); }}
           onHandoffTimingEvent={onHandoffTimingEvent}
           autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === micTurnId ? micTurnId : null}
           micEngine={micEngine}

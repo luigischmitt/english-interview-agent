@@ -48,6 +48,7 @@ export type AnswerStream = {
   connect(): Promise<Record<string, unknown>>;
   begin(): Promise<{ preconnected: boolean; readyMessage: AnswerStream["readyMessage"] }>;
   pushFrame(frame: { samples: Float32Array; level: number }): void;
+  sendControl(message: Record<string, unknown>): boolean;
   cancel(): void;
   release(): void;
 };

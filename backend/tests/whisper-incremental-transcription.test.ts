@@ -380,6 +380,24 @@ describe("semantic end of answer", () => {
     expect(logs()).toContain('"semanticVerdict":"incomplete"');
   });
 
+  it("returns only the revisioned compatibility status for a bounded follow-up candidate", async () => {
+    const service: AnswerCompletionService = {
+      isComplete: async () => false,
+      assess: async ({ candidate }) => {
+        expect(candidate).toEqual({ question: "Why did the lock help?", anchor: "a lock" });
+        return { complete: false, candidateCompatibility: "OPEN" };
+      },
+    };
+    const { connect } = await startServer(createWhisper([answerText]).service, options(service, { answerGraceMs: 1_200, incompleteGraceMs: 1_200 }));
+    const { socket, waitFor } = await connect({ question });
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 1, question: "Why did the lock help?", anchor: "a lock" }));
+    await speak(socket, 800, 0.05);
+    await speak(socket, 600, 0.001);
+    await expect(waitFor("follow-up-candidate-status")).resolves.toMatchObject({ type: "follow-up-candidate-status", turnId: "turn_12345678", revision: 1, status: "OPEN" });
+    expect(logs()).not.toContain("Why did the lock help");
+    expect(logs()).not.toContain("a lock");
+  });
+
   it.each([["error"], ["timeout"]] as const)("keeps the grace on a classifier %s", async (verdict) => {
     const fake = classifier(() => Promise.reject(new AnswerCompletionError(verdict, "x")));
     const { connect } = await startServer(createWhisper([answerText]).service, options(fake.service, { answerGraceMs: 1_000, incompleteGraceMs: 1_000 }));

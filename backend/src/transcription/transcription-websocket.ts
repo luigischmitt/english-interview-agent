@@ -10,13 +10,14 @@ import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, Streami
 import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
 import type { StreamFailureReason, StreamingTurnSession, TurnEndInfo } from "./streaming-turn-session.js";
 import { IncrementalWhisperSession, type SessionFailureDetail } from "./incremental-whisper-session.js";
-import { AnswerCompletionError, type AnswerCompletionService } from "../thinking/answer-completion-service.js";
+import { AnswerCompletionError, type AnswerCompletionService, type CandidateCompatibility, type FollowUpCandidate } from "../thinking/answer-completion-service.js";
 import { aggregateAzureBlockScores, alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
   | { type: "start"; accessToken?: unknown; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; captions?: unknown; question?: unknown; transcriptionEngine?: unknown }
   | { type: "level"; value: number }
   | { type: "finalize"; reason: "manual" | "silence" }
+  | { type: "follow-up-candidate"; turnId: unknown; revision: unknown; question: unknown; anchor: unknown }
   | { type: "cancel" };
 
 const maxQuestionLength = 400;
@@ -26,6 +27,18 @@ export function sanitizeQuestion(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const text = value.replace(/[\u0000-\u001f\u007f-\u009f]+/gu, " ").replace(/\s+/gu, " ").trim();
   return text.length > 0 && text.length <= maxQuestionLength ? text : null;
+}
+
+export type FollowUpCandidateUpdate = FollowUpCandidate & { type: "follow-up-candidate"; turnId: string; revision: number };
+
+/** Strict, bounded control message. Its text fields are used only by the semantic classifier and are never logged. */
+export function sanitizeFollowUpCandidate(message: Extract<ClientMessage, { type: "follow-up-candidate" }>): FollowUpCandidateUpdate | null {
+  if (typeof message.turnId !== "string" || !/^[A-Za-z0-9_-]{8,80}$/u.test(message.turnId)) return null;
+  if (!Number.isInteger(message.revision) || (message.revision as number) < 1 || (message.revision as number) > 2) return null;
+  if (typeof message.question !== "string" || message.question !== message.question.trim() || message.question.length < 2 || message.question.length > 180 || (message.question.match(/\?/gu) ?? []).length !== 1 || !message.question.endsWith("?")) return null;
+  if (typeof message.anchor !== "string" || message.anchor !== message.anchor.trim() || message.anchor.length < 1 || message.anchor.length > 140) return null;
+  if (/[\u0000-\u001f\u007f-\u009f]/u.test(message.question) || /[\u0000-\u001f\u007f-\u009f]/u.test(message.anchor)) return null;
+  return { type: "follow-up-candidate", turnId: message.turnId, revision: message.revision as number, question: message.question, anchor: message.anchor };
 }
 
 /** Minimum spacing between live caption messages (about 5 per second). */
@@ -300,6 +313,7 @@ export function attachTranscriptionWebSocket(
     let semanticHoldTimer: ReturnType<typeof setTimeout> | null = null;
     let semanticStartedAfterSilenceMs = 0;
     let semanticHeldMs = 0;
+    let followUpCandidate: FollowUpCandidateUpdate | null = null;
     const clearGrace = () => {
       if (semanticTimer !== null) clearTimeout(semanticTimer);
       semanticTimer = null;
@@ -351,11 +365,20 @@ export function attachTranscriptionWebSocket(
       semanticChecks += 1;
       const startedAt = Date.now();
       semanticStartedAfterSilenceMs = Math.max(0, startedAt - silenceStartedAt);
-      classifier.isComplete({ question, answer: transcript, signal: controller.signal }).then((complete) => ({ complete, kind: null }), (error: unknown) => ({ complete: false, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const })).then((outcome) => {
+      const candidate = followUpCandidate;
+      const check = candidate && classifier.assess
+        ? classifier.assess({ question, answer: transcript, candidate: { question: candidate.question, anchor: candidate.anchor }, signal: controller.signal })
+        : classifier.isComplete({ question, answer: transcript, signal: controller.signal }).then((complete) => ({ complete, candidateCompatibility: "NONE" as CandidateCompatibility }));
+      check.then((assessment) => ({ ...assessment, kind: null }), (error: unknown) => ({ complete: false, candidateCompatibility: "NONE" as CandidateCompatibility, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const })).then((outcome) => {
         if (controller.signal.aborted) return;
         if (semanticAbort === controller) semanticAbort = null;
         semanticLatencyMs = Date.now() - startedAt;
         semanticVerdict = outcome.kind ?? (outcome.complete ? "complete" : "incomplete");
+        if (candidate && followUpCandidate?.turnId === candidate.turnId && followUpCandidate.revision === candidate.revision) {
+          const status = outcome.kind ? "NONE" : outcome.candidateCompatibility;
+          send(socket, { type: "follow-up-candidate-status", turnId: candidate.turnId, revision: candidate.revision, status });
+          logStreamDiagnostic({ status: "follow_up_candidate", compatibility: status, revision: candidate.revision });
+        }
         if (!outcome.complete) return;
         // A transcript ending on a connector ("and", "because") is never trusted as finished, whatever the verdict.
         if (endsWithConnector(transcript)) return;
@@ -962,6 +985,19 @@ export function attachTranscriptionWebSocket(
             finalize("silence");
           }, session.config.finalizationGraceMs + session.config.resumedSpeechConfirmationMs);
         }
+        return;
+      }
+
+      if (message.type === "follow-up-candidate" && sessionId) {
+        const candidate = sanitizeFollowUpCandidate(message);
+        if (!candidate) {
+          logStreamDiagnostic({ status: "invalid_message", field: "follow-up-candidate" });
+          return;
+        }
+        if (followUpCandidate && candidate.turnId !== followUpCandidate.turnId) return;
+        if (followUpCandidate && candidate.revision < followUpCandidate.revision) return;
+        followUpCandidate = candidate;
+        logStreamDiagnostic({ status: "follow_up_candidate_updated", revision: candidate.revision });
         return;
       }
 

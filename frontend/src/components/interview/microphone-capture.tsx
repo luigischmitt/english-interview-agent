@@ -32,12 +32,16 @@ type StreamMessage = {
   committed?: string;
   partial?: string;
   revision?: number;
+  turnId?: string;
   blockCount?: number;
   assessedBlockCount?: number;
   failedBlockCount?: number;
   diagnostics?: { transcriptionDurationMs?: number; azureQueueWaitMs?: number; azureServiceDurationMs?: number; totalDurationMs?: number };
   timing?: { speechEndToFinalizationMs?: number };
 };
+
+export type FollowUpCandidateUpdate = { type: "follow-up-candidate"; turnId: string; revision: number; question: string; anchor: string };
+export type FollowUpCandidateStatus = { type: "follow-up-candidate-status"; turnId: string; revision: number; status: "OPEN" | "COVERED" | "INVALID" | "NONE" };
 
 type HandoffTimingEvent = "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed" | "listening";
 
@@ -91,6 +95,8 @@ type MicrophoneCaptureProps = {
   onProvisionalAnswer?: (transcript: string, revision: number) => void;
   /** The speaker resumed after a pause, so any provisional answer is stale. */
   onSpeechResumed?: () => void;
+  followUpCandidate?: FollowUpCandidateUpdate | null;
+  onFollowUpCandidateStatus?: (status: FollowUpCandidateStatus) => void;
   onHandoffTimingEvent?: (event: HandoffTimingEvent, details?: { speechEndToFinalizationMs?: number; preconnected?: boolean }) => void;
   autoStartSignal?: string | null;
   /** Interview-long microphone owned by the room. Without it (or if it fails) each answer opens its own microphone. */
@@ -154,7 +160,7 @@ function streamFailureMessage(reason: AnswerStreamFailure): string {
   return "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.";
 }
 
-export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, onDeviceFallback, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, followUpCandidate = null, onFollowUpCandidateStatus, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, onDeviceFallback, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -178,6 +184,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
   const onCaptureStateChangeRef = useRef(onCaptureStateChange);
   const onProvisionalAnswerRef = useRef(onProvisionalAnswer);
   const onSpeechResumedRef = useRef(onSpeechResumed);
+  const onFollowUpCandidateStatusRef = useRef(onFollowUpCandidateStatus);
   const onHandoffTimingEventRef = useRef(onHandoffTimingEvent);
   const assessmentContextRef = useRef(assessmentContext);
   const micEngineRef = useRef(micEngine);
@@ -197,11 +204,16 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     onCaptureStateChangeRef.current = onCaptureStateChange;
     onProvisionalAnswerRef.current = onProvisionalAnswer;
     onSpeechResumedRef.current = onSpeechResumed;
+    onFollowUpCandidateStatusRef.current = onFollowUpCandidateStatus;
     onHandoffTimingEventRef.current = onHandoffTimingEvent;
     assessmentContextRef.current = assessmentContext;
     micEngineRef.current = micEngine;
     onDeviceFallbackRef.current = onDeviceFallback;
-  }, [onDeviceFallback, assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+  }, [onDeviceFallback, assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onFollowUpCandidateStatus, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+
+  useEffect(() => {
+    if (followUpCandidate) attemptRef.current?.stream.sendControl(followUpCandidate);
+  }, [followUpCandidate]);
 
 
   /** Ends the answer window: audio stops flowing, timers stop, and a per-answer (private) microphone is released. The room's microphone stays open. */
@@ -303,6 +315,14 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
       const { transcript, revision } = message;
       if (typeof transcript === "string" && typeof revision === "number" && Number.isInteger(revision) && !finalizationRequestedRef.current) {
         onProvisionalAnswerRef.current?.(transcript, revision);
+      }
+      return;
+    }
+    if (message.type === "follow-up-candidate-status") {
+      const status = message.status;
+      if (typeof message.turnId === "string" && typeof message.revision === "number" && Number.isInteger(message.revision)
+        && (status === "OPEN" || status === "COVERED" || status === "INVALID" || status === "NONE")) {
+        onFollowUpCandidateStatusRef.current?.({ type: "follow-up-candidate-status", turnId: message.turnId, revision: message.revision, status });
       }
       return;
     }
