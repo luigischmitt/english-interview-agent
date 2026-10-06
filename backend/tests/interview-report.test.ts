@@ -163,7 +163,7 @@ describe("final interview report service", () => {
       expect(timingEvents.map(({ phase }) => phase)).toEqual(["provider", "validation"]);
       for (const event of timingEvents) {
         expect(Object.keys(event).sort()).toEqual(event.phase === "provider"
-          ? ["cachedTokens", "completionTokens", "costUsd", "durationMs", "event", "phase", "promptTokens", "turnCount"]
+          ? ["cachedTokens", "completionTokens", "costUsd", "durationMs", "event", "outcome", "phase", "promptTokens", "turnCount"]
           : ["durationMs", "event", "phase", "turnCount"]);
         expect(event.durationMs).toEqual(expect.any(Number));
         expect(event.turnCount).toBe(input.turns.length);

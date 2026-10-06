@@ -5,9 +5,13 @@ export const maxClientEventsPerRequest = 20;
 /** Global safety valve against log flooding (events per minute, per process). */
 export const maxClientEventsPerMinute = 1_200;
 
-const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "playback_ended", "playback_error", "playback_timeout", "unlock", "mic_open", "mic_close", "mic_error", "mic_level_check", "audio_session", "ack_preloaded", "ack_play", "ack_play_resolved", "ack_play_failed", "ack_ended", "ack_skipped", "ack_overlap", "ack_question_gap"] as const;
+const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "playback_ended", "playback_error", "playback_timeout", "unlock", "mic_open", "mic_close", "mic_error", "mic_level_check", "audio_session", "ack_preloaded", "ack_play", "ack_play_resolved", "ack_play_failed", "ack_ended", "ack_skipped", "ack_overlap", "ack_question_gap", "turn_preparation", "handoff_timing", "question_start_timing", "transcription_failure"] as const;
 /** Why an instant acknowledgement was not spoken. */
 const ackSkipReasons = ["not_loaded", "not_applicable", "question_started"] as const;
+const preparationTypes = ["fixed", "speculative"] as const;
+const preparationOutcomes = ["started", "ready", "prepared_used", "prepared_discarded", "failed", "used", "discarded", "closing"] as const;
+const preparationReasons = ["capture_ended", "speech_resumed", "unavailable", "mismatch", "speculative_not_ready", "question_started", "leaving", "new_turn", "skip"] as const;
+const failureReasons = ["connection", "timeout", "setup", "unsupported", "closed", "slow", "buffer", "microphone"] as const;
 const errorNames = ["NotAllowedError", "NotSupportedError", "AbortError", "NotFoundError", "InvalidStateError", "EncodingError", "NotReadableError", "SecurityError", "OverconstrainedError", "TypeError", "Error", "MediaError", "other"] as const;
 const audioContextStates = ["suspended", "running", "closed", "interrupted", "none"] as const;
 const audioSessionTypes = ["auto", "playback", "transient", "transient-solo", "ambient", "play-and-record"] as const;
@@ -28,6 +32,10 @@ const enumFields: Record<string, readonly string[]> = {
   inAppBrowser: inAppBrowsers,
   inputDeviceKind: inputDeviceKinds,
   reason: ackSkipReasons,
+  preparationType: preparationTypes,
+  outcome: preparationOutcomes,
+  preparationReason: preparationReasons,
+  failureReason: failureReasons,
 };
 // Numeric fields with their inclusive [min, max] range.
 const numberFields: Record<string, readonly [number, number]> = {
@@ -44,8 +52,27 @@ const numberFields: Record<string, readonly [number, number]> = {
   answerToAckMs: [0, 3_600_000],
   ackDurationMs: [0, 3_600_000],
   ackToQuestionMs: [0, 3_600_000],
+  confirmationToFirstAudioMs: [0, 3_600_000],
+  confirmationToQuestionStartMs: [0, 3_600_000],
+  transitionDurationMs: [0, 3_600_000],
+  plannedCount: [0, 100],
+  readyCount: [0, 100],
+  usedCount: [0, 100_000],
+  discardedCount: [0, 100_000],
+  usedIndex: [0, 100],
+  startedBeforeCompleteMs: [0, 3_600_000],
+  readyBeforeCompleteMs: [0, 3_600_000],
+  totalMs: [0, 3_600_000],
+  vadFinalizationMs: [0, 3_600_000],
+  queueWaitMs: [0, 3_600_000],
+  whisperMs: [0, 3_600_000],
+  decisionMs: [0, 3_600_000],
+  synthesisMs: [0, 3_600_000],
+  playbackStartMs: [0, 3_600_000],
+  unaccountedMs: [0, 3_600_000],
+  revision: [0, 1_000_000],
 };
-const booleanFields = ["mediaMuted", "mediaPaused", "micActive", "pooled", "audioSessionPresent"] as const;
+const booleanFields = ["mediaMuted", "mediaPaused", "micActive", "pooled", "audioSessionPresent", "prepared"] as const;
 
 type UnknownRecord = Record<string, unknown>;
 

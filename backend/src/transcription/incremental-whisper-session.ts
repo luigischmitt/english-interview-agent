@@ -45,6 +45,8 @@ export type IncrementalWhisperOptions = {
   now?: () => number;
   onTurnStart?: () => void;
   onTurnEnd?: (transcript: string, info?: TurnEndInfo) => void;
+  /** Called when a non-empty segment is committed in order, including during continuous speech. */
+  onSegmentCommitted?: (transcript: string, info: { segmentCount: number; audioDurationMs: number; turnEnded: boolean }) => void;
   onCaptionChange?: () => void;
   onFailure?: (reason: StreamFailureReason, detail: SessionFailureDetail) => void;
 };
@@ -72,6 +74,8 @@ type Segment = {
   promise: Promise<void> | null;
   /** Offset in the full answer; Whisper timestamps inside this segment start at zero. */
   startSeconds: number;
+  /** Audio end of the segment, measured from the start of the answer. */
+  audioEndMs: number;
   result: TranscriptionResult | null;
 };
 
@@ -150,7 +154,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       // A soft cut already took everything up to this pause: the turn ends once the segments before it are committed.
       if (this.softCutPending && this.activeTurn) {
         this.softCutPending = false;
-        this.segments.push({ state: "skipped", text: "", turnEnd: true, epoch: this.speechEpoch, cutAt: Date.now(), promise: null, startSeconds: this.consumedBytes / bytesPerMs / 1_000, result: null });
+        this.segments.push({ state: "skipped", text: "", turnEnd: true, epoch: this.speechEpoch, cutAt: Date.now(), promise: null, startSeconds: this.consumedBytes / bytesPerMs / 1_000, audioEndMs: Math.round(this.consumedBytes / bytesPerMs), result: null });
         this.drain();
       }
       return;
@@ -308,7 +312,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
 
     const segment: Segment = {
       state: "pending", text: "", turnEnd, epoch: this.speechEpoch, cutAt: Date.now(), promise: null,
-      startSeconds: this.consumedBytes / bytesPerMs / 1_000, result: null,
+      startSeconds: this.consumedBytes / bytesPerMs / 1_000, audioEndMs: Math.round((this.consumedBytes + byteCount) / bytesPerMs), result: null,
     };
     this.segments.push(segment);
     this.consumedBytes += byteCount;
@@ -411,6 +415,11 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       if (segment.state === "done") {
         this.finals.push(segment.text);
         this.options.onCaptionChange?.();
+        this.options.onSegmentCommitted?.(this.joined(), {
+          segmentCount: this.committed,
+          audioDurationMs: segment.audioEndMs,
+          turnEnded: segment.turnEnd && segment.epoch === this.speechEpoch,
+        });
       }
       if (segment.turnEnd && segment.epoch === this.speechEpoch && !this.flushing) {
         this.activeTurn = false;

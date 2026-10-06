@@ -98,7 +98,7 @@ type ReportRoute<Input, Output> = {
   invalidMessage: string;
   parse: (body: unknown) => Input | null;
   turnCount: (input: Input) => number;
-  run: (service: InterviewReportService, input: Input) => Promise<Output>;
+  run: (service: InterviewReportService, input: Input, signal?: AbortSignal) => Promise<Output>;
 };
 
 function createReportRouteController<Input, Output>(service: InterviewReportService | null, route: ReportRoute<Input, Output>): RequestHandler {
@@ -114,11 +114,21 @@ function createReportRouteController<Input, Output>(service: InterviewReportServ
     }
     const turnCount = route.turnCount(input);
     const startedAt = Date.now();
+    const abortController = new AbortController();
+    const abortForDisconnect = () => {
+      if (!response.writableEnded) abortController.abort();
+    };
+    request.once("aborted", abortForDisconnect);
+    response.once("close", abortForDisconnect);
     console.info(`[${route.logName}] request_started`, { turnCount });
     try {
-      response.status(200).json(await route.run(service, input));
+      response.status(200).json(await route.run(service, input, abortController.signal));
       console.info(`[${route.logName}] request_completed`, { turnCount, durationMs: Date.now() - startedAt });
     } catch (error) {
+      if (abortController.signal.aborted || response.destroyed) {
+        console.info(`[${route.logName}] request_cancelled`, { turnCount, durationMs: Date.now() - startedAt });
+        return;
+      }
       if (error instanceof ThinkingServiceError) {
         console.warn(`[${route.logName}] request_failed`, { turnCount, durationMs: Date.now() - startedAt, category: error.code });
         response.status(error.status).json({ error: { code: error.code, message: error.message } });
@@ -126,6 +136,9 @@ function createReportRouteController<Input, Output>(service: InterviewReportServ
       }
       console.warn(`[${route.logName}] request_failed`, { turnCount, durationMs: Date.now() - startedAt, category: "THINKING_PROVIDER_UNAVAILABLE" });
       response.status(502).json({ error: { code: "THINKING_PROVIDER_UNAVAILABLE", message: "The reasoning service is unavailable." } });
+    } finally {
+      request.off("aborted", abortForDisconnect);
+      response.off("close", abortForDisconnect);
     }
   };
 }
@@ -148,7 +161,7 @@ export function createInterviewReportTurnController(service: InterviewReportServ
     invalidMessage: "roleContext and one question/answer turn are required within their length limits.",
     parse: parseTurnInput,
     turnCount: () => 1,
-    run: (reportService, input) => reportService.analyzeTurn(input),
+    run: (reportService, input, signal) => reportService.analyzeTurn({ ...input, signal }),
   });
 }
 

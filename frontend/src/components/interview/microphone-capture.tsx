@@ -397,6 +397,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
 
   const handleStreamFailure = (attempt: Attempt, reason: AnswerStreamFailure) => {
     if (attemptRef.current !== attempt || generationRef.current !== attempt.generation) return;
+    reportAudioDiagnostic({ kind: "transcription_failure", failureReason: reason });
     fail(streamFailureMessage(reason));
   };
 
@@ -520,6 +521,11 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     } catch (captureError) {
       if (generationRef.current !== generation) return;
       if (captureError instanceof StreamSetupError && captureError.code === "UNAUTHENTICATED") notifySessionExpired();
+      const failureReason = captureError instanceof StreamSetupError ? "setup"
+        : captureError instanceof Error && captureError.message === "unsupported" ? "unsupported"
+          : captureError instanceof StreamConnectionError && captureError.kind === "timeout" ? "timeout"
+            : captureError instanceof StreamConnectionError ? "connection" : "microphone";
+      reportAudioDiagnostic({ kind: "transcription_failure", failureReason });
       fail(captureError instanceof StreamSetupError
         ? transcriptionFailureMessage(captureError.code)
         : captureError instanceof Error && captureError.message === "unsupported"

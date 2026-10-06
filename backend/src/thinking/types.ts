@@ -127,6 +127,8 @@ export type InterviewTurnAnalysisInput = {
   roleContext: InterviewThinkingInput["roleContext"];
   jobDirection?: ApprovedJobDirection;
   turn: InterviewReportInput["turns"][number];
+  /** Internal cancellation signal; never accepted from or serialized to the client. */
+  signal?: AbortSignal;
 };
 
 export type InterviewReportConsolidationInput = InterviewReportInput & { turnAnalyses: InterviewTurnAnalysis[] };

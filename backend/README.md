@@ -69,7 +69,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `TRANSCRIPTION_TIMEOUT_MS` | `55000` | Overall OpenRouter time budget for the final Whisper transcription, including bounded 429 and transient-failure retries. |
 | `TRANSCRIPTION_STREAM_MAX_DURATION_MS` | `180000` | Maximum duration for one PCM WebSocket response. Must be a positive integer. |
 | `TRANSCRIPTION_STREAM_MAX_BYTES` | `6291456` | Maximum in-memory PCM bytes per response (6 MiB by default). |
-| `TRANSCRIPTION_STREAM_MAX_ACTIVE_SESSIONS` | `8` | Maximum simultaneous in-memory PCM responses. |
+| `TRANSCRIPTION_STREAM_MAX_ACTIVE_SESSIONS` | `20` | Maximum simultaneous in-memory PCM responses per instance; configurable from 1 to 20 to match Cloud Run concurrency. With the 6 MiB default, raw PCM plus one finalization WAV copy is bounded to about 240 MiB at the ceiling. |
 | `TRANSCRIPTION_STREAM_MAX_CONCURRENT_TRANSCRIPTIONS` | `4` | Maximum simultaneous final Whisper calls per backend process. |
 | `TRANSCRIPTION_STREAM_MAX_QUEUED_TRANSCRIPTIONS` | `4` | Maximum finalized recordings waiting for a Whisper slot. |
 | `TRANSCRIPTION_HEDGE_AFTER_MS` | `4000` | If a Whisper call is still pending after this delay and a concurrency slot is free, one identical extra call is started and the first success wins (ENG-90). `0` disables hedging; maximum `30000`. A hedge is an extra Whisper call only on slow requests (Whisper costs about US$0.01 per audio hour). |
@@ -91,11 +91,19 @@ performed by the authenticated frontend client. The speech service accepts:
 | `INTERVIEW_BRIDGE_TIMEOUT_MS` | `1800` | Timeout in milliseconds of the small second call that writes the spoken bridge before the next question; clamped to `300`–`5000`. It never exceeds the remaining part of the overall next-turn deadline and is skipped when less than 1200 ms remain. |
 | `INTERVIEW_REPORT_MODEL` | value of `INTERVIEW_REASONING_MODEL` | OpenRouter model used only for the final interview report (trimmed; blank falls back to `INTERVIEW_REASONING_MODEL`, then the default). Next-turn orchestration keeps using `INTERVIEW_REASONING_MODEL`. The returned `model` field reflects the report model. |
 | `INTERVIEW_REPORT_TIMEOUT_MS` | `45000` | Report-only provider deadline in milliseconds; accepts positive values up to `60000`. The browser deadline is 65 seconds by default. |
+| Per-turn report analysis | `6000` | Hard server-side provider deadline for one answer, including response reading. Degenerate provider output is not retried; caller disconnects abort upstream work. |
 | `INTERVIEW_REASONING_DIAGNOSTICS` | `false` | Set to `true` to include model, latency, and provider-reported cost in next-turn responses. Keep disabled outside local testing. |
 | `INTERVIEW_SPECULATIVE_HANDOFF` | `off` | Set to `on` to enable the short speculative turn-analysis endpoint. This server-side switch is checked on every request, so rollback does not require a frontend deploy. |
 
 Do not add Supabase `service_role` keys or other private credentials to this
 service unless a future server-side integration explicitly requires them.
+
+The stream limits are per backend instance. At 20 Cloud Run request slots and
+50 instances, the configured ceiling is 1,000 live stream sessions; the separate
+finalization queue remains capped at 4 active plus 4 waiting per instance
+(200 active plus 200 waiting across 50 instances). This is limit arithmetic,
+not a throughput or latency guarantee; actual capacity depends on audio length,
+provider latency, memory headroom, and Cloud Run scaling.
 
 ## Interviewer voice via OpenRouter
 

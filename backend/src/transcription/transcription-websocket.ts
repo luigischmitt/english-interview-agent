@@ -200,6 +200,8 @@ export type StreamingOptions = {
   prepareAfterMs?: number;
   /** Maximum provisional messages (and semantic completion checks) per answer. Defaults to 2. */
   maxPrepares?: number;
+  /** Minimum finalized incremental audio before a long continuous answer can trigger a provisional snapshot. Defaults to 10000; 0 disables. */
+  prepareAfterSpeechMs?: number;
   /**
    * Silence (measured from the pause that cut the tail) after which the semantic completeness check starts, as soon as the
    * tail is transcribed. Defaults to `prepareAfterMs` (the check then rides on the provisional trigger).
@@ -325,6 +327,16 @@ export function attachTranscriptionWebSocket(
       graceTimer = null;
       if (prepareTimer !== null) clearTimeout(prepareTimer);
       prepareTimer = null;
+    };
+    const sendProvisionalSnapshot = () => {
+      const current = sessionId ? sessions.get(sessionId) : undefined;
+      if (finalRequested || finishing || !streamSession || streamSession.failed || !streamSession.turnActive || !current?.vad.hasSpeech) return;
+      const transcript = streamSession.committedText();
+      const maxPrepares = streaming?.maxPrepares ?? 2;
+      if (!transcript || transcript === lastProvisional || preparesSent >= maxPrepares) return;
+      lastProvisional = transcript;
+      preparesSent += 1;
+      send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
     };
     // Live caption (display-only, never logged or stored): throttled, sent only when the text changed.
     let captionsEnabled = false;
@@ -904,12 +916,10 @@ export function attachTranscriptionWebSocket(
                     const current = sessionId ? sessions.get(sessionId) : undefined;
                     if (finalRequested || finishing || !streamSession || streamSession.failed || streamSession.turnActive || !current?.vad.hasSpeech) return;
                     const transcript = streamSession.committedText();
-                    if (!transcript) return;
-                    if (transcript !== lastProvisional && preparesSent < maxPrepares) {
-                      lastProvisional = transcript;
-                      preparesSent += 1;
-                      send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
-                    }
+                    if (!transcript || transcript === lastProvisional || preparesSent >= maxPrepares) return;
+                    lastProvisional = transcript;
+                    preparesSent += 1;
+                    send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
                   };
                   const remainingPrepareMs = Math.max(0, prepareAfterMs - elapsedMs);
                   // Tail transcription can consume the entire preparation delay. Emit that final snapshot synchronously
@@ -935,7 +945,17 @@ export function attachTranscriptionWebSocket(
                 logStreamDiagnostic({ status: "incremental_whisper_unavailable", reason: failure, detail });
               },
             };
-            streamSession = new IncrementalWhisperSession({ service: transcriptionService, speechThreshold: session.config.speechThreshold, question: whisperQuestion, ...streaming.incrementalWhisper, ...sessionCallbacks });
+            const prepareAfterSpeechMs = streaming.prepareAfterSpeechMs ?? 10_000;
+            streamSession = new IncrementalWhisperSession({
+              service: transcriptionService,
+              speechThreshold: session.config.speechThreshold,
+              question: whisperQuestion,
+              ...streaming.incrementalWhisper,
+              ...sessionCallbacks,
+              onSegmentCommitted: (transcript, info) => {
+                if (prepareAfterSpeechMs > 0 && !info.turnEnded && info.audioDurationMs >= prepareAfterSpeechMs) sendProvisionalSnapshot();
+              },
+            });
             streamSession.open();
           }
           send(socket, {
