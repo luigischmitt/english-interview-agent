@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fetchVoiceStatus, startVoiceReadinessPolling, voiceReadinessCopy } from "../src/lib/interview/voice-readiness.mjs";
+import { fetchVoiceStatus, startVoiceReadinessPolling, voiceBlocksInterviewStart, voiceReadinessCopy } from "../src/lib/interview/voice-readiness.mjs";
 
 function harness(results, { maxMs = 120_000 } = {}) {
   let time = 0;
@@ -68,7 +68,15 @@ test("fetchVoiceStatus validates the response and never rejects", async () => {
 });
 
 test("copy is in Portuguese for every state", () => {
-  assert.match(voiceReadinessCopy.warming, /1 minuto/);
+  assert.match(voiceReadinessCopy.warming, /Ligando/);
   assert.match(voiceReadinessCopy.ready, /pronta/);
-  assert.match(voiceReadinessCopy.unavailable, /voz do navegador/);
+  assert.match(voiceReadinessCopy.unavailable, /Não foi possível/);
+});
+
+test("blocks audio interviews until the voice is ready but never blocks text-only interviews", () => {
+  assert.equal(voiceBlocksInterviewStart(true, "warming"), true);
+  assert.equal(voiceBlocksInterviewStart(true, "unavailable"), true);
+  assert.equal(voiceBlocksInterviewStart(true, "ready"), false);
+  assert.equal(voiceBlocksInterviewStart(false, "warming"), false);
+  assert.equal(voiceBlocksInterviewStart(false, "unavailable"), false);
 });
