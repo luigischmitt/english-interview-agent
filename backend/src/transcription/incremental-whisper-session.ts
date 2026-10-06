@@ -2,7 +2,7 @@ import { TranscriptionUnavailableError } from "./errors.js";
 import type { StreamFailureReason, StreamingTurnSession, TurnEndInfo } from "./streaming-turn-session.js";
 import { pcmToWav } from "./streaming-transcription.js";
 import { hedgedTranscribe } from "./hedged-transcription.js";
-import type { TranscriptionResult, TranscriptionService } from "./types.js";
+import type { TranscriptionResult, TranscriptionService, TranscriptionWord } from "./types.js";
 
 /**
  * Incremental Whisper: the answer is cut at local VAD pauses (and every ~15 s of continuous speech) and each segment is
@@ -70,11 +70,15 @@ type Segment = {
   /** When the pause that cut this segment was detected (epoch ms). */
   cutAt: number;
   promise: Promise<void> | null;
+  /** Offset in the full answer; Whisper timestamps inside this segment start at zero. */
+  startSeconds: number;
+  result: TranscriptionResult | null;
 };
 
 export class IncrementalWhisperSession implements StreamingTurnSession {
   private chunks: Buffer[] = [];
   private bytes = 0;
+  private consumedBytes = 0;
   private levels: number[] = [];
   private segments: Segment[] = [];
   private committed = 0;
@@ -146,7 +150,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       // A soft cut already took everything up to this pause: the turn ends once the segments before it are committed.
       if (this.softCutPending && this.activeTurn) {
         this.softCutPending = false;
-        this.segments.push({ state: "skipped", text: "", turnEnd: true, epoch: this.speechEpoch, cutAt: Date.now(), promise: null });
+        this.segments.push({ state: "skipped", text: "", turnEnd: true, epoch: this.speechEpoch, cutAt: Date.now(), promise: null, startSeconds: this.consumedBytes / bytesPerMs / 1_000, result: null });
         this.drain();
       }
       return;
@@ -168,6 +172,38 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
 
   partialText(): string {
     return "";
+  }
+
+  /**
+   * Rebuilds full-answer timing from the already completed segment requests. A missing/untimed segment creates a hard
+   * block boundary, so Azure never receives reference text spanning audio that was not aligned.
+   */
+  timingResult(): TranscriptionResult | null {
+    const transcript = this.joined();
+    if (!transcript || this.segments.some((segment) => segment.state !== "done" && segment.state !== "skipped")) return null;
+    const collect = (field: "words" | "segments"): TranscriptionWord[] | undefined => {
+      const combined: TranscriptionWord[] = [];
+      let breakBefore = false;
+      for (const segment of this.segments) {
+        const timings = segment.result?.[field];
+        if (segment.state !== "done" || !timings?.length) {
+          breakBefore = true;
+          continue;
+        }
+        timings.forEach((timing, index) => combined.push({
+          ...timing,
+          start: timing.start + segment.startSeconds,
+          end: timing.end + segment.startSeconds,
+          ...(index === 0 && breakBefore ? { breakBefore: true } : {}),
+        }));
+        breakBefore = false;
+      }
+      return combined.length ? combined : undefined;
+    };
+    const words = collect("words");
+    const segments = collect("segments");
+    if (!words?.length && !segments?.length) return null;
+    return { provider: "whisper-large-v3-turbo", transcript, words, segments };
   }
 
   /**
@@ -270,8 +306,12 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
     const levels = this.levels.slice(0, levelCount);
     this.levels = this.levels.slice(levelCount);
 
-    const segment: Segment = { state: "pending", text: "", turnEnd, epoch: this.speechEpoch, cutAt: Date.now(), promise: null };
+    const segment: Segment = {
+      state: "pending", text: "", turnEnd, epoch: this.speechEpoch, cutAt: Date.now(), promise: null,
+      startSeconds: this.consumedBytes / bytesPerMs / 1_000, result: null,
+    };
     this.segments.push(segment);
+    this.consumedBytes += byteCount;
 
     // Speech inside the segment according to the local VAD levels; without levels the segment is transcribed to be safe.
     // A segment shorter than the minimum speech cannot hold enough speech either (levels can lag audio by a frame).
@@ -328,7 +368,9 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       // instead of abandoning the whole incremental transcript for a full-audio call.
       for (let round = 0; ; round += 1) {
         try {
-          text = (await this.requestSegment(wav, critical)).transcript.trim();
+          const result = await this.requestSegment(wav, critical);
+          segment.result = result;
+          text = result.transcript.trim();
           break;
         } catch (error) {
           if (this.closed) return;

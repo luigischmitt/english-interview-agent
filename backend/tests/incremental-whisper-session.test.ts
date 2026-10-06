@@ -8,7 +8,7 @@ const frame = Buffer.alloc(3_200, 0x20);
 const speech = 0.05;
 const quiet = 0.001;
 
-type Call = { wav: Buffer; signal: AbortSignal; resolve: (text: string) => void; reject: (error: unknown) => void };
+type Call = { wav: Buffer; signal: AbortSignal; resolve: (text: string, timing?: Pick<TranscriptionResult, "words" | "segments">) => void; reject: (error: unknown) => void };
 
 /** Fake Whisper whose calls stay pending until the test settles them. */
 function manualService() {
@@ -18,7 +18,7 @@ function manualService() {
     transcribe: (audio, provider, _format, signal) => new Promise<TranscriptionResult>((resolve, reject) => {
       calls.push({
         wav: audio, signal: signal!,
-        resolve: (text) => resolve({ provider, transcript: text }),
+        resolve: (text, timing = {}) => resolve({ provider, transcript: text, ...timing }),
         reject,
       });
     }),
@@ -88,6 +88,42 @@ describe("IncrementalWhisperSession", () => {
     // Speech resumed after the first cut: only the second pause signals a turn end.
     expect(events.turnEnds).toEqual(["second part."]);
     expect(session.turnCount).toBe(1);
+  });
+
+  it("preserves incremental timestamps and offsets them into the full answer for Azure", async () => {
+    const { session, calls } = build();
+    session.markSpeech();
+    feed(session, 10, speech);
+    const first = session.endTurn(1_500);
+    calls[0]!.resolve("First part.", {
+      words: [{ text: "First", start: 0.1, end: 0.4 }, { text: "part", start: 0.5, end: 0.8 }],
+      segments: [{ text: "First part.", start: 0.1, end: 0.8 }],
+    });
+    await first;
+
+    session.markSpeech();
+    feed(session, 5, speech);
+    const second = session.endTurn(1_500);
+    calls[1]!.resolve("Second part.", {
+      words: [{ text: "Second", start: 0.05, end: 0.25 }, { text: "part", start: 0.3, end: 0.45 }],
+      segments: [{ text: "Second part.", start: 0.05, end: 0.45 }],
+    });
+    await second;
+
+    expect(session.timingResult()).toEqual({
+      provider: "whisper-large-v3-turbo",
+      transcript: "First part. Second part.",
+      words: [
+        { text: "First", start: 0.1, end: 0.4 },
+        { text: "part", start: 0.5, end: 0.8 },
+        { text: "Second", start: 1.05, end: 1.25 },
+        { text: "part", start: 1.3, end: 1.45 },
+      ],
+      segments: [
+        { text: "First part.", start: 0.1, end: 0.8 },
+        { text: "Second part.", start: 1.05, end: 1.45 },
+      ],
+    });
   });
 
   it("joins the text but signals no turn end when speech resumed after the cut", async () => {
