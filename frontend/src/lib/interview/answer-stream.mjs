@@ -173,6 +173,11 @@ export function createAnswerStream(options) {
       buffer.push(frame);
       if (buffer.length > maxBufferedFrames && !failedSent) { failedSent = true; options.onFailure?.("buffer"); }
     },
+    /** Sends a bounded JSON control message on the active answer socket (never buffers content across reconnects). */
+    sendControl(message) {
+      if (!gateOpen || state !== "streaming" || !socket || socket.readyState !== socketOpen) return false;
+      try { socket.send(JSON.stringify(message)); return true; } catch { return false; }
+    },
     /** Cancels the answer on the server (if open), detaches and closes the socket, drops buffered frames. */
     cancel() {
       epoch += 1;

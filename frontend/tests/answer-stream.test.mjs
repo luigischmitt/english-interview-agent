@@ -57,6 +57,16 @@ test("begin on a ready socket streams from that instant with zero wait", async (
   assert.equal(h.sockets.length, 1, "no second connection");
 });
 
+test("candidate control messages are sent only on the active answer socket", async () => {
+  const h = harness();
+  await connectReady(h);
+  const update = { type: "follow-up-candidate", turnId: "turn_12345678", revision: 1, question: "Why Kafka?", anchor: "Kafka" };
+  assert.equal(h.stream.sendControl(update), false);
+  await h.stream.begin();
+  assert.equal(h.stream.sendControl(update), true);
+  assert.deepEqual(h.sockets[0].json().at(-1), update);
+});
+
 test("when the socket is not ready at begin, post-begin frames are buffered and sent in order once ready", async () => {
   const h = harness();
   const pre = h.stream.connect();

@@ -1,6 +1,7 @@
 import { pinnedOpenRouterFetch } from "./openrouter-routing.js";
 import { parseOpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
 import { preservesPlannedCompetency } from "./openrouter-orchestration-service.js";
+import { repeatsRecentQuestion } from "./question-repetition.js";
 
 export type CandidateCompatibility = "OPEN" | "COVERED" | "INVALID" | "NONE";
 export type SpeculativeTurnAnalysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null };
@@ -26,8 +27,10 @@ export class SpeculativeTurnAnalysisService {
       if (!value || value.revision !== input.revision) return null;
       if (value.followUpAction === "KEEP" && (!input.previousCandidate || value.followUpQuestion !== input.previousCandidate.question || value.followUpAnchor !== input.previousCandidate.anchor)) return null;
       if (value.followUpAction === "REPLACE" && (!hasQuestionShape(value.followUpQuestion, 180) || !literal(input.snapshot, value.followUpAnchor))) return null;
+      if ((value.followUpAction === "REPLACE" || value.followUpAction === "KEEP") && value.followUpQuestion && repeatsRecentQuestion(value.followUpQuestion, input.askedQuestions, false)) return null;
       if (value.followUpAction === "NONE" && (value.followUpQuestion !== null || value.followUpAnchor !== null)) return null;
       if (value.fixedAction === "SKIP" && (input.firstFixedType === "job" || !literal(input.snapshot, value.fixedEvidenceAnchor))) return null;
+      if (value.fixedAction === "SKIP" && (value.adaptedFixedQuestion !== null || !input.secondFixedQuestion)) return null;
       if (value.fixedAction === "DEEPEN" && (!hasQuestionShape(value.adaptedFixedQuestion, 220) || !literal(input.snapshot, value.fixedEvidenceAnchor) || !preservesPlannedCompetency(value.adaptedFixedQuestion!, input.firstFixedQuestion))) return null;
       if (value.fixedAction === "KEEP" && (value.adaptedFixedQuestion !== null || value.fixedEvidenceAnchor !== null)) return null;
       actions = { followUpAction: value.followUpAction, fixedAction: value.fixedAction }; outcome = "success"; return value;

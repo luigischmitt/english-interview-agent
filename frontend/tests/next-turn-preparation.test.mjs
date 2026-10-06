@@ -87,6 +87,19 @@ test("takeReady never waits for pending speculative work", async () => {
   gate.resolve("late");
 });
 
+test("takeAnyReady accepts only a ready semantically compatible revision", async () => {
+  const registry = createNextTurnPreparationRegistry();
+  registry.prepare({ transcript: "I used Kafka.", run: async () => ({ revision: 1, anchor: "Kafka" }) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const entry = registry.takeAnyReady({ accept: (value) => value.revision === 1 && value.anchor === "Kafka" });
+  assert.deepEqual(await entry.promise, { revision: 1, anchor: "Kafka" });
+
+  registry.prepare({ transcript: "old", run: async () => ({ revision: 1, anchor: "Redis" }) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(registry.takeAnyReady({ accept: (value) => value.anchor === "Kafka" }), null);
+  assert.deepEqual(registry.stats(), { used: 1, discarded: 1 });
+});
+
 class FakeAudio {
   listeners = new Map();
   addEventListener(type, listener) { this.listeners.set(type, listener); }

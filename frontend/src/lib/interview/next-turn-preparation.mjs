@@ -87,6 +87,19 @@ export function createNextTurnPreparationRegistry() {
       return this.take({ transcript, inputKey });
     },
 
+    /** Claims a ready value after a caller-supplied semantic compatibility check (used only for revisioned candidates). */
+    takeAnyReady({ accept }) {
+      const entry = current;
+      current = null;
+      if (!entry || entry.settled !== "ready" || !accept(entry.value)) {
+        if (entry) discard(entry);
+        return null;
+      }
+      entry.used = true;
+      used += 1;
+      return entry;
+    },
+
     /** The prepared value was unusable after all (it resolved to nothing): count it as discarded instead of used. */
     release(entry) {
       if (!entry?.used) return;

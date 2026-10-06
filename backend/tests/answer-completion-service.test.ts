@@ -35,6 +35,15 @@ describe("OpenRouterAnswerCompletionService", () => {
     await expect(service((async () => reply('{"complete":false}')) as unknown as typeof fetch).isComplete(input)).resolves.toBe(false);
   });
 
+  it.each(["OPEN", "COVERED", "INVALID"] as const)("classifies a follow-up candidate as %s without changing completion", async (candidateCompatibility) => {
+    const fetchMock = vi.fn(async () => reply(JSON.stringify({ complete: false, candidateCompatibility })));
+    const result = await service(fetchMock as unknown as typeof fetch).assess({ ...input, candidate: { question: "What made the lock safe?", anchor: "a lock" } });
+    expect(result).toEqual({ complete: false, candidateCompatibility });
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+    expect(body.response_format.json_schema.schema.required).toEqual(["complete", "candidateCompatibility"]);
+    expect(body.provider.data_collection).toBe("deny");
+  });
+
   it.each([["not json"], ['{"complete":"yes"}'], ['{"complete":true,"extra":1}'], ["[]"], [null], [42]])("rejects invalid content %j as an error", async (content) => {
     await expect(service((async () => reply(content)) as unknown as typeof fetch).isComplete(input)).rejects.toMatchObject({ kind: "error" });
   });
