@@ -81,6 +81,10 @@
   .mt-call { padding-inline: 20px; }
   .mt-stage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; max-width: 1280px; width: 100%; margin-inline: auto; }
 }
+@media (min-width: 768px) {
+  .mt-interviewer { grid-column: 1; grid-row: 1; }
+  .mt-candidate { grid-column: 2; grid-row: 1; }
+}
 
 .mt-tile {
   position: relative;
@@ -136,7 +140,7 @@
   width: calc(100% - 24px);
   max-width: 44rem;
   max-height: 45%;
-  margin: auto 12px 52px;
+  margin: auto 12px 30px;
   overscroll-behavior: contain;
   overflow-y: auto;
   border-radius: 12px;

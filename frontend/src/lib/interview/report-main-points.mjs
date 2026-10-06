@@ -60,5 +60,9 @@ export function deriveMainPoints(analysis) {
   const priorities = (Array.isArray(analysis?.priorities) ? analysis.priorities : []).filter((item) => usableEvidence(item) && usableText(item.exercise)).slice(0, mainPointLimits.priorities)
     .map((item) => ({ ...item, focus: toSecondPerson(item.focus), exercise: toSecondPerson(item.exercise) }));
 
-  return { english, technical, priorities, summary: toSecondPerson(technicalContent?.summary) };
+  const summary = toSecondPerson(technicalContent?.summary).trim();
+  const fallbackSummary = technical.length
+    ? `Nesta sessão, você mostrou pontos técnicos relevantes. ${technical.slice(0, 2).map((item) => item.explanation).join(" ")}`
+    : "Nesta sessão, não houve evidência técnica suficiente para gerar um resumo confiável.";
+  return { english, technical, priorities, summary: summary || fallbackSummary };
 }
