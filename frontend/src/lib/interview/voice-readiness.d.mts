@@ -3,6 +3,7 @@ export type VoiceReadinessState = "ready" | "warming" | "unavailable";
 export const VOICE_POLL_INTERVAL_MS: number;
 export const VOICE_POLL_MAX_MS: number;
 export const voiceReadinessCopy: Record<VoiceReadinessState, string>;
+export function voiceBlocksInterviewStart(playInterviewerAudio: boolean, state: VoiceReadinessState): boolean;
 
 export function fetchVoiceStatus(
   endpoint: string,

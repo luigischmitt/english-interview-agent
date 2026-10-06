@@ -26,6 +26,7 @@ import { composeContextualOpening } from "@/lib/interview/speech-playback.mjs";
 import { storeRoomHandoff } from "@/lib/interview/room-handoff.mjs";
 import { readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
 import { DEFAULT_INTERVIEWER_VOICE } from "@/lib/interview/voices.mjs";
+import type { VoiceReadinessState } from "@/lib/interview/voice-readiness.mjs";
 
 import "./components/shell.css";
 
@@ -41,7 +42,8 @@ const settingsNavigationItem = { id: "settings" as const, label: "Configuraçõe
 const navigationItems = [...primaryNavigationItems, settingsNavigationItem];
 
 import { InterviewSetup } from "./components/interview-setup";
-import { prewarmInterviewerUtterance, useSpeechWarmup } from "./hooks/use-speech-playback";
+import { VoiceReadinessStatus } from "./components/voice-readiness-status";
+import { prewarmInterviewerUtterance, useSpeechWarmup, useVoiceReadiness } from "./hooks/use-speech-playback";
 import { ProgressView } from "./components/progress-view";
 import { PageIntro } from "./components/shared";
 import { VoicePicker } from "./components/voice-picker";
@@ -226,9 +228,13 @@ const pageMain = "mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py
 function HomeView({
   onStart,
   onProgress,
+  voiceReadiness,
+  onRetryVoice,
 }: {
   onStart: () => void;
   onProgress: () => void;
+  voiceReadiness: VoiceReadinessState;
+  onRetryVoice: () => void;
 }) {
   const [promptIndex, setPromptIndex] = useState(0);
   const prompt = warmUpPrompts[promptIndex];
@@ -257,6 +263,7 @@ function HomeView({
           <p className="shl-hero-muted mt-3 max-w-[48ch] text-[0.9375rem] leading-6">
             Escolha o cargo e o foco. Na entrevista, as perguntas aparecem em texto e também podem ser lidas em voz alta.
           </p>
+          <VoiceReadinessStatus state={voiceReadiness} onRetry={onRetryVoice} className="mt-5 max-w-xl" />
           <button type="button" className="ds-btn ds-btn-cta mt-7" onClick={onStart}>
             <Play className="size-4 fill-current" aria-hidden="true" /> Começar prática
           </button>
@@ -352,7 +359,9 @@ function SettingsView() {
 
 export default function App({ initialView = "home" }: { initialView?: View }) {
   const router = useRouter();
-  useSpeechWarmup(); // Wake the interviewer voice as soon as the signed-in user lands here.
+  const [voiceWarmupAttempt, setVoiceWarmupAttempt] = useState(0);
+  useSpeechWarmup(voiceWarmupAttempt); // Wake the interviewer voice as soon as the signed-in user lands here.
+  const voiceReadiness = useVoiceReadiness(true, voiceWarmupAttempt);
   const [view, setView] = useState<View>(initialView);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [startError, setStartError] = useState(false);
@@ -379,6 +388,8 @@ export default function App({ initialView = "home" }: { initialView?: View }) {
             <HomeView
               onStart={() => navigate("interview-setup")}
               onProgress={() => navigate("progress")}
+              voiceReadiness={voiceReadiness}
+              onRetryVoice={() => setVoiceWarmupAttempt((attempt) => attempt + 1)}
             />
           )}
           {startError && view === "interview-setup" && (
@@ -387,6 +398,8 @@ export default function App({ initialView = "home" }: { initialView?: View }) {
           {view === "interview-setup" && (
             <InterviewSetup
               onBack={() => navigate("home")}
+              voiceReadiness={voiceReadiness}
+              onRetryVoice={() => setVoiceWarmupAttempt((attempt) => attempt + 1)}
               onStart={(config) => {
                 // The opening is fully known here: synthesize it while the room mounts; the room's playback reuses it.
                 if (config.playInterviewerAudio) {

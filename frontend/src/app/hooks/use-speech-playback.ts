@@ -18,13 +18,13 @@ const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
  * first tap/click/key anywhere unlocks the shared playback elements, which iOS needs before it lets the interviewer
  * speak without a gesture (the interview starts on another route, but the document and its elements survive).
  */
-export function useSpeechWarmup() {
+export function useSpeechWarmup(attempt = 0) {
   useEffect(() => {
     warmUpInterviewerSpeech(speechEndpoint, authorizedFetch);
     installAudioUnlockOnFirstGesture();
     setAudioUnlockObserver((info) => reportAudioDiagnostic({ kind: "unlock", ...info }));
     return () => setAudioUnlockObserver(null);
-  }, []);
+  }, [attempt]);
 }
 
 /** Polls the backend for the interviewer voice readiness while `enabled`; stops when ready, on unmount or after 2 min. */

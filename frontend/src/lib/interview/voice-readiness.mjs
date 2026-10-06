@@ -4,10 +4,15 @@ export const VOICE_POLL_MAX_MS = 120_000;
 const knownStates = new Set(["ready", "warming", "unavailable"]);
 
 export const voiceReadinessCopy = {
-  warming: "Preparando a voz do entrevistador… (pode levar até 1 minuto)",
-  ready: "Voz do entrevistador pronta",
-  unavailable: "Não foi possível preparar a voz agora — usaremos a voz do navegador se precisar.",
+  warming: "Ligando a voz do entrevistador… Isso pode levar alguns segundos.",
+  ready: "Voz do entrevistador ligada e pronta.",
+  unavailable: "Não foi possível ligar a voz do entrevistador agora.",
 };
+
+/** Text-only interviews do not depend on the speech provider. */
+export function voiceBlocksInterviewStart(playInterviewerAudio, state) {
+  return Boolean(playInterviewerAudio) && state !== "ready";
+}
 
 /** GET <speech endpoint>/warmup-status; resolves to a known state or null (never rejects). */
 export async function fetchVoiceStatus(endpoint, fetcher, signal) {

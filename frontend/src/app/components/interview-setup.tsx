@@ -7,9 +7,9 @@ import type { JobDirection, JobSeniority } from "@/lib/interview/job-direction.m
 import type { SetupMode } from "@/lib/interview/job-direction.mjs";
 import { applyJobAnalysis, isValidJobDirection, JobDirectionRequestError, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection, setupModeBlocksStart, switchSetupMode } from "@/lib/interview/job-direction.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
-import { useSpeechWarmup } from "../hooks/use-speech-playback";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { synthesizeInterviewerQuestion } from "@/lib/interview/speech-playback.mjs";
+import { voiceBlocksInterviewStart, type VoiceReadinessState } from "@/lib/interview/voice-readiness.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
 import { inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
@@ -22,6 +22,7 @@ import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import "./interview-setup.css";
 import { defaultInterviewConfig } from "../interview-config";
 import { interviewDurationOptions } from "@/lib/interview/session-policy.mjs";
+import { VoiceReadinessStatus } from "./voice-readiness-status";
 
 const seniorityLabels: Record<InterviewConfig["seniority"], string> = {
   junior: "Júnior",
@@ -44,11 +45,14 @@ const audioTestPhrase = "Hello, thanks for joining me today. Could you tell me a
 export function InterviewSetup({
   onBack,
   onStart,
+  voiceReadiness,
+  onRetryVoice,
 }: {
   onBack: () => void;
   onStart: (config: InterviewConfig) => void;
+  voiceReadiness: VoiceReadinessState;
+  onRetryVoice: () => void;
 }) {
-  useSpeechWarmup();
   const [config, setConfig] = useState<InterviewConfig>(defaultInterviewConfig);
   const [jobDescription, setJobDescription] = useState("");
   const [jobDirectionStatus, setJobDirectionStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -67,7 +71,8 @@ export function InterviewSetup({
   const roomOptionsRef = useRef<HTMLElement>(null);
   const micTestRef = useRef<MicrophoneTestHandle>(null);
   const autoBlocked = setupModeBlocksStart(setupMode, config.jobDirection);
-  const startBlocked = autoBlocked;
+  const voiceBlocked = voiceBlocksInterviewStart(config.playInterviewerAudio, voiceReadiness);
+  const startBlocked = autoBlocked || voiceBlocked;
 
   const cancelAudioTest = () => {
     audioTestRef.current?.cancel();
@@ -259,7 +264,7 @@ export function InterviewSetup({
       setJobDirectionValidationError("Complete os campos do direcionamento ou mude para “Manual” para continuar sem ele.");
       return;
     }
-    if (autoBlocked) return;
+    if (autoBlocked || voiceBlocked) return;
     cancelAudioTest();
     micTestRef.current?.stop();
     const jobDirection = config.jobDirection ? {
@@ -283,8 +288,14 @@ export function InterviewSetup({
     roomOptionsRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "nearest" });
   };
 
-  const startLabel = config.playInterviewerAudio ? "Iniciar com áudio" : "Iniciar somente com texto";
-  const startHint = "Analise a vaga para continuar, ou mude para “Manual”.";
+  const startLabel = config.playInterviewerAudio
+    ? voiceReadiness === "warming" ? "Ligando voz…" : voiceReadiness === "unavailable" ? "Voz indisponível" : "Iniciar com áudio"
+    : "Iniciar somente com texto";
+  const startHint = autoBlocked
+    ? "Analise a vaga para continuar, ou mude para “Manual”."
+    : voiceReadiness === "unavailable"
+      ? "Tente ligar a voz novamente ou escolha “Somente texto”."
+      : "Aguarde a voz do entrevistador ficar pronta para iniciar com áudio.";
   const roleInvalid = showErrors && !config.role.trim();
 
   return (
@@ -494,13 +505,16 @@ export function InterviewSetup({
             </fieldset>
 
             {config.playInterviewerAudio && (
-              <div className="ds-fade-in mt-5 flex flex-col gap-2 min-[460px]:flex-row min-[460px]:items-center">
-                <button type="button" className="ds-btn ds-btn-soft" onClick={() => void testAudio()}>
-                  {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
-                </button>
-                <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "font-medium text-danger" : audioTestStatus.kind === "success" ? "font-medium text-green" : "text-text-2"}`}>
-                  {audioTestStatus.message ?? "Opcional: ouça uma frase curta antes de começar."}
-                </p>
+              <div className="ds-fade-in mt-5 space-y-4">
+                <VoiceReadinessStatus state={voiceReadiness} onRetry={onRetryVoice} />
+                <div className="flex flex-col gap-2 min-[460px]:flex-row min-[460px]:items-center">
+                  <button type="button" className="ds-btn ds-btn-soft" onClick={() => void testAudio()} disabled={voiceReadiness !== "ready"}>
+                    {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
+                  </button>
+                  <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "font-medium text-danger" : audioTestStatus.kind === "success" ? "font-medium text-green" : "text-text-2"}`}>
+                    {audioTestStatus.message ?? (voiceReadiness === "ready" ? "Opcional: ouça uma frase curta antes de começar." : "O teste será liberado quando a voz estiver pronta.")}
+                  </p>
+                </div>
               </div>
             )}
           </section>
@@ -573,10 +587,11 @@ export function InterviewSetup({
                 </div>
               ))}
             </dl>
-            <button type="submit" className="ds-btn ds-btn-cta mt-7 hidden lg:flex" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint" : undefined}>
+            <button type="submit" className="ds-btn ds-btn-cta mt-7 hidden lg:flex" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint-desktop" : undefined}>
+              {config.playInterviewerAudio && voiceReadiness === "warming" && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
               {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
             </button>
-            {startBlocked && <p id="start-hint" className="ds-hint ds-fade-in mt-3 hidden text-on-panel-accent lg:block">{startHint}</p>}
+            {startBlocked && <p id="start-hint-desktop" className="ds-hint ds-fade-in mt-3 hidden text-on-panel-accent lg:block">{startHint}</p>}
             <button type="button" className="ds-btn ds-btn-quiet mt-2 hidden w-full text-on-panel-accent hover:text-[color:var(--ds-on-panel)] lg:flex" onClick={onBack}>
               Cancelar
             </button>
@@ -588,8 +603,9 @@ export function InterviewSetup({
 
         {/* Mobile: the primary action stays reachable */}
         <div className="isu-bar fixed inset-x-0 z-20 px-4 pb-3 pt-3 lg:hidden">
-          {startBlocked && <p className="ds-hint ds-fade-in mb-2 text-center text-text-2">{startHint}</p>}
-          <button type="submit" form="interview-setup-form" className="ds-btn ds-btn-cta-green" disabled={startBlocked}>
+          {startBlocked && <p id="start-hint-mobile" className="ds-hint ds-fade-in mb-2 text-center text-text-2">{startHint}</p>}
+          <button type="submit" form="interview-setup-form" className="ds-btn ds-btn-cta-green" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint-mobile" : undefined}>
+            {config.playInterviewerAudio && voiceReadiness === "warming" && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
             {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
           </button>
         </div>
