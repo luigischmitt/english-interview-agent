@@ -23,6 +23,19 @@ export function pickFallbackTransition(recentAcknowledgements = []) {
   return best;
 }
 
+/** Neutral NEXT transition prepared before we know whether an instant acknowledgement will play. */
+export function pickFixedHandoffTransition(recentAcknowledgements = []) {
+  const candidates = fallbackTransitions.slice(1);
+  const recent = recentAcknowledgements.map(acknowledgementKey);
+  let best = candidates[0];
+  let bestIndex = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const lastUsed = recent.lastIndexOf(acknowledgementKey(candidate));
+    if (lastUsed < bestIndex) { best = candidate; bestIndex = lastUsed; }
+  }
+  return best;
+}
+
 export function fallbackTurnDecision(nextQuestion, recentAcknowledgements = []) {
   return { decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: nextQuestion ? pickFallbackTransition(recentAcknowledgements) : null };
 }

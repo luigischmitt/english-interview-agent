@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fallbackTurnDecision, normalizeNextTurnDecision, parseTurnDecisionResponse, pickFallbackTransition } from "../src/lib/interview/orchestration-policy.mjs";
+import { fallbackTurnDecision, normalizeNextTurnDecision, parseTurnDecisionResponse, pickFallbackTransition, pickFixedHandoffTransition } from "../src/lib/interview/orchestration-policy.mjs";
 
 test("the local NEXT fallback adds a neutral, content-free transition", () => {
   assert.deepEqual(fallbackTurnDecision("Tell me about a technical trade-off."), {
@@ -19,6 +19,11 @@ test("fallback transitions rotate and avoid the recent acknowledgements", () => 
   assert.notEqual(pickFallbackTransition(["Thanks for that. Let’s move on."]), "Thanks for that. Let's move on.");
   assert.equal(pickFallbackTransition(seen), seen[0]);
   assert.equal(fallbackTurnDecision("Q?", ["Thanks for that. Let's move on."]).acknowledgement, "Let's move to a different topic.");
+});
+
+test("fixed handoff transitions do not duplicate the instant acknowledgement", () => {
+  assert.equal(pickFixedHandoffTransition([]), "Let's move to a different topic.");
+  assert.notEqual(pickFixedHandoffTransition([]), "Thanks for that. Let's move on.");
 });
 
 test("a valid NEXT response keeps the backend bridge", () => {

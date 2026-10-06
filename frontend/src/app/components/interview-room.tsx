@@ -6,11 +6,12 @@ import { inAppMicBody, inAppMicTitle, useInAppBrowser } from "../hooks/use-in-ap
 import { MicrophoneCapture, micDeniedMessage, type MicControls, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { buildPreviousAnswers, decideNextTurn, isClarificationTurn, type TurnDecision } from "@/lib/interview/orchestration";
-import { repeatTurnDecision } from "@/lib/interview/orchestration-policy.mjs";
+import { pickFixedHandoffTransition, repeatTurnDecision } from "@/lib/interview/orchestration-policy.mjs";
 import { detectClarificationRequest } from "@/lib/interview/clarification-request.mjs";
 import { assessmentContextKey, composeClarificationTurn, planTurnAfterDecision, type ClarificationTurn } from "@/lib/interview/clarification-policy.mjs";
-import { selectNextPlannedQuestion } from "@/lib/interview/question-scheduling.mjs";
+import { selectNextPlannedQuestion, selectNextPlannedQuestions } from "@/lib/interview/question-scheduling.mjs";
 import { createNextTurnPreparationRegistry } from "@/lib/interview/next-turn-preparation.mjs";
+import { createFixedHandoffPreparationRegistry, type FixedHandoffEntry } from "@/lib/interview/fixed-handoff-preparation.mjs";
 import { type InterviewTurnInput } from "@/lib/interview/persistence";
 import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
@@ -28,7 +29,7 @@ import { CallDock, CandidateTile, InterviewerTile, Toast, useCandidateCamera, us
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
-import { createInterviewerAcknowledgements, prewarmInterviewerClosing, prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
+import { createInterviewerAcknowledgements, prewarmFixedInterviewerUtterance, prewarmInterviewerClosing, prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { isAcknowledgeableAnswer, stripLeadingAcknowledgement } from "@/lib/interview/acknowledgement.mjs";
 import { useMicEngine } from "../hooks/use-mic-engine";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
@@ -54,7 +55,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   useSpeechWarmup();
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
   const { autoCaptureVoice } = resolveCandidateVoicePreferences(config);
-  const questions = getFixedInterviewQuestions(config);
+  const questions = useMemo(() => getFixedInterviewQuestions(config), [config]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [question, setQuestion] = useState<InterviewQuestion>(() => questions[0]);
   const [questionSequenceNumber, setQuestionSequenceNumber] = useState(1);
@@ -77,6 +78,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const [feedbackSyncMessage, setFeedbackSyncMessage] = useState<string | null>(null);
   const [assessmentSockets] = useState(() => new AssessmentSocketRegistry());
   const [nextTurnPreparation] = useState(() => createNextTurnPreparationRegistry<TurnDecision>());
+  const [fixedHandoffPreparation] = useState(() => createFixedHandoffPreparationRegistry());
+  const fixedHandoffTurnIdRef = useRef<string | null>(null);
   // Receives each interviewer audio chunk (decoded for the avatar's beak lip-sync); it never touches playback.
   const speechFeed = useMemo(() => createSpeechFeed(), []);
   // The instant "Okay." / "Got it." (pre-synthesized, played from memory when the answer is considered finished).
@@ -271,13 +274,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       decisionAbortRef.current?.abort();
       decisionAbortRef.current = null;
       nextTurnPreparation.abort();
+      fixedHandoffPreparation.cancel();
       acknowledgements.cancel();
       abortTurnAnalyses();
       submitInFlightRef.current = false;
       if (advanceTimerRef.current !== null) window.clearTimeout(advanceTimerRef.current);
       assessmentSockets.closeAll();
     };
-  }, [abortTurnAnalyses, acknowledgements, assessmentSockets, nextTurnPreparation]);
+  }, [abortTurnAnalyses, acknowledgements, assessmentSockets, fixedHandoffPreparation, nextTurnPreparation]);
 
   // At the start of the first answer, synthesize the predictable closing line so it is ready whenever the interview ends
   // (once; the blob is retained and the backend keeps fixed phrases cached).
@@ -287,6 +291,49 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     closingPrewarmedRef.current = true;
     void prewarmInterviewerClosing(closingUtterance, config.voice);
   }, [phase, config.playInterviewerAudio, config.voice, closingUtterance]);
+
+  const logFixedPreparation = useCallback((entry: FixedHandoffEntry, outcome: "used" | "discarded" | "failed" | "closing", usedIndex?: number) => {
+    console.info(JSON.stringify({
+      event: "interview_fixed_question_preparation",
+      ...fixedHandoffPreparation.metrics(entry),
+      ...(usedIndex === undefined ? {} : { usedIndex }),
+      outcome,
+    }));
+  }, [fixedHandoffPreparation]);
+
+  // Every answer window has a content-free, ephemeral preparation generation. The neutral transition and each of the
+  // next two fixed questions are synthesized separately, so the normal combined playback reuses the same chunks.
+  useEffect(() => {
+    if (phase !== "answering" || !config.playInterviewerAudio || leftRef.current) return;
+    const planned = selectNextPlannedQuestions({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
+    if (planned.length === 0) {
+      const prior = fixedHandoffPreparation.cancel();
+      if (prior) logFixedPreparation(prior, "closing");
+      fixedHandoffTurnIdRef.current = null;
+      return;
+    }
+    const entry = fixedHandoffPreparation.begin({
+      voiceKey: config.voice ?? "",
+      transition: pickFixedHandoffTransition(recentAcknowledgementsRef.current),
+      questions: planned,
+      prepareSpeech: (text: string) => prewarmFixedInterviewerUtterance(text, config.voice),
+    });
+    fixedHandoffTurnIdRef.current = entry.turnId;
+    void Promise.all(entry.handles.map((handle: { promise: Promise<boolean> }) => handle.promise)).then(() => {
+      if (fixedHandoffPreparation.peek() === entry && entry.readyCount === 0) logFixedPreparation(entry, "failed");
+    });
+  }, [config.playInterviewerAudio, config.voice, durationMinutes, fixedHandoffPreparation, logFixedPreparation, micTurnId, phase, questions]);
+
+  const finishFixedPreparation = (outcome: "used" | "discarded" | "closing", usedIndex?: number) => {
+    const entry = fixedHandoffPreparation.peek();
+    if (!entry) return null;
+    const claimed = outcome === "used" && fixedHandoffTurnIdRef.current
+      ? fixedHandoffPreparation.take({ turnId: fixedHandoffTurnIdRef.current, voiceKey: config.voice ?? "" })
+      : (fixedHandoffPreparation.cancel(), null);
+    logFixedPreparation(entry, claimed ? "used" : outcome === "used" ? "discarded" : outcome, claimed ? usedIndex : undefined);
+    fixedHandoffTurnIdRef.current = null;
+    return claimed;
+  };
 
   /** Inputs of the next-turn decision for an answer, given the report turns that already include that answer's pair. */
   const buildDecisionInput = (turns: InterviewReportTurnSource[], answer: string) => {
@@ -432,6 +479,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
     // Too little time left for another question: skip the decision call and close.
     if (finishAfter || timeLimitReached || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) {
+      finishFixedPreparation("closing");
       if (clarificationHint === null) commitAnswer();
       else excludeClarificationAssessment();
       submitInFlightRef.current = false;
@@ -446,10 +494,27 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     const decisionInput = { ...buildDecisionInput(submittedTurns, savedAnswer), ...(clarificationHint ? { clarificationHint } : {}) };
     handoffTimingRef.current?.mark("decisionStarted");
     let decision: TurnDecision | null = null;
+    let fixedPreparationSettled = false;
     if (clarificationHint === "repeat") {
       // A pure repeat request needs no model call: replay the question locally.
       nextTurnPreparation.abort();
+      finishFixedPreparation("discarded");
+      fixedPreparationSettled = true;
       decision = repeatTurnDecision("detector");
+    } else if (clarificationHint === null && followUpUsed) {
+      // A fixed question always follows the one allowed follow-up. No model or dynamic bridge belongs on this path.
+      nextTurnPreparation.abort();
+      const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
+      const prepared = fixedHandoffPreparation.peek();
+      decision = {
+        decision: "NEXT",
+        followUpQuestion: null,
+        nextQuestion: nextPlan.question?.prompt ?? null,
+        acknowledgement: nextPlan.question ? prepared?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) : null,
+      };
+      const matches = Boolean(nextPlan.question && prepared?.questions[0]?.id === nextPlan.question.id);
+      finishFixedPreparation(matches ? "used" : "discarded", matches ? 0 : undefined);
+      fixedPreparationSettled = true;
     } else if (clarificationHint === null) {
       // Use the decision prepared during the answer grace only for exactly this transcript and these inputs.
       const discardedBefore = nextTurnPreparation.stats().discarded;
@@ -471,8 +536,18 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       }
     } else {
       nextTurnPreparation.abort();
+      finishFixedPreparation("discarded");
+      fixedPreparationSettled = true;
     }
     decision ??= await decideNextTurn({ ...decisionInput, signal: abortController.signal });
+    if (!fixedPreparationSettled) {
+      const prepared = fixedHandoffPreparation.peek();
+      const usesPreparedFixed = decision.decision === "NEXT"
+        && Boolean(prepared?.questions[0]?.prompt)
+        && decision.nextQuestion === prepared?.questions[0]?.prompt
+        && decision.acknowledgement === prepared?.transition;
+      finishFixedPreparation(usesPreparedFixed ? "used" : "discarded", usesPreparedFixed ? 0 : undefined);
+    }
     handoffTimingRef.current?.mark("decisionCompleted");
     if (!mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
     decisionAbortRef.current = null;
@@ -577,6 +652,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const leaveInterview = () => {
     leftRef.current = true;
     nextTurnPreparation.abort();
+    const fixed = fixedHandoffPreparation.cancel();
+    if (fixed) logFixedPreparation(fixed, "discarded");
     acknowledgements.cancel();
     cancelPlayback();
     generationRef.current += 1;

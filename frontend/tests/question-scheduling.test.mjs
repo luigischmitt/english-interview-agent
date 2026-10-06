@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { remainingPlannedQuestions, selectNextPlannedQuestion } from "../src/lib/interview/question-scheduling.mjs";
+import { remainingPlannedQuestions, selectNextPlannedQuestion, selectNextPlannedQuestions } from "../src/lib/interview/question-scheduling.mjs";
 
 const questions = [
   { id: "introduction", prompt: "Introduction?", cue: "" },
@@ -27,6 +27,16 @@ test("vacancy questions stay ahead of generic bank questions", () => {
   const plan = selectNextPlannedQuestion({ questions, askedQuestionIds: ["introduction", "job-1"], elapsedSeconds: 120, durationMinutes: 5 });
   assert.equal(plan.question?.id, "job-2");
   assert.equal(plan.index, 2);
+});
+
+test("prepares the next two planned questions without skipping job questions", () => {
+  const prepared = selectNextPlannedQuestions({ questions, askedQuestionIds: ["introduction"], elapsedSeconds: 120, durationMinutes: 5 });
+  assert.deepEqual(prepared.map((question) => question.id), ["job-1", "job-2"]);
+});
+
+test("prepares nothing inside the final reserve", () => {
+  const prepared = selectNextPlannedQuestions({ questions, askedQuestionIds: ["introduction"], elapsedSeconds: 271, durationMinutes: 5 });
+  assert.deepEqual(prepared, []);
 });
 
 test("starts a new question with exactly 30 seconds left, but not with 29", () => {
