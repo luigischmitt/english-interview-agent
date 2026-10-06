@@ -860,12 +860,6 @@ export function attachTranscriptionWebSocket(
                 const graceMs = looksUnfinished(turnTranscript) ? (streaming.incompleteGraceMs ?? streaming.answerGraceMs) : streaming.answerGraceMs;
                 // Local-VAD turns arrive after their segment was transcribed: time grace and prepare from the pause, not from now.
                 const elapsedMs = info?.silenceStartedAt !== undefined ? Math.max(0, Date.now() - info.silenceStartedAt) : 0;
-                graceTimer = setTimeout(() => {
-                  graceTimer = null;
-                  const current = sessionId ? sessions.get(sessionId) : undefined;
-                  // Noise before the first words can end an empty turn; only a real answer may be closed by a transcribed turn.
-                  if (current?.vad.hasSpeech) finalize("silence", "turn_end");
-                }, Math.max(0, graceMs - elapsedMs));
                 const prepareAfterMs = streaming.prepareAfterMs ?? 0;
                 const maxPrepares = streaming.maxPrepares ?? 2;
                 const canPrepare = preparesSent < maxPrepares;
@@ -882,7 +876,7 @@ export function attachTranscriptionWebSocket(
                   runSemanticCheck(streaming.answerCompletion, interviewerQuestion, transcript, silenceStartedAt, minSilenceMs);
                 };
                 if (prepareAfterMs > 0 && prepareAfterMs < graceMs && canPrepare) {
-                  prepareTimer = setTimeout(() => {
+                  const sendProvisional = () => {
                     prepareTimer = null;
                     const current = sessionId ? sessions.get(sessionId) : undefined;
                     if (finalRequested || finishing || !streamSession || streamSession.failed || streamSession.turnActive || !current?.vad.hasSpeech) return;
@@ -893,13 +887,24 @@ export function attachTranscriptionWebSocket(
                       preparesSent += 1;
                       send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
                     }
-                  }, Math.max(0, prepareAfterMs - elapsedMs));
+                  };
+                  const remainingPrepareMs = Math.max(0, prepareAfterMs - elapsedMs);
+                  // Tail transcription can consume the entire preparation delay. Emit that final snapshot synchronously
+                  // before a zero-delay grace timer gets a chance to finalize and clear it.
+                  if (remainingPrepareMs === 0) sendProvisional();
+                  else prepareTimer = setTimeout(sendProvisional, remainingPrepareMs);
                 }
                 // The check judges the committed transcript, which already includes the tail (the turn end fires after it is transcribed).
                 // It runs on its own timer so it can start earlier than the provisional answer and the long grace.
                 if (canCheckSemantically && (streaming.semanticCheckAfterMs !== undefined || prepareAfterMs > 0) && semanticAfterMs < graceMs) {
                   semanticTimer = setTimeout(() => { semanticTimer = null; startSemanticCheck(); }, Math.max(0, semanticAfterMs - elapsedMs));
                 }
+                graceTimer = setTimeout(() => {
+                  graceTimer = null;
+                  const current = sessionId ? sessions.get(sessionId) : undefined;
+                  // Noise before the first words can end an empty turn; only a real answer may be closed by a transcribed turn.
+                  if (current?.vad.hasSpeech) finalize("silence", "turn_end");
+                }, Math.max(0, graceMs - elapsedMs));
               },
               onFailure: (failure: StreamFailureReason, detail: SessionFailureDetail) => {
                 clearGrace();

@@ -78,6 +78,15 @@ test("empty provisional transcripts are ignored", () => {
   assert.equal(registry.hasPending(), false);
 });
 
+test("takeReady never waits for pending speculative work", async () => {
+  const registry = createNextTurnPreparationRegistry();
+  const gate = deferred();
+  registry.prepare({ transcript: "pending", inputKey: "k", run: () => gate.promise });
+  assert.equal(registry.takeReady({ transcript: "pending", inputKey: "k" }), null);
+  assert.equal(registry.hasPending(), false);
+  gate.resolve("late");
+});
+
 class FakeAudio {
   listeners = new Map();
   addEventListener(type, listener) { this.listeners.set(type, listener); }

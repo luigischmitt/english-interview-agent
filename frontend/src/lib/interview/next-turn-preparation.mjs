@@ -78,6 +78,15 @@ export function createNextTurnPreparationRegistry() {
       return entry;
     },
 
+    /** Claims only an already-ready preparation. Closing never waits for speculative model or speech work. */
+    takeReady({ transcript, inputKey }) {
+      if (current?.settled !== "ready") {
+        if (current) { const entry = current; current = null; discard(entry); }
+        return null;
+      }
+      return this.take({ transcript, inputKey });
+    },
+
     /** The prepared value was unusable after all (it resolved to nothing): count it as discarded instead of used. */
     release(entry) {
       if (!entry?.used) return;

@@ -18,6 +18,7 @@ import { createInterviewReportService } from "./thinking/openrouter-interview-re
 import { createJobDirectionService } from "./thinking/openrouter-job-direction-service.js";
 import { JobDirectionUserLimit } from "./thinking/job-direction-user-limit.js";
 import type { InterviewOrchestrationService, InterviewReportService, JobDirectionService, ThinkingService } from "./thinking/types.js";
+import { SpeculativeTurnAnalysisService } from "./thinking/speculative-turn-analysis-service.js";
 import { loadTranscriptionConfig, type TranscriptionConfig } from "./transcription/config.js";
 import { createTranscriptionService } from "./transcription/create-transcription-service.js";
 import { createPronunciationAssessmentService } from "./transcription/create-pronunciation-assessment-service.js";
@@ -57,6 +58,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
   const resolvedReportService = reportService === undefined ? createInterviewReportService(resolvedThinkingConfig) : reportService;
   const resolvedJobDirectionService = jobDirectionService === undefined ? createJobDirectionService(resolvedThinkingConfig) : jobDirectionService;
   const resolvedJobDirectionUserLimit = jobDirectionUserLimit ?? new JobDirectionUserLimit();
+  const speculativeService = resolvedThinkingConfig.openRouterApiKey ? new SpeculativeTurnAnalysisService({ apiKey: resolvedThinkingConfig.openRouterApiKey, model: resolvedThinkingConfig.model, timeoutMs: 1_800 }) : null;
   const app = express();
 
   app.use(
@@ -72,7 +74,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
 
   const verifier = accessTokenVerifier === undefined ? defaultAccessTokenVerifier : accessTokenVerifier;
   app.use("/api/v1", requireAccessToken(verifier, (request) => request.method === "GET" && request.path === "/speech/health"));
-  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, resolvedJobDirectionService, resolvedJobDirectionUserLimit, clientEventLogger));
+  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, resolvedJobDirectionService, resolvedJobDirectionUserLimit, clientEventLogger, speculativeService, resolvedThinkingConfig.speculativeHandoffEnabled === true));
   app.use(notFoundHandler);
   app.use(errorHandler);
 
