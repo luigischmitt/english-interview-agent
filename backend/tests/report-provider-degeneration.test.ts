@@ -23,29 +23,32 @@ describe("degenerate whitespace output", () => {
     expect(hasDegenerateWhitespace(JSON.stringify(valid, null, 2))).toBe(false);
   });
 
-  it("retries once ignoring the failing provider and succeeds", async () => {
+  it("does not retry a degenerate per-turn result", async () => {
     const bodies: Array<Record<string, any>> = [];
     const responses = [response(loop, "Parasail", "length"), response(JSON.stringify(valid), "Other", "stop")];
     const fetchImplementation: typeof fetch = async (_u, init) => { bodies.push(JSON.parse(String(init?.body))); return responses.shift()!; };
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
-    const result = await service(fetchImplementation).analyzeTurn({ roleContext, turn });
-    expect(result.sequenceNumber).toBe(9);
-    expect(bodies).toHaveLength(2);
+    await expect(service(fetchImplementation).analyzeTurn({ roleContext, turn })).rejects.toMatchObject({ code: "THINKING_INVALID_PROVIDER_RESPONSE" });
+    expect(bodies).toHaveLength(1);
     expect(bodies[0]!.provider.ignore).toBeUndefined();
-    expect(bodies[1]!.provider).toEqual({ sort: "latency", require_parameters: true, data_collection: "deny", ignore: ["Parasail"] });
     const logged = info.mock.calls.map(([e]) => String(e)).join("\n");
-    expect(logged).toContain("degenerate_output");
-    expect(logged).toContain("Parasail");
+    expect(logged).toContain("invalid_provider_response");
+    expect(logged).not.toContain("Parasail");
     expect(logged).not.toContain("LLM generated");
     info.mockRestore();
   });
 
-  it("fails cleanly after a single retry when both attempts degenerate", async () => {
+  it("caps configured per-turn timeout overrides and logs content-free outcomes", async () => {
     let calls = 0;
-    const fetchImplementation: typeof fetch = async () => { calls += 1; return response(loop, "Parasail", "length"); };
+    let sentSignal: AbortSignal | undefined;
+    const fetchImplementation: typeof fetch = async (_url, init) => { calls += 1; sentSignal = init?.signal as AbortSignal; return response(JSON.stringify(valid), "Other", "stop"); };
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
-    await expect(service(fetchImplementation).analyzeTurn({ roleContext, turn })).rejects.toMatchObject({ code: "THINKING_INVALID_PROVIDER_RESPONSE" });
-    expect(calls).toBe(2);
-    info.mockRestore();
+    const configured = new OpenRouterInterviewReportService({ key: "k", model: defaultThinkingModel, timeoutMs: 60000, turnTimeoutMs: 60_000, fetchImplementation });
+    try {
+      await configured.analyzeTurn({ roleContext, turn });
+      expect(calls).toBe(1);
+      expect(sentSignal).toBeDefined();
+      expect(info.mock.calls.map(([entry]) => String(entry)).join("\n")).toContain('"event":"interview_report_turn_outcome","outcome":"success"');
+    } finally { info.mockRestore(); }
   });
 });

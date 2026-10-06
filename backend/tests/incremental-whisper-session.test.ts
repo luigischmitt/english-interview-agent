@@ -90,6 +90,21 @@ describe("IncrementalWhisperSession", () => {
     expect(session.turnCount).toBe(1);
   });
 
+  it("reports finalized segments during continuous speech with cumulative audio time", async () => {
+    const committed: Array<{ transcript: string; info: { segmentCount: number; audioDurationMs: number; turnEnded: boolean } }> = [];
+    const { session, calls } = build({
+      maxSegmentMs: 500,
+      onSegmentCommitted: (transcript, info) => committed.push({ transcript, info }),
+    });
+    session.markSpeech();
+    feed(session, 6, speech);
+    expect(calls).toHaveLength(1);
+    calls[0]!.resolve("First clause,");
+    await tick();
+    expect(committed).toEqual([{ transcript: "First clause,", info: { segmentCount: 1, audioDurationMs: 450, turnEnded: false } }]);
+    expect(session.turnActive).toBe(true);
+  });
+
   it("preserves incremental timestamps and offsets them into the full answer for Azure", async () => {
     const { session, calls } = build();
     session.markSpeech();

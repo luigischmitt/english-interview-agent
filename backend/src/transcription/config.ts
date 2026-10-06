@@ -38,6 +38,10 @@ export type TranscriptionConfig = {
   whisperPromptEnabled: boolean;
 };
 
+/** Cloud Run concurrency is 20; per-instance stream memory remains bounded by 20 x 6 MiB PCM plus WAV copies. */
+export const maxStreamingSessionsPerInstance = 20;
+export const defaultStreamingSessionsPerInstance = 20;
+
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
   if (value === undefined) return fallback;
 
@@ -92,7 +96,7 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     openRouterTimeoutMs: parsePositiveInteger(environment.TRANSCRIPTION_TIMEOUT_MS, 55_000, 60_000),
     streamMaxDurationMs: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_DURATION_MS, 180_000, 180_000),
     streamMaxBytes: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_BYTES, 6 * 1024 * 1024, 6 * 1024 * 1024),
-    streamMaxActiveSessions: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_ACTIVE_SESSIONS, 8, 8),
+    streamMaxActiveSessions: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_ACTIVE_SESSIONS, defaultStreamingSessionsPerInstance, maxStreamingSessionsPerInstance),
     streamMaxConcurrentTranscriptions: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_CONCURRENT_TRANSCRIPTIONS, 4, 4),
     streamMaxQueuedTranscriptions: parsePositiveInteger(environment.TRANSCRIPTION_STREAM_MAX_QUEUED_TRANSCRIPTIONS, 4, 4),
     vadTrailingSilenceMs: parsePositiveInteger(environment.TRANSCRIPTION_VAD_TRAILING_SILENCE_MS, 3_500, 10_000),

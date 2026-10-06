@@ -37,6 +37,7 @@ import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTi
 import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/interview/opening-timing.mjs";
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
+import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; round?: number; state: VoiceAssessmentState };
 type PreparedTurn = { decision: TurnDecision; turnId: string; revision: number; transcript: string; anchor: string | null };
@@ -188,7 +189,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       if (!isHandoffTimingEnabled()) return;
       const timing = createInterviewHandoffTiming({
         speechEndToFinalizationMs: details?.speechEndToFinalizationMs,
-        onComplete: (metrics: InterviewHandoffMetrics) => console.info(JSON.stringify({ event: "interview_handoff_timing", ...metrics })),
+        onComplete: (metrics: InterviewHandoffMetrics) => {
+          console.info(JSON.stringify({ event: "interview_handoff_timing", ...metrics }));
+          reportAudioDiagnostic({ kind: "handoff_timing", ...metrics });
+        },
       });
       handoffTimingRef.current = timing;
       timing.mark("finalizingReceived");
@@ -228,7 +232,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     const marks = handoffAudioMarksRef.current;
     if (marks.confirmationAt !== null && marks.firstAudioAt !== null) {
       const now = performance.now();
-      console.info(JSON.stringify({ event: "interview_question_start_timing", confirmationToFirstAudioMs: Math.max(0, Math.round(marks.firstAudioAt - marks.confirmationAt)), confirmationToQuestionStartMs: Math.max(0, Math.round(now - marks.confirmationAt)), transitionDurationMs: Math.max(0, Math.round(now - marks.firstAudioAt)) }));
+      const metrics = { confirmationToFirstAudioMs: Math.max(0, Math.round(marks.firstAudioAt - marks.confirmationAt)), confirmationToQuestionStartMs: Math.max(0, Math.round(now - marks.confirmationAt)), transitionDurationMs: Math.max(0, Math.round(now - marks.firstAudioAt)) };
+      console.info(JSON.stringify({ event: "interview_question_start_timing", ...metrics }));
+      reportAudioDiagnostic({ kind: "question_start_timing", ...metrics });
       handoffAudioMarksRef.current = { confirmationAt: null, firstAudioAt: null };
     }
     // The opening's synthesis is done: now is the quiet moment to synthesize the acknowledgements (one request at a time).
@@ -326,12 +332,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   }, [phase, config.playInterviewerAudio, config.voice, closingUtterance]);
 
   const logFixedPreparation = useCallback((entry: FixedHandoffEntry, outcome: "used" | "discarded" | "failed" | "closing", usedIndex?: number) => {
+    const metrics = fixedHandoffPreparation.metrics(entry);
     console.info(JSON.stringify({
       event: "interview_fixed_question_preparation",
-      ...fixedHandoffPreparation.metrics(entry),
+      ...metrics,
       ...(usedIndex === undefined ? {} : { usedIndex }),
       outcome,
     }));
+    reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "fixed", outcome, plannedCount: metrics.plannedCount, readyCount: metrics.readyCount, startedBeforeCompleteMs: metrics.startedBeforeCompleteMs, readyBeforeCompleteMs: metrics.readyBeforeCompleteMs, ...(usedIndex === undefined ? {} : { usedIndex }) });
   }, [fixedHandoffPreparation]);
 
   // Every answer window has a content-free, ephemeral preparation generation. The neutral transition and each of the
@@ -422,7 +430,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   const logPreparation = useCallback((outcome: "prepared_used" | "prepared_discarded", reason?: string) => {
     // Content-free counts only.
-    console.info(JSON.stringify({ event: "interview_next_turn_preparation", outcome, ...(reason ? { reason } : {}), ...nextTurnPreparation.stats() }));
+    const stats = nextTurnPreparation.stats();
+    console.info(JSON.stringify({ event: "interview_next_turn_preparation", outcome, ...(reason ? { reason } : {}), ...stats }));
+    reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome, usedCount: stats.used, discardedCount: stats.discarded, ...(reason ? { preparationReason: reason } : {}) });
   }, [nextTurnPreparation]);
   const abortPreparation = useCallback((reason: string) => {
     const before = nextTurnPreparation.stats().discarded;
@@ -467,6 +477,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       inputKey: decisionInputKey(input),
       run: async (signal, onCleanup) => {
         const planned = selectNextPlannedQuestions({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
+        const preparationStartedAt = performance.now();
+        reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "started", plannedCount: planned.length, revision });
         const speculative = planned[0] ? await requestSpeculativeTurn({
           revision,
           currentQuestion: question.prompt,
@@ -500,8 +512,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         if (utterance) {
           const prewarm = prewarmInterviewerUtterance(utterance, config.voice);
           onCleanup(() => prewarm.cancel());
-          if (speculative.enabled && !await prewarm.promise) return null;
+          if (speculative.enabled && !await prewarm.promise) {
+            reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "failed", preparationReason: "unavailable", plannedCount: planned.length, revision, elapsedMs: Math.max(0, Math.round(performance.now() - preparationStartedAt)) });
+            return null;
+          }
         }
+        reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "ready", plannedCount: planned.length, revision, elapsedMs: Math.max(0, Math.round(performance.now() - preparationStartedAt)) });
         return { decision, turnId: speculativeTurnIdRef.current, revision, transcript: answer, anchor: decision.decision === "FOLLOW_UP" ? speculativeCandidateRef.current?.anchor ?? null : null };
       },
     });
@@ -620,6 +636,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       const prepared = fixedHandoffPreparation.peek();
       decision = { decision: "NEXT", followUpQuestion: null, nextQuestion: nextPlan.question?.prompt ?? null, acknowledgement: nextPlan.question ? prepared?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) : null };
       console.info(JSON.stringify({ event: "interview_speculative_handoff", outcome: "fixed_fallback", reason: "speculative_not_ready" }));
+      reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "discarded", preparationReason: "speculative_not_ready" });
     }
     decision ??= await decideNextTurn({ ...decisionInput, signal: abortController.signal });
     if (!fixedPreparationSettled) {

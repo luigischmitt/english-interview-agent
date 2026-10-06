@@ -48,6 +48,22 @@ describe("sanitizeClientEvent", () => {
     for (const kind of ["ack_play_resolved", "ack_play_failed", "ack_overlap"]) expect(sanitizeClientEvent({ kind })).toEqual({ kind });
   });
 
+  it("keeps only allowlisted preparation, handoff and transcription failure metrics", () => {
+    expect(sanitizeClientEvent({ kind: "turn_preparation", preparationType: "speculative", outcome: "prepared_used", preparationReason: "mismatch", usedCount: 1, discardedCount: 2, transcript: "secret" }))
+      .toEqual({ kind: "turn_preparation", preparationType: "speculative", outcome: "prepared_used", preparationReason: "mismatch", usedCount: 1, discardedCount: 2 });
+    expect(sanitizeClientEvent({ kind: "turn_preparation", preparationType: "fixed", outcome: "used", plannedCount: 2, readyCount: 1, startedBeforeCompleteMs: 90000, readyBeforeCompleteMs: 3000, usedIndex: 0, question: "secret" }))
+      .toEqual({ kind: "turn_preparation", preparationType: "fixed", outcome: "used", plannedCount: 2, readyCount: 1, startedBeforeCompleteMs: 90000, readyBeforeCompleteMs: 3000, usedIndex: 0 });
+    expect(sanitizeClientEvent({ kind: "question_start_timing", confirmationToFirstAudioMs: 120, confirmationToQuestionStartMs: 850, transitionDurationMs: 730, text: "secret" }))
+      .toEqual({ kind: "question_start_timing", confirmationToFirstAudioMs: 120, confirmationToQuestionStartMs: 850, transitionDurationMs: 730 });
+    expect(sanitizeClientEvent({ kind: "transcription_failure", failureReason: "timeout", code: "free text" }))
+      .toEqual({ kind: "transcription_failure", failureReason: "timeout" });
+    expect(sanitizeClientEvent({ kind: "transcription_failure", failureReason: "answer text" })).toEqual({ kind: "transcription_failure" });
+    expect(sanitizeClientEvent({ kind: "turn_preparation", preparationType: "speculative", outcome: "ready", plannedCount: 2, revision: 3, elapsedMs: 81, prepared: true }))
+      .toEqual({ kind: "turn_preparation", preparationType: "speculative", outcome: "ready", plannedCount: 2, revision: 3, elapsedMs: 81, prepared: true });
+    expect(sanitizeClientEvent({ kind: "handoff_timing", totalMs: 1_200, whisperMs: 500, decisionMs: 200, prepared: true, transcript: "secret" }))
+      .toEqual({ kind: "handoff_timing", totalMs: 1_200, whisperMs: 500, decisionMs: 200, prepared: true });
+  });
+
   it("drops invalid enums, out-of-range numbers and wrong types", () => {
     expect(sanitizeClientEvent({ kind: "playback_error", errorName: "Some free text", platform: "windows", mediaVolume: 5, elapsedMs: -1, chunkIndex: "1", micActive: "yes", readyState: Number.NaN }))
       .toEqual({ kind: "playback_error" });

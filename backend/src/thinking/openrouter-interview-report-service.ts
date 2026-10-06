@@ -1,4 +1,4 @@
-import { defaultInterviewConsolidationTimeoutMs, defaultInterviewReportTimeoutMs, defaultInterviewTurnAnalysisTimeoutMs, type ThinkingConfig } from "./config.js";
+import { defaultInterviewConsolidationTimeoutMs, defaultInterviewReportTimeoutMs, defaultInterviewTurnAnalysisTimeoutMs, maxInterviewTurnAnalysisTimeoutMs, type ThinkingConfig } from "./config.js";
 import { ThinkingServiceError } from "./errors.js";
 import { isDegenerateProviderOutput } from "./report-degeneration.js";
 import { parseApprovedJobDirection } from "./job-direction-validation.js";
@@ -652,6 +652,7 @@ type StructuredRequest = {
   timeoutMs: number;
   turnCount: number;
   scope?: "turn" | "consolidate";
+  signal?: AbortSignal;
 };
 
 export class OpenRouterInterviewReportService implements InterviewReportService {
@@ -666,6 +667,8 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
     const startedAt = Date.now();
     const first = await this.requestStructuredOnce(request, []);
     if (!isDegenerateProviderOutput(first.content, first.finishReason)) return first.content;
+    // Incremental analysis must never use a second provider call to repair an empty/degenerate answer.
+    if (request.scope === "turn") invalidReportResponse();
     // Whitespace loop in JSON mode: retry once immediately, skipping the provider that produced it.
     const ignored = first.provider ? [first.provider] : [];
     const remaining = request.timeoutMs - (Date.now() - startedAt);
@@ -681,7 +684,8 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
 
   private async requestStructuredOnce(request: StructuredRequest, ignoreProviders: string[], logExtra?: Record<string, unknown>): Promise<{ content: unknown; provider?: string; finishReason?: unknown }> {
     const { turnCount, scope } = request;
-    const signal = AbortSignal.timeout(request.timeoutMs);
+    const timeoutSignal = AbortSignal.timeout(request.timeoutMs);
+    const signal = request.signal ? AbortSignal.any([request.signal, timeoutSignal]) : timeoutSignal;
     const providerStartedAt = Date.now();
     let response: Response;
     try {
@@ -703,27 +707,27 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
         signal,
       });
     } catch (error) {
-      logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra);
+      logReportPhase("provider", providerStartedAt, turnCount, scope, { outcome: request.signal?.aborted ? "cancelled" : signal.aborted ? "timeout" : "error", ...(logExtra ?? {}) });
       if (signal.aborted || isAbortError(error)) throw new ThinkingServiceError("THINKING_TIMEOUT", 504, "The reasoning service timed out.", { cause: error });
       throw new ThinkingServiceError("THINKING_PROVIDER_UNAVAILABLE", 502, "The reasoning service is unavailable.", { cause: error });
     }
     if (response.status === 429) {
       await response.body?.cancel();
-      logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra);
+      logReportPhase("provider", providerStartedAt, turnCount, scope, { outcome: "rate_limited", ...(logExtra ?? {}) });
       throw new ThinkingServiceError("THINKING_RATE_LIMITED", 503, "The reasoning service is temporarily rate limited.");
     }
     if (!response.ok) {
       await response.body?.cancel();
-      logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra);
+      logReportPhase("provider", providerStartedAt, turnCount, scope, { outcome: "provider_error", ...(logExtra ?? {}) });
       throw new ThinkingServiceError("THINKING_PROVIDER_UNAVAILABLE", 502, "The reasoning service is unavailable.");
     }
     let body: OpenRouterResponse;
     try { body = await response.json() as OpenRouterResponse; } catch (error) {
-      logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra);
+      logReportPhase("provider", providerStartedAt, turnCount, scope, { outcome: signal.aborted ? (request.signal?.aborted ? "cancelled" : "timeout") : "invalid_response", ...(logExtra ?? {}) });
       if (signal.aborted || isAbortError(error)) throw new ThinkingServiceError("THINKING_TIMEOUT", 504, "The reasoning service timed out.", { cause: error });
       throw new ThinkingServiceError("THINKING_INVALID_PROVIDER_RESPONSE", 502, "The reasoning service returned an invalid response.", { cause: error });
     }
-    logReportPhase("provider", providerStartedAt, turnCount, scope, logExtra, parseOpenRouterUsage(body.usage));
+    logReportPhase("provider", providerStartedAt, turnCount, scope, { outcome: "success", ...(logExtra ?? {}) }, parseOpenRouterUsage(body.usage));
     const choice = body.choices?.[0];
     return { content: choice?.message?.content, provider: typeof body.provider === "string" ? body.provider : undefined, finishReason: choice?.finish_reason };
   }
@@ -759,8 +763,17 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
   }
 
   async analyzeTurn(input: InterviewTurnAnalysisInput): Promise<InterviewTurnAnalysis & { model: string }> {
-    const { analysis } = await this.analyzeTurnDetailed(input);
-    return { ...analysis, model: this.options.model };
+    const startedAt = Date.now();
+    let outcome = "success";
+    try {
+      const { analysis } = await this.analyzeTurnDetailed(input);
+      return { ...analysis, model: this.options.model };
+    } catch (error) {
+      outcome = input.signal?.aborted ? "cancelled" : error instanceof ThinkingServiceError ? error.code.toLowerCase() : "error";
+      throw error;
+    } finally {
+      console.info(JSON.stringify({ event: "interview_report_turn_outcome", outcome, durationMs: Math.max(0, Date.now() - startedAt) }));
+    }
   }
 
   /** Adds content-free rejection counts for offline benchmarking; the route does not expose them. */
@@ -780,9 +793,10 @@ export class OpenRouterInterviewReportService implements InterviewReportService 
       system: turnAnalysisPrompt,
       user: { roleContext: input.roleContext, ...(input.jobDirection ? { jobDirection: input.jobDirection } : {}), turns: [input.turn] },
       maxTokens: 600,
-      timeoutMs: this.options.turnTimeoutMs ?? defaultInterviewTurnAnalysisTimeoutMs,
+      timeoutMs: Math.min(this.options.turnTimeoutMs ?? defaultInterviewTurnAnalysisTimeoutMs, maxInterviewTurnAnalysisTimeoutMs),
       turnCount: 1,
       scope: "turn",
+      signal: input.signal,
     });
     return this.validated(1, "turn", () => parseTurnAnalysis(content, input));
   }

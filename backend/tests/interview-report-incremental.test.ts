@@ -131,6 +131,26 @@ describe("per-turn analysis service", () => {
     await expect(call(async () => providerResponse({ technicalStrengths: [], technicalGaps: [], englishPatterns: [], extra: 1 }))).rejects.toMatchObject({ code: "THINKING_INVALID_PROVIDER_RESPONSE" });
   });
 
+  it("aborts upstream work when the request is cancelled and logs only the outcome", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const caller = new AbortController();
+    let upstreamSignal: AbortSignal | undefined;
+    const fetchImplementation: typeof fetch = async (_url, init) => {
+      upstreamSignal = init?.signal as AbortSignal;
+      return new Promise((_resolve, reject) => upstreamSignal!.addEventListener("abort", () => reject(new DOMException("cancelled", "AbortError")), { once: true }));
+    };
+    try {
+      const call = makeService(fetchImplementation).analyzeTurn({ roleContext, turn: turns[0], signal: caller.signal });
+      await Promise.resolve();
+      caller.abort();
+      await expect(call).rejects.toMatchObject({ code: "THINKING_TIMEOUT" });
+      expect(upstreamSignal?.aborted).toBe(true);
+      const logged = info.mock.calls.flatMap(([entry]) => typeof entry === "string" ? [JSON.parse(entry) as Record<string, unknown>] : []);
+      expect(logged.some((event) => event.outcome === "cancelled")).toBe(true);
+      expect(JSON.stringify(logged)).not.toContain(turns[0].answer);
+    } finally { info.mockRestore(); }
+  });
+
   it("logs content-free timings scoped to the turn", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     try {
@@ -142,7 +162,7 @@ describe("per-turn analysis service", () => {
       for (const event of events) {
         expect(event.scope).toBe("turn");
         expect(Object.keys(event).sort()).toEqual(event.phase === "provider"
-          ? ["cachedTokens", "completionTokens", "costUsd", "durationMs", "event", "phase", "promptTokens", "scope", "turnCount"]
+          ? ["cachedTokens", "completionTokens", "costUsd", "durationMs", "event", "outcome", "phase", "promptTokens", "scope", "turnCount"]
           : ["durationMs", "event", "phase", "scope", "turnCount"]);
       }
       expect(JSON.stringify(info.mock.calls)).not.toContain(sentinel);
@@ -322,7 +342,7 @@ describe("incremental report routes", () => {
     const ok = await request(app).post("/api/v1/thinking/report/turn").send({ roleContext, turn: turns[0] });
     expect(ok.status).toBe(200);
     expect(ok.body).toEqual(turnResult);
-    expect(reportService.analyzeTurn).toHaveBeenCalledWith({ roleContext, turn: turns[0] });
+    expect(reportService.analyzeTurn).toHaveBeenCalledWith({ roleContext, turn: turns[0], signal: expect.any(AbortSignal) });
 
     const bad = [
       { roleContext, turn: turns[0], interviewId: "private-db-id" },
