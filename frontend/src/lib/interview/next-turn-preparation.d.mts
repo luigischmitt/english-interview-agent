@@ -16,6 +16,7 @@ export type NextTurnPreparationRegistry<T> = {
   }): NextTurnPreparationEntry<T> | null;
   abort(): void;
   take(input: { transcript: string; inputKey?: string }): NextTurnPreparationEntry<T> | null;
+  takeReady(input: { transcript: string; inputKey?: string }): NextTurnPreparationEntry<T> | null;
   release(entry: NextTurnPreparationEntry<T> | null): void;
   hasPending(): boolean;
   stats(): { used: number; discarded: number };

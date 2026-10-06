@@ -22,6 +22,7 @@ export type ThinkingConfig = {
   /** Merge bridge writing into the decision call by default; `separate` keeps the rollback path. */
   bridgeMode?: "merged" | "separate";
   diagnosticsEnabled: boolean;
+  speculativeHandoffEnabled?: boolean;
 };
 
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
@@ -59,6 +60,12 @@ function parseBridgeMode(value: string | undefined): "merged" | "separate" {
   return mode;
 }
 
+function parseSpeculativeHandoff(value: string | undefined): boolean {
+  const mode = value?.trim().toLowerCase() || "off";
+  if (mode !== "off" && mode !== "on") throw new Error("INTERVIEW_SPECULATIVE_HANDOFF must be off or on.");
+  return mode === "on";
+}
+
 export function loadThinkingConfig(environment = process.env): ThinkingConfig {
   const model = environment.INTERVIEW_REASONING_MODEL?.trim() || defaultThinkingModel;
   return {
@@ -72,5 +79,6 @@ export function loadThinkingConfig(environment = process.env): ThinkingConfig {
     bridgeMode: parseBridgeMode(environment.INTERVIEW_BRIDGE_MODE),
     reportTimeoutMs: parseReportTimeout(environment.INTERVIEW_REPORT_TIMEOUT_MS),
     diagnosticsEnabled: environment.INTERVIEW_REASONING_DIAGNOSTICS?.trim().toLowerCase() === "true",
+    speculativeHandoffEnabled: parseSpeculativeHandoff(environment.INTERVIEW_SPECULATIVE_HANDOFF),
   };
 }

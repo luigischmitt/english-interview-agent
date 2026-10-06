@@ -235,7 +235,7 @@ function fallbackQuestion(input: InterviewOrchestrationInput): string | null {
 }
 
 /** A rewritten NEXT must retain at least one meaningful word from the mandatory planned competency. */
-function preservesPlannedCompetency(question: string, plannedQuestion: string | null | undefined): boolean {
+export function preservesPlannedCompetency(question: string, plannedQuestion: string | null | undefined): boolean {
   if (!plannedQuestion) return true;
   const proposed = canonicalQuestionWords(question);
   const planned = canonicalQuestionWords(plannedQuestion);

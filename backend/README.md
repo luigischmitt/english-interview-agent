@@ -92,6 +92,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `INTERVIEW_REPORT_MODEL` | value of `INTERVIEW_REASONING_MODEL` | OpenRouter model used only for the final interview report (trimmed; blank falls back to `INTERVIEW_REASONING_MODEL`, then the default). Next-turn orchestration keeps using `INTERVIEW_REASONING_MODEL`. The returned `model` field reflects the report model. |
 | `INTERVIEW_REPORT_TIMEOUT_MS` | `45000` | Report-only provider deadline in milliseconds; accepts positive values up to `60000`. The browser deadline is 65 seconds by default. |
 | `INTERVIEW_REASONING_DIAGNOSTICS` | `false` | Set to `true` to include model, latency, and provider-reported cost in next-turn responses. Keep disabled outside local testing. |
+| `INTERVIEW_SPECULATIVE_HANDOFF` | `off` | Set to `on` to enable the short speculative turn-analysis endpoint. This server-side switch is checked on every request, so rollback does not require a frontend deploy. |
 
 Do not add Supabase `service_role` keys or other private credentials to this
 service unless a future server-side integration explicitly requires them.
