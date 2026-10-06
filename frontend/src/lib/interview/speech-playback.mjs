@@ -10,7 +10,8 @@ export function composeContextualOpening(config, firstQuestion) {
   const seniorityLabels = { junior: "junior", "mid-level": "mid-level", senior: "senior", staff: "staff-level" };
   const minutes = Number.parseInt(config.duration, 10) || 5;
   const { phrase, personal } = describeRoleForSpeech(config.role, seniorityLabels[config.seniority?.trim()]);
-  return `Hi, I'm TUC, and I'll be your interviewer today. We have about ${minutes} minutes ${personal ? "for your " : "for "}${phrase}${focusClause(config.focus)}. ${firstQuestion.trim()}`;
+  // Keep the brand stylized as TUC in the UI, but use title case in speech so Kokoro says it as a name ("Tuk"), not as initials.
+  return `Hi, I'm Tuk, and I'll be your interviewer today. We have about ${minutes} minutes ${personal ? "for your " : "for "}${phrase}${focusClause(config.focus)}. ${firstQuestion.trim()}`;
 }
 
 export function composeAcknowledgedQuestion(acknowledgement, question) {
