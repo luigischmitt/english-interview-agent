@@ -500,6 +500,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           firstFixedType: planned[0].id.startsWith("job-") ? "job" : "bank",
           secondFixedType: planned[1] ? planned[1].id.startsWith("job-") ? "job" : "bank" : null,
           previousCandidate: speculativeCandidateRef.current,
+          previousAnswers: input.previousAnswers,
           roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
         }, signal) : { enabled: true, analysis: null };
         if (speculative.enabled) speculativeEnabledRef.current = true;
