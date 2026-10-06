@@ -45,6 +45,11 @@ function lemmaCandidates(word: string): Set<string> {
   if (word.endsWith("s")) add(word.slice(0, -1));
   if (word.endsWith("ed")) { add(word.slice(0, -2)); add(word.slice(0, -1)); }
   if (word.endsWith("ing")) { add(word.slice(0, -3)); add(`${word.slice(0, -3)}e`); }
+  // Regular adjective comparison is a grammar-form correction, not a replacement of Whisper content.
+  if (word.endsWith("ier")) add(`${word.slice(0, -3)}y`);
+  if (word.endsWith("iest")) add(`${word.slice(0, -4)}y`);
+  if (word.endsWith("er")) add(word.slice(0, -2));
+  if (word.endsWith("est")) add(word.slice(0, -3));
   for (const value of [...candidates]) {
     if (/([^aeiou])\1$/u.test(value)) add(value.slice(0, -1));
   }
@@ -91,7 +96,7 @@ export type EnglishEditAnalysis = {
   addedContent: Token[];
   /** Subset of addedContent that does not appear anywhere in the full answer. */
   addedNew: Token[];
-  /** Same-lemma pairs, for example choose to chose. */
+  /** Same-lemma pairs, for example choose to chose or fast to faster. */
   formChanges: Array<{ from: Token; to: Token }>;
   removedFunction: Token[];
   addedFunction: Token[];
@@ -150,7 +155,9 @@ export function isLikelyTranscriptionArtifactEdit(edit: EnglishEditAnalysis, swa
   // A mis-heard proper noun (capitalized in the middle of the answer) is never a candidate error.
   if (edit.removedProperNoun && added > 0) return true;
   if (swapTolerant) return removed > 1 || edit.addedNew.length > 2;
-  if (removed >= 1 && added >= 1) return true;
+  // Grammar corrections may change function words, inflect the same lemma, and restore nearby answer context. They must
+  // not silently delete a content word; that is rewriting the answer, not correcting its grammar.
+  if (removed > 0) return true;
   return edit.addedNew.length >= 2;
 }
 
@@ -171,6 +178,10 @@ export function checkGrammarRuleLabel(suggestion: string, edit: EnglishEditAnaly
   // "Use a preposição correta" is the wrong rule when no preposition changed and a verb merely became its -ing form.
   const prepositionChange = [...edit.removedFunction, ...edit.addedFunction].some((token) => prepositions.has(token.lower));
   const ingChange = edit.formChanges.find(({ from, to }) => /ing$/u.test(to.lower) && !/ing$/u.test(from.lower));
+  const comparativeChange = edit.formChanges.some(({ from, to }) => from.lower !== to.lower && /(?:er|ier)$/u.test(to.lower));
+  if (comparativeChange && edit.removedFunction.some((token) => token.lower === "more")) {
+    return "Use o comparativo sem more antes de formas em -er: faster e easier.";
+  }
   if (claimsPreposition.test(suggestion) && !prepositionChange && ingChange) {
     const after = tokenize(rephrased);
     const index = after.findIndex((token) => token.lower === ingChange.to.lower);

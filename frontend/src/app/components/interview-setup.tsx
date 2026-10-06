@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
-import { ArrowUpRight, ArrowLeft, ChevronDown, Check, Leaf } from "lucide-react";
+import { ArrowUpRight, ArrowLeft, ChevronDown, Leaf } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import type { JobDirection, JobSeniority } from "@/lib/interview/job-direction.mjs";
 import type { SetupMode } from "@/lib/interview/job-direction.mjs";
 import { applyJobAnalysis, isValidJobDirection, JobDirectionRequestError, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection, setupModeBlocksStart, switchSetupMode } from "@/lib/interview/job-direction.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
-import { useSpeechWarmup, useVoiceReadiness } from "../hooks/use-speech-playback";
+import { useSpeechWarmup } from "../hooks/use-speech-playback";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
-import { synthesizeInterviewerQuestion, warmUpInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
+import { synthesizeInterviewerQuestion } from "@/lib/interview/speech-playback.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
 import { inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
@@ -61,16 +61,13 @@ export function InterviewSetup({
   const [showErrors, setShowErrors] = useState(false);
   const [audioTestStatus, setAudioTestStatus] = useState<{ kind: "idle" | "loading" | "success" | "error"; message?: string }>({ kind: "idle" });
   const audioTestRef = useRef<{ cancel: () => void } | null>(null);
-  const [voiceAttempt, setVoiceAttempt] = useState(0);
-  const voiceState = useVoiceReadiness(config.playInterviewerAudio, voiceAttempt);
   const [roomOptionsOpen, setRoomOptionsOpen] = useState(false);
   const inApp = useInAppBrowser();
   const { copied, copy } = useCopyPageLink();
   const roomOptionsRef = useRef<HTMLElement>(null);
   const micTestRef = useRef<MicrophoneTestHandle>(null);
-  const voiceBlocked = config.playInterviewerAudio && voiceState !== "ready";
   const autoBlocked = setupModeBlocksStart(setupMode, config.jobDirection);
-  const startBlocked = voiceBlocked || autoBlocked;
+  const startBlocked = autoBlocked;
 
   const cancelAudioTest = () => {
     audioTestRef.current?.cancel();
@@ -216,7 +213,7 @@ export function InterviewSetup({
 
 
   const testAudio = async () => {
-    if (!config.playInterviewerAudio || voiceState !== "ready") return;
+    if (!config.playInterviewerAudio) return;
     if (audioTestRef.current) {
       cancelAudioTest();
       setAudioTestStatus({ kind: "idle" });
@@ -262,7 +259,7 @@ export function InterviewSetup({
       setJobDirectionValidationError("Complete os campos do direcionamento ou mude para “Manual” para continuar sem ele.");
       return;
     }
-    if (voiceBlocked || autoBlocked) return;
+    if (autoBlocked) return;
     cancelAudioTest();
     micTestRef.current?.stop();
     const jobDirection = config.jobDirection ? {
@@ -277,11 +274,6 @@ export function InterviewSetup({
 
   const [cargoSummary, ...restSummary] = getInterviewSetupSummary({ ...config, voice }, seniorityLabels, focusLabels);
 
-  const retryVoice = () => {
-    warmUpInterviewerSpeech(`${backendBaseUrl}/api/v1/speech`, authorizedFetch);
-    setVoiceAttempt((attempt) => attempt + 1);
-  };
-
   const toggleRoomOptions = () => setRoomOptionsOpen((open) => !open);
 
   // When the section opens, bring the revealed content into view once it has grown.
@@ -292,11 +284,7 @@ export function InterviewSetup({
   };
 
   const startLabel = config.playInterviewerAudio ? "Iniciar com áudio" : "Iniciar somente com texto";
-  const startHint = autoBlocked
-    ? "Analise a vaga para continuar, ou mude para “Manual”."
-    : voiceState === "unavailable"
-    ? "A voz não ficou pronta. Tente de novo acima ou escolha “Somente texto”."
-    : "Aguarde a voz do entrevistador ficar pronta para iniciar com áudio.";
+  const startHint = "Analise a vaga para continuar, ou mude para “Manual”.";
   const roleInvalid = showErrors && !config.role.trim();
 
   return (
@@ -467,7 +455,7 @@ export function InterviewSetup({
             </div>
           </section>
 
-          {/* 2. Interviewer voice, with its readiness and test next to the choice they affect */}
+          {/* 2. Interviewer audio mode and an optional real synthesis test. */}
           <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 1 } as CSSProperties} aria-labelledby="interviewer-audio-title">
             <div className="flex items-center gap-3">
               <span className="ds-step" aria-hidden="true">2</span>
@@ -506,46 +494,13 @@ export function InterviewSetup({
             </fieldset>
 
             {config.playInterviewerAudio && (
-              <div className="isu-voice ds-fade-in mt-5 flex flex-col gap-3" data-voice-state={voiceState}>
-                <div role="status" aria-live="polite" className="flex items-start gap-3">
-                  <span aria-hidden="true" className="mt-0.5 flex size-6 shrink-0 items-center justify-center">
-                    {voiceState === "ready" ? (
-                      <span className="ds-pop flex size-6 items-center justify-center rounded-full bg-green-solid text-on-green"><Check className="size-3.5" strokeWidth={3} /></span>
-                    ) : voiceState === "warming" ? (
-                      <span className="size-2.5 rounded-full bg-green motion-safe:animate-pulse" />
-                    ) : (
-                      <span className="size-2.5 rounded-full bg-danger-ring" />
-                    )}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="ds-label">
-                      {voiceState === "ready" ? "Voz do entrevistador pronta" : voiceState === "warming" ? "Preparando a voz do entrevistador" : "Não conseguimos preparar a voz"}
-                    </p>
-                    <p className="ds-small mt-0.5">
-                      {voiceState === "ready"
-                        ? "Tudo certo para começar com áudio."
-                        : voiceState === "warming"
-                          ? "Na primeira vez isso pode levar cerca de 1 minuto. Ajuste o resto enquanto espera; o botão de iniciar libera sozinho."
-                          : "Sem a voz não dá para iniciar com áudio. Tente de novo ou escolha “Somente texto”."}
-                    </p>
-                  </div>
-                </div>
-                <div className="isu-voice-bar" aria-hidden="true" />
-                {voiceState === "unavailable" && (
-                  <div>
-                    <button type="button" className="ds-btn ds-btn-soft" onClick={retryVoice}>Tentar de novo</button>
-                  </div>
-                )}
-                {voiceState === "ready" && (
-                  <div className="flex flex-col gap-2 min-[460px]:flex-row min-[460px]:items-center">
-                    <button type="button" className="ds-btn ds-btn-soft" onClick={() => void testAudio()}>
-                      {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
-                    </button>
-                    <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "font-medium text-danger" : audioTestStatus.kind === "success" ? "font-medium text-green" : "text-text-2"}`}>
-                      {audioTestStatus.message ?? "Opcional: ouça uma frase curta antes de começar."}
-                    </p>
-                  </div>
-                )}
+              <div className="ds-fade-in mt-5 flex flex-col gap-2 min-[460px]:flex-row min-[460px]:items-center">
+                <button type="button" className="ds-btn ds-btn-soft" onClick={() => void testAudio()}>
+                  {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
+                </button>
+                <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "font-medium text-danger" : audioTestStatus.kind === "success" ? "font-medium text-green" : "text-text-2"}`}>
+                  {audioTestStatus.message ?? "Opcional: ouça uma frase curta antes de começar."}
+                </p>
               </div>
             )}
           </section>

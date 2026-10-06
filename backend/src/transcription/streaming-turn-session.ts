@@ -1,3 +1,5 @@
+import type { TranscriptionResult } from "./types.js";
+
 /** `silenceStartedAt` (epoch ms): when the local VAD pause was detected; lets the caller time grace and prepare from the pause, not from text arrival. */
 export type TurnEndInfo = { silenceStartedAt?: number };
 
@@ -27,6 +29,8 @@ export interface StreamingTurnSession {
   committedText(): string;
   partialText(): string;
   flush(timeoutMs: number): Promise<string>;
+  /** Optional timing assembled from the same incremental calls, for Azure assessment without another full-audio transcription. */
+  timingResult?(): TranscriptionResult | null;
   close(): void;
   /** Content-free counters for the `complete` diagnostic. */
   diagnostics?(): Record<string, number>;

@@ -19,6 +19,41 @@ const report = (overrides: Record<string, unknown>) => evaluateInterviewReportPr
 }), { roleContext, turns } as InterviewReportInput);
 
 describe("real report calibration", () => {
+  it("keeps clear English errors from clean spans even when the same answer contains Whisper noise", () => {
+    const latestTurns = [{
+      sequenceNumber: 4,
+      question: "What was the AI agent's specific task?",
+      answer: "The task is to see resumes and the stock. Instead of the manager needs to see in sheets or papers, he sends a message. This data is more fast, more easier for him.",
+    }];
+    const result = evaluateInterviewReportProviderOutput(JSON.stringify({
+      technicalContent: { summary: "Você descreveu o acesso aos dados pelo WhatsApp.", strengths: [], gaps: [] },
+      englishCommunication: {
+        clarity: "MOSTLY_CLEAR",
+        patterns: [
+          pattern(4, "Instead of the manager needs to see in sheets or papers, he sends a message", "Instead of the manager needing to see in sheets or papers, he sends a message."),
+          pattern(4, "This data is more fast, more easier for him", "This data is faster and easier for him."),
+        ],
+      },
+      priorities: [],
+    }), { roleContext, turns: latestTurns } as InterviewReportInput);
+    expect(result.report?.englishCommunication.patterns.map(({ evidence }) => evidence)).toEqual([
+      "Instead of the manager needs to see in sheets or papers, he sends a message",
+      "This data is more fast, more easier for him",
+    ]);
+    expect(result.report?.englishCommunication.patterns[1]?.suggestion).toBe("Use o comparativo sem more antes de formas em -er: faster e easier.");
+  });
+
+  it("rejects a grammar correction that makes a valid phrase look wrong by deleting a content verb", () => {
+    const latestTurns = [{ sequenceNumber: 2, question: "Tell me about your experience.", answer: "I have been working and building many projects." }];
+    const result = evaluateInterviewReportProviderOutput(JSON.stringify({
+      technicalContent: { summary: "Você descreveu sua experiência em projetos.", strengths: [], gaps: [] },
+      englishCommunication: { clarity: "CLEAR", patterns: [{ type: "GRAMMAR", sequenceNumber: 2, evidence: "I have been working and building many projects", suggestion: "Use o present perfect para ações contínuas.", rephrasedExample: "I have been working on many projects." }] },
+      priorities: [],
+    }), { roleContext, turns: latestTurns } as InterviewReportInput);
+    expect(result.report?.englishCommunication.patterns).toEqual([]);
+    expect(result.diagnostics.optionalItems.rejectionReasons.artifact).toBe(1);
+  });
+
   it("rejects technical items and English patterns built on likely transcription artifacts", () => {
     const result = report({
       technicalContent: {

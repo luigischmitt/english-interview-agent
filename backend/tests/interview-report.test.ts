@@ -243,7 +243,7 @@ describe("final interview report service", () => {
     expect(report.technicalContent.strengths).toEqual(validReport.technicalContent.strengths);
   });
 
-  it("keeps only the four most impactful distinct English findings", async () => {
+  it("keeps only the three most impactful distinct English findings", async () => {
     const answer = "I build reliable services. I design clear APIs. I deploy tested changes. I explain technical choices. I review code carefully. I monitor service health. I document useful decisions. I support production systems.";
     const turns = [{ sequenceNumber: 1, question: "Tell me about your work.", answer }];
     const evidence = [
@@ -262,8 +262,8 @@ describe("final interview report service", () => {
       englishCommunication: { clarity: "MOSTLY_CLEAR", patterns },
     }))).generate({ ...input, turns });
 
-    expect(report.englishCommunication.patterns).toHaveLength(4);
-    expect(report.englishCommunication.patterns.map((pattern) => pattern.evidence)).toEqual(evidence.slice(0, 4));
+    expect(report.englishCommunication.patterns).toHaveLength(3);
+    expect(report.englishCommunication.patterns.map((pattern) => pattern.evidence)).toEqual(evidence.slice(0, 3));
   });
 
   it("counts valid items beyond category limits without breaking evidence totals", async () => {
@@ -297,11 +297,11 @@ describe("final interview report service", () => {
 
     expect(report.technicalContent.strengths).toHaveLength(2);
     expect(report.technicalContent.gaps).toHaveLength(3);
-    expect(report.englishCommunication.patterns).toHaveLength(4);
+    expect(report.englishCommunication.patterns).toHaveLength(3);
     expect(report.priorities).toHaveLength(3);
     expect(counts?.technicalStrengths).toMatchObject({ candidates: 9, accepted: 2, rejected: 7, rejectionReasons: { limit: 7 } });
     expect(counts?.technicalGaps).toMatchObject({ candidates: 9, accepted: 3, rejected: 6, rejectionReasons: { limit: 6 } });
-    expect(counts?.englishPatterns).toMatchObject({ candidates: 10, accepted: 4, rejected: 6, rejectionReasons: { limit: 6 } });
+    expect(counts?.englishPatterns).toMatchObject({ candidates: 10, accepted: 3, rejected: 7, rejectionReasons: { limit: 7 } });
     expect(counts?.priorities).toMatchObject({ candidates: 4, accepted: 3, rejected: 1, rejectionReasons: { limit: 1 } });
     for (const category of Object.values(counts ?? {})) {
       if (typeof category !== "object" || !category || !("rejected" in category)) continue;

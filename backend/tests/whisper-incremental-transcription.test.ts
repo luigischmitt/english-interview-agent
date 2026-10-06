@@ -6,6 +6,7 @@ import { WebSocket } from "ws";
 import { attachTranscriptionWebSocket, looksUnfinished, sanitizeQuestion, type StreamingOptions } from "../src/transcription/transcription-websocket.js";
 import { AnswerCompletionError, type AnswerCompletionInput, type AnswerCompletionService } from "../src/thinking/answer-completion-service.js";
 import type { TranscriptionResult, TranscriptionService } from "../src/transcription/types.js";
+import type { PronunciationAssessmentService } from "../src/transcription/azure-pronunciation-assessment.js";
 import { defaultStreamingLimits } from "../src/transcription/streaming-transcription.js";
 
 const frameBytes = 3_200;
@@ -38,9 +39,9 @@ function createWhisper(segmentTexts: Array<string | Error>, fullText = "Full aud
   return { service, transcribe, wavSizes, callTimes };
 }
 
-async function startServer(service: TranscriptionService, streaming: StreamingOptions) {
+async function startServer(service: TranscriptionService, streaming: StreamingOptions, assessmentService: PronunciationAssessmentService | null = null) {
   const server = createServer();
-  attachTranscriptionWebSocket(server, service, null, defaultStreamingLimits, streaming);
+  attachTranscriptionWebSocket(server, service, assessmentService, defaultStreamingLimits, streaming);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
   const url = `ws://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/transcriptions/stream`;
@@ -99,6 +100,26 @@ describe("incremental Whisper over the stream WebSocket", () => {
     expect(completeLog).toHaveProperty("tailMs");
     expect(completeLog).toHaveProperty("maxSegmentLatencyMs");
     expect(logs()).not.toContain("Secret");
+  });
+
+  it("reuses incremental word timing for Azure without a full-audio transcription", async () => {
+    const transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({
+      provider,
+      transcript: "Clear answer.",
+      words: [{ text: "Clear", start: 0.1, end: 0.4 }, { text: "answer", start: 0.45, end: 0.8 }],
+    }));
+    const service: TranscriptionService = { availableProviders: () => ["whisper-large-v3-turbo"], transcribe };
+    const assess = vi.fn(async (_audio: Buffer, _format: "wav", _referenceText: string) => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 90, fluency: 85, prosody: 80 } }));
+    const { connect } = await startServer(service, incremental(), { assess });
+    const { socket, waitFor } = await connect();
+    await speak(socket, 800, 0.05);
+    await speak(socket, 500, 0.001);
+    await expect(waitFor("complete")).resolves.toMatchObject({ provider: "whisper-incremental", transcript: "Clear answer." });
+    await expect(waitFor("assessment")).resolves.toMatchObject({ status: "available", blockCount: 1, assessedBlockCount: 1 });
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(assess).toHaveBeenCalledTimes(1);
+    expect(assess.mock.calls[0]?.[2]).toBe("Clear answer");
+    expect(logs()).toContain('"timingOrigin":"incremental"');
   });
 
   it("joins segments across a resumed-speech pause: the first pause's grace is cancelled and the whole transcript completes", async () => {

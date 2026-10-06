@@ -2,10 +2,9 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState, type CSSProperties } from "react";
+import { useState, useSyncExternalStore, type CSSProperties } from "react";
 import {
   ArrowUpRight,
-  Check,
   Home,
   Leaf,
   LineChart,
@@ -25,6 +24,8 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { composeContextualOpening } from "@/lib/interview/speech-playback.mjs";
 import { storeRoomHandoff } from "@/lib/interview/room-handoff.mjs";
+import { readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
+import { DEFAULT_INTERVIEWER_VOICE } from "@/lib/interview/voices.mjs";
 
 import "./components/shell.css";
 
@@ -43,6 +44,9 @@ import { InterviewSetup } from "./components/interview-setup";
 import { prewarmInterviewerUtterance, useSpeechWarmup } from "./hooks/use-speech-playback";
 import { ProgressView } from "./components/progress-view";
 import { PageIntro } from "./components/shared";
+import { VoicePicker } from "./components/voice-picker";
+
+const subscribeNever = () => () => {};
 
 function isNavigationItemActive(view: View, item: View) {
   return view === item;
@@ -307,6 +311,14 @@ function HomeView({
 }
 
 function SettingsView() {
+  const storedVoice = useSyncExternalStore(subscribeNever, () => readStoredInterviewerVoice(window.localStorage), () => DEFAULT_INTERVIEWER_VOICE);
+  const [chosenVoice, setChosenVoice] = useState<string | undefined>(undefined);
+  const voice = chosenVoice ?? storedVoice;
+  const chooseVoice = (next: string) => {
+    setChosenVoice(next);
+    storeInterviewerVoice(window.localStorage, next);
+  };
+
   return (
     <main id="main-content" className={`${pageMain} max-w-4xl`}>
       <PageIntro
@@ -318,10 +330,12 @@ function SettingsView() {
         <div className="shl-row">
           <span className="shl-icon-tile" aria-hidden="true"><Volume2 className="size-5" /></span>
           <div className="min-w-0 flex-1">
-            <p className="ds-label">Entrevista com foco na voz</p>
-            <p className="ds-small mt-1">As perguntas podem ser reproduzidas em voz alta durante a entrevista.</p>
+            <p className="ds-label">Voz do entrevistador</p>
+            <p className="ds-small mt-1">A escolha fica salva neste navegador e pode ser alterada ao preparar cada entrevista.</p>
           </div>
-          <span className="shl-pill shl-pill-on"><Check className="size-3.5" strokeWidth={3} aria-hidden="true" />Ativado</span>
+        </div>
+        <div className="pb-6 pt-2 sm:pl-[3.75rem]">
+          <VoicePicker value={voice} onChange={chooseVoice} />
         </div>
         <div className="shl-row">
           <span className="shl-icon-tile" aria-hidden="true"><Video className="size-5" /></span>
