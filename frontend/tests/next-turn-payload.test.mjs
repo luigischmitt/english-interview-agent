@@ -44,6 +44,19 @@ test("next-turn serialization bounds future questions and history while keeping 
   assert.equal(payload.previousAnswers[1].answer.endsWith("LAST_ANSWER_DETAIL"), true);
 });
 
+test("resume next turns omit vacancy framing while keeping the inferred role context", () => {
+  const payload = JSON.parse(serializeNextTurnRequest({
+    config: {
+      role: "Backend Engineer", seniority: "senior", focus: "technical-depth", interviewSource: "resume",
+      jobDirection: { targetRole: "Backend Engineer", suggestedSeniority: "senior", mainInterviewEmphasis: "Resume", priorityCompetencies: ["Resume"], productTeamContext: "Resume" },
+    },
+    currentQuestion: "What did you build?", transcript: "I built an API.", nextFixedQuestion: "How did you test it?",
+    remainingFixedQuestions: ["How did you test it?"], followUpUsed: false, askedQuestions: [],
+  }));
+  assert.equal("jobDirection" in payload, false);
+  assert.deepEqual(payload.roleContext, { targetRole: "Backend Engineer", seniority: "senior", focus: "technical-depth" });
+});
+
 import { DEFAULT_INTERVIEWER_VOICE, INTERVIEWER_VOICE_OPTIONS, resolveInterviewerVoice } from "../src/lib/interview/voices.mjs";
 
 test("the next-turn request carries a selectable voice, defaulting to am_echo", () => {

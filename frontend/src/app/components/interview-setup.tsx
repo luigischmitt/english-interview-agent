@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
-import { ArrowUpRight, ArrowLeft, ChevronDown, FileText, Leaf, Trash2 } from "lucide-react";
+import { ArrowUpRight, ArrowLeft, ChevronDown, FileText, Leaf } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import type { JobDirection, JobSeniority } from "@/lib/interview/job-direction.mjs";
 import type { SetupMode } from "@/lib/interview/job-direction.mjs";
-import { applyJobAnalysis, isValidJobDirection, isValidTailoredQuestion, JobDirectionRequestError, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection, setupModeBlocksStart } from "@/lib/interview/job-direction.mjs";
-import { removeResumeQuestion, requestResumeDirection, ResumeDirectionRequestError, updateResumeQuestion, validateResumeFile } from "@/lib/interview/resume-direction.mjs";
+import { applyJobAnalysis, isValidJobDirection, JobDirectionRequestError, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection, setupModeBlocksStart } from "@/lib/interview/job-direction.mjs";
+import { requestResumeDirection, ResumeDirectionRequestError, validateResumeFile } from "@/lib/interview/resume-direction.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { synthesizeInterviewerQuestion } from "@/lib/interview/speech-playback.mjs";
@@ -291,20 +291,6 @@ export function InterviewSetup({
     const code = validateResumeFile(file);
     if (code === "RESUME_FILE_TOO_LARGE") setResumeDirectionError("O PDF pode ter no máximo 5 MB. Escolha uma versão menor.");
     else if (code) setResumeDirectionError("Escolha um arquivo PDF válido para analisar.");
-  };
-
-  const editResumeQuestion = (index: number, question: string) => {
-    setJobDirectionValidationError("");
-    setConfig((current) => current.jobDirection
-      ? { ...current, jobDirection: updateResumeQuestion(current.jobDirection, index, question.slice(0, 200)) }
-      : current);
-  };
-
-  const deleteResumeQuestion = (index: number) => {
-    setJobDirectionValidationError("");
-    setConfig((current) => current.jobDirection
-      ? { ...current, jobDirection: removeResumeQuestion(current.jobDirection, index) }
-      : current);
   };
 
   const editJobDirection = (field: keyof JobDirection, value: string) => {
@@ -621,8 +607,8 @@ export function InterviewSetup({
                     <fieldset className="-mx-1 rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-5" aria-labelledby="direction-found-title">
                       <legend className="sr-only">Direcionamento da entrevista</legend>
                       <h3 id="direction-found-title" className="ds-label">{setupMode === "resume" ? "Entrevista criada pelo currículo" : "Prioridades da vaga"}</h3>
-                      <p className="ds-small mt-1">{setupMode === "resume" ? "Revise o direcionamento e as perguntas. Remova o que não quiser praticar." : "Revise o resumo. Ele orienta as perguntas e o relatório."}</p>
-                      <div className="mt-4 grid gap-4">
+                      <p className="ds-small mt-1">{setupMode === "resume" ? "Currículo analisado. As oito perguntas personalizadas ficam ocultas e aparecem somente durante a entrevista." : "Revise o direcionamento geral. As oito perguntas específicas ficam ocultas e aparecem somente durante a entrevista."}</p>
+                      {setupMode !== "resume" && <div className="mt-4 grid gap-4">
                         <div className="flex flex-col gap-2">
                           <label htmlFor="direction-emphasis" className="ds-label">Principal ênfase da entrevista</label>
                           <textarea id="direction-emphasis" rows={2} maxLength={240} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.mainInterviewEmphasis} onChange={(event) => editJobDirection("mainInterviewEmphasis", event.target.value)} />
@@ -636,44 +622,7 @@ export function InterviewSetup({
                           <label htmlFor="direction-context" className="ds-label">Contexto de produto e equipe</label>
                           <textarea id="direction-context" rows={2} maxLength={280} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.productTeamContext} onChange={(event) => editJobDirection("productTeamContext", event.target.value)} />
                         </div>
-                        {setupMode === "resume" && (
-                          <fieldset className="mt-1 border-t border-base-300 pt-4">
-                            <legend className="ds-label">Perguntas do currículo</legend>
-                            <p className="ds-small mt-1">Elas serão feitas em inglês e podem gerar follow-ups a partir da sua resposta.</p>
-                            <div className="mt-3 grid gap-3">
-                              {(config.jobDirection.tailoredQuestions ?? []).map((question, index) => {
-                                const valid = isValidTailoredQuestion(question);
-                                return (
-                                  <div key={`resume-question-${index}`} className="card card-border bg-base-100">
-                                    <div className="card-body gap-2 p-3 sm:p-4">
-                                      <div className="flex items-center justify-between gap-3">
-                                        <label htmlFor={`resume-question-${index}`} className="text-xs font-semibold uppercase tracking-[0.08em] text-base-content/60">Pergunta {index + 1}</label>
-                                        <button type="button" className="btn btn-ghost btn-xs text-error" onClick={() => deleteResumeQuestion(index)} aria-label={`Remover pergunta ${index + 1}`}>
-                                          <Trash2 className="size-4" aria-hidden="true" /> Remover
-                                        </button>
-                                      </div>
-                                      <textarea
-                                        id={`resume-question-${index}`}
-                                        rows={2}
-                                        maxLength={200}
-                                        className={`textarea ds-field w-full resize-y text-sm leading-6 ${valid ? "" : "textarea-error"}`}
-                                        value={question}
-                                        onChange={(event) => editResumeQuestion(index, event.target.value)}
-                                        aria-invalid={!valid}
-                                        aria-describedby={valid ? undefined : `resume-question-${index}-error`}
-                                      />
-                                      {!valid && <p id={`resume-question-${index}-error`} className="ds-small text-error" role="alert">Use uma pergunta curta em inglês, com apenas um “?”.</p>}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                              {(config.jobDirection.tailoredQuestions ?? []).length === 0 && (
-                                <div className="alert alert-warning" role="alert">Mantenha ao menos uma pergunta para iniciar pelo currículo.</div>
-                              )}
-                            </div>
-                          </fieldset>
-                        )}
-                      </div>
+                      </div>}
                       {jobDirectionEditNote && <p className="ds-small mt-3 text-warning" role="status">{jobDirectionEditNote}</p>}
                       {jobDirectionValidationError && <p className="ds-small mt-3 text-error" role="alert">{jobDirectionValidationError}</p>}
                     </fieldset>

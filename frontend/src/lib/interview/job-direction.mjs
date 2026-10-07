@@ -10,9 +10,9 @@ const limits = {
 };
 const focuses = ["technical-depth", "communication", "behavioral", "mixed"];
 const keys = ["targetRole", "suggestedSeniority", "mainInterviewEmphasis", "priorityCompetencies", "productTeamContext", "tailoredQuestions"];
-/** Approved snapshots can carry a full resume plan; vacancy generation intentionally stays at three. */
+/** Both automatic interview sources return a full eight-question plan. */
 export const maxTailoredQuestions = 8;
-export const maxJobTailoredQuestions = 3;
+export const maxJobTailoredQuestions = maxTailoredQuestions;
 const maxTailoredQuestionLength = 200;
 const portugueseQuestionHints = /[ãõç]|\b(?:você|voce|como|qual|quais|quando|para|uma|não|nao|sua|seu|pelo|pela|dos|das|que|mais|muito|também|tambem)\b/iu;
 const genericOpeners = /^\s*(?:tell me about yourself|walk me through your (?:resume|cv)|can you introduce yourself|do you have any questions|what questions do you have)/iu;
@@ -89,16 +89,16 @@ export async function requestJobDirection(jobDescription, roleContext, fetcher, 
   try { body = await response.json(); } catch { throw new JobDirectionRequestError("INVALID_RESPONSE", response.status); }
   // The practice focus only fills the setup; it is not part of the approved snapshot. Absent for older backends.
   const { suggestedFocus, tailoredQuestions: rawTailored, ...result } = isRecord(body) ? body : {};
-  // Tailored questions are optional: invalid or duplicate ones are dropped instead of failing the whole analysis.
   const tailoredQuestions = [...new Set((Array.isArray(rawTailored) ? rawTailored : []).filter(isValidTailoredQuestion).map((item) => item.trim()))].slice(0, maxJobTailoredQuestions);
-  if (!isValidJobDirection(result) || (suggestedFocus !== undefined && !focuses.includes(suggestedFocus))) throw new JobDirectionRequestError("INVALID_RESPONSE", response.status);
+  if (!isValidJobDirection(result) || tailoredQuestions.length !== maxJobTailoredQuestions
+    || (suggestedFocus !== undefined && !focuses.includes(suggestedFocus))) throw new JobDirectionRequestError("INVALID_RESPONSE", response.status);
   return {
     targetRole: result.targetRole.trim(),
     suggestedSeniority: result.suggestedSeniority,
     mainInterviewEmphasis: result.mainInterviewEmphasis.trim(),
     priorityCompetencies: result.priorityCompetencies.map((item) => item.trim()),
     productTeamContext: result.productTeamContext.trim(),
-    ...(tailoredQuestions.length > 0 ? { tailoredQuestions } : {}),
+    tailoredQuestions,
     ...(suggestedFocus ? { suggestedFocus } : {}),
   };
 }

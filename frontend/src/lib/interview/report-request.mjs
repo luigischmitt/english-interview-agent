@@ -4,6 +4,7 @@ import { isValidJobDirection } from "./job-direction.mjs";
 export function buildInterviewReportRequest(config, reportData) {
   const direction = config.jobDirection;
   const jobDirection = direction
+    && config.interviewSource !== "resume"
     && isValidJobDirection(direction)
     && direction.targetRole.trim() === config.role.trim()
     && direction.suggestedSeniority === config.seniority

@@ -6,7 +6,7 @@ export type JobDirection = {
   mainInterviewEmphasis: string;
   priorityCompetencies: string[];
   productTeamContext: string;
-  /** Up to three English questions tailored to the posting (optional). */
+  /** Eight English questions when generated automatically; fewer may remain after user review. */
   tailoredQuestions?: string[];
 };
 

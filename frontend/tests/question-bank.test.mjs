@@ -134,7 +134,7 @@ test("tailored questions replace the first technical slots and run immediately a
   assert.deepEqual(questions.slice(1, 4).map((question) => question.prompt), tailored);
   assert.deepEqual(questions.slice(1, 4).map((question) => question.id), ["job-1", "job-2", "job-3"]);
   assert.ok(questions.every((question) => question.cue.trim().length > 0));
-  assert.deepEqual(questions.slice(4).map((question) => question.id), [bank[3].id, ...bank.slice(5).map((question) => question.id)]);
+  assert.deepEqual(questions.slice(4).map((question) => question.id), bank.slice(4).map((question) => question.id));
   assert.match(questions[0].prompt, /role description/u);
   assert.equal(new Set(questions.map((question) => question.prompt)).size, 15);
 });
@@ -151,7 +151,7 @@ test("resume interviews use a resume-aware introduction and keep approved questi
   assert.deepEqual(questions.slice(1, 4).map((question) => question.prompt), tailored);
 });
 
-test("resume interviews can fill eight planned slots without changing the three vacancy slots", () => {
+test("resume and vacancy interviews both fill eight source-specific planned slots", () => {
   const resumeQuestions = Array(8).fill(0).map((_, index) => `In resume project ${index + 1}, what technical decision did you make?`);
   const questions = getFixedInterviewQuestions({
     role: "QA Analyst",
@@ -164,8 +164,8 @@ test("resume interviews can fill eight planned slots without changing the three 
   assert.deepEqual(questions.slice(1, 9).map((question) => question.prompt), resumeQuestions);
 
   const vacancyQuestions = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: { ...qaDirection, tailoredQuestions: resumeQuestions } });
-  assert.deepEqual(vacancyQuestions.slice(1, 4).map((question) => question.id), ["job-1", "job-2", "job-3"]);
-  assert.equal(vacancyQuestions.some((question) => question.id === "job-4"), false);
+  assert.deepEqual(vacancyQuestions.slice(1, 9).map((question) => question.id), Array(8).fill(0).map((_, index) => `job-${index + 1}`));
+  assert.deepEqual(vacancyQuestions.slice(1, 9).map((question) => question.prompt), resumeQuestions);
 });
 
 test("fewer tailored questions fill slots in order; none or a stale direction keeps the bank", () => {
@@ -211,6 +211,6 @@ test("junior sessions never receive the system design question, and tailored que
   const bank = getQuestionBankForRole("QA Analyst", "junior");
   assert.equal(questions.length, 15);
   assert.deepEqual(questions.slice(1, 4).map((question) => question.id), ["job-1", "job-2", "job-3"]);
-  assert.deepEqual(questions.slice(4).map((question) => question.id), [bank[3].id, ...bank.slice(5).map((question) => question.id)]);
+  assert.deepEqual(questions.slice(4).map((question) => question.id), bank.slice(4).map((question) => question.id));
   assert.equal(new Set(questions.map((question) => question.prompt)).size, 15);
 });

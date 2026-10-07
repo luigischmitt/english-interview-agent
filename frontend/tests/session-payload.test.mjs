@@ -36,3 +36,8 @@ test("tailored questions stay out of the stored direction (the asked questions a
   const payload = buildInterviewSessionPayload({ ...config, jobDirection: { ...direction, tailoredQuestions } }, "user-1", "now");
   assert.equal(Object.hasOwn(payload.job_direction, "tailoredQuestions"), false);
 });
+
+test("resume sessions do not persist a vacancy-style direction", () => {
+  const payload = buildInterviewSessionPayload({ ...config, interviewSource: "resume" }, "user-1", "now");
+  assert.equal(Object.hasOwn(payload, "job_direction"), false);
+});
