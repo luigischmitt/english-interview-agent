@@ -71,14 +71,13 @@ function containsSensitiveContact(value: string): boolean {
   return /@|https?:\/\/|www\.|\b(?:linkedin|github)\.com\b|\+?\d[\d\s().-]{7,}\d/iu.test(value);
 }
 
-function validProviderQuestion(value: unknown, resumeText: string): value is ProviderQuestion {
+function validProviderQuestion(value: unknown): value is ProviderQuestion {
   if (!isRecord(value) || !hasOnlyKeys(value, ["question", "sourceAnchor"])) return false;
   if (typeof value.question !== "string" || typeof value.sourceAnchor !== "string") return false;
   const anchor = value.sourceAnchor.trim();
   return anchor.length >= 3 && anchor.length <= 180
     && !containsSensitiveContact(anchor)
-    && !containsSensitiveContact(value.question)
-    && resumeText.includes(anchor);
+    && !containsSensitiveContact(value.question);
 }
 
 export function parseResumeDirection(content: unknown, input: ResumeDirectionInput): ResumeDirectionAnalysis {
@@ -106,7 +105,10 @@ export function parseResumeDirection(content: unknown, input: ResumeDirectionInp
   const targetRole = normalizeTargetRole(candidate.targetRole);
   if (!targetRole) throw invalidProviderResponse();
   const groundedQuestions = candidate.tailoredQuestions
-    .filter((question) => validProviderQuestion(question, input.resumeText))
+    // Providers commonly translate sourceAnchor when a Portuguese resume is used.
+    // Keep it as an anti-invention prompt aid, but do not discard an otherwise valid
+    // eight-question plan solely because the auxiliary anchor is not byte-identical.
+    .filter(validProviderQuestion)
     .map((question) => (question as ProviderQuestion).question);
   const tailoredQuestions = normalizeTailoredQuestions(groundedQuestions, maxResumeTailoredQuestions);
   if (tailoredQuestions.length !== maxResumeTailoredQuestions) throw invalidProviderResponse();

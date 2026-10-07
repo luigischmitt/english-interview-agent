@@ -79,22 +79,28 @@ describe("resume direction validation", () => {
     });
   });
 
-  it("rejects provider questions whose evidence is absent or exposes contact details", () => {
+  it("accepts translated evidence anchors but rejects contact details", () => {
+    expect(parseResumeDirection(JSON.stringify({
+      ...providerResult,
+      tailoredQuestions: providerResult.tailoredQuestions.map((item, index) => index === 0
+        ? { question: item.question, sourceAnchor: "translated professional experience" }
+        : item),
+    }), { resumeText, pageCount: 2 }).tailoredQuestions).toHaveLength(8);
     expect(() => parseResumeDirection(JSON.stringify({
       ...providerResult,
-      tailoredQuestions: [{ question: "How did you build the billing system?", sourceAnchor: "billing system" }],
-    }), { resumeText, pageCount: 2 })).toThrowError(/validar a análise/iu);
-    expect(() => parseResumeDirection(JSON.stringify({
-      ...providerResult,
-      tailoredQuestions: [{ question: "How did you build that platform?", sourceAnchor: "person@example.com" }],
+      tailoredQuestions: providerResult.tailoredQuestions.map((item, index) => index === 0
+        ? { question: item.question, sourceAnchor: "person@example.com" }
+        : item),
     }), { resumeText: `${resumeText} person@example.com`, pageCount: 2 })).toThrowError(/validar a análise/iu);
     expect(() => parseResumeDirection(JSON.stringify({
       ...providerResult,
-      tailoredQuestions: [{ question: "How did person@example.com build the platform?", sourceAnchor: "distributed payments platform" }],
+      tailoredQuestions: providerResult.tailoredQuestions.map((item, index) => index === 0
+        ? { question: "How did person@example.com build the platform?", sourceAnchor: item.sourceAnchor }
+        : item),
     }), { resumeText, pageCount: 2 })).toThrowError(/validar a análise/iu);
   });
 
-  it("requires exactly eight grounded resume questions", () => {
+  it("requires exactly eight resume questions", () => {
     const questions = resumeAnchors.map((sourceAnchor, index) => ({
       question: `What did you learn from experience number ${index + 1} with this work?`,
       sourceAnchor,
