@@ -18,11 +18,14 @@
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
+    "multer": "^2.4.0",
+    "pdfjs-dist": "6.4.299",
     "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
+    "@types/multer": "^2.3.0",
     "@types/node": "^22.15.3",
     "@types/supertest": "^6.0.3",
     "@types/ws": "^8.18.1",

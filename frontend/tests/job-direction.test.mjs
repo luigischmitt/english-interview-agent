@@ -51,6 +51,16 @@ test("handoff includes only the approved direction and drops it when role or sen
   assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, seniority: "staff" }, 1), 2).jobDirection, undefined);
 });
 
+test("handoff preserves a validated resume source without carrying the PDF", () => {
+  const tailoredQuestions = ["How did you design the main service in your Atlas project?"];
+  const resumeConfig = { ...config, interviewSource: "resume", jobDirection: { ...direction, tailoredQuestions }, resumeFile: "private.pdf" };
+  const serialized = serializeRoomHandoff(resumeConfig, 1_000);
+  const parsed = parseRoomHandoff(serialized, 1_000);
+  assert.equal(parsed.interviewSource, "resume");
+  assert.deepEqual(parsed.jobDirection.tailoredQuestions, tailoredQuestions);
+  assert.equal("resumeFile" in parsed, false);
+});
+
 test("keeps the practice focus out of the snapshot and tolerates older backends without it", async () => {
   const withFocus = await requestJobDirection(description, { targetRole: "" }, async () => new Response(JSON.stringify({ ...direction, suggestedFocus: "behavioral" }), { status: 200 }));
   assert.equal(withFocus.suggestedFocus, "behavioral");
@@ -84,6 +94,8 @@ test("switching modes parks and restores the direction without losing edits", ()
   assert.equal(empty.config.jobDirection, undefined);
   assert.equal(setupModeBlocksStart("auto", empty.config.jobDirection), true);
   assert.equal(setupModeBlocksStart("auto", direction), false);
+  assert.equal(setupModeBlocksStart("resume", direction), true);
+  assert.equal(setupModeBlocksStart("resume", { ...direction, tailoredQuestions: ["How did you design the main service in this project?"] }), false);
 });
 
 test("tailored questions are optional, validated, kept through hand-off and filtered on request", async () => {
@@ -92,10 +104,16 @@ test("tailored questions are optional, validated, kept through hand-off and filt
   assert.equal(isValidJobDirection(withQuestions), true);
   assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: [] }), false);
   assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: ["Two? Questions?"] }), false);
-  assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: Array(4).fill(0).map((_, i) => `Question number ${i} about testing?`) }), false);
+  assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: ["Como você construiu seu projeto mais importante?"] }), false);
+  assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: ["Tell me about yourself and your recent work?"] }), false);
+  assert.equal(isValidJobDirection({ ...direction, tailoredQuestions: Array(9).fill(0).map((_, i) => `Question number ${i} about testing?`) }), false);
   const parsed = parseRoomHandoff(serializeRoomHandoff({ ...config, jobDirection: withQuestions }, 1_000), 1_000);
   assert.deepEqual(parsed.jobDirection.tailoredQuestions, [good]);
   const fetcher = async () => ({ ok: true, status: 200, json: async () => ({ ...direction, tailoredQuestions: [good, good, "bad", "Two? Questions?"] }) });
   const result = await requestJobDirection(description, { targetRole: direction.targetRole }, fetcher);
   assert.deepEqual(result.tailoredQuestions, [good]);
+
+  const tooManyFromVacancy = Array(8).fill(0).map((_, index) => `How would you handle vacancy scenario number ${index}?`);
+  const bounded = await requestJobDirection(description, { targetRole: direction.targetRole }, async () => new Response(JSON.stringify({ ...direction, tailoredQuestions: tooManyFromVacancy }), { status: 200 }));
+  assert.equal(bounded.tailoredQuestions.length, 3);
 });

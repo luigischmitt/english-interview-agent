@@ -16,6 +16,8 @@ export type InterviewConfig = {
   voice?: string;
   /** User-approved job summary handed to the room; raw job description is never included. */
   jobDirection?: JobDirection;
+  /** How the approved interview plan was created. The original job description or resume is never stored here. */
+  interviewSource?: "manual" | "job" | "resume";
 };
 
 export type InterviewQuestion = {

@@ -17,7 +17,7 @@ describe("approved job direction", () => {
   });
 
   it.each([
-    ["too many", [question, "What is flaky testing?", "How do you triage bugs?", "How do you use Postman collections?"]],
+    ["too many", Array.from({ length: 9 }, (_value, index) => `How would you approach testing scenario number ${index + 1}?`)],
     ["empty", []],
     ["portuguese", ["Como você estrutura uma suíte de testes?"]],
     ["two question marks", ["How do you test? And why?"]],

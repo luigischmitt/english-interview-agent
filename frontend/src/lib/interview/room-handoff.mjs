@@ -36,6 +36,11 @@ export function parseRoomHandoff(raw, now = Date.now()) {
     && config.jobDirection.suggestedSeniority === config.seniority
     ? config.jobDirection
     : undefined;
+  const interviewSource = config.interviewSource === "resume" && jobDirection?.tailoredQuestions?.length
+    ? "resume"
+    : config.interviewSource === "job" && jobDirection
+      ? "job"
+      : "manual";
   return {
     role: config.role,
     seniority: config.seniority,
@@ -49,6 +54,7 @@ export function parseRoomHandoff(raw, now = Date.now()) {
     // Optional (older hand-offs have none): the input device chosen on the setup.
     ...(microphoneDeviceId === null ? {} : { microphoneDeviceId }),
     ...(jobDirection ? { jobDirection } : {}),
+    ...(interviewSource !== "manual" ? { interviewSource } : {}),
     // Optional (older hand-offs have none): only a known interviewer voice is kept; otherwise the room uses the default.
     ...(INTERVIEWER_VOICES.includes(config.voice) ? { voice: config.voice } : {}),
   };

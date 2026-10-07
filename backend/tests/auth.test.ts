@@ -160,6 +160,7 @@ describe("authenticated HTTP routes", () => {
     ["get", "/api/v1/speech/warmup-status"],
     ["post", "/api/v1/thinking"],
     ["post", "/api/v1/thinking/job-direction"],
+    ["post", "/api/v1/thinking/resume-direction"],
     ["post", "/api/v1/thinking/next-turn"],
     ["post", "/api/v1/thinking/report"],
     ["post", "/api/v1/thinking/report/turn"],

@@ -16,8 +16,9 @@ import { createThinkingService } from "./thinking/openrouter-thinking-service.js
 import { createOrchestrationService } from "./thinking/openrouter-orchestration-service.js";
 import { createInterviewReportService } from "./thinking/openrouter-interview-report-service.js";
 import { createJobDirectionService } from "./thinking/openrouter-job-direction-service.js";
+import { createResumeDirectionService } from "./thinking/openrouter-resume-direction-service.js";
 import { JobDirectionUserLimit } from "./thinking/job-direction-user-limit.js";
-import type { InterviewOrchestrationService, InterviewReportService, JobDirectionService, ThinkingService } from "./thinking/types.js";
+import type { InterviewOrchestrationService, InterviewReportService, JobDirectionService, ResumeDirectionService, ThinkingService } from "./thinking/types.js";
 import { SpeculativeTurnAnalysisService } from "./thinking/speculative-turn-analysis-service.js";
 import { loadTranscriptionConfig, type TranscriptionConfig } from "./transcription/config.js";
 import { createTranscriptionService } from "./transcription/create-transcription-service.js";
@@ -40,6 +41,7 @@ type AppDependencies = {
   orchestrationService?: InterviewOrchestrationService;
   reportService?: InterviewReportService | null;
   jobDirectionService?: JobDirectionService | null;
+  resumeDirectionService?: ResumeDirectionService | null;
   jobDirectionUserLimit?: JobDirectionUserLimit;
   /** Omit for the environment default; pass null to disable authentication. */
   accessTokenVerifier?: AccessTokenVerifier | null;
@@ -47,7 +49,7 @@ type AppDependencies = {
   clientEventLogger?: (line: string) => void;
 };
 
-export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, jobDirectionService, jobDirectionUserLimit, accessTokenVerifier, clientEventLogger }: AppDependencies = {}) {
+export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, jobDirectionService, resumeDirectionService, jobDirectionUserLimit, accessTokenVerifier, clientEventLogger }: AppDependencies = {}) {
   const resolvedSpeechConfig = speechConfig ?? loadSpeechConfig();
   const resolvedSpeechProvider = speechProvider ?? createSpeechProvider(resolvedSpeechConfig);
   const resolvedTranscriptionService = transcriptionService
@@ -57,6 +59,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
   const resolvedOrchestrationService = orchestrationService ?? createOrchestrationService(resolvedThinkingConfig);
   const resolvedReportService = reportService === undefined ? createInterviewReportService(resolvedThinkingConfig) : reportService;
   const resolvedJobDirectionService = jobDirectionService === undefined ? createJobDirectionService(resolvedThinkingConfig) : jobDirectionService;
+  const resolvedResumeDirectionService = resumeDirectionService === undefined ? createResumeDirectionService(resolvedThinkingConfig) : resumeDirectionService;
   const resolvedJobDirectionUserLimit = jobDirectionUserLimit ?? new JobDirectionUserLimit();
   const speculativeService = resolvedThinkingConfig.openRouterApiKey ? new SpeculativeTurnAnalysisService({ apiKey: resolvedThinkingConfig.openRouterApiKey, model: resolvedThinkingConfig.model, timeoutMs: 5_000 }) : null;
   const app = express();
@@ -74,7 +77,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
 
   const verifier = accessTokenVerifier === undefined ? defaultAccessTokenVerifier : accessTokenVerifier;
   app.use("/api/v1", requireAccessToken(verifier, (request) => request.method === "GET" && request.path === "/speech/health"));
-  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, resolvedJobDirectionService, resolvedJobDirectionUserLimit, clientEventLogger, speculativeService, resolvedThinkingConfig.speculativeHandoffEnabled === true));
+  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, resolvedJobDirectionService, resolvedResumeDirectionService, resolvedJobDirectionUserLimit, clientEventLogger, speculativeService, resolvedThinkingConfig.speculativeHandoffEnabled === true));
   app.use(notFoundHandler);
   app.use(errorHandler);
 

@@ -1,5 +1,5 @@
 import type { JobDirection } from "./types.js";
-import { isValidTailoredQuestion, maxTailoredQuestions } from "./job-direction-normalization.js";
+import { isValidTailoredQuestion, maxApprovedTailoredQuestions } from "./job-direction-normalization.js";
 
 const requiredKeys = ["targetRole", "suggestedSeniority", "mainInterviewEmphasis", "priorityCompetencies", "productTeamContext"];
 const keys = [...requiredKeys, "tailoredQuestions"];
@@ -22,7 +22,7 @@ export function parseApprovedJobDirection(value: unknown, targetRole: string, se
   if (!Array.isArray(value.priorityCompetencies) || value.priorityCompetencies.length < 1 || value.priorityCompetencies.length > 5
     || value.priorityCompetencies.some((item) => !validText(item, 100))) return null;
   const tailored = value.tailoredQuestions;
-  if (tailored !== undefined && (!Array.isArray(tailored) || tailored.length < 1 || tailored.length > maxTailoredQuestions
+  if (tailored !== undefined && (!Array.isArray(tailored) || tailored.length < 1 || tailored.length > maxApprovedTailoredQuestions
     || tailored.some((item) => !isValidTailoredQuestion(item)) || new Set(tailored.map((item) => (item as string).trim().toLowerCase())).size !== tailored.length)) return null;
   const direction: JobDirection = {
     targetRole: value.targetRole.trim(),
