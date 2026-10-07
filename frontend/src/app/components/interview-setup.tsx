@@ -550,11 +550,11 @@ export function InterviewSetup({
                 </div>
               </div>
 
-              {/* Role, seniority and focus: typed in manual mode, filled by the analysis (and still editable) in automatic mode. */}
-              {(setupMode === "manual" || config.jobDirection) && (
+              {/* Resume interviews use the inferred profile internally; only manual and vacancy modes expose these controls. */}
+              {setupMode !== "resume" && (setupMode === "manual" || config.jobDirection) && (
                 <div className="ds-fade-in flex flex-col gap-6">
                   {setupMode !== "manual" && (
-                    <p className="ds-small -mb-2" role="status">Preenchido a partir {setupMode === "resume" ? "do currículo" : "da vaga"}. Ajuste o que não estiver certo.</p>
+                    <p className="ds-small -mb-2" role="status">Preenchido a partir da vaga. Ajuste o que não estiver certo.</p>
                   )}
                   <div className="flex flex-col gap-2">
                     <label htmlFor="role-input" className="ds-label">
