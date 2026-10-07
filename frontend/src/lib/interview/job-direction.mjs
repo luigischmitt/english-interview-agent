@@ -10,14 +10,20 @@ const limits = {
 };
 const focuses = ["technical-depth", "communication", "behavioral", "mixed"];
 const keys = ["targetRole", "suggestedSeniority", "mainInterviewEmphasis", "priorityCompetencies", "productTeamContext", "tailoredQuestions"];
-export const maxTailoredQuestions = 3;
+/** Approved snapshots can carry a full resume plan; vacancy generation intentionally stays at three. */
+export const maxTailoredQuestions = 8;
+export const maxJobTailoredQuestions = 3;
 const maxTailoredQuestionLength = 200;
+const portugueseQuestionHints = /[ãõç]|\b(?:você|voce|como|qual|quais|quando|para|uma|não|nao|sua|seu|pelo|pela|dos|das|que|mais|muito|também|tambem)\b/iu;
+const genericOpeners = /^\s*(?:tell me about yourself|walk me through your (?:resume|cv)|can you introduce yourself|do you have any questions|what questions do you have)/iu;
 
 /** One spoken English question with a single trailing "?" (the backend also filters Portuguese and generic ones). */
 export function isValidTailoredQuestion(value) {
   if (typeof value !== "string") return false;
   const text = value.trim();
-  return text.length >= 15 && text.length <= maxTailoredQuestionLength && text.endsWith("?") && text.split("?").length === 2 && !/[\r\n]/.test(text);
+  return text.length >= 15 && text.length <= maxTailoredQuestionLength && text.endsWith("?")
+    && text.split("?").length === 2 && !/[\r\n]/u.test(text)
+    && !portugueseQuestionHints.test(text) && !genericOpeners.test(text);
 }
 
 function validTailoredQuestions(value) {
@@ -84,7 +90,7 @@ export async function requestJobDirection(jobDescription, roleContext, fetcher, 
   // The practice focus only fills the setup; it is not part of the approved snapshot. Absent for older backends.
   const { suggestedFocus, tailoredQuestions: rawTailored, ...result } = isRecord(body) ? body : {};
   // Tailored questions are optional: invalid or duplicate ones are dropped instead of failing the whole analysis.
-  const tailoredQuestions = [...new Set((Array.isArray(rawTailored) ? rawTailored : []).filter(isValidTailoredQuestion).map((item) => item.trim()))].slice(0, maxTailoredQuestions);
+  const tailoredQuestions = [...new Set((Array.isArray(rawTailored) ? rawTailored : []).filter(isValidTailoredQuestion).map((item) => item.trim()))].slice(0, maxJobTailoredQuestions);
   if (!isValidJobDirection(result) || (suggestedFocus !== undefined && !focuses.includes(suggestedFocus))) throw new JobDirectionRequestError("INVALID_RESPONSE", response.status);
   return {
     targetRole: result.targetRole.trim(),
@@ -127,7 +133,9 @@ export function switchSetupMode(state, mode) {
   return { mode, config: { ...state.config, role: role || parked.targetRole, jobDirection: direction }, parkedDirection: undefined };
 }
 
-/** Starting from the automatic mode needs an analysis; manual never does. */
+/** Automatic modes need an analysis; resume mode also needs at least one approved question. */
 export function setupModeBlocksStart(mode, jobDirection) {
-  return mode === "auto" && !jobDirection;
+  if (mode === "manual") return false;
+  if (!jobDirection) return true;
+  return mode === "resume" && (!Array.isArray(jobDirection.tailoredQuestions) || jobDirection.tailoredQuestions.length === 0);
 }

@@ -11,9 +11,15 @@ export type JobDirectionErrorCode =
   | "JOB_DIRECTION_PROVIDER_UNAVAILABLE"
   | "JOB_DIRECTION_INVALID_PROVIDER_RESPONSE";
 
+export type ResumeDirectionErrorCode =
+  | "RESUME_DIRECTION_RATE_LIMITED"
+  | "RESUME_DIRECTION_TIMEOUT"
+  | "RESUME_DIRECTION_PROVIDER_UNAVAILABLE"
+  | "RESUME_DIRECTION_INVALID_PROVIDER_RESPONSE";
+
 export class ThinkingServiceError extends Error {
   constructor(
-    readonly code: ThinkingErrorCode | JobDirectionErrorCode,
+    readonly code: ThinkingErrorCode | JobDirectionErrorCode | ResumeDirectionErrorCode,
     readonly status: number,
     message: string,
     options?: ErrorOptions,

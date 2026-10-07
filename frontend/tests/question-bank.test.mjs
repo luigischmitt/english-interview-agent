@@ -139,6 +139,35 @@ test("tailored questions replace the first technical slots and run immediately a
   assert.equal(new Set(questions.map((question) => question.prompt)).size, 15);
 });
 
+test("resume interviews use a resume-aware introduction and keep approved questions identifiable", () => {
+  const questions = getFixedInterviewQuestions({
+    role: "QA Analyst",
+    seniority: "mid-level",
+    interviewSource: "resume",
+    jobDirection: qaDirection,
+  });
+  assert.match(questions[0].prompt, /introduce yourself/u);
+  assert.deepEqual(questions.slice(1, 4).map((question) => question.id), ["resume-1", "resume-2", "resume-3"]);
+  assert.deepEqual(questions.slice(1, 4).map((question) => question.prompt), tailored);
+});
+
+test("resume interviews can fill eight planned slots without changing the three vacancy slots", () => {
+  const resumeQuestions = Array(8).fill(0).map((_, index) => `In resume project ${index + 1}, what technical decision did you make?`);
+  const questions = getFixedInterviewQuestions({
+    role: "QA Analyst",
+    seniority: "mid-level",
+    interviewSource: "resume",
+    jobDirection: { ...qaDirection, tailoredQuestions: resumeQuestions },
+  });
+  assert.equal(questions.length, 15);
+  assert.deepEqual(questions.slice(1, 9).map((question) => question.id), Array(8).fill(0).map((_, index) => `resume-${index + 1}`));
+  assert.deepEqual(questions.slice(1, 9).map((question) => question.prompt), resumeQuestions);
+
+  const vacancyQuestions = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: { ...qaDirection, tailoredQuestions: resumeQuestions } });
+  assert.deepEqual(vacancyQuestions.slice(1, 4).map((question) => question.id), ["job-1", "job-2", "job-3"]);
+  assert.equal(vacancyQuestions.some((question) => question.id === "job-4"), false);
+});
+
 test("fewer tailored questions fill slots in order; none or a stale direction keeps the bank", () => {
   const two = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: { ...qaDirection, tailoredQuestions: tailored.slice(0, 2) } });
   assert.deepEqual([two[1].id, two[2].id, two[4].id], ["job-1", "job-2", getQuestionBankForRole("QA Analyst")[4].id]);

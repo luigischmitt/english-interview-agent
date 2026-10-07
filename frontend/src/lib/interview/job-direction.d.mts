@@ -11,6 +11,7 @@ export type JobDirection = {
 };
 
 export const maxTailoredQuestions: number;
+export const maxJobTailoredQuestions: number;
 export function isValidTailoredQuestion(value: unknown): value is string;
 export const jobDescriptionMinLength: number;
 export const jobDescriptionMaxLength: number;
@@ -21,7 +22,7 @@ export class JobDirectionRequestError extends Error {
 }
 export type JobFocus = "technical-depth" | "communication" | "behavioral" | "mixed";
 export type JobDirectionAnalysis = JobDirection & { suggestedFocus?: JobFocus };
-export type SetupMode = "manual" | "auto";
+export type SetupMode = "manual" | "auto" | "resume";
 type SetupConfig = { role: string; seniority: string; focus: string; jobDirection?: JobDirection };
 export type SetupModeState<C extends SetupConfig = SetupConfig> = { mode: SetupMode; config: C; parkedDirection?: JobDirection };
 export function requestJobDirection(jobDescription: string, roleContext: { targetRole: string; seniority?: string; focus?: string }, fetcher: typeof fetch, endpoint?: string): Promise<JobDirectionAnalysis>;

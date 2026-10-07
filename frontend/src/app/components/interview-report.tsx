@@ -234,7 +234,11 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
           <div><dt>Tempo</dt><dd className="tabular-nums">{elapsed} / {totalClock}</dd></div>
           <div><dt>Respostas</dt><dd>{answerCount}</dd></div>
         </dl>
-        {reportDirection && <p className="rp-hint mt-3">Relatório direcionado para esta vaga: {reportDirection.mainInterviewEmphasis}</p>}
+        {reportDirection && (
+          <p className="rp-hint mt-3">
+            Relatório direcionado {config.interviewSource === "resume" ? "pelo currículo" : "para esta vaga"}: {reportDirection.mainInterviewEmphasis}
+          </p>
+        )}
       </header>
 
       {persistenceMessage && <div role="status" className="rp-alert mt-5">{persistenceMessage}</div>}

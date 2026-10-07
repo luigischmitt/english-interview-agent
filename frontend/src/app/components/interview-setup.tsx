@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
-import { ArrowUpRight, ArrowLeft, ChevronDown, Leaf } from "lucide-react";
+import { ArrowUpRight, ArrowLeft, ChevronDown, FileText, Leaf, Trash2 } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import type { JobDirection, JobSeniority } from "@/lib/interview/job-direction.mjs";
 import type { SetupMode } from "@/lib/interview/job-direction.mjs";
-import { applyJobAnalysis, isValidJobDirection, JobDirectionRequestError, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection, setupModeBlocksStart, switchSetupMode } from "@/lib/interview/job-direction.mjs";
+import { applyJobAnalysis, isValidJobDirection, isValidTailoredQuestion, JobDirectionRequestError, jobDescriptionMaxLength, jobDescriptionMinLength, requestJobDirection, setupModeBlocksStart } from "@/lib/interview/job-direction.mjs";
+import { removeResumeQuestion, requestResumeDirection, ResumeDirectionRequestError, updateResumeQuestion, validateResumeFile } from "@/lib/interview/resume-direction.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { synthesizeInterviewerQuestion } from "@/lib/interview/speech-playback.mjs";
@@ -42,6 +43,11 @@ const subscribeNever = () => () => {};
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const audioTestPhrase = "Hello, thanks for joining me today. Could you tell me about a recent project?";
 
+type ParkedAutomaticSetup = {
+  direction: JobDirection;
+  focus: InterviewConfig["focus"];
+};
+
 export function InterviewSetup({
   onBack,
   onStart,
@@ -61,7 +67,14 @@ export function InterviewSetup({
   const [jobDirectionValidationError, setJobDirectionValidationError] = useState("");
   const [setupMode, setSetupMode] = useState<SetupMode>("manual");
   // Direction kept aside while in manual mode, so switching modes never loses the user's edits.
-  const [parkedDirection, setParkedDirection] = useState<JobDirection | undefined>(undefined);
+  const [parkedJobSetup, setParkedJobSetup] = useState<ParkedAutomaticSetup | undefined>(undefined);
+  const [parkedResumeSetup, setParkedResumeSetup] = useState<ParkedAutomaticSetup | undefined>(undefined);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [resumeDirectionStatus, setResumeDirectionStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [resumeDirectionError, setResumeDirectionError] = useState("");
+  const resumeInputRef = useRef<HTMLInputElement>(null);
+  const jobAnalysisGenerationRef = useRef(0);
+  const resumeAnalysisGenerationRef = useRef(0);
   const [showErrors, setShowErrors] = useState(false);
   const [audioTestStatus, setAudioTestStatus] = useState<{ kind: "idle" | "loading" | "success" | "error"; message?: string }>({ kind: "idle" });
   const audioTestRef = useRef<{ cancel: () => void } | null>(null);
@@ -70,7 +83,8 @@ export function InterviewSetup({
   const { copied, copy } = useCopyPageLink();
   const roomOptionsRef = useRef<HTMLElement>(null);
   const micTestRef = useRef<MicrophoneTestHandle>(null);
-  const autoBlocked = setupModeBlocksStart(setupMode, config.jobDirection);
+  const autoBlocked = setupModeBlocksStart(setupMode, config.jobDirection)
+    || (setupMode !== "manual" && !!config.jobDirection && !isValidJobDirection(config.jobDirection));
   const voiceBlocked = voiceBlocksInterviewStart(config.playInterviewerAudio, voiceReadiness);
   const startBlocked = autoBlocked || voiceBlocked;
 
@@ -82,6 +96,8 @@ export function InterviewSetup({
   useEffect(() => () => {
     audioTestRef.current?.cancel();
     audioTestRef.current = null;
+    jobAnalysisGenerationRef.current += 1;
+    resumeAnalysisGenerationRef.current += 1;
   }, []);
 
   // The device chosen in an earlier session (this browser only); null on the server render, so hydration matches.
@@ -135,6 +151,7 @@ export function InterviewSetup({
 
   const analyzeJobDescription = async () => {
     if (jobDirectionStatus === "loading") return;
+    const generation = ++jobAnalysisGenerationRef.current;
     setJobDirectionStatus("loading");
     setJobDirectionError("");
     setJobDirectionEditNote("");
@@ -145,10 +162,13 @@ export function InterviewSetup({
         seniority: config.seniority,
         focus: config.focus,
       }, authorizedFetch, `${backendBaseUrl}/api/v1/thinking/job-direction`);
-      setConfig((current) => applyJobAnalysis(current, direction));
+      if (jobAnalysisGenerationRef.current !== generation) return;
+      setConfig((current) => ({ ...applyJobAnalysis(current, direction), interviewSource: "job" }));
+      setParkedJobSetup(undefined);
       setShowErrors(false);
       setJobDirectionStatus("idle");
     } catch (error) {
+      if (jobAnalysisGenerationRef.current !== generation) return;
       const code = error instanceof JobDirectionRequestError ? error.code : "REQUEST_FAILED";
       const message = code === "INVALID_INPUT" || code === "INVALID_JOB_DIRECTION_REQUEST"
         ? `Cole uma descrição com pelo menos ${jobDescriptionMinLength} caracteres para gerar o direcionamento.`
@@ -164,23 +184,127 @@ export function InterviewSetup({
     }
   };
 
+  const analyzeResume = async () => {
+    if (resumeDirectionStatus === "loading" || !resumeFile) return;
+    const generation = ++resumeAnalysisGenerationRef.current;
+    setResumeDirectionStatus("loading");
+    setResumeDirectionError("");
+    setJobDirectionValidationError("");
+    try {
+      const direction = await requestResumeDirection(resumeFile, authorizedFetch, `${backendBaseUrl}/api/v1/thinking/resume-direction`);
+      if (resumeAnalysisGenerationRef.current !== generation) return;
+      setConfig((current) => ({ ...applyJobAnalysis(current, direction), interviewSource: "resume" }));
+      setParkedResumeSetup(undefined);
+      setShowErrors(false);
+      setResumeDirectionStatus("idle");
+    } catch (error) {
+      if (resumeAnalysisGenerationRef.current !== generation) return;
+      const code = error instanceof ResumeDirectionRequestError ? error.code : "REQUEST_FAILED";
+      const message = code === "RESUME_FILE_TOO_LARGE"
+        ? "O PDF pode ter no máximo 5 MB. Escolha uma versão menor."
+        : code === "RESUME_TOO_MANY_PAGES"
+          ? "O currículo pode ter no máximo 20 páginas."
+          : code === "RESUME_INVALID_PDF"
+            ? "Não conseguimos ler este PDF. Use um arquivo com texto selecionável e sem senha."
+            : code === "RESUME_INSUFFICIENT_CONTENT"
+              ? "O PDF tem pouco texto útil. Envie uma versão com experiências e projetos descritos."
+              : code === "RESUME_CONTENT_TOO_LARGE"
+                ? "O currículo tem texto demais para a análise. Envie uma versão mais curta."
+                : code === "RESUME_DIRECTION_TIMEOUT"
+                  ? "A análise demorou mais do que o esperado. Tente novamente."
+                  : code === "RESUME_DIRECTION_RATE_LIMITED"
+                    ? "A análise está ocupada agora. Aguarde um pouco e tente novamente."
+                    : code === "INVALID_RESUME_REQUEST"
+                      ? "Escolha um arquivo PDF válido para analisar."
+                      : "Não foi possível analisar este currículo agora. Tente novamente ou use o modo manual.";
+      setResumeDirectionError(message);
+      setResumeDirectionStatus("error");
+    }
+  };
+
   const changeSetupMode = (mode: SetupMode) => {
-    const next = switchSetupMode({ mode: setupMode, config, parkedDirection }, mode);
-    setSetupMode(next.mode);
-    setConfig(next.config);
-    setParkedDirection(next.parkedDirection);
+    if (mode === setupMode) return;
+    if (setupMode === "auto") {
+      jobAnalysisGenerationRef.current += 1;
+      setJobDirectionStatus("idle");
+    }
+    if (setupMode === "resume") {
+      resumeAnalysisGenerationRef.current += 1;
+      setResumeDirectionStatus("idle");
+    }
+    const activeDirection = config.jobDirection;
+    if (setupMode === "auto" && activeDirection) setParkedJobSetup({ direction: activeDirection, focus: config.focus });
+    if (setupMode === "resume" && activeDirection) setParkedResumeSetup({ direction: activeDirection, focus: config.focus });
+    const restored = mode === "auto" ? parkedJobSetup : mode === "resume" ? parkedResumeSetup : undefined;
+    setSetupMode(mode);
+    setConfig((current) => {
+      const base = { ...current };
+      delete base.jobDirection;
+      delete base.interviewSource;
+      if (!restored) return { ...base, interviewSource: mode === "manual" ? "manual" : mode === "auto" ? "job" : "resume" };
+      return {
+        ...base,
+        role: restored.direction.targetRole,
+        seniority: restored.direction.suggestedSeniority,
+        focus: restored.focus,
+        jobDirection: restored.direction,
+        interviewSource: mode === "auto" ? "job" : "resume",
+      };
+    });
+    if (mode === "auto") setParkedJobSetup(undefined);
+    if (mode === "resume") setParkedResumeSetup(undefined);
     setJobDirectionError("");
+    setResumeDirectionError("");
     setJobDirectionEditNote("");
     setJobDirectionValidationError("");
   };
 
   const clearAnalysis = () => {
     setConfig((current) => ({ ...current, jobDirection: undefined }));
-    setParkedDirection(undefined);
-    setJobDescription("");
+    if (setupMode === "resume") {
+      resumeAnalysisGenerationRef.current += 1;
+      setParkedResumeSetup(undefined);
+      setResumeFile(null);
+      if (resumeInputRef.current) resumeInputRef.current.value = "";
+      setResumeDirectionError("");
+      setResumeDirectionStatus("idle");
+    } else {
+      jobAnalysisGenerationRef.current += 1;
+      setParkedJobSetup(undefined);
+      setJobDescription("");
+      setJobDirectionStatus("idle");
+    }
     setJobDirectionError("");
     setJobDirectionEditNote("");
     setJobDirectionValidationError("");
+  };
+
+  const chooseResumeFile = (file: File | null) => {
+    resumeAnalysisGenerationRef.current += 1;
+    setResumeDirectionStatus("idle");
+    setResumeDirectionError("");
+    setJobDirectionValidationError("");
+    setResumeFile(file);
+    setConfig((current) => ({ ...current, jobDirection: undefined, interviewSource: "resume" }));
+    setParkedResumeSetup(undefined);
+    if (!file) return;
+    const code = validateResumeFile(file);
+    if (code === "RESUME_FILE_TOO_LARGE") setResumeDirectionError("O PDF pode ter no máximo 5 MB. Escolha uma versão menor.");
+    else if (code) setResumeDirectionError("Escolha um arquivo PDF válido para analisar.");
+  };
+
+  const editResumeQuestion = (index: number, question: string) => {
+    setJobDirectionValidationError("");
+    setConfig((current) => current.jobDirection
+      ? { ...current, jobDirection: updateResumeQuestion(current.jobDirection, index, question.slice(0, 200)) }
+      : current);
+  };
+
+  const deleteResumeQuestion = (index: number) => {
+    setJobDirectionValidationError("");
+    setConfig((current) => current.jobDirection
+      ? { ...current, jobDirection: removeResumeQuestion(current.jobDirection, index) }
+      : current);
   };
 
   const editJobDirection = (field: keyof JobDirection, value: string) => {
@@ -274,7 +398,14 @@ export function InterviewSetup({
       priorityCompetencies: config.jobDirection.priorityCompetencies.map((item) => item.trim()),
       productTeamContext: config.jobDirection.productTeamContext.trim(),
     } : undefined;
-    onStart({ ...config, role: config.role.trim(), voice, microphoneDeviceId, ...(jobDirection ? { jobDirection } : {}) });
+    onStart({
+      ...config,
+      role: config.role.trim(),
+      voice,
+      microphoneDeviceId,
+      interviewSource: setupMode === "auto" ? "job" : setupMode,
+      ...(jobDirection ? { jobDirection } : {}),
+    });
   };
 
   const [cargoSummary, ...restSummary] = getInterviewSetupSummary({ ...config, voice }, seniorityLabels, focusLabels);
@@ -292,7 +423,9 @@ export function InterviewSetup({
     ? voiceReadiness === "warming" ? "Ligando voz…" : voiceReadiness === "unavailable" ? "Voz indisponível" : "Iniciar com áudio"
     : "Iniciar somente com texto";
   const startHint = autoBlocked
-    ? "Analise a vaga para continuar, ou mude para “Manual”."
+    ? setupMode === "resume"
+      ? "Analise o currículo e mantenha ao menos uma pergunta válida para continuar."
+      : "Analise a vaga para continuar, ou mude para “Manual”."
     : voiceReadiness === "unavailable"
       ? "Tente ligar a voz novamente ou escolha “Somente texto”."
       : "Aguarde a voz do entrevistador ficar pronta para iniciar com áudio.";
@@ -326,9 +459,13 @@ export function InterviewSetup({
                 <SlidingSegmented
                   name="setup-mode"
                   ariaLabel="Como definir a entrevista"
-                  className="grid-cols-2"
+                  className="grid-cols-1 min-[520px]:grid-cols-3"
                   itemClassName="min-h-11"
-                  options={[{ value: "manual", label: "Manual" }, { value: "auto", label: "Automático pela vaga" }]}
+                  options={[
+                    { value: "manual", label: "Manual" },
+                    { value: "auto", label: "Pela vaga" },
+                    { value: "resume", label: "Pelo currículo" },
+                  ]}
                   value={setupMode}
                   onChange={(value) => changeSetupMode(value as SetupMode)}
                 />
@@ -372,11 +509,66 @@ export function InterviewSetup({
                 </div>
               </div>
 
+              {/* Resume mode: the PDF is sent once for analysis, then discarded by the backend. */}
+              <div id="resume-analysis-panel" className="ds-reveal" data-open={setupMode === "resume"} inert={setupMode !== "resume"}>
+                <div>
+                  <div className="-mx-1 px-1 pb-1">
+                    <label htmlFor="resume-file" className="ds-label block">Currículo em PDF</label>
+                    <p className="ds-small mt-1">A IA identifica experiências e projetos para criar perguntas específicas. Você revisa tudo antes de começar.</p>
+                    <div className="card card-border mt-3 bg-base-100">
+                      <div className="card-body gap-3 p-4 sm:p-5">
+                        <div className="flex items-start gap-3">
+                          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-base-200 text-base-content/70" aria-hidden="true">
+                            <FileText className="size-5" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold">Envie uma versão com texto selecionável</p>
+                            <p className="ds-small mt-1">Somente PDF, até 5 MB e 20 páginas. O arquivo não é salvo pelo app.</p>
+                          </div>
+                        </div>
+                        <input
+                          id="resume-file"
+                          ref={resumeInputRef}
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          className="file-input file-input-sm w-full"
+                          onChange={(event) => chooseResumeFile(event.target.files?.[0] ?? null)}
+                          aria-describedby="resume-file-help"
+                        />
+                        <p id="resume-file-help" className="ds-small">
+                          {resumeFile ? `${resumeFile.name} · ${(resumeFile.size / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB` : "Nenhum arquivo selecionado."}
+                        </p>
+                        <div className="card-actions items-center">
+                          <button
+                            type="button"
+                            className="btn btn-sm ds-btn ds-btn-soft"
+                            onClick={() => void analyzeResume()}
+                            disabled={!resumeFile || !!validateResumeFile(resumeFile) || resumeDirectionStatus === "loading"}
+                          >
+                            {resumeDirectionStatus === "loading"
+                              ? <><span className="loading loading-spinner loading-xs" aria-hidden="true" /> Analisando currículo…</>
+                              : config.jobDirection ? "Analisar novamente" : "Analisar currículo"}
+                          </button>
+                          {config.jobDirection && (
+                            <button type="button" className="btn btn-sm ds-btn ds-btn-quiet" onClick={clearAnalysis}>Remover análise</button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div aria-live="polite">
+                      {resumeDirectionError && (
+                        <div className="alert alert-warning mt-4" role="alert"><p>{resumeDirectionError}</p></div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Role, seniority and focus: typed in manual mode, filled by the analysis (and still editable) in automatic mode. */}
               {(setupMode === "manual" || config.jobDirection) && (
                 <div className="ds-fade-in flex flex-col gap-6">
-                  {setupMode === "auto" && (
-                    <p className="ds-small -mb-2" role="status">Preenchido a partir da vaga. Ajuste o que não estiver certo.</p>
+                  {setupMode !== "manual" && (
+                    <p className="ds-small -mb-2" role="status">Preenchido a partir {setupMode === "resume" ? "do currículo" : "da vaga"}. Ajuste o que não estiver certo.</p>
                   )}
                   <div className="flex flex-col gap-2">
                     <label htmlFor="role-input" className="ds-label">
@@ -423,13 +615,13 @@ export function InterviewSetup({
               )}
 
               {/* Direction summary from the analysis: editable, and the approved snapshot goes to the room and the report. */}
-              <div id="job-direction-panel" className="ds-reveal" data-open={setupMode === "auto" && !!config.jobDirection} inert={!(setupMode === "auto" && config.jobDirection)}>
+              <div id="job-direction-panel" className="ds-reveal" data-open={setupMode !== "manual" && !!config.jobDirection} inert={!(setupMode !== "manual" && config.jobDirection)}>
                 <div>
                   {config.jobDirection && (
                     <fieldset className="-mx-1 rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-5" aria-labelledby="direction-found-title">
-                      <legend className="sr-only">Direcionamento da vaga</legend>
-                      <h3 id="direction-found-title" className="ds-label">Prioridades da vaga</h3>
-                      <p className="ds-small mt-1">Revise o resumo. Ele orienta as perguntas e o relatório; nenhuma pergunta foi gerada nesta etapa.</p>
+                      <legend className="sr-only">Direcionamento da entrevista</legend>
+                      <h3 id="direction-found-title" className="ds-label">{setupMode === "resume" ? "Entrevista criada pelo currículo" : "Prioridades da vaga"}</h3>
+                      <p className="ds-small mt-1">{setupMode === "resume" ? "Revise o direcionamento e as perguntas. Remova o que não quiser praticar." : "Revise o resumo. Ele orienta as perguntas e o relatório."}</p>
                       <div className="mt-4 grid gap-4">
                         <div className="flex flex-col gap-2">
                           <label htmlFor="direction-emphasis" className="ds-label">Principal ênfase da entrevista</label>
@@ -444,6 +636,43 @@ export function InterviewSetup({
                           <label htmlFor="direction-context" className="ds-label">Contexto de produto e equipe</label>
                           <textarea id="direction-context" rows={2} maxLength={280} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.productTeamContext} onChange={(event) => editJobDirection("productTeamContext", event.target.value)} />
                         </div>
+                        {setupMode === "resume" && (
+                          <fieldset className="mt-1 border-t border-base-300 pt-4">
+                            <legend className="ds-label">Perguntas do currículo</legend>
+                            <p className="ds-small mt-1">Elas serão feitas em inglês e podem gerar follow-ups a partir da sua resposta.</p>
+                            <div className="mt-3 grid gap-3">
+                              {(config.jobDirection.tailoredQuestions ?? []).map((question, index) => {
+                                const valid = isValidTailoredQuestion(question);
+                                return (
+                                  <div key={`resume-question-${index}`} className="card card-border bg-base-100">
+                                    <div className="card-body gap-2 p-3 sm:p-4">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <label htmlFor={`resume-question-${index}`} className="text-xs font-semibold uppercase tracking-[0.08em] text-base-content/60">Pergunta {index + 1}</label>
+                                        <button type="button" className="btn btn-ghost btn-xs text-error" onClick={() => deleteResumeQuestion(index)} aria-label={`Remover pergunta ${index + 1}`}>
+                                          <Trash2 className="size-4" aria-hidden="true" /> Remover
+                                        </button>
+                                      </div>
+                                      <textarea
+                                        id={`resume-question-${index}`}
+                                        rows={2}
+                                        maxLength={200}
+                                        className={`textarea ds-field w-full resize-y text-sm leading-6 ${valid ? "" : "textarea-error"}`}
+                                        value={question}
+                                        onChange={(event) => editResumeQuestion(index, event.target.value)}
+                                        aria-invalid={!valid}
+                                        aria-describedby={valid ? undefined : `resume-question-${index}-error`}
+                                      />
+                                      {!valid && <p id={`resume-question-${index}-error`} className="ds-small text-error" role="alert">Use uma pergunta curta em inglês, com apenas um “?”.</p>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              {(config.jobDirection.tailoredQuestions ?? []).length === 0 && (
+                                <div className="alert alert-warning" role="alert">Mantenha ao menos uma pergunta para iniciar pelo currículo.</div>
+                              )}
+                            </div>
+                          </fieldset>
+                        )}
                       </div>
                       {jobDirectionEditNote && <p className="ds-small mt-3 text-warning" role="status">{jobDirectionEditNote}</p>}
                       {jobDirectionValidationError && <p className="ds-small mt-3 text-error" role="alert">{jobDirectionValidationError}</p>}
