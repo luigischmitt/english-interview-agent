@@ -36,3 +36,10 @@ test("sessions without a valid matching snapshot keep the legacy payload shape",
     roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
   });
 });
+
+test("resume reports use the asked questions and answers without vacancy framing", () => {
+  const data = { turns: [{ sequenceNumber: 1, question: "What did you build?", answer: "I built an API." }] };
+  const result = buildInterviewReportRequest({ ...config, interviewSource: "resume", jobDirection: direction }, data);
+  assert.equal("jobDirection" in result, false);
+  assert.deepEqual(result.roleContext, { targetRole: config.role, seniority: config.seniority, focus: config.focus });
+});

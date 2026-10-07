@@ -3,6 +3,9 @@ import { isValidJobDirection, isValidTailoredQuestion, maxTailoredQuestions } fr
 export const resumeMaxBytes = 5 * 1024 * 1024;
 
 const focuses = ["technical-depth", "communication", "behavioral", "mixed"];
+const resumeEmphasis = "Experiências, projetos e decisões descritos no currículo.";
+const resumeContext = "Entrevista orientada exclusivamente pelo currículo enviado.";
+const resumeCompetencies = ["Experiências e projetos do currículo"];
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -50,24 +53,19 @@ export async function requestResumeDirection(file, fetcher, endpoint = "http://l
   let body;
   try { body = await response.json(); } catch { throw new ResumeDirectionRequestError("INVALID_RESPONSE", response.status); }
   if (!isRecord(body)) throw new ResumeDirectionRequestError("INVALID_RESPONSE", response.status);
-  const { suggestedFocus, tailoredQuestions: rawQuestions, ...base } = body;
+  const { suggestedFocus, tailoredQuestions: rawQuestions, ...profile } = body;
   const questions = [...new Set((Array.isArray(rawQuestions) ? rawQuestions : [])
     .filter(isValidTailoredQuestion)
     .map((question) => question.trim()))].slice(0, maxTailoredQuestions);
-  const direction = { ...base, tailoredQuestions: questions };
-  if (!isValidJobDirection(direction) || questions.length === 0 || (suggestedFocus !== undefined && !focuses.includes(suggestedFocus))) {
+  const direction = {
+    ...profile,
+    mainInterviewEmphasis: resumeEmphasis,
+    priorityCompetencies: resumeCompetencies,
+    productTeamContext: resumeContext,
+    tailoredQuestions: questions,
+  };
+  if (!isValidJobDirection(direction) || questions.length !== maxTailoredQuestions || (suggestedFocus !== undefined && !focuses.includes(suggestedFocus))) {
     throw new ResumeDirectionRequestError("INVALID_RESPONSE", response.status);
   }
   return { ...direction, ...(suggestedFocus ? { suggestedFocus } : {}) };
-}
-
-export function updateResumeQuestion(direction, index, question) {
-  if (!direction || !Array.isArray(direction.tailoredQuestions) || index < 0 || index >= direction.tailoredQuestions.length) return direction;
-  const tailoredQuestions = direction.tailoredQuestions.map((item, itemIndex) => itemIndex === index ? question : item);
-  return { ...direction, tailoredQuestions };
-}
-
-export function removeResumeQuestion(direction, index) {
-  if (!direction || !Array.isArray(direction.tailoredQuestions)) return direction;
-  return { ...direction, tailoredQuestions: direction.tailoredQuestions.filter((_, itemIndex) => itemIndex !== index) };
 }

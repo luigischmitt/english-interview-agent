@@ -26,12 +26,11 @@ export function getFixedInterviewQuestions(config: InterviewConfig): InterviewQu
 }
 
 // Bank order: [introduction, t1, t2, ownership, t3, conflict, t4, ...]. Tailored questions take the first technical slots.
-const vacancySlots = [1, 2, 4];
-const resumeSlots = [1, 2, 3, 4, 5, 6, 7, 8];
+const tailoredSlots = [1, 2, 3, 4, 5, 6, 7, 8];
 
 function applyTailoredQuestions(questions: InterviewQuestion[], tailored: string[] | undefined, prefix: "job" | "resume"): InterviewQuestion[] {
   const used = new Set(questions.map((question) => question.prompt.trim().toLowerCase()));
-  const slots = prefix === "resume" ? resumeSlots : vacancySlots;
+  const slots = tailoredSlots;
   let slot = 0;
   (tailored ?? []).forEach((prompt) => {
     const key = prompt.trim().toLowerCase();
@@ -40,7 +39,7 @@ function applyTailoredQuestions(questions: InterviewQuestion[], tailored: string
     used.add(key);
     slot += 1;
   });
-  // In a five-minute interview, keep all vacancy questions immediately after the introduction.
+  // In a short interview, keep all source-specific questions immediately after the introduction.
   // Questions from the role bank retain their relative order after the tailored block.
   const tailoredPrefix = `${prefix}-`;
   return [questions[0], ...questions.slice(1).filter((question) => question.id.startsWith(tailoredPrefix)), ...questions.slice(1).filter((question) => !question.id.startsWith(tailoredPrefix))];

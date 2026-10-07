@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { OpenRouterJobDirectionService } from "./openrouter-job-direction-service.js";
 
+const tailoredQuestions = [
+  "How would you design reliable APIs for the logistics platform?",
+  "How would you monitor distributed services in production?",
+  "What trade-offs would you consider when scaling this backend?",
+  "How would you investigate a production incident in this platform?",
+  "How would you keep data consistent across distributed services?",
+  "How would you collaborate with product on a technical decision?",
+  "How would you test a critical logistics workflow before release?",
+  "How would you improve the performance of a slow API endpoint?",
+];
+
 const direction = {
   targetRole: "Backend Engineer",
   suggestedSeniority: "senior",
@@ -8,6 +19,7 @@ const direction = {
   priorityCompetencies: ["Sistemas distribuídos", "Observabilidade"],
   productTeamContext: "Plataforma B2B para logística; equipe de produto e engenharia.",
   suggestedFocus: "technical-depth",
+  tailoredQuestions,
 };
 const input = {
   jobDescription: "We are hiring a backend engineer to build distributed services, improve API reliability, and work with product on a logistics platform. " .repeat(2),
@@ -87,32 +99,24 @@ describe("OpenRouter job direction service", () => {
     await expect(unavailableService.analyze(input)).rejects.toMatchObject({ code: "JOB_DIRECTION_PROVIDER_UNAVAILABLE", status: 502 });
   });
 
-  it("keeps valid tailored questions and drops Portuguese, multi-question, long, generic and duplicate ones", async () => {
-    const good = "How would you structure a Playwright test suite so it stays reliable as the product grows?";
+  it("returns a normalized plan only when all eight tailored questions are valid and distinct", async () => {
     const service = new OpenRouterJobDirectionService({
       key: "k", model: "m", timeoutMs: 1_000,
       fetchImplementation: async () => providerResponse({
         ...direction,
-        tailoredQuestions: [
-          good,
-          `  ${good.toUpperCase()} `,
-          "Como você automatizaria testes de API com Postman?",
-          "How do you test APIs? And how do you report bugs?",
-          "Tell me about yourself and your experience?",
-          `${"Why ".repeat(60)}?`,
-          "How do you run API tests in GitHub Actions without slowing down the pipeline?",
-          "What is your approach to flaky tests in CI?",
-        ],
+        tailoredQuestions: tailoredQuestions.map((question, index) => index === 0 ? `  ${question}  ` : question),
       }),
     });
-    await expect(service.analyze(input)).resolves.toMatchObject({
-      tailoredQuestions: [good, "How do you run API tests in GitHub Actions without slowing down the pipeline?", "What is your approach to flaky tests in CI?"],
-    });
+    await expect(service.analyze(input)).resolves.toMatchObject({ tailoredQuestions });
   });
 
-  it("omits tailoredQuestions when none survive validation", async () => {
-    const service = new OpenRouterJobDirectionService({ key: "k", model: "m", timeoutMs: 1_000, fetchImplementation: async () => providerResponse({ ...direction, tailoredQuestions: ["Qual é a sua experiência com testes?", 42] }) });
-    const result = await service.analyze(input);
-    expect(result).not.toHaveProperty("tailoredQuestions");
+  it.each([
+    ["fewer than eight", tailoredQuestions.slice(0, 7)],
+    ["duplicate", [...tailoredQuestions.slice(0, 7), tailoredQuestions[0]]],
+    ["Portuguese", [...tailoredQuestions.slice(0, 7), "Como você investigaria um incidente em produção?"]],
+    ["multiple questions", [...tailoredQuestions.slice(0, 7), "How do you test APIs? And how do you report bugs?"]],
+  ])("rejects an incomplete tailored plan after validation (%s)", async (_case, questions) => {
+    const service = new OpenRouterJobDirectionService({ key: "k", model: "m", timeoutMs: 1_000, fetchImplementation: async () => providerResponse({ ...direction, tailoredQuestions: questions }) });
+    await expect(service.analyze(input)).rejects.toMatchObject({ code: "JOB_DIRECTION_INVALID_PROVIDER_RESPONSE" });
   });
 });

@@ -4,23 +4,24 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createResumeDirectionHandlers, extractResumePdf, maximumResumeBytes, redactResumeContactDetails } from "../src/controllers/resume-direction-controller.js";
 import { JobDirectionUserLimit } from "../src/thinking/job-direction-user-limit.js";
-import { parseApprovedJobDirection } from "../src/thinking/job-direction-validation.js";
 import { maxResumeTailoredQuestions, OpenRouterResumeDirectionService, parseResumeDirection } from "../src/thinking/openrouter-resume-direction-service.js";
 import type { ResumeDirectionInput, ResumeDirectionService } from "../src/thinking/types.js";
 
 const resumeText = "Backend Engineer at Acme. Built a distributed payments platform with Node.js and PostgreSQL. Led observability improvements and reduced incidents by 30 percent. Collaborated with product and support teams across releases.";
 
+const resumeAnchors = [
+  "Backend Engineer", "Acme", "distributed payments platform", "Node.js", "PostgreSQL",
+  "observability improvements", "reduced incidents by 30 percent", "product and support teams",
+];
+
 const providerResult = {
   targetRole: "Senior Backend Engineer",
   suggestedSeniority: "senior",
-  mainInterviewEmphasis: "Decisões técnicas, impacto e colaboração.",
-  priorityCompetencies: ["Sistemas distribuídos", "Observabilidade"],
-  productTeamContext: "Plataforma de pagamentos e colaboração com produto.",
   suggestedFocus: "technical-depth",
-  tailoredQuestions: [
-    { question: "How did you design the distributed payments platform?", sourceAnchor: "distributed payments platform" },
-    { question: "How did your observability work reduce incidents?", sourceAnchor: "reduced incidents by 30 percent" },
-  ],
+  tailoredQuestions: resumeAnchors.map((sourceAnchor, index) => ({
+    question: `What technical decision did you make in experience number ${index + 1}?`,
+    sourceAnchor,
+  })),
 };
 
 function simplePdf(text: string): Buffer {
@@ -73,14 +74,8 @@ describe("resume direction validation", () => {
     expect(parseResumeDirection(JSON.stringify(providerResult), { resumeText, pageCount: 2 })).toEqual({
       targetRole: "Backend Engineer",
       suggestedSeniority: "senior",
-      mainInterviewEmphasis: "Decisões técnicas, impacto e colaboração.",
-      priorityCompetencies: ["Sistemas distribuídos", "Observabilidade"],
-      productTeamContext: "Plataforma de pagamentos e colaboração com produto.",
       suggestedFocus: "technical-depth",
-      tailoredQuestions: [
-        "How did you design the distributed payments platform?",
-        "How did your observability work reduce incidents?",
-      ],
+      tailoredQuestions: Array.from({ length: 8 }, (_, index) => `What technical decision did you make in experience number ${index + 1}?`),
     });
   });
 
@@ -95,29 +90,19 @@ describe("resume direction validation", () => {
     }), { resumeText: `${resumeText} person@example.com`, pageCount: 2 })).toThrowError(/validar a análise/iu);
     expect(() => parseResumeDirection(JSON.stringify({
       ...providerResult,
-      productTeamContext: "Contato person@example.com",
-    }), { resumeText, pageCount: 2 })).toThrowError(/validar a análise/iu);
-    expect(() => parseResumeDirection(JSON.stringify({
-      ...providerResult,
       tailoredQuestions: [{ question: "How did person@example.com build the platform?", sourceAnchor: "distributed payments platform" }],
     }), { resumeText, pageCount: 2 })).toThrowError(/validar a análise/iu);
   });
 
-  it("accepts up to eight grounded resume questions without changing the vacancy default", () => {
-    const anchors = [
-      "Backend Engineer", "Acme", "distributed payments platform", "Node.js", "PostgreSQL",
-      "observability improvements", "reduced incidents by 30 percent", "product and support teams",
-    ];
-    const questions = anchors.map((sourceAnchor, index) => ({
+  it("requires exactly eight grounded resume questions", () => {
+    const questions = resumeAnchors.map((sourceAnchor, index) => ({
       question: `What did you learn from experience number ${index + 1} with this work?`,
       sourceAnchor,
     }));
     const result = parseResumeDirection(JSON.stringify({ ...providerResult, tailoredQuestions: questions }), { resumeText, pageCount: 2 });
     expect(maxResumeTailoredQuestions).toBe(8);
     expect(result.tailoredQuestions).toHaveLength(8);
-    const { suggestedFocus: _suggestedFocus, ...approvedSnapshot } = result;
-    expect(parseApprovedJobDirection(approvedSnapshot, result.targetRole, result.suggestedSeniority)).not.toBeNull();
-    expect(parseApprovedJobDirection({ ...approvedSnapshot, tailoredQuestions: [...result.tailoredQuestions!, "What did you learn from one more experience?"] }, result.targetRole, result.suggestedSeniority)).toBeNull();
+    expect(() => parseResumeDirection(JSON.stringify({ ...providerResult, tailoredQuestions: questions.slice(0, 7) }), { resumeText, pageCount: 2 })).toThrowError(/validar a análise/iu);
   });
 });
 
@@ -136,7 +121,7 @@ describe("OpenRouter resume direction service", () => {
     });
     const result = await service.analyze({ resumeText, pageCount: 2 });
 
-    expect(result.tailoredQuestions).toHaveLength(2);
+    expect(result.tailoredQuestions).toHaveLength(8);
     expect(sent?.provider).toEqual({ require_parameters: true, data_collection: "deny" });
     expect(sent?.usage).toEqual({ include: true });
     expect(sent?.response_format).toMatchObject({ type: "json_schema", json_schema: { strict: true } });
@@ -155,7 +140,7 @@ describe("POST resume direction controller", () => {
       .post("/resume")
       .attach("resume", Buffer.from("%PDF-fake-test"), { filename: "resume.pdf", contentType: "application/pdf" });
     expect(response.status).toBe(200);
-    expect(response.body.tailoredQuestions).toHaveLength(2);
+    expect(response.body.tailoredQuestions).toHaveLength(8);
     expect(analyze).toHaveBeenCalledWith({ resumeText, pageCount: 2 });
   });
 

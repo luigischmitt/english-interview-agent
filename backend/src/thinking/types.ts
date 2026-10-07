@@ -40,7 +40,7 @@ export type JobDirection = {
   mainInterviewEmphasis: string;
   priorityCompetencies: string[];
   productTeamContext: string;
-  /** English questions tailored to the source (up to three for a vacancy, up to eight for a resume). */
+  /** English questions tailored to the source (eight when generated automatically; fewer remain valid after user review). */
   tailoredQuestions?: string[];
 };
 
@@ -69,9 +69,13 @@ export type ResumeDirectionInput = {
   pageCount: number;
 };
 
-/** Produces the same approved setup snapshot as job analysis, without retaining the uploaded resume. */
+export type ResumeDirectionAnalysis = Pick<JobDirectionAnalysis, "targetRole" | "suggestedSeniority" | "suggestedFocus"> & {
+  tailoredQuestions: string[];
+};
+
+/** Produces only the profile and grounded questions needed for a resume interview. */
 export interface ResumeDirectionService {
-  analyze(input: ResumeDirectionInput): Promise<JobDirectionAnalysis>;
+  analyze(input: ResumeDirectionInput): Promise<ResumeDirectionAnalysis>;
 }
 
 export type InterviewReportInput = {

@@ -23,7 +23,7 @@ const schema = {
     priorityCompetencies: { type: "array", minItems: 1, maxItems: 5, items: { type: "string", minLength: 1, maxLength: 100 } },
     productTeamContext: { type: "string", minLength: 1, maxLength: 280 },
     suggestedFocus: { type: "string", enum: ["technical-depth", "communication", "behavioral", "mixed"] },
-    tailoredQuestions: { type: "array", maxItems: maxTailoredQuestions, items: { type: "string", minLength: 1, maxLength: maxTailoredQuestionLength } },
+    tailoredQuestions: { type: "array", minItems: maxTailoredQuestions, maxItems: maxTailoredQuestions, items: { type: "string", minLength: 15, maxLength: maxTailoredQuestionLength } },
   },
   required: ["targetRole", "suggestedSeniority", "mainInterviewEmphasis", "priorityCompetencies", "productTeamContext", "suggestedFocus", "tailoredQuestions"],
 } as const;
@@ -90,8 +90,8 @@ function parseJobDirection(content: unknown, input: JobDirectionInput): JobDirec
   const suggestedFocus: JobFocus = focuses.includes(providedFocus as JobFocus) ? providedFocus as JobFocus : "mixed";
   if (candidate.suggestedFocus !== undefined && candidate.suggestedFocus !== suggestedFocus) throw invalidProviderResponse();
 
-  // Invalid, Portuguese or duplicate questions are dropped silently: the fixed role bank covers any gap.
   const tailoredQuestions = normalizeTailoredQuestions(candidate.tailoredQuestions);
+  if (tailoredQuestions.length !== maxTailoredQuestions) throw invalidProviderResponse();
 
   return {
     targetRole,
@@ -99,7 +99,7 @@ function parseJobDirection(content: unknown, input: JobDirectionInput): JobDirec
     mainInterviewEmphasis: candidate.mainInterviewEmphasis.trim(),
     priorityCompetencies: candidate.priorityCompetencies.map((item) => item.trim()),
     productTeamContext: normalizeProductTeamContext(candidate.productTeamContext),
-    ...(tailoredQuestions.length > 0 ? { tailoredQuestions } : {}),
+    tailoredQuestions,
     suggestedFocus,
   };
 }
@@ -130,7 +130,7 @@ export class OpenRouterJobDirectionService implements JobDirectionService {
             { role: "user", content: JSON.stringify({ roleContext: input.roleContext, jobDescription: input.jobDescription }) },
           ],
           temperature: 0,
-          max_tokens: 900,
+          max_tokens: 1_400,
           usage: { include: true },
           provider: { require_parameters: true, data_collection: "deny" },
           response_format: { type: "json_schema", json_schema: { name: "job_interview_direction", strict: true, schema } },

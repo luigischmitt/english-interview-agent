@@ -1,4 +1,4 @@
-import type { JobDirection, JobDirectionAnalysis } from "./job-direction.mjs";
+import type { JobDirectionAnalysis } from "./job-direction.mjs";
 
 export const resumeMaxBytes: number;
 export class ResumeDirectionRequestError extends Error {
@@ -11,5 +11,3 @@ export function requestResumeDirection(
   fetcher: typeof fetch,
   endpoint?: string,
 ): Promise<JobDirectionAnalysis>;
-export function updateResumeQuestion(direction: JobDirection, index: number, question: string): JobDirection;
-export function removeResumeQuestion(direction: JobDirection, index: number): JobDirection;

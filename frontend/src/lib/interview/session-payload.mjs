@@ -3,7 +3,7 @@ import { nullableQuestionCount } from "./session-policy.mjs";
 
 /** Whitelist the values saved for a session; source job descriptions are never copied into persistence. */
 export function buildInterviewSessionPayload(config, userId, startedAt = new Date().toISOString()) {
-  const jobDirection = config.jobDirection && isValidJobDirection(config.jobDirection)
+  const jobDirection = config.interviewSource !== "resume" && config.jobDirection && isValidJobDirection(config.jobDirection)
     && config.jobDirection.targetRole.trim() === config.role.trim()
     && config.jobDirection.suggestedSeniority === config.seniority
     ? {

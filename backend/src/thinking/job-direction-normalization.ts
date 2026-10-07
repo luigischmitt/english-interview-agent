@@ -69,9 +69,9 @@ export function normalizeProductTeamContext(value: string): string {
   return /[.!]$/u.test(text) ? text : `${text}.`;
 }
 
-export const maxTailoredQuestions = 3;
-/** Approved snapshots may come from resume analysis, whose source-specific generator returns up to eight. */
-export const maxApprovedTailoredQuestions = 8;
+/** Both automatic interview sources generate a full eight-question personalized plan. */
+export const maxTailoredQuestions = 8;
+export const maxApprovedTailoredQuestions = maxTailoredQuestions;
 export const maxTailoredQuestionLength = 200;
 const portugueseQuestionHints = /[ãõç]|\b(?:você|voce|como|qual|quais|quando|para|uma|não|nao|sua|seu|pelo|pela|dos|das|que|mais|muito|também|tambem)\b/iu;
 const genericOpeners = /^\s*(?:tell me about yourself|walk me through your (?:resume|cv)|can you introduce yourself|do you have any questions|what questions do you have)/iu;
@@ -85,7 +85,7 @@ export function isValidTailoredQuestion(value: unknown): value is string {
     && !portugueseQuestionHints.test(text) && !genericOpeners.test(text);
 }
 
-/** Keeps valid, de-duplicated questions from an untrusted list. Vacancy analysis defaults to three. */
+/** Keeps valid, de-duplicated questions from an untrusted list. */
 export function normalizeTailoredQuestions(values: unknown, maximumQuestions = maxTailoredQuestions): string[] {
   if (!Array.isArray(values)) return [];
   const limit = Math.max(0, Math.floor(maximumQuestions));
