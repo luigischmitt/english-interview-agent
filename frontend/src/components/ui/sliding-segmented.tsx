@@ -12,6 +12,7 @@ type Option = { value: string; label: string };
 export function SlidingSegmented({
   name,
   ariaLabel,
+  ariaDescribedBy,
   options,
   value,
   onChange,
@@ -20,6 +21,7 @@ export function SlidingSegmented({
 }: {
   name: string;
   ariaLabel: string;
+  ariaDescribedBy?: string;
   options: Option[];
   value: string;
   onChange: (value: string) => void;
@@ -48,7 +50,7 @@ export function SlidingSegmented({
   }, [value, options.length]);
 
   return (
-    <div ref={containerRef} className={`ds-seg ${className}`} role="radiogroup" aria-label={ariaLabel} data-ready={box ? "" : undefined}>
+    <div ref={containerRef} className={`ds-seg ${className}`} role="radiogroup" aria-label={ariaLabel} aria-describedby={ariaDescribedBy} data-ready={box ? "" : undefined}>
       {box && (
         <span
           aria-hidden="true"

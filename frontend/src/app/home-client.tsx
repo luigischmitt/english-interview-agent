@@ -46,6 +46,7 @@ import { prewarmInterviewerUtterance, useSpeechWarmup, useVoiceReadiness } from 
 import { ProgressView } from "./components/progress-view";
 import { PageIntro } from "./components/shared";
 import { VoicePicker } from "./components/voice-picker";
+import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 
 const subscribeNever = () => () => {};
 
@@ -364,23 +365,25 @@ function SettingsView() {
         title={t("Configurações")}
         description={t("Escolha como você prefere usar a plataforma.")}
       />
-      <section className="ds-card ds-enter mt-8 px-5 py-2 sm:px-7 lg:mt-10" aria-labelledby="language-title">
-        <h2 id="language-title" className="ds-label pt-5 text-text-2">{t("Idioma")}</h2>
-        <div className="shl-row">
-          <div className="min-w-0 flex-1">
-            <label htmlFor="platform-language" className="ds-label">{t("Idioma")}</label>
+      <section className="ds-card ds-enter mt-8 p-5 sm:p-7 lg:mt-10" aria-labelledby="language-title">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 id="language-title" className="ds-h2">{t("Idioma")}</h2>
             <p id="platform-language-help" className="ds-small mt-1">{t("Escolha o idioma da plataforma.")}</p>
           </div>
-          <select
-            id="platform-language"
-            aria-describedby="platform-language-help"
-            className="min-h-11 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <SlidingSegmented
+            name="platform-language"
+            ariaLabel={t("Idioma")}
+            ariaDescribedBy="platform-language-help"
+            className="w-full grid-cols-2 sm:w-[18rem]"
+            itemClassName="min-h-11"
+            options={[
+              { value: "pt-BR", label: t("Português (Brasil)") },
+              { value: "en", label: t("English") },
+            ]}
             value={locale}
-            onChange={(event) => setLocale(event.target.value === "en" ? "en" : "pt-BR")}
-          >
-            <option value="pt-BR">{t("Português (Brasil)")}</option>
-            <option value="en">{t("English")}</option>
-          </select>
+            onChange={(value) => setLocale(value === "en" ? "en" : "pt-BR")}
+          />
         </div>
       </section>
       <section className="ds-card ds-enter mt-5 px-5 py-2 sm:px-7 lg:mt-6" aria-labelledby="appearance-title">
