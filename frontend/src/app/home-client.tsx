@@ -129,7 +129,6 @@ function Navigation({
           type="button"
           aria-label={label}
           aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
-          data-home-item={id === "home" ? "true" : undefined}
           onClick={() => onNavigate(id)}
           onMouseEnter={(event) => showTooltip(event.currentTarget, label)}
           onMouseLeave={() => setTooltip(null)}
@@ -217,7 +216,6 @@ function Navigation({
               <button
                 type="button"
                 aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
-                data-home-item={id === "home" ? "true" : undefined}
                 onClick={() => onNavigate(id)}
                 className="shl-mobile-item"
               >
