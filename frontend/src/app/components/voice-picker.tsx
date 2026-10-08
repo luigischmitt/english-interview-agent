@@ -1,5 +1,7 @@
 "use client";
 
+
+import { t } from "@/lib/locale";
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown, Pause, Play } from "lucide-react";
 import { groupVoicesByGender, voiceDisplayName, voiceSamplePath, voiceSummary } from "@/lib/interview/voice-picker.mjs";
@@ -82,7 +84,7 @@ export function VoicePicker({
 
   return (
     <div className="vp">
-      <span id={labelId} className="ds-label block">Voz do entrevistador</span>
+      <span id={labelId} className="ds-label block">{t("Voz do entrevistador")}</span>
       <button
         type="button"
         className="vp-trigger mt-2"
@@ -102,8 +104,8 @@ export function VoicePicker({
       <div id={listId} className="ds-reveal" data-open={open && !disabled} inert={!open || disabled}>
         <div>
           <fieldset className="vp-list">
-            <legend className="sr-only">Voz do entrevistador</legend>
-            <p className="ds-small">Toque em ▶ para ouvir a mesma frase em cada voz e selecione a que preferir.</p>
+            <legend className="sr-only">{t("Voz do entrevistador")}</legend>
+            <p className="ds-small">{t("Toque em ▶ para ouvir a mesma frase em cada voz e selecione a que preferir.")}</p>
             {groups.map((group) => (
               <div key={group.gender} role="group" aria-labelledby={`${uid}-${group.gender}`} className="mt-4">
                 <h4 id={`${uid}-${group.gender}`} className="vp-group-title">{group.label}</h4>
@@ -117,9 +119,9 @@ export function VoicePicker({
                           <span className="min-w-0">
                             <span className="flex flex-wrap items-center gap-x-2 text-[15px] font-semibold leading-5">
                               {voice.name}
-                              {voice.isDefault && <span className="rounded-full bg-tint px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-green-deep">Padrão</span>}
+                              {voice.isDefault && <span className="rounded-full bg-tint px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-green-deep">{t("Padrão")}</span>}
                             </span>
-                            <span className="ds-small block leading-5">{voice.accent === "UK" ? "britânica" : "americana"}</span>
+                            <span className="ds-small block leading-5">{t(voice.accent === "UK" ? "britânica" : "americana")}</span>
                           </span>
                         </label>
                         <button

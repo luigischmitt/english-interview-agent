@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useLocale } from "@/lib/locale";
 
 export function SignOutButton() {
+  const { t } = useLocale();
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +25,7 @@ export function SignOutButton() {
       router.replace("/login");
     } catch {
       window.sessionStorage.removeItem("auth:manual-signout");
-      setError("Não foi possível sair. Tente novamente.");
+      setError(t("Não foi possível sair. Tente novamente."));
       setIsSigningOut(false);
     }
   };
@@ -36,10 +38,10 @@ export function SignOutButton() {
         className="btn btn-ghost btn-sm gap-2"
         onClick={handleSignOut}
         disabled={isSigningOut}
-        aria-label="Sair"
+        aria-label={t("Sair")}
       >
         {isSigningOut ? <span className="loading loading-spinner loading-xs" /> : <LogOut className="size-4" />}
-        <span className="hidden sm:inline">Sair</span>
+        <span className="hidden sm:inline">{t("Sair")}</span>
       </button>
     </div>
   );

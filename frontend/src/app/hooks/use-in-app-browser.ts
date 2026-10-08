@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { detectInAppBrowser, detectPlatform, openInSystemBrowserUrl, type InAppBrowser } from "@/lib/interview/client-environment.mjs";
+import { getCurrentLocale } from "@/lib/locale";
 
 export type InAppBrowserInfo = {
   app: InAppBrowser;
@@ -85,14 +86,22 @@ export function useCopyPageLink() {
   return { copied, copy };
 }
 
-export const inAppMicTitle = (info: InAppBrowserInfo) => `Libere o microfone para o ${info.settingsName}`;
+export const inAppMicTitle = (info: InAppBrowserInfo) => getCurrentLocale() === "en"
+  ? `Allow microphone access for ${info.settingsName}`
+  : `Libere o microfone para o ${info.settingsName}`;
 
 /**
  * A web page can't open the phone's settings, so we spell out the path. In-app browsers ask for the mic only after the
  * host app itself has microphone access; once it's on, the page asks normally.
  */
-export const inAppMicSteps = (info: InAppBrowserInfo) => info.platform === "android"
-  ? `Abra Configurações → Apps → ${info.settingsName} → Permissões e ative o Microfone. Depois volte e toque em “Tentar novamente”.`
-  : `Abra os Ajustes do iPhone → ${info.settingsName} e ative o Microfone. Depois volte e toque em “Tentar novamente”.`;
+export const inAppMicSteps = (info: InAppBrowserInfo) => getCurrentLocale() === "en"
+  ? info.platform === "android"
+    ? `Open Settings → Apps → ${info.settingsName} → Permissions and enable Microphone. Then come back and select “Try again.”`
+    : `Open iPhone Settings → ${info.settingsName} and enable Microphone. Then come back and select “Try again.”`
+  : info.platform === "android"
+    ? `Abra Configurações → Apps → ${info.settingsName} → Permissões e ative o Microfone. Depois volte e toque em “Tentar novamente”.`
+    : `Abra os Ajustes do iPhone → ${info.settingsName} e ative o Microfone. Depois volte e toque em “Tentar novamente”.`;
 
-export const inAppMicBody = (info: InAppBrowserInfo) => `Você está no navegador do ${info.appLabel}. Para responder por voz aqui, ele precisa de acesso ao microfone. ${inAppMicSteps(info)} Ou abra esta página no ${info.browserName}.`;
+export const inAppMicBody = (info: InAppBrowserInfo) => getCurrentLocale() === "en"
+  ? `You are in the ${info.appLabel} browser. It needs microphone access for you to answer by voice here. ${inAppMicSteps(info)} Or open this page in ${info.browserName}.`
+  : `Você está no navegador do ${info.appLabel}. Para responder por voz aqui, ele precisa de acesso ao microfone. ${inAppMicSteps(info)} Ou abra esta página no ${info.browserName}.`;

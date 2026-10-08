@@ -46,6 +46,27 @@
 .shl-nav-item[data-home-item="true"][aria-current="page"] svg { color: var(--ds-brand-warm); }
 .shl-nav-item:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
 
+.shl-tooltip {
+  position: fixed;
+  z-index: 50;
+  transform: translateY(-50%);
+  border-radius: var(--ds-r-pill);
+  background: #101010;
+  padding: 0.625rem 1rem;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 24%);
+  pointer-events: none;
+  animation: shl-tooltip-in 100ms ease-out 200ms both;
+}
+@keyframes shl-tooltip-in {
+  from { opacity: 0; transform: translateY(-50%) translateX(-0.25rem); }
+  to { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
 .shl-collapse {
   display: grid;
   width: 2.25rem;
@@ -178,6 +199,7 @@
 @media (prefers-reduced-motion: reduce) {
   .shl-thumb { transition: opacity var(--ds-dur-fast) ease; }
   .shl-nav-item:active, .shl-mobile-item:active, .shl-collapse:active, .shl-signout .btn:active:not(:disabled) { transform: none; }
+  .shl-tooltip { animation: none; }
 }
 @media (hover: hover) and (pointer: fine) {
   .shl-collapse:hover { background: var(--ds-hover-wash); color: var(--ds-ink); }

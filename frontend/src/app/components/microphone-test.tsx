@@ -1,5 +1,7 @@
 "use client";
 
+
+import { t } from "@/lib/locale";
 import { useCallback, useEffect, useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { Mic } from "lucide-react";
 
@@ -171,9 +173,9 @@ export function MicrophoneTest({ deviceId, onDeviceChange, ref }: {
 
       {revealed && inputs.length > 0 && (
         <div className="mt-4 flex flex-col gap-2">
-          <label htmlFor={`${uid}-device`} className="ds-label">Microfone usado na entrevista</label>
+          <label htmlFor={`${uid}-device`} className="ds-label">{t("Microfone usado na entrevista")}</label>
           <select id={`${uid}-device`} className="ds-field" value={selectValue} onChange={(event) => choose(event.target.value)} disabled={busy}>
-            <option value="">Padrão do sistema</option>
+            <option value="">{t("Padrão do sistema")}</option>
             {inputs.map((input) => <option key={input.deviceId} value={input.deviceId}>{input.label}</option>)}
           </select>
         </div>
@@ -186,7 +188,7 @@ export function MicrophoneTest({ deviceId, onDeviceChange, ref }: {
       )}
 
       <p role="status" aria-live="polite" className={`isu-mic-status mt-3 text-sm leading-6 ${notice?.tone === "error" || heard === "silent" && state === "on" ? "font-medium text-danger" : heard === "hearing" && state === "on" ? "font-medium text-green" : "text-text-2"}`} hidden={!notice && !statusText}>
-        {notice?.text ?? statusText}
+        {t(notice?.text ?? statusText ?? "")}
       </p>
     </div>
   );

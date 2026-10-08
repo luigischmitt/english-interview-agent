@@ -1,5 +1,7 @@
 "use client";
 
+
+import { t } from "@/lib/locale";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -19,8 +21,8 @@ export function SessionExpiredNotice() {
 
   return (
     <div role="alert" className="alert alert-warning mx-4 mt-4 text-sm sm:mx-8">
-      <span>{sessionExpiredMessage}</span>
-      <Link href={loginHref} className="font-semibold underline underline-offset-4">Entrar novamente</Link>
+      <span>{t(sessionExpiredMessage)}</span>
+      <Link href={loginHref} className="font-semibold underline underline-offset-4">{t("Entrar novamente")}</Link>
     </div>
   );
 }

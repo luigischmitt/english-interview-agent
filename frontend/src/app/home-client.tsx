@@ -26,6 +26,7 @@ import { composeContextualOpening } from "@/lib/interview/speech-playback.mjs";
 import { storeRoomHandoff } from "@/lib/interview/room-handoff.mjs";
 import { readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
 import { DEFAULT_INTERVIEWER_VOICE } from "@/lib/interview/voices.mjs";
+import { useLocale, t } from "@/lib/locale";
 
 import "./components/shell.css";
 
@@ -91,8 +92,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
       />
       {!compact && (
         <span className="whitespace-nowrap text-sm font-semibold tracking-[-0.01em] max-[419px]:sr-only">
-          English Interview Agent
-        </span>
+          {t("English Interview Agent ")}</span>
       )}
     </div>
   );
@@ -111,21 +111,37 @@ function Navigation({
   sidebarExpanded: boolean;
   onToggleSidebar: () => void;
 }) {
-  const renderNavigationItem = ({ id, label, icon: Icon }: NavigationItem) => (
-    <li key={id} className="flex">
-      <button
-        type="button"
-        aria-label={label}
-        aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
-        data-home-item={id === "home" ? "true" : undefined}
-        onClick={() => onNavigate(id)}
-        className={`shl-nav-item ${sidebarExpanded ? "gap-3 px-3.5" : "justify-center px-0"}`}
-      >
-        <Icon className="size-[1.125rem]" aria-hidden="true" />
-        <span className={sidebarExpanded ? "whitespace-nowrap" : "sr-only"}>{label}</span>
-      </button>
-    </li>
-  );
+  const { t } = useLocale();
+  const [tooltip, setTooltip] = useState<{ label: string; top: number; left: number } | null>(null);
+  const showTooltip = (element: HTMLElement, label: string) => {
+    if (sidebarExpanded) return;
+    const bounds = element.getBoundingClientRect();
+    setTooltip({ label, top: bounds.top + bounds.height / 2, left: bounds.right + 12 });
+  };
+  const collapseLabel = t(sidebarExpanded ? "Recolher barra lateral" : "Expandir barra lateral");
+
+  const renderNavigationItem = ({ id, label: sourceLabel, icon: Icon }: NavigationItem) => {
+    const label = t(sourceLabel);
+    return (
+      <li key={id} className="flex">
+        <button
+          type="button"
+          aria-label={label}
+          aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
+          data-home-item={id === "home" ? "true" : undefined}
+          onClick={() => onNavigate(id)}
+          onMouseEnter={(event) => showTooltip(event.currentTarget, label)}
+          onMouseLeave={() => setTooltip(null)}
+          onFocus={(event) => showTooltip(event.currentTarget, label)}
+          onBlur={() => setTooltip(null)}
+          className={`shl-nav-item ${sidebarExpanded ? "gap-3 px-3.5" : "justify-center px-0"}`}
+        >
+          <Icon className="size-[1.125rem]" aria-hidden="true" />
+          <span className={sidebarExpanded ? "whitespace-nowrap" : "sr-only"}>{label}</span>
+        </button>
+      </li>
+    );
+  };
 
   const primaryIndex = primaryNavigationItems.findIndex((item) => isNavigationItemActive(view, item.id));
   const mobileIndex = navigationItems.findIndex((item) => isNavigationItemActive(view, item.id));
@@ -134,7 +150,7 @@ function Navigation({
     <>
       <aside
         id="desktop-sidebar"
-        aria-label="Navegação para desktop"
+        aria-label={t("Navegação para desktop")}
         className={`shl-sidebar sticky top-0 hidden h-dvh max-h-dvh min-h-0 shrink-0 self-start overflow-y-auto px-3.5 py-5 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
           sidebarExpanded ? "w-72" : "w-20"
         }`}
@@ -143,23 +159,30 @@ function Navigation({
           <Brand compact={!sidebarExpanded} />
           <button
             type="button"
-            aria-label={sidebarExpanded ? "Recolher barra lateral" : "Expandir barra lateral"}
+            aria-label={collapseLabel}
             aria-expanded={sidebarExpanded}
             aria-controls="desktop-sidebar"
-            onClick={onToggleSidebar}
+            onClick={() => {
+              setTooltip(null);
+              onToggleSidebar();
+            }}
+            onMouseEnter={(event) => showTooltip(event.currentTarget, collapseLabel)}
+            onMouseLeave={() => setTooltip(null)}
+            onFocus={(event) => showTooltip(event.currentTarget, collapseLabel)}
+            onBlur={() => setTooltip(null)}
             className="shl-collapse"
           >
             {sidebarExpanded ? <PanelLeftClose className="size-4" aria-hidden="true" /> : <PanelLeftOpen className="size-4" aria-hidden="true" />}
           </button>
         </div>
-        <nav aria-label="Navegação principal">
+        <nav aria-label={t("Navegação principal")}>
           <ul className="shl-nav-list" style={{ "--idx": Math.max(primaryIndex, 0) } as CSSProperties}>
             <li aria-hidden="true" className="shl-thumb" data-hidden={primaryIndex < 0} />
             {primaryNavigationItems.map(renderNavigationItem)}
           </ul>
         </nav>
         <div className="mt-auto pt-4">
-          <nav aria-label="Navegação utilitária">
+          <nav aria-label={t("Navegação utilitária")}>
             <ul className="shl-nav-list">
               <li aria-hidden="true" className="shl-thumb" data-hidden={view !== "settings"} />
               {renderNavigationItem(settingsNavigationItem)}
@@ -167,17 +190,28 @@ function Navigation({
           </nav>
         </div>
         <p className={`mt-5 px-2 text-xs leading-5 text-muted-foreground ${sidebarExpanded ? "" : "sr-only"}`}>
-          Pratique inglês para entrevistas.
+          {t("Pratique inglês para entrevistas.")}
         </p>
+        {tooltip && (
+          <div
+            aria-hidden="true"
+            className="shl-tooltip"
+            style={{ top: tooltip.top, left: tooltip.left }}
+          >
+            {tooltip.label}
+          </div>
+        )}
       </aside>
 
       <nav
-        aria-label="Navegação móvel"
+        aria-label={t("Navegação móvel")}
         className="shl-mobile-nav fixed inset-x-0 bottom-0 z-20 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden"
       >
         <ul className="shl-mobile-list" style={{ "--idx": Math.max(mobileIndex, 0) } as CSSProperties}>
           <li aria-hidden="true" className="shl-thumb" />
-          {navigationItems.map(({ id, label, icon: Icon }) => (
+          {navigationItems.map(({ id, label: sourceLabel, icon: Icon }) => {
+            const label = t(sourceLabel);
+            return (
             <li key={id} className="min-w-0">
               <button
                 type="button"
@@ -190,7 +224,8 @@ function Navigation({
                 {label}
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </nav>
     </>
@@ -198,7 +233,10 @@ function Navigation({
 }
 
 function Topbar({ view }: { view: View }) {
-  const [section, page] = viewTrail[view];
+  const { t } = useLocale();
+  const [sourceSection, sourcePage] = viewTrail[view];
+  const section = t(sourceSection);
+  const page = sourcePage ? t(sourcePage) : undefined;
   return (
     <header className="shl-topbar sticky top-0 z-10 flex h-16 items-center justify-between px-4 sm:px-8">
       <div className="lg:hidden">
@@ -208,13 +246,12 @@ function Topbar({ view }: { view: View }) {
         <span aria-current={page ? undefined : "page"}>{section}</span>
         {page && (
           <>
-            <span aria-hidden="true">/</span>
+            <span aria-hidden="true">{t("/")}</span>
             <span aria-current="page">{page}</span>
           </>
         )}
       </p>
       <div className="shl-signout flex items-center gap-2">
-        <ThemeToggle />
         <SignOutButton />
       </div>
     </header>
@@ -230,14 +267,15 @@ function HomeView({
   onStart: () => void;
   onProgress: () => void;
 }) {
+  const { t } = useLocale();
   const [promptIndex, setPromptIndex] = useState(0);
   const prompt = warmUpPrompts[promptIndex];
 
   return (
     <main id="main-content" className={pageMain}>
       <PageIntro
-        title="Vamos praticar?"
-        description="Monte uma entrevista para o cargo que você busca e responda em inglês."
+        title={t("Vamos praticar?")}
+        description={t("Monte uma entrevista para o cargo que você busca e responda em inglês.")}
       />
 
       <div className="mt-8 grid items-start gap-5 lg:mt-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:gap-6">
@@ -252,22 +290,22 @@ function HomeView({
             className="shl-hero-forest"
           />
           <h2 id="start-title" className="text-balance font-[family-name:var(--font-display)] text-[clamp(1.875rem,1.4rem+1.6vw,2.375rem)] leading-[1.1] tracking-[-0.02em]">
-            Prepare sua prática.
+            {t("Prepare sua prática.")}
           </h2>
           <p className="shl-hero-muted mt-3 max-w-[48ch] text-[0.9375rem] leading-6">
-            Escolha o cargo e o foco. Na entrevista, as perguntas aparecem em texto e também podem ser lidas em voz alta.
+            {t("Escolha o cargo e o foco. Na entrevista, as perguntas aparecem em texto e também podem ser lidas em voz alta.")}
           </p>
           <button type="button" className="ds-btn ds-btn-cta mt-7" onClick={onStart}>
-            <Play className="size-4 fill-current" aria-hidden="true" /> Começar prática
+            <Play className="size-4 fill-current" aria-hidden="true" /> {t("Começar prática")}
           </button>
           <dl className="shl-hero-facts mt-8 grid gap-2 text-sm sm:grid-cols-3">
-            <div><dt className="shl-hero-muted text-xs">Modo</dt><dd className="font-medium">Inglês, respostas faladas</dd></div>
-            <div><dt className="shl-hero-muted text-xs">Foco</dt><dd className="font-medium">Escolha na configuração</dd></div>
-            <div><dt className="shl-hero-muted text-xs">Sala</dt><dd className="font-medium">Você responde no seu ritmo e escolhe quando ver as legendas.</dd></div>
+            <div><dt className="shl-hero-muted text-xs">{t("Modo")}</dt><dd className="font-medium">{t("Inglês, respostas faladas")}</dd></div>
+            <div><dt className="shl-hero-muted text-xs">{t("Foco")}</dt><dd className="font-medium">{t("Escolha na configuração")}</dd></div>
+            <div><dt className="shl-hero-muted text-xs">{t("Sala")}</dt><dd className="font-medium">{t("Você responde no seu ritmo e escolhe quando ver as legendas.")}</dd></div>
           </dl>
           <p className="mt-5 flex items-center gap-2 text-xs font-medium tracking-[0.01em] shl-hero-muted">
             <Leaf className="size-3.5 shrink-0 text-[color:var(--ds-brand-warm)]" aria-hidden="true" />
-            Feito no Brasil, para vaga lá fora
+            {t("Feito no Brasil, para vaga lá fora")}
           </p>
         </section>
 
@@ -276,8 +314,8 @@ function HomeView({
           <div className="flex items-start gap-3">
             <span className="shl-icon-tile" aria-hidden="true"><Target className="size-5" /></span>
             <div className="min-w-0">
-              <h2 id="warm-up-title" className="ds-h2">Aquecimento opcional</h2>
-              <p className="ds-small mt-1">Use uma pergunta para começar a pensar em inglês.</p>
+              <h2 id="warm-up-title" className="ds-h2">{t("Aquecimento opcional")}</h2>
+              <p className="ds-small mt-1">{t("Use uma pergunta para começar a pensar em inglês.")}</p>
             </div>
           </div>
           <div aria-live="polite" className="shl-well mt-5">
@@ -288,7 +326,7 @@ function HomeView({
             </div>
           </div>
           <button type="button" onClick={() => setPromptIndex((promptIndex + 1) % warmUpPrompts.length)} className="ds-btn ds-btn-soft mt-4">
-            <Shuffle className="size-4" aria-hidden="true" /> Outra pergunta
+            <Shuffle className="size-4" aria-hidden="true" /> {t("Outra pergunta")}
           </button>
         </aside>
 
@@ -297,12 +335,12 @@ function HomeView({
           <div className="flex items-start gap-3">
             <span className="shl-icon-tile" aria-hidden="true"><LineChart className="size-5" /></span>
             <div>
-              <h2 id="history-title" className="ds-h2">Confira seu histórico de prática.</h2>
-              <p className="ds-small mt-1">Veja as sessões que você já concluiu.</p>
+              <h2 id="history-title" className="ds-h2">{t("Confira seu histórico de prática.")}</h2>
+              <p className="ds-small mt-1">{t("Veja as sessões que você já concluiu.")}</p>
             </div>
           </div>
           <button type="button" className="ds-btn ds-btn-soft w-fit shrink-0" onClick={onProgress}>
-            Ver progresso <ArrowUpRight className="size-4" aria-hidden="true" />
+            {t("Ver progresso")} <ArrowUpRight className="size-4" aria-hidden="true" />
           </button>
         </section>
       </div>
@@ -311,6 +349,7 @@ function HomeView({
 }
 
 function SettingsView() {
+  const { locale, setLocale, t } = useLocale();
   const storedVoice = useSyncExternalStore(subscribeNever, () => readStoredInterviewerVoice(window.localStorage), () => DEFAULT_INTERVIEWER_VOICE);
   const [chosenVoice, setChosenVoice] = useState<string | undefined>(undefined);
   const voice = chosenVoice ?? storedVoice;
@@ -322,16 +361,47 @@ function SettingsView() {
   return (
     <main id="main-content" className={`${pageMain} max-w-4xl`}>
       <PageIntro
-        title="Configurações"
-        description="Escolha como você prefere usar a plataforma."
+        title={t("Configurações")}
+        description={t("Escolha como você prefere usar a plataforma.")}
       />
-      <section className="ds-card ds-enter mt-8 px-5 py-2 sm:px-7 lg:mt-10" aria-labelledby="interview-experience-title">
-        <h2 id="interview-experience-title" className="ds-label pt-5 text-text-2">Experiência da entrevista</h2>
+      <section className="ds-card ds-enter mt-8 px-5 py-2 sm:px-7 lg:mt-10" aria-labelledby="language-title">
+        <h2 id="language-title" className="ds-label pt-5 text-text-2">{t("Idioma")}</h2>
+        <div className="shl-row">
+          <div className="min-w-0 flex-1">
+            <label htmlFor="platform-language" className="ds-label">{t("Idioma")}</label>
+            <p id="platform-language-help" className="ds-small mt-1">{t("Escolha o idioma da plataforma.")}</p>
+          </div>
+          <select
+            id="platform-language"
+            aria-describedby="platform-language-help"
+            className="min-h-11 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={locale}
+            onChange={(event) => setLocale(event.target.value === "en" ? "en" : "pt-BR")}
+          >
+            <option value="pt-BR">{t("Português (Brasil)")}</option>
+            <option value="en">{t("English")}</option>
+          </select>
+        </div>
+      </section>
+      <section className="ds-card ds-enter mt-5 px-5 py-2 sm:px-7 lg:mt-6" aria-labelledby="appearance-title">
+        <h2 id="appearance-title" className="ds-label pt-5 text-text-2">{t("Aparência")}</h2>
+        <div className="shl-row">
+          <div className="min-w-0 flex-1">
+            <p className="ds-label">{t("Tema da plataforma")}</p>
+            <p className="ds-small mt-1">{t("Escolha entre claro, escuro ou acompanhar o tema do seu dispositivo.")}</p>
+          </div>
+        </div>
+        <div className="pb-6 pt-2">
+          <ThemeToggle />
+        </div>
+      </section>
+      <section className="ds-card ds-enter mt-5 px-5 py-2 sm:px-7 lg:mt-6" aria-labelledby="interview-experience-title">
+        <h2 id="interview-experience-title" className="ds-label pt-5 text-text-2">{t("Experiência da entrevista")}</h2>
         <div className="shl-row">
           <span className="shl-icon-tile" aria-hidden="true"><Volume2 className="size-5" /></span>
           <div className="min-w-0 flex-1">
-            <p className="ds-label">Voz do entrevistador</p>
-            <p className="ds-small mt-1">A escolha fica salva neste navegador e pode ser alterada ao preparar cada entrevista.</p>
+            <p className="ds-label">{t("Voz do entrevistador")}</p>
+            <p className="ds-small mt-1">{t("A escolha fica salva neste navegador e pode ser alterada ao preparar cada entrevista.")}</p>
           </div>
         </div>
         <div className="pb-6 pt-2 sm:pl-[3.75rem]">
@@ -340,10 +410,10 @@ function SettingsView() {
         <div className="shl-row">
           <span className="shl-icon-tile" aria-hidden="true"><Video className="size-5" /></span>
           <div className="min-w-0 flex-1">
-            <p className="ds-label">Câmera e avatar do entrevistador</p>
-            <p className="ds-small mt-1">Esses recursos ainda não estão disponíveis.</p>
+            <p className="ds-label">{t("Câmera e avatar do entrevistador")}</p>
+            <p className="ds-small mt-1">{t("Esses recursos ainda não estão disponíveis.")}</p>
           </div>
-          <span className="shl-pill shl-pill-off">Indisponível</span>
+          <span className="shl-pill shl-pill-off">{t("Indisponível")}</span>
         </div>
       </section>
     </main>
@@ -351,6 +421,7 @@ function SettingsView() {
 }
 
 export default function App({ initialView = "home" }: { initialView?: View }) {
+  const { locale, t } = useLocale();
   const router = useRouter();
   const [voiceWarmupAttempt, setVoiceWarmupAttempt] = useState(0);
   useSpeechWarmup(voiceWarmupAttempt); // Wake the interviewer voice as soon as the signed-in user lands here.
@@ -365,8 +436,8 @@ export default function App({ initialView = "home" }: { initialView?: View }) {
   };
 
   return (
-    <div className="min-h-dvh overflow-x-clip bg-background text-foreground">
-      <a href="#main-content" className="skip-link">Pular para o conteúdo</a>
+    <div lang={locale === "en" ? "en" : "pt-BR"} className="min-h-dvh overflow-x-clip bg-background text-foreground">
+      <a href="#main-content" className="skip-link">{t("Pular para o conteúdo")}</a>
       <div className="flex min-h-dvh">
         <Navigation
           view={view}
@@ -384,7 +455,7 @@ export default function App({ initialView = "home" }: { initialView?: View }) {
             />
           )}
           {startError && view === "interview-setup" && (
-            <p role="alert" className="alert alert-warning mx-4 mt-4 text-sm sm:mx-8">Não foi possível abrir a sala de entrevista neste navegador. Libere o armazenamento do site e tente novamente.</p>
+            <p role="alert" className="alert alert-warning mx-4 mt-4 text-sm sm:mx-8">{t("Não foi possível abrir a sala de entrevista neste navegador. Libere o armazenamento do site e tente novamente.")}</p>
           )}
           {view === "interview-setup" && (
             <InterviewSetup

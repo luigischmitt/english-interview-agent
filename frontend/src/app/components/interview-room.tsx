@@ -38,6 +38,7 @@ import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/intervi
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
+import { useLocale, t } from "@/lib/locale";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; round?: number; state: VoiceAssessmentState };
 type PreparedTurn = { decision: TurnDecision; turnId: string; revision: number; transcript: string; anchor: string | null };
@@ -55,6 +56,7 @@ function assessmentSamples(entries: Record<string, AssessmentEntry>, excluded: R
 }
 
 export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; onLeave: () => void }) {
+  const { locale } = useLocale();
   useSpeechWarmup();
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
   const { autoCaptureVoice } = resolveCandidateVoicePreferences(config);
@@ -298,7 +300,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     turnAnalysesRef.current.set(turn.sequenceNumber, analyzeTurnWithRetry({
       turn,
       signal: controller.signal,
-      analyze: (entry, signal) => requestInterviewTurnAnalysis(config, entry, signal),
+      analyze: (entry, signal) => requestInterviewTurnAnalysis(config, entry, signal, undefined, locale),
       onRetry: () => { turnAnalysisRetriesRef.current += 1; },
     })
       .then((analysis) => {
@@ -782,6 +784,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   useEffect(() => {
     if (phase !== "ending" || !reportStartedRef.current()) return;
+    let current = true;
     const lifecycleStartedAt = Date.now();
     console.info("[interview-report] lifecycle_started");
     setReportState({ status: "pending" });
@@ -794,7 +797,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       const turns = pairInterviewTurns(reportTurnsRef.current);
       if (turns.length === 0) {
         console.warn("[interview-report] unavailable", { category: "no_submitted_answers", durationMs: Date.now() - lifecycleStartedAt });
-        if (mountedRef.current) setReportState({ status: "unavailable", message: "Nenhuma resposta foi enviada. Não foi solicitada uma análise sem evidências." });
+        if (mountedRef.current && current) setReportState({ status: "unavailable", message: "Nenhuma resposta foi enviada. Não foi solicitada uma análise sem evidências." });
         return;
       }
 
@@ -810,24 +813,25 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           settled: settledAnalyses,
           signal: endAbort.signal,
           exhausted: exhaustedTurnAnalysesRef.current,
-          analyze: (turn, signal) => requestInterviewTurnAnalysis(config, turn, signal),
-          consolidate: (analyses) => requestInterviewConsolidation(config, turns, analyses),
+          analyze: (turn, signal) => requestInterviewTurnAnalysis(config, turn, signal, undefined, locale),
+          consolidate: (analyses) => requestInterviewConsolidation(config, turns, analyses, undefined, locale),
           fullReport: () => {
             console.info("[interview-report] request_started", { path: "fallback", turnCount: turns.length, waitDurationMs: Date.now() - lifecycleStartedAt });
-            return requestInterviewReport(config, turns);
+            return requestInterviewReport(config, turns, undefined, locale);
           },
           onEvent: (event, details) => console.info(`[interview-report] ${event}`, { turnCount: turns.length, ...details, durationMs: Date.now() - lifecycleStartedAt }),
         }).finally(() => { turnAnalysisAbortsRef.current.delete(endAbort); });
         path = outcome.path;
         console.info("[interview-report] ready", { path, turnCount: turns.length, retried: turnAnalysisRetriesRef.current, missingAtEnd: outcome.missingAtEnd, recoveredAtEnd: outcome.recoveredAtEnd, durationMs: Date.now() - lifecycleStartedAt });
-        if (mountedRef.current) setReportState({ status: "ready", result: outcome.result });
+        if (mountedRef.current && current) setReportState({ status: "ready", result: outcome.result });
       } catch {
         console.warn("[interview-report] unavailable", { category: "request_failed_or_timed_out", path, turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
         const message = "A análise detalhada falhou ou excedeu o tempo limite. As respostas registradas continuam disponíveis abaixo.";
-        if (mountedRef.current) setReportState({ status: "unavailable", message });
+        if (mountedRef.current && current) setReportState({ status: "unavailable", message });
       }
     })();
-  }, [config, phase, sessionId, waitForSessionId]);
+    return () => { current = false; };
+  }, [config, locale, phase, sessionId, waitForSessionId]);
 
   useEffect(() => {
     if (!sessionId || phase !== "ending" || (reportState.status !== "ready" && reportState.status !== "unavailable")) return;
@@ -841,10 +845,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       if (!mountedRef.current || reportPersistenceSignatureRef.current !== signature) return;
       setFeedbackSyncMessage(result.ok ? null : "O relatório está disponível nesta tela, mas não foi possível sincronizá-lo com sua conta.");
     });
-  }, [currentAzureSummary, phase, reportState, sessionId]);
+  }, [currentAzureSummary, locale, phase, reportState, sessionId]);
 
 
   const isAdvancing = phase === "advancing";
+  const seniorityLabel = config.seniority === "junior" ? t("Júnior") : config.seniority === "mid-level" ? t("Pleno") : config.seniority === "senior" ? t("Sênior") : "Staff / Lead";
+  const focusLabel = t(config.focus === "technical-depth" ? "Profundidade técnica" : config.focus === "communication" ? "Comunicação e clareza" : config.focus === "behavioral" ? "Respostas comportamentais" : "Prática equilibrada");
   const persistenceLabel = persistenceState === "saved" ? "sessão salva na conta" : persistenceState === "local" ? "salva apenas no estado local da sessão; sincronização pendente" : "salvando na conta…";
   const reportCaption = reportState.status === "pending" ? "Montando seu relatório final…" : reportState.status === "unavailable" ? "O relatório detalhado não ficou disponível para esta sessão." : "Relatório da prática";
   const capturedReportTurns = pairInterviewTurns(reportTurns);
@@ -910,32 +916,32 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         toasts={<>
           {mic.errorMessage && (
             <Toast tone="error" role="alert" actions={<>
-              {inAppDenied && inApp?.openUrl && <a href={inApp.openUrl} className="mt-toast-btn mt-toast-link">Abrir no {inApp.browserName}</a>}
-              <button type="button" className="mt-toast-btn" onClick={mic.start} disabled={micDisabled || !mic.canStart}>Tentar novamente</button>
-              <button type="button" className="mt-toast-btn" onClick={skipQuestion} disabled={!canSkip}>Pular</button>
-            </>}>{inAppDenied && inApp ? <><strong>{inAppMicTitle(inApp)}.</strong> {inAppMicBody(inApp)}</> : mic.errorMessage}</Toast>
+              {inAppDenied && inApp?.openUrl && <a href={inApp.openUrl} className="mt-toast-btn mt-toast-link">{t("Abrir no ")}{inApp.browserName}</a>}
+              <button type="button" className="mt-toast-btn" onClick={mic.start} disabled={micDisabled || !mic.canStart}>{t("Tentar novamente")}</button>
+              <button type="button" className="mt-toast-btn" onClick={skipQuestion} disabled={!canSkip}>{t("Pular")}</button>
+            </>}>{inAppDenied && inApp ? <><strong>{inAppMicTitle(inApp)}{t(".")}</strong> {inAppMicBody(inApp)}</> : mic.errorMessage}</Toast>
           )}
           {mic.micNotice && (
             <Toast tone="warn" actions={<>
-              <button type="button" className="mt-toast-btn" onClick={mic.retry}>Tentar de novo</button>
+              <button type="button" className="mt-toast-btn" onClick={mic.retry}>{t("Tentar de novo")}</button>
               <MicrophoneSwitcher currentDeviceId={micDeviceId} onChoose={(deviceId) => chooseMicrophone(mic, deviceId)} />
             </>}>
-              <strong>{mic.micNotice === "silent" ? "Não estamos recebendo áudio do seu microfone." : "Ainda não ouvimos sua voz."}</strong>{" "}
-              {mic.micNotice === "silent" ? "Confira se o microfone certo está selecionado e se não está mudo. Fones Bluetooth às vezes levam alguns segundos para ativar o microfone." : "Fale normalmente perto do microfone ou tente de novo."}
+              <strong>{t(mic.micNotice === "silent" ? "Não estamos recebendo áudio do seu microfone." : "Ainda não ouvimos sua voz.")}</strong>{" "}
+              {t(mic.micNotice === "silent" ? "Confira se o microfone certo está selecionado e se não está mudo. Fones Bluetooth às vezes levam alguns segundos para ativar o microfone." : "Fale normalmente perto do microfone ou tente de novo.")}
             </Toast>
           )}
-          {micFallbackNotice && <Toast tone="warn" onDismiss={() => setMicFallbackNotice(false)}>Microfone escolhido indisponível — usando o padrão.</Toast>}
+          {micFallbackNotice && <Toast tone="warn" onDismiss={() => setMicFallbackNotice(false)}>{t("Microfone escolhido indisponível — usando o padrão.")}</Toast>}
           {speechMessage && (
             // Replaying would be picked up by an open microphone, so the retry is offered only while it is idle.
-            <Toast tone="warn" actions={phase === "answering" && voiceCaptureState === "idle" ? <button type="button" className="mt-toast-btn" onClick={retrySpeech}>{audioBlocked ? "Ouvir" : "Tentar de novo"}</button> : undefined}>{speechMessage}</Toast>
+            <Toast tone="warn" actions={phase === "answering" && voiceCaptureState === "idle" ? <button type="button" className="mt-toast-btn" onClick={retrySpeech}>{t(audioBlocked ? "Ouvir" : "Tentar de novo")}</button> : undefined}>{t(speechMessage)}</Toast>
           )}
-          {answerError && <Toast tone="error" role="alert" onDismiss={() => setAnswerError(null)}>{answerError}</Toast>}
-          {camera.cameraError && <Toast tone="warn" onDismiss={camera.dismissError}>{camera.cameraError}</Toast>}
-          {timeLimitReached && <Toast>O tempo chegou ao fim. Você pode concluir esta resposta; uma nova pergunta não será iniciada.</Toast>}
-          {persistenceMessage && <Toast>{persistenceMessage}</Toast>}
+          {answerError && <Toast tone="error" role="alert" onDismiss={() => setAnswerError(null)}>{t(answerError)}</Toast>}
+          {camera.cameraError && <Toast tone="warn" onDismiss={camera.dismissError}>{t(camera.cameraError)}</Toast>}
+          {timeLimitReached && <Toast>{t("O tempo chegou ao fim. Você pode concluir esta resposta; uma nova pergunta não será iniciada.")}</Toast>}
+          {persistenceMessage && <Toast>{t(persistenceMessage)}</Toast>}
         </>}
         micState={micState}
-        micLabel={micLabel}
+        micLabel={t(micLabel)}
         micDisabled={mic.isPending || (!mic.isRecording && (micDisabled || !mic.canStart))}
         recording={mic.isRecording}
         pending={mic.isPending}
@@ -961,8 +967,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       {phase === "ending" && (
         <>
           <button type="button" className="ds-btn ds-btn-quiet -ml-3 mb-4 min-h-10 gap-2 px-3 text-sm" onClick={onLeave}>
-            <ArrowLeft className="size-4" aria-hidden="true" /> Voltar ao dashboard
-          </button>
+            <ArrowLeft className="size-4" aria-hidden="true" /> {t("Voltar ao dashboard ")}</button>
           <InterviewReport
             config={config}
             elapsed={elapsed}
@@ -984,34 +989,34 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       <div className="mt-call" hidden={phase === "ending"} aria-hidden={phase === "ending"} data-over={timeLimitReached ? "true" : undefined}>
         <header className="mt-top">
           <div className="mt-top-title">
-            <h1 className="mt-title"><span className="sr-only">Entrevista em andamento: </span>{config.role}</h1>
-            <p className="mt-sub">{config.seniority.replace("-", " ")} · {config.focus.replaceAll("-", " ")}</p>
+            <h1 className="mt-title"><span className="sr-only">{t("Entrevista em andamento: ")}</span>{config.role}</h1>
+            <p className="mt-sub">{seniorityLabel} {t("· ")}{focusLabel}</p>
           </div>
           <div className="mt-top-meta">
             <p className="mt-save" role="status" aria-live="polite" title={persistenceLabel}>
               <SaveIcon className={`size-3.5 ${persistenceState !== "saved" && persistenceState !== "local" ? "motion-safe:animate-spin" : ""}`} aria-hidden="true" />
               <span aria-hidden="true" className="mt-save-text">{saveText}</span>
-              <span className="sr-only">{persistenceLabel}</span>
+              <span className="sr-only">{t(persistenceLabel)}</span>
             </p>
             {micEngineState === "ready" && (
-              <span className="mt-mic-live" data-testid="mic-held-note" title="Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.">
+              <span className="mt-mic-live" data-testid="mic-held-note" title={t("Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.")}>
                 <Mic className="size-3.5" aria-hidden="true" />
-                <span className="sr-only">Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.</span>
+                <span className="sr-only">{t("Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.")}</span>
               </span>
             )}
             <div className="mt-timer" data-over={timeLimitReached ? "true" : undefined}>
-              <strong aria-label={`Tempo decorrido ${elapsed}`}>{elapsed}</strong>
-              <span aria-hidden="true">·</span>
-              <span aria-label={`Tempo restante ${remaining}`}>{timeLimitReached ? `+${formatClock(seconds - durationMinutes * 60)}` : remaining} <span className="mt-timer-rest">restantes</span></span>
+              <strong aria-label={`${t("Tempo decorrido: ")}${elapsed}`}>{elapsed}</strong>
+              <span aria-hidden="true">{t("·")}</span>
+              <span aria-label={`${t("Tempo restante: ")}${remaining}`}>{timeLimitReached ? `+${formatClock(seconds - durationMinutes * 60)}` : remaining} <span className="mt-timer-rest">{t("restantes")}</span></span>
             </div>
           </div>
-          <progress className="mt-progress" value={progress} max="100" aria-label={`${progress}% do tempo planejado`} />
+          <progress className="mt-progress" value={progress} max="100" aria-label={`${progress}% ${t("do tempo planejado")}`} />
         </header>
 
         <p className="sr-only" role="status" aria-live="polite">{speakingLabel}</p>
         <p className="sr-only" aria-live="polite">{answerHint}</p>
 
-        <section className="mt-stage" aria-label="Participantes da sala">
+        <section className="mt-stage" aria-label={t("Participantes da sala")}>
           <CandidateTile
             tileRef={meter.tileRef}
             stream={camera.enabled ? camera.stream : null}
@@ -1093,13 +1098,12 @@ function EndCallDialog({ open, canFinish, onClose, onFinish, onLeave }: { open: 
   return (
     <dialog ref={dialogRef} className="mt-dialog" aria-labelledby="end-call-title" onClose={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="mt-dialog-body">
-        <h2 id="end-call-title" className="mt-dialog-title">Encerrar a entrevista?</h2>
+        <h2 id="end-call-title" className="mt-dialog-title">{t("Encerrar a entrevista?")}</h2>
         <button type="button" className="mt-dialog-btn mt-dialog-primary" onClick={onFinish} disabled={!canFinish} autoFocus={canFinish}>
-          Encerrar e ver relatório
-          {!canFinish && <small>Disponível na sua vez de responder.</small>}
+          {t("Encerrar e ver relatório ")}{!canFinish && <small>{t("Disponível na sua vez de responder.")}</small>}
         </button>
-        <button type="button" className="mt-dialog-btn mt-dialog-danger" onClick={onLeave}>Sair sem concluir</button>
-        <button type="button" className="mt-dialog-btn" onClick={onClose} autoFocus={!canFinish}>Continuar na entrevista</button>
+        <button type="button" className="mt-dialog-btn mt-dialog-danger" onClick={onLeave}>{t("Sair sem concluir")}</button>
+        <button type="button" className="mt-dialog-btn" onClick={onClose} autoFocus={!canFinish}>{t("Continuar na entrevista")}</button>
       </div>
     </dialog>
   );
@@ -1111,12 +1115,12 @@ function MicrophoneSwitcher({ currentDeviceId, onChoose }: { currentDeviceId: st
   return (
     <select
       className="mt-toast-select"
-      aria-label="Trocar microfone"
+      aria-label={t("Trocar microfone")}
       value="__pick"
       onChange={(event) => onChoose(event.target.value === "" ? null : event.target.value)}
     >
-      <option value="__pick" disabled>Trocar microfone</option>
-      <option value="">Padrão do sistema{currentDeviceId === null ? " (atual)" : ""}</option>
+      <option value="__pick" disabled>{t("Trocar microfone")}</option>
+      <option value="">{t("Padrão do sistema")}{currentDeviceId === null ? " (atual)" : ""}</option>
       {inputs.map((input) => <option key={input.deviceId} value={input.deviceId}>{input.label}{input.deviceId === currentDeviceId ? " (atual)" : ""}</option>)}
     </select>
   );

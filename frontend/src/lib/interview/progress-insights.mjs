@@ -18,6 +18,17 @@ export const voiceDimensionCopy = {
   fluency: { label: "Fluência", short: "Fluência" },
   prosody: { label: "Entonação", short: "Entonação" },
 };
+const patternTypeCopyEn = {
+  GRAMMAR: { label: "Grammar", short: "Grammar" },
+  WORD_CHOICE: { label: "Word choice", short: "Words" },
+  FALSE_COGNATE: { label: "False cognates", short: "False cognates" },
+  STRUCTURE: { label: "Answer structure", short: "Structure" },
+};
+const voiceDimensionCopyEn = {
+  accuracy: { label: "Pronunciation accuracy", short: "Accuracy" },
+  fluency: { label: "Speech rhythm", short: "Fluency" },
+  prosody: { label: "Intonation", short: "Prosody" },
+};
 /** Used only when no saved report priority carries an exercise for the topic. Marked as `default` in the UI. */
 export const defaultExercises = {
   GRAMMAR: "Escolha uma resposta sua e regrave-a em voz alta cuidando só do tempo verbal e dos artigos; compare com a versão corrigida do relatório.",
@@ -25,11 +36,23 @@ export const defaultExercises = {
   FALSE_COGNATE: "Anote os falsos cognatos que apareceram, escreva uma frase correta com cada um e pratique dizê-las sem olhar.",
   STRUCTURE: "Responda de novo em três passos: contexto, o que você fez e resultado. Fale por 60 segundos sem parar.",
 };
+const defaultExercisesEn = {
+  GRAMMAR: "Choose one of your answers and record it again, focusing only on verb tense and articles. Compare it with the corrected version in the report.",
+  WORD_CHOICE: "List three expressions you used and replace each with a more natural English option. Use them in a new answer.",
+  FALSE_COGNATE: "Write down the false cognates that came up, write a correct sentence with each one, and practice saying them without looking.",
+  STRUCTURE: "Answer again in three steps: context, what you did, and the result. Speak for 60 seconds without stopping.",
+};
 const topicTitleByType = {
   GRAMMAR: "Gramática em respostas faladas",
   WORD_CHOICE: "Escolha de palavras mais naturais",
   FALSE_COGNATE: "Falsos cognatos do português",
   STRUCTURE: "Estrutura das respostas",
+};
+const topicTitleByTypeEn = {
+  GRAMMAR: "Grammar in spoken answers",
+  WORD_CHOICE: "More natural word choice",
+  FALSE_COGNATE: "Portuguese false cognates",
+  STRUCTURE: "Answer structure",
 };
 
 export const minAnswersForProfile = 3;
@@ -122,9 +145,10 @@ function normalizeSession(record) {
 
 const sortAscending = (a, b) => (a.time ?? 0) - (b.time ?? 0);
 
-function dayLabel(iso) {
+function dayLabel(iso, locale = "pt-BR") {
   if (!iso) return "";
   const date = new Date(iso);
+  if (locale === "en") return new Intl.DateTimeFormat("en-US", { month: "numeric", day: "numeric" }).format(date);
   return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
@@ -136,7 +160,7 @@ function startOfWeek(time) {
   return date;
 }
 
-export function weeklySessions(sessions, now = Date.now()) {
+export function weeklySessions(sessions, now = Date.now(), locale = "pt-BR") {
   const current = startOfWeek(now);
   const weeks = [];
   for (let offset = weeksShown - 1; offset >= 0; offset -= 1) {
@@ -145,7 +169,7 @@ export function weeklySessions(sessions, now = Date.now()) {
     const end = new Date(start);
     end.setDate(end.getDate() + 7);
     const count = sessions.filter((s) => s.time !== null && s.time >= start.getTime() && s.time < end.getTime()).length;
-    weeks.push({ start: start.toISOString(), label: dayLabel(start.toISOString()), count });
+    weeks.push({ start: start.toISOString(), label: dayLabel(start.toISOString(), locale), count });
   }
   return weeks;
 }
@@ -181,7 +205,9 @@ function voiceAggregate(sessions) {
   return result;
 }
 
-function buildDimensions(sessions) {
+function buildDimensions(sessions, locale) {
+  const patternsCopy = locale === "en" ? patternTypeCopyEn : patternTypeCopy;
+  const voiceCopy = locale === "en" ? voiceDimensionCopyEn : voiceDimensionCopy;
   const usable = sessions.filter((s) => s.patternsUsable);
   const answers = usable.reduce((sum, s) => sum + s.answerCount, 0);
   const dimensions = [];
@@ -192,10 +218,12 @@ function buildDimensions(sessions) {
       dimensions.push({
         key: type,
         kind: "pattern",
-        label: patternTypeCopy[type].short,
-        fullLabel: patternTypeCopy[type].label,
+        label: patternsCopy[type].short,
+        fullLabel: patternsCopy[type].label,
         value: round((clean / answers) * 100),
-        detail: `${clean} de ${answers} respostas sem ${patternTypeCopy[type].label.toLowerCase()} destacada(o) no relatório.`,
+        detail: locale === "en"
+          ? `${patternsCopy[type].label} was not flagged in ${clean} of ${answers} answers.`
+          : `${clean} de ${answers} respostas sem ${patternsCopy[type].label.toLowerCase()} destacada(o) no relatório.`,
       });
     }
   }
@@ -205,16 +233,19 @@ function buildDimensions(sessions) {
     dimensions.push({
       key: dimension,
       kind: "voice",
-      label: voiceDimensionCopy[dimension].short,
-      fullLabel: voiceDimensionCopy[dimension].label,
+      label: voiceCopy[dimension].short,
+      fullLabel: voiceCopy[dimension].label,
       value: aggregate.mean,
-      detail: `Média da avaliação de fala (Azure) em ${aggregate.sessionCount} ${aggregate.sessionCount === 1 ? "prática" : "práticas"}, ponderada pelo tempo de fala avaliado. Sinal experimental, não é seu nível de inglês.`,
+      detail: locale === "en"
+        ? `Azure speech assessment average across ${aggregate.sessionCount} ${aggregate.sessionCount === 1 ? "practice" : "practices"}, weighted by assessed speaking time. This is an experimental signal, not your English level.`
+        : `Média da avaliação de fala (Azure) em ${aggregate.sessionCount} ${aggregate.sessionCount === 1 ? "prática" : "práticas"}, ponderada pelo tempo de fala avaliado. Sinal experimental, não é seu nível de inglês.`,
     });
   }
   return { dimensions, analyzedAnswers: answers, analyzedSessions: usable.length };
 }
 
-function buildCommonErrors(sessions) {
+function buildCommonErrors(sessions, locale) {
+  const patternsCopy = locale === "en" ? patternTypeCopyEn : patternTypeCopy;
   const usable = sessions.filter((s) => s.patternsUsable);
   const canTrend = usable.length >= minSessionsForTrends;
   const split = Math.floor(usable.length / 2);
@@ -244,7 +275,7 @@ function buildCommonErrors(sessions) {
     }).slice(0, 2).map((o) => ({ evidence: o.evidence, suggestion: o.suggestion, rephrasedExample: o.rephrasedExample, date: o.date, role: o.role }));
     errors.push({
       type,
-      label: patternTypeCopy[type].label,
+      label: patternsCopy[type].label,
       count: occurrences.length,
       sessionCount: new Set(occurrences.map((o) => o.sessionId)).size,
       rate: totalAnswers > 0 ? round(occurrences.length / totalAnswers, 2) : null,
@@ -258,7 +289,9 @@ function buildCommonErrors(sessions) {
   return errors.map((error) => ({ type: error.type, label: error.label, count: error.count, sessionCount: error.sessionCount, rate: error.rate, trend: error.trend, examples: error.examples, share: topCount ? round(error.count / topCount, 2) : 0 }));
 }
 
-function buildStudyTopics(sessions) {
+function buildStudyTopics(sessions, locale) {
+  const titles = locale === "en" ? topicTitleByTypeEn : topicTitleByType;
+  const exercises = locale === "en" ? defaultExercisesEn : defaultExercises;
   const withReport = sessions.filter((s) => s.reportStatus === "ready");
   const topics = [];
   const upsert = (candidate) => {
@@ -281,14 +314,14 @@ function buildStudyTopics(sessions) {
     const perType = new Map();
     for (const pattern of session.patterns ?? []) perType.set(pattern.type, (perType.get(pattern.type) ?? 0) + 1);
     for (const [type, count] of perType) {
-      upsert({ kind: "english", patternType: type, title: topicTitleByType[type], count, score: count * weight, sessionIds: new Set([session.id]), lastTime: session.time, exercise: defaultExercises[type], exerciseSource: "default", focuses: [] });
+      upsert({ kind: "english", patternType: type, title: titles[type], count, score: count * weight, sessionIds: new Set([session.id]), lastTime: session.time, exercise: exercises[type], exerciseSource: "default", focuses: [] });
     }
     for (const priority of session.priorities) {
       const linkedType = priority.area === "ENGLISH_COMMUNICATION" ? typeBySequence.get(priority.sequenceNumber) : undefined;
       const exercise = priority.exercise.trim();
       const focus = priority.focus.trim();
       if (linkedType) {
-        upsert({ kind: "english", patternType: linkedType, title: topicTitleByType[linkedType], count: 0, score: weight * 0.5, sessionIds: new Set([session.id]), lastTime: session.time, exercise, exerciseSource: "report", focuses: [focus] });
+        upsert({ kind: "english", patternType: linkedType, title: titles[linkedType], count: 0, score: weight * 0.5, sessionIds: new Set([session.id]), lastTime: session.time, exercise, exerciseSource: "report", focuses: [focus] });
       } else {
         upsert({ kind: priority.area === "TECHNICAL_CONTENT" ? "technical" : "english", title: focus, count: 1, score: weight, sessionIds: new Set([session.id]), lastTime: session.time, exercise, exerciseSource: "report", focuses: [] });
       }
@@ -320,36 +353,36 @@ function buildStudyTopics(sessions) {
     }));
 }
 
-function pointsFrom(sessions, valueOf) {
+function pointsFrom(sessions, valueOf, locale) {
   const points = [];
   for (const session of sessions) {
     const value = valueOf(session);
     if (value === null || value === undefined) continue;
-    points.push({ id: session.id, date: session.date, label: dayLabel(session.date), value });
+    points.push({ id: session.id, date: session.date, label: dayLabel(session.date, locale), value });
   }
   return points.slice(-maxSeriesPoints);
 }
 
-function buildSeries(sessions) {
+function buildSeries(sessions, locale) {
   const series = {
-    patterns: pointsFrom(sessions, (s) => (s.patternsUsable ? round(s.patterns.length / s.answerCount, 2) : null)),
-    gaps: pointsFrom(sessions, (s) => (s.gaps && s.answerCount > 0 ? round(s.gaps.length / s.answerCount, 2) : null)),
+    patterns: pointsFrom(sessions, (s) => (s.patternsUsable ? round(s.patterns.length / s.answerCount, 2) : null), locale),
+    gaps: pointsFrom(sessions, (s) => (s.gaps && s.answerCount > 0 ? round(s.gaps.length / s.answerCount, 2) : null), locale),
   };
   for (const dimension of Object.keys(voiceDimensionCopy)) {
-    series[dimension] = pointsFrom(sessions, (s) => (s.voice[dimension].reliability === "ok" ? round(s.voice[dimension].metric.mean) : null));
+    series[dimension] = pointsFrom(sessions, (s) => (s.voice[dimension].reliability === "ok" ? round(s.voice[dimension].metric.mean) : null), locale);
   }
   return series;
 }
 
-export function buildProgressInsights(records, { now = Date.now() } = {}) {
+export function buildProgressInsights(records, { now = Date.now(), locale = "pt-BR" } = {}) {
   const completed = (records ?? []).filter((r) => r && r.status === "completed");
   const sessions = completed.map(normalizeSession).sort(sortAscending);
   const latest = sessions[sessions.length - 1] ?? null;
   const known = sessions.filter((s) => s.durationMs !== null);
-  const { dimensions, analyzedAnswers, analyzedSessions } = buildDimensions(sessions);
+  const { dimensions, analyzedAnswers, analyzedSessions } = buildDimensions(sessions, locale);
   const patternDimensions = dimensions.filter((d) => d.kind === "pattern");
   const attention = patternDimensions.length > 0 ? [...patternDimensions].sort((a, b) => a.value - b.value)[0] : null;
-  const series = buildSeries(sessions);
+  const series = buildSeries(sessions, locale);
   return {
     sessionCount: sessions.length,
     practiceMs: known.length > 0 ? known.reduce((sum, s) => sum + s.durationMs, 0) : null,
@@ -362,10 +395,10 @@ export function buildProgressInsights(records, { now = Date.now() } = {}) {
     analyzedAnswers,
     dimensions,
     attentionDimension: attention && attention.value < 100 ? attention : null,
-    commonErrors: buildCommonErrors(sessions),
-    studyTopics: buildStudyTopics(sessions),
+    commonErrors: buildCommonErrors(sessions, locale),
+    studyTopics: buildStudyTopics(sessions, locale),
     series,
-    weekly: weeklySessions(sessions, now),
+    weekly: weeklySessions(sessions, now, locale),
     sessionsUntilTrends: Math.max(0, minSessionsForTrends - analyzedSessions),
     sessions: [...sessions].reverse().map((s) => ({
       id: s.id, date: s.date, role: s.role, seniority: s.seniority, durationMs: s.durationMs, answerCount: s.answerCount, reportStatus: s.reportStatus,
