@@ -60,6 +60,8 @@ describe("sanitizeClientEvent", () => {
     expect(sanitizeClientEvent({ kind: "transcription_failure", failureReason: "answer text" })).toEqual({ kind: "transcription_failure" });
     expect(sanitizeClientEvent({ kind: "turn_preparation", preparationType: "speculative", outcome: "ready", plannedCount: 2, revision: 3, elapsedMs: 81, prepared: true }))
       .toEqual({ kind: "turn_preparation", preparationType: "speculative", outcome: "ready", plannedCount: 2, revision: 3, elapsedMs: 81, prepared: true });
+    expect(sanitizeClientEvent({ kind: "turn_preparation", preparationType: "speculative", outcome: "decision_ready", revision: 3, elapsedMs: 81, prepared: false }))
+      .toEqual({ kind: "turn_preparation", preparationType: "speculative", outcome: "decision_ready", revision: 3, elapsedMs: 81, prepared: false });
     expect(sanitizeClientEvent({ kind: "handoff_timing", totalMs: 1_200, whisperMs: 500, decisionMs: 200, prepared: true, transcript: "secret" }))
       .toEqual({ kind: "handoff_timing", totalMs: 1_200, whisperMs: 500, decisionMs: 200, prepared: true });
   });

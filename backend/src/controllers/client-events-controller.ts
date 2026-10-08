@@ -9,7 +9,7 @@ const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "
 /** Why an instant acknowledgement was not spoken. */
 const ackSkipReasons = ["not_loaded", "not_applicable", "question_started"] as const;
 const preparationTypes = ["fixed", "speculative"] as const;
-const preparationOutcomes = ["started", "ready", "prepared_used", "prepared_discarded", "failed", "used", "discarded", "closing"] as const;
+const preparationOutcomes = ["started", "ready", "decision_ready", "prepared_used", "prepared_discarded", "failed", "used", "discarded", "closing"] as const;
 const preparationReasons = ["capture_ended", "speech_resumed", "unavailable", "mismatch", "speculative_not_ready", "question_started", "leaving", "new_turn", "skip"] as const;
 const failureReasons = ["connection", "timeout", "setup", "unsupported", "closed", "slow", "buffer", "microphone"] as const;
 const errorNames = ["NotAllowedError", "NotSupportedError", "AbortError", "NotFoundError", "InvalidStateError", "EncodingError", "NotReadableError", "SecurityError", "OverconstrainedError", "TypeError", "Error", "MediaError", "other"] as const;

@@ -263,7 +263,7 @@ describe("answer-provisional and captions", () => {
     expect(provisionals(messages)).toHaveLength(0);
   });
 
-  it("prepares from finalized segments during continuous speech, with at most two revisions", async () => {
+  it("does not spend the reserved pause revision on consecutive short segments", async () => {
     const whisper = createWhisper(["First clause,", "second clause,"]);
     const { connect } = await startServer(whisper.service, incremental({
       prepareAfterSpeechMs: 400,
@@ -275,15 +275,12 @@ describe("answer-provisional and captions", () => {
     const speechStartedAt = Date.now();
     await speak(socket, 1_200, 0.05);
     const duringSpeech = provisionals(messages);
-    expect(duringSpeech.map(({ transcript, revision }) => [transcript, revision])).toEqual([
-      ["First clause,", 1],
-      ["First clause, second clause,", 2],
-    ]);
+    expect(duringSpeech.map(({ transcript, revision }) => [transcript, revision])).toEqual([["First clause,", 1]]);
     expect(duringSpeech.every((message) => message.at - speechStartedAt < 1_200)).toBe(true);
 
     await speak(socket, 500, 0.001);
     await waitFor("complete");
-    expect(provisionals(messages)).toHaveLength(2);
+    expect(provisionals(messages)).toHaveLength(1);
     expect(logs()).not.toContain("First clause");
   });
 
@@ -299,7 +296,7 @@ describe("answer-provisional and captions", () => {
     expect(provisionals(messages)).toHaveLength(0);
   });
 
-  it("sends at most two per answer with increasing revisions", async () => {
+  it("sends at most three per answer with increasing revisions", async () => {
     const whisper = createWhisper(["One.", "Two.", "Three."]);
     const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 200 }));
     const { socket, messages, waitFor } = await connect();
@@ -308,12 +305,12 @@ describe("answer-provisional and captions", () => {
       await speak(socket, 700, 0.001);
     }
     await waitFor("complete", 6_000);
-    expect(provisionals(messages).map((message) => [message.transcript, message.revision])).toEqual([["One.", 1], ["One. Two.", 2]]);
+    expect(provisionals(messages).map((message) => [message.transcript, message.revision])).toEqual([["One.", 1], ["One. Two.", 2], ["One. Two. Three.", 3]]);
   }, 15_000);
 
-  it("still prepares the real ending of a long answer after earlier thinking pauses used provisionals (maxPrepares 4)", async () => {
+  it("caps answer preparation at three revisions", async () => {
     const whisper = createWhisper(["One.", "Two.", "Three."]);
-    const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 200, maxPrepares: 4 }));
+    const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 200, maxPrepares: 3 }));
     const { socket, messages, waitFor } = await connect();
     for (let turn = 0; turn < 3; turn += 1) {
       await speak(socket, 600, 0.05);

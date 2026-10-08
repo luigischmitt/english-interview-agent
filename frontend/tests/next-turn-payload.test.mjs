@@ -39,9 +39,25 @@ test("next-turn serialization bounds future questions and history while keeping 
   assert.deepEqual(payload.remainingFixedQuestions, ["Question 1?", "Question 2?", "Question 3?", "Question 4?"]);
   assert.equal(payload.askedQuestions[0].length, 160);
   assert.equal(payload.askedQuestions[1], "Short question?");
-  assert.equal(payload.previousAnswers.length, 2);
-  assert.equal(payload.previousAnswers[1].answer.length, 300);
-  assert.equal(payload.previousAnswers[1].answer.endsWith("LAST_ANSWER_DETAIL"), true);
+  assert.equal(payload.previousAnswers.length, 3);
+  assert.equal(payload.previousAnswers.at(-1).answer.length, 300);
+  assert.equal(payload.previousAnswers.at(-1).answer.endsWith("LAST_ANSWER_DETAIL"), true);
+});
+
+test("bounded previous-answer memory retains older themes through the last eight pairs", () => {
+  const previousAnswers = Array.from({ length: 10 }, (_, index) => ({
+    question: index === 2 ? "How did you handle the legacy migration?" : `Question ${index}?`,
+    answer: index === 2 ? "I coordinated the old billing migration." : `Answer ${index}.`,
+  }));
+  const payload = JSON.parse(serializeNextTurnRequest({
+    config: { role: "Backend Engineer", seniority: "senior", focus: "technical-depth" },
+    currentQuestion: "Current?", transcript: "Current answer.", nextFixedQuestion: "Next?", remainingFixedQuestions: ["Next?"],
+    followUpUsed: false, askedQuestions: [], previousAnswers,
+  }));
+  assert.equal(payload.previousAnswers.length, 8);
+  assert.equal(payload.previousAnswers[0].question, "How did you handle the legacy migration?");
+  assert.equal(payload.previousAnswers[0].answer, "I coordinated the old billing migration.");
+  assert.equal(payload.previousAnswers.at(-1).question, "Question 9?");
 });
 
 test("resume next turns omit vacancy framing while keeping the inferred role context", () => {

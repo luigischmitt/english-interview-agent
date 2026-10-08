@@ -4,6 +4,26 @@ function isTailoredQuestion(question) {
   return question.id.startsWith("job-");
 }
 
+export function plannedQuestionType(question) {
+  if (question?.id?.startsWith("job-")) return "job";
+  if (question?.id?.startsWith("resume-")) return "resume";
+  return "bank";
+}
+
+/** Resolve the fixed question selected by speculative analysis, including the identity of any skipped item. */
+export function resolveSpeculativeFixedSelection(plannedQuestions, action, adaptedQuestion = null) {
+  const first = plannedQuestions[0] ?? null;
+  if (!first) return { question: null, skippedQuestionIds: [] };
+  if (action === "SKIP" && !isTailoredQuestion(first) && plannedQuestions[1]) {
+    return { question: plannedQuestions[1], skippedQuestionIds: [first.id] };
+  }
+  return {
+    question: first,
+    prompt: action === "DEEPEN" && typeof adaptedQuestion === "string" && adaptedQuestion.trim() ? adaptedQuestion.trim() : first.prompt,
+    skippedQuestionIds: [],
+  };
+}
+
 /** Keep every unasked planned question, with vacancy-tailored questions first and bank order stable within each group. */
 export function remainingPlannedQuestions(questions, askedQuestionIds) {
   const asked = new Set(askedQuestionIds);

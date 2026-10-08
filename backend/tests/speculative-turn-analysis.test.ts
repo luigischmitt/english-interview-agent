@@ -12,6 +12,26 @@ describe("speculative turn analysis", () => {
     const body = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0]?.[1]?.body));
     expect(body.usage).toEqual({ include: true });
     expect(body.provider.data_collection).toBe("deny");
+    expect(body.response_format.json_schema.schema.properties.followUpAction.enum).toEqual(["REPLACE", "NONE"]);
+    expect(body.messages[0].content).toContain("KEEP is forbidden");
+  });
+
+  it("allows KEEP only when a prior candidate exists and logs only content-free diagnostics", async () => {
+    const previousCandidate = { question: "How did Kafka help?", anchor: "Kafka" };
+    const fetcher = response({ revision: 2, followUpAction: "KEEP", followUpQuestion: previousCandidate.question, followUpAnchor: previousCandidate.anchor, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null });
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...input, previousCandidate });
+      expect(result?.followUpAction).toBe("KEEP");
+      const body = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0]?.[1]?.body));
+      expect(body.response_format.json_schema.schema.properties.followUpAction.enum).toEqual(["KEEP", "REPLACE", "NONE"]);
+      const diagnostic = JSON.parse(String(info.mock.calls[0]?.[0]));
+      expect(diagnostic).toMatchObject({ revision: 2, hadPreviousCandidate: true, followUpSelected: true });
+      expect(String(info.mock.calls[0]?.[0])).not.toContain(previousCandidate.question);
+      expect(String(info.mock.calls[0]?.[0])).not.toContain(input.snapshot);
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("drops only a follow-up whose anchor is absent from the snapshot", async () => {
@@ -32,6 +52,16 @@ describe("speculative turn analysis", () => {
     await expect(service.analyze({ ...input, firstFixedType: "job" })).resolves.toMatchObject({ fixedAction: "KEEP" });
     await expect(service.analyze({ ...input, followUpUsed: true })).resolves.toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a covered resume question to be skipped and forwards eight prior answer pairs", async () => {
+    const previousAnswers = Array.from({ length: 8 }, (_, index) => ({ question: `Question ${index}?`, answer: `Answer ${index}.` }));
+    const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "SKIP", adaptedFixedQuestion: null, fixedEvidenceAnchor: "Kafka pipeline" });
+    const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...input, firstFixedType: "resume", previousAnswers });
+    expect(result).toMatchObject({ fixedAction: "SKIP", fixedEvidenceAnchor: "Kafka pipeline" });
+    const body = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0]?.[1]?.body));
+    expect(body.messages[1].content).toContain('"previousAnswers"');
+    expect(JSON.parse(body.messages[1].content).previousAnswers).toHaveLength(8);
   });
 
   it("repairs harmless provider field mistakes without losing a grounded follow-up", async () => {
