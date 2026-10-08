@@ -9,6 +9,7 @@ function normalize(value) {
 
 export function createNextTurnPreparationRegistry() {
   let current = null;
+  let retainedReady = [];
   let used = 0;
   let discarded = 0;
 
@@ -25,9 +26,12 @@ export function createNextTurnPreparationRegistry() {
      * Starts a preparation, aborting and discarding the previous one. `run(signal, onCleanup)` resolves with the prepared
      * value (or null/throws when unavailable); `onCleanup(fn)` registers work to undo if the entry is discarded unused.
      */
-    prepare({ transcript, inputKey, run }) {
+    prepare({ transcript, inputKey, preserveReady = false, run }) {
       const text = normalize(transcript);
-      if (current) discard(current);
+      if (current) {
+        if (preserveReady && current.settled === "ready") retainedReady.push(current);
+        else discard(current);
+      }
       current = null;
       if (!text) return null;
       const controller = new AbortController();
@@ -54,6 +58,8 @@ export function createNextTurnPreparationRegistry() {
 
     /** Aborts and discards the current preparation (speech resumed, new turn, leave, unmount). */
     abort() {
+      for (const entry of retainedReady) discard(entry);
+      retainedReady = [];
       if (!current) return;
       const entry = current;
       current = null;
@@ -89,12 +95,13 @@ export function createNextTurnPreparationRegistry() {
 
     /** Claims a ready value after a caller-supplied semantic compatibility check (used only for revisioned candidates). */
     takeAnyReady({ accept }) {
-      const entry = current;
+      const entries = [...retainedReady, ...(current ? [current] : [])];
+      retainedReady = [];
       current = null;
-      if (!entry || entry.settled !== "ready" || !accept(entry.value)) {
-        if (entry) discard(entry);
-        return null;
-      }
+      const entry = entries.filter((candidate) => candidate.settled === "ready" && accept(candidate.value))
+        .sort((a, b) => (b.value?.revision ?? 0) - (a.value?.revision ?? 0))[0] ?? null;
+      for (const candidate of entries) if (candidate !== entry) discard(candidate);
+      if (!entry) return null;
       entry.used = true;
       used += 1;
       return entry;
@@ -109,7 +116,7 @@ export function createNextTurnPreparationRegistry() {
     },
 
     hasPending() {
-      return current !== null;
+      return current?.settled === "pending";
     },
 
     stats() {

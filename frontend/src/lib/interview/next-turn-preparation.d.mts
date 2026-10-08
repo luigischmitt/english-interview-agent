@@ -12,6 +12,7 @@ export type NextTurnPreparationRegistry<T> = {
   prepare(input: {
     transcript: string;
     inputKey?: string;
+    preserveReady?: boolean;
     run: (signal: AbortSignal, onCleanup: (cleanup: () => void) => void) => Promise<T | null>;
   }): NextTurnPreparationEntry<T> | null;
   abort(): void;

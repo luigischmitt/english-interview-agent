@@ -12,8 +12,14 @@ type ResumeDirectionServiceOptions = {
 };
 
 type OpenRouterResponse = { choices?: Array<{ message?: { content?: unknown } }>; usage?: OpenRouterUsagePayload };
-type ProviderQuestion = { question: string; sourceAnchor: string };
+export const resumeQuestionDimensions = ["scope", "technical_approach", "decision_tradeoff", "challenge", "impact", "collaboration", "quality_reliability", "learning_growth"] as const;
+type ResumeQuestionDimension = (typeof resumeQuestionDimensions)[number];
+type ProviderQuestion = { question: string; sourceAnchor: string; subject: string; dimension: ResumeQuestionDimension };
 export const maxResumeTailoredQuestions = maxApprovedTailoredQuestions;
+const minimumDistinctDimensions = 5;
+const maximumValidatedQuestionsPerDimension = 3;
+const maxQuestionsPerSubjectWhenAlternativesExist = 4;
+const richResumeCharacterThreshold = 800;
 
 const schema = {
   type: "object",
@@ -32,8 +38,10 @@ const schema = {
         properties: {
           question: { type: "string", minLength: 15, maxLength: maxTailoredQuestionLength },
           sourceAnchor: { type: "string", minLength: 3, maxLength: 180 },
+          subject: { type: "string", minLength: 3, maxLength: 80 },
+          dimension: { type: "string", enum: resumeQuestionDimensions },
         },
-        required: ["question", "sourceAnchor"],
+        required: ["question", "sourceAnchor", "subject", "dimension"],
       },
     },
   },
@@ -46,8 +54,11 @@ export const resumeDirectionSystemPrompt = [
   "Use only facts supported by the resume. Do not invent employers, projects, technologies, responsibilities, outcomes, seniority, or dates.",
   "Infer a concise target role in English without a seniority word, and choose likely seniority from junior, mid-level, senior, or staff.",
   "Choose suggestedFocus from technical-depth, communication, behavioral, or mixed.",
-  `Write exactly ${maxResumeTailoredQuestions} distinct tailoredQuestions in English at B1/B2 level. Cover different projects, experiences, technologies, decisions, challenges, results, and collaboration evidenced by the resume. Multiple questions may use the same grounded experience when the resume is short, but each question must explore a different angle. Each question must be natural to say aloud, ask one focused question, contain exactly one question mark, and be at most ${maxTailoredQuestionLength} characters. Do not ask for an introduction or a generic resume walkthrough.`,
-  "For every question, sourceAnchor must be a short literal substring copied exactly from the resume that supports the premise of the question. Never include an email address, phone number, street address, document number, or URL in sourceAnchor.",
+  `Write exactly ${maxResumeTailoredQuestions} distinct tailoredQuestions in English at B1/B2 level. Each item also has a concise subject label (3–80 characters) naming its underlying project, experience, technology, or topic; reuse the same subject label for questions about the same underlying subject, even when exploring different angles. Prefer several supported subjects, and use no more than four questions about one subject when the resume supports at least three subjects. A short resume may have only one or two subjects: in that case, reuse them but give each question a genuinely different dimension.`,
+  `For every question choose exactly one dimension from ${resumeQuestionDimensions.join(", ")}: scope (specific responsibility, not a broad project introduction), technical_approach, decision_tradeoff, challenge, impact, collaboration, quality_reliability, learning_growth. Across the eight questions use at least ${minimumDistinctDimensions} different dimensions, and use no dimension more than twice.`,
+  "The first tailored question follows an introduction question, so it must not ask the candidate to introduce themselves, describe their background, summarize relevant experience, or broadly tell the interviewer about a project. Ask about a specific detail instead.",
+  `Cover different projects, experiences, technologies, decisions, challenges, results, and collaboration evidenced by the resume. Each question must be natural to say aloud, ask one focused question, contain exactly one question mark, and be at most ${maxTailoredQuestionLength} characters. Do not ask for a generic resume walkthrough.`,
+  "For every question, sourceAnchor must be a short literal substring copied exactly from the resume that supports the premise of the question. The subject label may be translated or normalized, but consistently name the same underlying subject the same way. Never include an email address, phone number, street address, document number, or URL in sourceAnchor or subject.",
   "Return only the exact JSON object in the supplied schema, with no extra properties or prose.",
 ].join(" ");
 
@@ -71,11 +82,41 @@ function containsSensitiveContact(value: string): boolean {
   return /@|https?:\/\/|www\.|\b(?:linkedin|github)\.com\b|\+?\d[\d\s().-]{7,}\d/iu.test(value);
 }
 
+function normalizeSubject(value: string): string {
+  return value.trim().toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+const broadFirstQuestion = /\b(?:introduce yourself|tell me about (?:your )?(?:background|experience|career|project|work)|tell me about your (?:most )?relevant (?:background|experience|project|work)|describe (?:your )?(?:background|experience|career)|describe (?:a|your) project|walk me through (?:your )?(?:background|experience|career|project|resume|cv)|(?:give|provide|share) (?:me )?(?:a )?(?:quick |brief )?(?:overview|summary) of (?:your |the )?(?:background|experience|career|project|work)|(?:experience|project|work|background) most relevant|most relevant (?:experience|project|work|background))\b/iu;
+
+function questionDiversityFailure(questions: ProviderQuestion[], resumeText: string): string | null {
+  const dimensions = new Map<ResumeQuestionDimension, number>();
+  const subjects = new Map<string, number>();
+  for (const question of questions) {
+    dimensions.set(question.dimension, (dimensions.get(question.dimension) ?? 0) + 1);
+    const subject = normalizeSubject(question.subject);
+    subjects.set(subject, (subjects.get(subject) ?? 0) + 1);
+  }
+  if (dimensions.size < minimumDistinctDimensions) return "too_few_dimensions";
+  // The prompt asks for at most two. Accept three at validation time so an otherwise broad five-dimension
+  // plan does not become a 502 because the provider classified one borderline question differently.
+  if ([...dimensions.values()].some((count) => count > maximumValidatedQuestionsPerDimension)) return "dimension_overrepresented";
+  // Use resume length as an independent richness signal so the model cannot bypass subject diversity by labeling
+  // every question with the same subject. Short resumes may still explore one or two experiences from distinct angles.
+  if (resumeText.trim().length >= richResumeCharacterThreshold && subjects.size < 3) return "too_few_subjects";
+  if (subjects.size >= 3 && [...subjects.values()].some((count) => count > maxQuestionsPerSubjectWhenAlternativesExist)) return "subject_overrepresented";
+  return broadFirstQuestion.test(questions[0]?.question ?? "") ? "broad_first_question" : null;
+}
+
 function validProviderQuestion(value: unknown): value is ProviderQuestion {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["question", "sourceAnchor"])) return false;
-  if (typeof value.question !== "string" || typeof value.sourceAnchor !== "string") return false;
+  if (!isRecord(value) || !hasOnlyKeys(value, ["question", "sourceAnchor", "subject", "dimension"])) return false;
+  if (typeof value.question !== "string" || typeof value.sourceAnchor !== "string" || typeof value.subject !== "string") return false;
   const anchor = value.sourceAnchor.trim();
+  const subject = value.subject.trim();
   return anchor.length >= 3 && anchor.length <= 180
+    && subject.length >= 3 && subject.length <= 80
+    && normalizeSubject(subject).length > 0
+    && !containsSensitiveContact(subject)
+    && resumeQuestionDimensions.includes(value.dimension as ResumeQuestionDimension)
     && !containsSensitiveContact(anchor)
     && !containsSensitiveContact(value.question);
 }
@@ -104,12 +145,13 @@ export function parseResumeDirection(content: unknown, input: ResumeDirectionInp
 
   const targetRole = normalizeTargetRole(candidate.targetRole);
   if (!targetRole) throw invalidProviderResponse();
-  const groundedQuestions = candidate.tailoredQuestions
-    // Providers commonly translate sourceAnchor when a Portuguese resume is used.
-    // Keep it as an anti-invention prompt aid, but do not discard an otherwise valid
-    // eight-question plan solely because the auxiliary anchor is not byte-identical.
-    .filter(validProviderQuestion)
-    .map((question) => (question as ProviderQuestion).question);
+  if (!candidate.tailoredQuestions.every(validProviderQuestion)) throw invalidProviderResponse();
+  const providerQuestions = candidate.tailoredQuestions as ProviderQuestion[];
+  const diversityFailure = questionDiversityFailure(providerQuestions, input.resumeText);
+  if (diversityFailure) throw invalidProviderResponse(new Error(diversityFailure));
+  // Providers may translate sourceAnchor for Portuguese resumes. Keep it as an anti-invention aid;
+  // do not reject an otherwise coherent plan solely because this auxiliary anchor is not byte-identical.
+  const groundedQuestions = providerQuestions.map((question) => question.question);
   const tailoredQuestions = normalizeTailoredQuestions(groundedQuestions, maxResumeTailoredQuestions);
   if (tailoredQuestions.length !== maxResumeTailoredQuestions) throw invalidProviderResponse();
 

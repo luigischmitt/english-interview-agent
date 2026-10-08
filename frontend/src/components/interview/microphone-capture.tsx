@@ -313,14 +313,14 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     }
     if (message.type === "answer-provisional") {
       const { transcript, revision } = message;
-      if (typeof transcript === "string" && typeof revision === "number" && Number.isInteger(revision) && !finalizationRequestedRef.current) {
+      if (typeof transcript === "string" && typeof revision === "number" && Number.isInteger(revision) && revision >= 1 && revision <= 3 && !finalizationRequestedRef.current) {
         onProvisionalAnswerRef.current?.(transcript, revision);
       }
       return;
     }
     if (message.type === "follow-up-candidate-status") {
       const status = message.status;
-      if (typeof message.turnId === "string" && typeof message.revision === "number" && Number.isInteger(message.revision)
+      if (typeof message.turnId === "string" && typeof message.revision === "number" && Number.isInteger(message.revision) && message.revision >= 1 && message.revision <= 3
         && (status === "OPEN" || status === "COVERED" || status === "INVALID" || status === "NONE")) {
         onFollowUpCandidateStatusRef.current?.({ type: "follow-up-candidate-status", turnId: message.turnId, revision: message.revision, status });
       }

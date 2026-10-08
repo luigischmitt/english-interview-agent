@@ -34,7 +34,7 @@ export type FollowUpCandidateUpdate = FollowUpCandidate & { type: "follow-up-can
 /** Strict, bounded control message. Its text fields are used only by the semantic classifier and are never logged. */
 export function sanitizeFollowUpCandidate(message: Extract<ClientMessage, { type: "follow-up-candidate" }>): FollowUpCandidateUpdate | null {
   if (typeof message.turnId !== "string" || !/^[A-Za-z0-9_-]{8,80}$/u.test(message.turnId)) return null;
-  if (!Number.isInteger(message.revision) || (message.revision as number) < 1 || (message.revision as number) > 2) return null;
+  if (!Number.isInteger(message.revision) || (message.revision as number) < 1 || (message.revision as number) > 3) return null;
   if (typeof message.question !== "string" || message.question !== message.question.trim() || message.question.length < 2 || message.question.length > 180 || (message.question.match(/\?/gu) ?? []).length !== 1 || !message.question.endsWith("?")) return null;
   if (typeof message.anchor !== "string" || message.anchor !== message.anchor.trim() || message.anchor.length < 1 || message.anchor.length > 140) return null;
   if (/[\u0000-\u001f\u007f-\u009f]/u.test(message.question) || /[\u0000-\u001f\u007f-\u009f]/u.test(message.anchor)) return null;
@@ -198,9 +198,9 @@ export type StreamingOptions = {
    * question during the grace. 0 or undefined disables; it only applies when shorter than the grace that is running.
    */
   prepareAfterMs?: number;
-  /** Maximum provisional messages (and semantic completion checks) per answer. Defaults to 2. */
+  /** Maximum provisional messages per answer. Defaults to 3. */
   maxPrepares?: number;
-  /** Minimum finalized incremental audio before a long continuous answer can trigger a provisional snapshot. Defaults to 10000; 0 disables. */
+  /** Minimum finalized incremental audio before a long continuous answer can trigger a provisional snapshot. Defaults to 6000; 0 disables. */
   prepareAfterSpeechMs?: number;
   /**
    * Silence (measured from the pause that cut the tail) after which the semantic completeness check starts, as soon as the
@@ -299,6 +299,7 @@ export function attachTranscriptionWebSocket(
     // Provisional answer for next-turn preparation (never logged; only the count is).
     let prepareTimer: ReturnType<typeof setTimeout> | null = null;
     let preparesSent = 0;
+    let lastProvisionalAudioDurationMs = 0;
     // Why the incremental transcript was abandoned for a full-audio call (content-free); null while it was not.
     let fallbackReason: SessionFailureDetail | null = null;
     let lastProvisional = "";
@@ -332,7 +333,7 @@ export function attachTranscriptionWebSocket(
       const current = sessionId ? sessions.get(sessionId) : undefined;
       if (finalRequested || finishing || !streamSession || streamSession.failed || !streamSession.turnActive || !current?.vad.hasSpeech) return;
       const transcript = streamSession.committedText();
-      const maxPrepares = streaming?.maxPrepares ?? 2;
+      const maxPrepares = streaming?.maxPrepares ?? 3;
       if (!transcript || transcript === lastProvisional || preparesSent >= maxPrepares) return;
       lastProvisional = transcript;
       preparesSent += 1;
@@ -896,9 +897,10 @@ export function attachTranscriptionWebSocket(
                 // Local-VAD turns arrive after their segment was transcribed: time grace and prepare from the pause, not from now.
                 const elapsedMs = info?.silenceStartedAt !== undefined ? Math.max(0, Date.now() - info.silenceStartedAt) : 0;
                 const prepareAfterMs = streaming.prepareAfterMs ?? 0;
-                const maxPrepares = streaming.maxPrepares ?? 2;
+                const maxPrepares = streaming.maxPrepares ?? 3;
                 const canPrepare = preparesSent < maxPrepares;
-                const canCheckSemantically = interviewerQuestion !== null && Boolean(streaming.answerCompletion) && semanticChecks < maxPrepares;
+                const maxSemanticChecks = streaming.maxSemanticChecks ?? 2;
+                const canCheckSemantically = interviewerQuestion !== null && Boolean(streaming.answerCompletion) && semanticChecks < maxSemanticChecks;
                 const semanticAfterMs = streaming.semanticCheckAfterMs ?? prepareAfterMs;
                 const silenceStartedAt = info?.silenceStartedAt ?? Date.now();
                 const minSilenceMs = streaming.semanticCompleteMinSilenceMs ?? 0;
@@ -906,7 +908,7 @@ export function attachTranscriptionWebSocket(
                   const current = sessionId ? sessions.get(sessionId) : undefined;
                   if (finalRequested || finishing || !streamSession || streamSession.failed || streamSession.turnActive || !current?.vad.hasSpeech) return;
                   const transcript = streamSession.committedText();
-                  if (!transcript || transcript === lastSemanticText || interviewerQuestion === null || !streaming.answerCompletion || semanticChecks >= (streaming.maxSemanticChecks ?? maxPrepares)) return;
+                  if (!transcript || transcript === lastSemanticText || interviewerQuestion === null || !streaming.answerCompletion || semanticChecks >= maxSemanticChecks) return;
                   lastSemanticText = transcript;
                   runSemanticCheck(streaming.answerCompletion, interviewerQuestion, transcript, silenceStartedAt, minSilenceMs);
                 };
@@ -945,15 +947,22 @@ export function attachTranscriptionWebSocket(
                 logStreamDiagnostic({ status: "incremental_whisper_unavailable", reason: failure, detail });
               },
             };
-            const prepareAfterSpeechMs = streaming.prepareAfterSpeechMs ?? 10_000;
+            const prepareAfterSpeechMs = streaming.prepareAfterSpeechMs ?? 6_000;
             streamSession = new IncrementalWhisperSession({
               service: transcriptionService,
               speechThreshold: session.config.speechThreshold,
               question: whisperQuestion,
               ...streaming.incrementalWhisper,
               ...sessionCallbacks,
-              onSegmentCommitted: (transcript, info) => {
-                if (prepareAfterSpeechMs > 0 && !info.turnEnded && info.audioDurationMs >= prepareAfterSpeechMs) sendProvisionalSnapshot();
+              onSegmentCommitted: (_transcript, info) => {
+                // Send the first useful snapshot at about six seconds, then require another six seconds of
+                // answer growth. Keep one of the three revisions for the pause that may end the answer.
+                const speechRevisionLimit = Math.max(0, (streaming.maxPrepares ?? 3) - 1);
+                if (prepareAfterSpeechMs > 0 && !info.turnEnded && preparesSent < speechRevisionLimit && info.audioDurationMs >= prepareAfterSpeechMs && (preparesSent === 0 || info.audioDurationMs - lastProvisionalAudioDurationMs >= 6_000)) {
+                  const previousRevision = preparesSent;
+                  sendProvisionalSnapshot();
+                  if (preparesSent > previousRevision) lastProvisionalAudioDurationMs = info.audioDurationMs;
+                }
               },
             });
             streamSession.open();

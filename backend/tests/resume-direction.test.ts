@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createResumeDirectionHandlers, extractResumePdf, maximumResumeBytes, redactResumeContactDetails } from "../src/controllers/resume-direction-controller.js";
 import { JobDirectionUserLimit } from "../src/thinking/job-direction-user-limit.js";
-import { maxResumeTailoredQuestions, OpenRouterResumeDirectionService, parseResumeDirection } from "../src/thinking/openrouter-resume-direction-service.js";
+import { maxResumeTailoredQuestions, OpenRouterResumeDirectionService, parseResumeDirection, resumeQuestionDimensions } from "../src/thinking/openrouter-resume-direction-service.js";
 import type { ResumeDirectionInput, ResumeDirectionService } from "../src/thinking/types.js";
 
 const resumeText = "Backend Engineer at Acme. Built a distributed payments platform with Node.js and PostgreSQL. Led observability improvements and reduced incidents by 30 percent. Collaborated with product and support teams across releases.";
@@ -19,8 +19,19 @@ const providerResult = {
   suggestedSeniority: "senior",
   suggestedFocus: "technical-depth",
   tailoredQuestions: resumeAnchors.map((sourceAnchor, index) => ({
-    question: `What technical decision did you make in experience number ${index + 1}?`,
+    question: [
+      "What part of the payments platform did you own directly?",
+      "How did Node.js fit into the platform's architecture?",
+      "What trade-off shaped your database design?",
+      "What was the hardest technical issue during the work?",
+      "How did you measure the reduction in incidents?",
+      "How did product and support teams shape the releases?",
+      "What checks helped keep the payment flow reliable?",
+      "What skill did you develop while building this system?",
+    ][index]!,
     sourceAnchor,
+    subject: "distributed payments platform",
+    dimension: resumeQuestionDimensions[index]!,
   })),
 };
 
@@ -75,27 +86,83 @@ describe("resume direction validation", () => {
       targetRole: "Backend Engineer",
       suggestedSeniority: "senior",
       suggestedFocus: "technical-depth",
-      tailoredQuestions: Array.from({ length: 8 }, (_, index) => `What technical decision did you make in experience number ${index + 1}?`),
+      tailoredQuestions: providerResult.tailoredQuestions.map(({ question }) => question),
     });
+  });
+
+  it("accepts one short resume experience when questions explore distinct dimensions", () => {
+    const shortResume = "Backend Engineer. Built a payments platform with Node.js and PostgreSQL.";
+    const result = parseResumeDirection(JSON.stringify(providerResult), { resumeText: shortResume, pageCount: 1 });
+    expect(result.tailoredQuestions).toHaveLength(8);
+  });
+
+  it("requires subject breadth for a rich resume even when the model labels every question alike", () => {
+    const richResume = `${resumeText} ${"Led a separate customer identity project, improved service reliability, coached teammates, and delivered a data migration. ".repeat(8)}`;
+    expect(richResume.length).toBeGreaterThanOrEqual(800);
+    expect(() => parseResumeDirection(JSON.stringify(providerResult), { resumeText: richResume, pageCount: 4 })).toThrowError(/validar a análise/iu);
+  });
+
+  it("rejects eight paraphrases of one intent even when source anchors and subjects differ", () => {
+    const repetitive = {
+      ...providerResult,
+      tailoredQuestions: providerResult.tailoredQuestions.map((question, index) => ({
+        ...question,
+        question: `How did you make a technical decision about ${["Node.js", "PostgreSQL", "payments", "observability", "incidents", "releases", "support", "Acme"][index]}?`,
+        subject: `subject ${index + 1}`,
+        dimension: "decision_tradeoff",
+      })),
+    };
+    expect(() => parseResumeDirection(JSON.stringify(repetitive), { resumeText, pageCount: 2 })).toThrowError(/validar a análise/iu);
+  });
+
+  it("limits one subject to four questions when the plan contains at least three subjects", () => {
+    const concentrated = {
+      ...providerResult,
+      tailoredQuestions: providerResult.tailoredQuestions.map((question, index) => ({
+        ...question,
+        subject: index < 5 ? "payments platform" : `subject ${index}`,
+      })),
+    };
+    expect(() => parseResumeDirection(JSON.stringify(concentrated), { resumeText, pageCount: 2 })).toThrowError(/validar a análise/iu);
+  });
+
+  it("rejects an opening tailored question that repeats the presentation prompt", () => {
+    const repeatedOpening = {
+      ...providerResult,
+      tailoredQuestions: providerResult.tailoredQuestions.map((question, index) => index === 0
+        ? { ...question, question: "Tell me about a project you built with Node.js." }
+        : question),
+    };
+    expect(() => parseResumeDirection(JSON.stringify(repeatedOpening), { resumeText, pageCount: 2 })).toThrowError(/validar a análise/iu);
+  });
+
+  it("rejects a broad overview paraphrase as the first tailored question", () => {
+    const repeatedOpening = {
+      ...providerResult,
+      tailoredQuestions: providerResult.tailoredQuestions.map((question, index) => index === 0
+        ? { ...question, question: "Can you give a quick overview of the work that best represents your experience?" }
+        : question),
+    };
+    expect(() => parseResumeDirection(JSON.stringify(repeatedOpening), { resumeText, pageCount: 2 })).toThrowError(/validar a análise/iu);
   });
 
   it("accepts translated evidence anchors but rejects contact details", () => {
     expect(parseResumeDirection(JSON.stringify({
       ...providerResult,
       tailoredQuestions: providerResult.tailoredQuestions.map((item, index) => index === 0
-        ? { question: item.question, sourceAnchor: "translated professional experience" }
+        ? { ...item, sourceAnchor: "translated professional experience" }
         : item),
     }), { resumeText, pageCount: 2 }).tailoredQuestions).toHaveLength(8);
     expect(() => parseResumeDirection(JSON.stringify({
       ...providerResult,
       tailoredQuestions: providerResult.tailoredQuestions.map((item, index) => index === 0
-        ? { question: item.question, sourceAnchor: "person@example.com" }
+        ? { ...item, sourceAnchor: "person@example.com" }
         : item),
     }), { resumeText: `${resumeText} person@example.com`, pageCount: 2 })).toThrowError(/validar a análise/iu);
     expect(() => parseResumeDirection(JSON.stringify({
       ...providerResult,
       tailoredQuestions: providerResult.tailoredQuestions.map((item, index) => index === 0
-        ? { question: "How did person@example.com build the platform?", sourceAnchor: item.sourceAnchor }
+        ? { ...item, question: "How did person@example.com build the platform?" }
         : item),
     }), { resumeText, pageCount: 2 })).toThrowError(/validar a análise/iu);
   });
@@ -104,6 +171,8 @@ describe("resume direction validation", () => {
     const questions = resumeAnchors.map((sourceAnchor, index) => ({
       question: `What did you learn from experience number ${index + 1} with this work?`,
       sourceAnchor,
+      subject: `experience ${index + 1}`,
+      dimension: resumeQuestionDimensions[index]!,
     }));
     const result = parseResumeDirection(JSON.stringify({ ...providerResult, tailoredQuestions: questions }), { resumeText, pageCount: 2 });
     expect(maxResumeTailoredQuestions).toBe(8);
@@ -131,6 +200,12 @@ describe("OpenRouter resume direction service", () => {
     expect(sent?.provider).toEqual({ require_parameters: true, data_collection: "deny" });
     expect(sent?.usage).toEqual({ include: true });
     expect(sent?.response_format).toMatchObject({ type: "json_schema", json_schema: { strict: true } });
+    const responseFormat = sent?.response_format as { json_schema?: { schema?: Record<string, unknown> } } | undefined;
+    const schemaProperties = responseFormat?.json_schema?.schema?.properties as Record<string, unknown> | undefined;
+    const tailoredSchema = schemaProperties?.tailoredQuestions as { items?: { properties?: Record<string, { enum?: string[] }> } } | undefined;
+    const questionSchema = tailoredSchema?.items?.properties;
+    expect(questionSchema).toHaveProperty("subject");
+    expect(questionSchema?.dimension?.enum).toEqual(resumeQuestionDimensions);
     const log = info.mock.calls.map(([line]) => String(line)).join("\n");
     expect(log).toContain('"event":"interview_resume_analysis_timing"');
     expect(log).toContain('"pages":2');

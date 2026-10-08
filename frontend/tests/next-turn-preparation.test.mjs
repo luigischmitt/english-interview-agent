@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createNextTurnPreparationRegistry } from "../src/lib/interview/next-turn-preparation.mjs";
+import { canUseSpeculativePreparation, followUpSpeechReadyByAcknowledgement } from "../src/lib/interview/speculative-preparation-policy.mjs";
 import { clearRetainedSpeechBlobs, playInterviewerSegments, prewarmInterviewerSpeech } from "../src/lib/interview/speech-playback.mjs";
 
 
@@ -98,6 +99,100 @@ test("takeAnyReady accepts only a ready semantically compatible revision", async
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(registry.takeAnyReady({ accept: (value) => value.anchor === "Kafka" }), null);
   assert.deepEqual(registry.stats(), { used: 1, discarded: 1 });
+});
+
+test("a ready earlier revision survives while a newer revision is pending", async () => {
+  const registry = createNextTurnPreparationRegistry();
+  const earlier = registry.prepare({ transcript: "I used Kafka.", preserveReady: true, run: async () => ({ revision: 1, anchor: "Kafka" }) });
+  await earlier.promise;
+  let newerSignal;
+  registry.prepare({ transcript: "I used Kafka in production.", preserveReady: true, run: (signal) => { newerSignal = signal; return new Promise(() => {}); } });
+
+  const entry = registry.takeAnyReady({ accept: (value) => value.anchor === "Kafka" });
+  assert.equal(entry, earlier);
+  assert.deepEqual(await entry.promise, { revision: 1, anchor: "Kafka" });
+  assert.equal(newerSignal.aborted, true, "unfinished newer work is cancelled at finalization");
+  assert.deepEqual(registry.stats(), { used: 1, discarded: 1 });
+});
+
+test("takeAnyReady selects the newest compatible prepared revision", async () => {
+  const registry = createNextTurnPreparationRegistry();
+  registry.prepare({ transcript: "revision one", preserveReady: true, run: async () => ({ revision: 1, anchor: "Kafka" }) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  registry.prepare({ transcript: "revision two", preserveReady: true, run: async () => ({ revision: 2, anchor: "Kafka" }) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const entry = registry.takeAnyReady({ accept: (value) => value.anchor === "Kafka" });
+  assert.equal(entry.value.revision, 2);
+  assert.deepEqual(registry.stats(), { used: 1, discarded: 1 });
+});
+
+test("final transcript accepts an exact snapshot unless compatibility invalidates it", () => {
+  const value = { turnId: "turn-a", revision: 2, transcript: "I led the migration.", decision: { decision: "NEXT" }, anchor: null };
+  const input = { value, finalTranscript: " I led the migration. ", currentTurnId: "turn-a", featureEnabled: true, compatibility: undefined };
+  assert.equal(canUseSpeculativePreparation(input), true);
+  assert.equal(canUseSpeculativePreparation({ ...input, compatibility: "COVERED" }), false);
+  assert.equal(canUseSpeculativePreparation({ ...input, compatibility: "INVALID" }), false);
+  assert.equal(canUseSpeculativePreparation({ ...input, compatibility: "NONE" }), false);
+});
+
+test("an extended final transcript reuses only an open anchored follow-up from this turn", () => {
+  const value = { turnId: "turn-a", revision: 1, transcript: "I used Kafka.", decision: { decision: "FOLLOW_UP" }, anchor: "Kafka" };
+  const input = { value, finalTranscript: "I used Kafka to process events.", currentTurnId: "turn-a", featureEnabled: true, compatibility: "OPEN" };
+  assert.equal(canUseSpeculativePreparation(input), true);
+  assert.equal(canUseSpeculativePreparation({ ...input, compatibility: "COVERED" }), false);
+  assert.equal(canUseSpeculativePreparation({ ...input, compatibility: "INVALID" }), false);
+  assert.equal(canUseSpeculativePreparation({ ...input, compatibility: undefined }), false);
+  assert.equal(canUseSpeculativePreparation({ ...input, currentTurnId: "turn-b" }), false);
+  assert.equal(canUseSpeculativePreparation({ ...input, featureEnabled: false }), false);
+  assert.equal(canUseSpeculativePreparation({ ...input, finalTranscript: "I used Redis." }), false);
+  assert.equal(canUseSpeculativePreparation({ ...input, value: { ...value, decision: { decision: "NEXT" } } }), false);
+});
+
+test("anchor compatibility ignores casing, punctuation, hyphens, and accents", () => {
+  const value = { turnId: "turn-a", revision: 2, transcript: "I improved Kafka.", decision: { decision: "FOLLOW_UP" }, anchor: "KAFKA pipeline" };
+  assert.equal(canUseSpeculativePreparation({
+    value,
+    finalTranscript: "I improved the kafka-pipeline used for cobrança events.",
+    currentTurnId: "turn-a",
+    featureEnabled: true,
+    compatibility: "OPEN",
+  }), true);
+  assert.equal(canUseSpeculativePreparation({
+    value: { ...value, anchor: "cobranca events" },
+    finalTranscript: "I improved the pipeline for cobrança events.",
+    currentTurnId: "turn-a",
+    featureEnabled: true,
+    compatibility: "OPEN",
+  }), true);
+});
+
+test("a speculative follow-up gets only the acknowledgement interval for speech synthesis", async () => {
+  const speech = deferred();
+  const acknowledgement = deferred();
+  const choice = followUpSpeechReadyByAcknowledgement({
+    decision: { decision: "FOLLOW_UP" }, speechReady: speech.promise, audioEnabled: true, acknowledgementIdle: acknowledgement.promise,
+  });
+  acknowledgement.resolve();
+  assert.equal(await choice, false);
+  speech.resolve(true);
+
+  const readySpeech = deferred();
+  const liveAcknowledgement = deferred();
+  const readyChoice = followUpSpeechReadyByAcknowledgement({
+    decision: { decision: "FOLLOW_UP" }, speechReady: readySpeech.promise, audioEnabled: true, acknowledgementIdle: liveAcknowledgement.promise,
+  });
+  readySpeech.resolve(true);
+  assert.equal(await readyChoice, true);
+  liveAcknowledgement.resolve();
+});
+
+test("text-only follow-ups do not wait for speech synthesis or acknowledgement", async () => {
+  const never = deferred();
+  assert.equal(await followUpSpeechReadyByAcknowledgement({
+    decision: { decision: "FOLLOW_UP" }, speechReady: never.promise, audioEnabled: false, acknowledgementIdle: never.promise,
+  }), true);
+  assert.equal(typeof never.resolve, "function");
 });
 
 class FakeAudio {

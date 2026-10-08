@@ -1,5 +1,13 @@
 import type { InterviewQuestion } from "./types";
 
+export type PlannedQuestionType = "resume" | "job" | "bank";
+export function plannedQuestionType(question: Pick<InterviewQuestion, "id">): PlannedQuestionType;
+export function resolveSpeculativeFixedSelection(
+  plannedQuestions: InterviewQuestion[],
+  action: "KEEP" | "SKIP" | "DEEPEN" | undefined,
+  adaptedQuestion?: string | null,
+): { question: InterviewQuestion | null; prompt?: string; skippedQuestionIds: string[] };
+
 export function remainingPlannedQuestions(questions: InterviewQuestion[], askedQuestionIds: Iterable<string>): InterviewQuestion[];
 export function selectNextPlannedQuestion(input: {
   questions: InterviewQuestion[];
