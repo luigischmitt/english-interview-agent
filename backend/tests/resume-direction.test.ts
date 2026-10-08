@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createResumeDirectionHandlers, extractResumePdf, maximumResumeBytes, redactResumeContactDetails } from "../src/controllers/resume-direction-controller.js";
 import { JobDirectionUserLimit } from "../src/thinking/job-direction-user-limit.js";
 import { maxResumeTailoredQuestions, OpenRouterResumeDirectionService, parseResumeDirection, resumeQuestionDimensions } from "../src/thinking/openrouter-resume-direction-service.js";
+import { defaultResumeDirectionTimeoutMs, loadThinkingConfig } from "../src/thinking/config.js";
 import type { ResumeDirectionInput, ResumeDirectionService } from "../src/thinking/types.js";
 
 const resumeText = "Backend Engineer at Acme. Built a distributed payments platform with Node.js and PostgreSQL. Led observability improvements and reduced incidents by 30 percent. Collaborated with product and support teams across releases.";
@@ -182,6 +183,14 @@ describe("resume direction validation", () => {
 });
 
 describe("OpenRouter resume direction service", () => {
+  it("uses a dedicated 28-second default and honors its dedicated environment override", () => {
+    expect(defaultResumeDirectionTimeoutMs).toBe(28_000);
+    expect(loadThinkingConfig({}).resumeDirectionTimeoutMs).toBe(28_000);
+    expect(loadThinkingConfig({ INTERVIEW_RESUME_DIRECTION_TIMEOUT_MS: "26000" }).resumeDirectionTimeoutMs).toBe(26_000);
+    expect(() => loadThinkingConfig({ INTERVIEW_RESUME_DIRECTION_TIMEOUT_MS: "24000" })).toThrow(/between 25000 and 30000/iu);
+    expect(() => loadThinkingConfig({ INTERVIEW_RESUME_DIRECTION_TIMEOUT_MS: "31000" })).toThrow(/between 25000 and 30000/iu);
+  });
+
   it("uses strict structured output, denies retention, and logs aggregates only", async () => {
     let sent: Record<string, unknown> | undefined;
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -210,6 +219,134 @@ describe("OpenRouter resume direction service", () => {
     expect(log).toContain('"event":"interview_resume_analysis_timing"');
     expect(log).toContain('"pages":2');
     expect(log).not.toContain("distributed payments platform");
+    info.mockRestore();
+  });
+
+  it("retries one invalid response while excluding its provider and preserving privacy and strict schema", async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    let call = 0;
+    const service = new OpenRouterResumeDirectionService({
+      key: "test-key",
+      model: "test-model",
+      timeoutMs: 1_000,
+      fetchImplementation: async (_url, init) => {
+        sent.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        call += 1;
+        return call === 1
+          ? Response.json({ openrouter_metadata: { endpoints: { available: [{ provider: "Example Cloud", selected: true }] } }, choices: [{ message: { content: "not json" } }] })
+          : Response.json({ provider: "other-cloud", choices: [{ message: { content: JSON.stringify(providerResult) } }] });
+      },
+    });
+
+    await expect(service.analyze({ resumeText, pageCount: 2 })).resolves.toMatchObject({ tailoredQuestions: expect.arrayContaining([expect.any(String)]) });
+    expect(sent).toHaveLength(2);
+    for (const body of sent) {
+      expect(body.provider).toMatchObject({ require_parameters: true, data_collection: "deny" });
+      expect(body.response_format).toMatchObject({ type: "json_schema", json_schema: { strict: true } });
+    }
+    expect(sent[0]?.provider).not.toHaveProperty("ignore");
+    expect(sent[1]?.provider).toMatchObject({ ignore: ["example-cloud"] });
+  });
+
+  it("ignores malformed routing metadata and still retries an invalid response", async () => {
+    let call = 0;
+    const service = new OpenRouterResumeDirectionService({
+      key: "test-key",
+      model: "test-model",
+      timeoutMs: 1_000,
+      fetchImplementation: async () => {
+        call += 1;
+        return call === 1
+          ? Response.json({ openrouter_metadata: { endpoints: { available: { provider: "not-an-array" } } }, choices: [{ message: { content: "not json" } }] })
+          : Response.json({ choices: [{ message: { content: JSON.stringify(providerResult) } }] });
+      },
+    });
+
+    await expect(service.analyze({ resumeText, pageCount: 2 })).resolves.toMatchObject({ tailoredQuestions: expect.arrayContaining([expect.any(String)]) });
+    expect(call).toBe(2);
+  });
+
+  it("retries once after an attempt timeout, excluding the inferred pinned provider", async () => {
+    vi.stubEnv("OPENROUTER_PINNED_PROVIDER", "parasail");
+    let call = 0;
+    const sent: Array<Record<string, unknown>> = [];
+    const fetchImplementation = vi.fn<typeof fetch>(async (_input, init) => {
+      sent.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      call += 1;
+      if (call === 1) {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        });
+      }
+      return Response.json({ choices: [{ message: { content: JSON.stringify(providerResult) } }] });
+    });
+    vi.stubGlobal("fetch", fetchImplementation);
+    try {
+      const service = new OpenRouterResumeDirectionService({ key: "test-key", model: "test-model", timeoutMs: 1_000 });
+      await expect(service.analyze({ resumeText, pageCount: 2 })).resolves.toMatchObject({ tailoredQuestions: expect.arrayContaining([expect.any(String)]) });
+      expect(call).toBe(2);
+      expect(sent[1]?.provider).toMatchObject({ ignore: ["parasail"] });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("retries once after a first-attempt network error", async () => {
+    let call = 0;
+    const service = new OpenRouterResumeDirectionService({
+      key: "test-key",
+      model: "test-model",
+      timeoutMs: 1_000,
+      fetchImplementation: async () => {
+        call += 1;
+        if (call === 1) throw new TypeError("network unavailable");
+        return Response.json({ choices: [{ message: { content: JSON.stringify(providerResult) } }] });
+      },
+    });
+
+    await expect(service.analyze({ resumeText, pageCount: 2 })).resolves.toMatchObject({ tailoredQuestions: expect.arrayContaining([expect.any(String)]) });
+    expect(call).toBe(2);
+  });
+
+  it("stops after exactly two invalid provider responses", async () => {
+    let call = 0;
+    const service = new OpenRouterResumeDirectionService({
+      key: "test-key",
+      model: "test-model",
+      timeoutMs: 1_000,
+      fetchImplementation: async () => {
+        call += 1;
+        return Response.json({ choices: [{ message: { content: "not json" } }] });
+      },
+    });
+
+    await expect(service.analyze({ resumeText, pageCount: 2 })).rejects.toMatchObject({ code: "RESUME_DIRECTION_INVALID_PROVIDER_RESPONSE", status: 502 });
+    expect(call).toBe(2);
+  });
+
+  it("shares the timeout across retry and logs safe invalid-response reasons without response content", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    let call = 0;
+    const service = new OpenRouterResumeDirectionService({
+      key: "test-key",
+      model: "test-model",
+      timeoutMs: 60,
+      fetchImplementation: async (_url, init) => {
+        call += 1;
+        if (call === 1) return Response.json({ provider: "first-provider", choices: [{ message: { content: "PRIVATE_RESPONSE_CONTENT" } }] });
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        });
+      },
+    });
+
+    await expect(service.analyze({ resumeText, pageCount: 2 })).rejects.toMatchObject({ code: "RESUME_DIRECTION_TIMEOUT", status: 504 });
+    expect(call).toBe(2);
+    const logs = info.mock.calls.map(([line]) => String(line)).join("\n");
+    expect(logs).toContain('"invalidReason":"invalid_json"');
+    expect(logs).not.toContain("PRIVATE_RESPONSE_CONTENT");
+    expect(logs).not.toContain("distributed payments platform");
     info.mockRestore();
   });
 });

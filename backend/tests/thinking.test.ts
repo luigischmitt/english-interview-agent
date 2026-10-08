@@ -2,7 +2,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app.js";
-import { loadThinkingConfig, defaultThinkingModel, defaultThinkingTimeoutMs, defaultOrchestrationTimeoutMs, defaultInterviewReportTimeoutMs } from "../src/thinking/config.js";
+import { loadThinkingConfig, defaultThinkingModel, defaultThinkingTimeoutMs, defaultOrchestrationTimeoutMs, defaultInterviewReportTimeoutMs, defaultResumeDirectionTimeoutMs } from "../src/thinking/config.js";
 import { ThinkingServiceError } from "../src/thinking/errors.js";
 import { OpenRouterThinkingService } from "../src/thinking/openrouter-thinking-service.js";
 import type { InterviewThinkingInput } from "../src/thinking/types.js";
@@ -65,6 +65,7 @@ describe("thinking configuration", () => {
       bridgeTimeoutMs: 1_800,
       bridgeMode: "merged",
       reportTimeoutMs: defaultInterviewReportTimeoutMs,
+      resumeDirectionTimeoutMs: defaultResumeDirectionTimeoutMs,
       diagnosticsEnabled: false,
       speculativeHandoffEnabled: false,
     });
@@ -88,6 +89,7 @@ describe("thinking configuration", () => {
       bridgeTimeoutMs: 1_800,
       bridgeMode: "merged",
       reportTimeoutMs: 45_000,
+      resumeDirectionTimeoutMs: defaultResumeDirectionTimeoutMs,
       diagnosticsEnabled: true,
       speculativeHandoffEnabled: false,
     });
