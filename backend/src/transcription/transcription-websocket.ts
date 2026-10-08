@@ -18,10 +18,12 @@ type ClientMessage =
   | { type: "level"; value: number }
   | { type: "finalize"; reason: "manual" | "silence" }
   | { type: "follow-up-candidate"; turnId: unknown; revision: unknown; question: unknown; anchor: unknown }
+  | { type: "follow-up-candidate-cleared"; turnId: unknown; revision: unknown }
   | { type: "cancel" };
 
 const maxQuestionLength = 400;
 const maxSpeculativeRevisions = 8;
+const maxCandidateTurnIdsPerAnswer = 16;
 
 /** Interviewer question from `start`: control characters become spaces; empty or over-long values are ignored. Never logged. */
 export function sanitizeQuestion(value: unknown): string | null {
@@ -32,6 +34,8 @@ export function sanitizeQuestion(value: unknown): string | null {
 
 export type FollowUpCandidateUpdate = FollowUpCandidate & { type: "follow-up-candidate"; turnId: string; revision: number };
 
+type FollowUpCandidateClear = { type: "follow-up-candidate-cleared"; turnId: string; revision: number };
+
 /** Strict, bounded control message. Its text fields are used only by the semantic classifier and are never logged. */
 export function sanitizeFollowUpCandidate(message: Extract<ClientMessage, { type: "follow-up-candidate" }>): FollowUpCandidateUpdate | null {
   if (typeof message.turnId !== "string" || !/^[A-Za-z0-9_-]{8,80}$/u.test(message.turnId)) return null;
@@ -40,6 +44,12 @@ export function sanitizeFollowUpCandidate(message: Extract<ClientMessage, { type
   if (typeof message.anchor !== "string" || message.anchor !== message.anchor.trim() || message.anchor.length < 1 || message.anchor.length > 140) return null;
   if (/[\u0000-\u001f\u007f-\u009f]/u.test(message.question) || /[\u0000-\u001f\u007f-\u009f]/u.test(message.anchor)) return null;
   return { type: "follow-up-candidate", turnId: message.turnId, revision: message.revision as number, question: message.question, anchor: message.anchor };
+}
+
+function sanitizeFollowUpCandidateClear(message: Extract<ClientMessage, { type: "follow-up-candidate-cleared" }>): FollowUpCandidateClear | null {
+  if (typeof message.turnId !== "string" || !/^[A-Za-z0-9_-]{8,80}$/u.test(message.turnId)) return null;
+  if (!Number.isInteger(message.revision) || (message.revision as number) < 1 || (message.revision as number) > maxSpeculativeRevisions) return null;
+  return { type: "follow-up-candidate-cleared", turnId: message.turnId, revision: message.revision as number };
 }
 
 /** Minimum spacing between live caption messages (about 5 per second). */
@@ -237,7 +247,7 @@ export function parseTranscriptionEngine(value: unknown): RequestedEngine | null
 
 type AnswerEndReason = "turn_end_grace" | "semantic_complete" | "vad_silence" | "fallback_whisper";
 
-type SemanticVerdict = "complete" | "incomplete" | "timeout" | "error" | "none";
+type SemanticVerdict = "complete" | "incomplete" | "timeout" | "error" | "aborted" | "none";
 
 type SpeculationOutcome = "reused" | "discarded" | "skipped_no_slot" | "failed" | "none";
 
@@ -309,8 +319,12 @@ export function attachTranscriptionWebSocket(
     // Question for Whisper vocabulary biasing only; independent of the semantic end check. Never logged.
     let whisperQuestion: string | null = null;
     let semanticAbort: AbortController | null = null;
+    let candidateAbort: AbortController | null = null;
     let semanticChecks = 0;
-    let lastAssessedCandidateRevision = 0;
+    let lastAssessedCandidate: { turnId: string; revision: number } | null = null;
+    let candidateChecksInEpoch = 0;
+    let speechEpoch = 0;
+    const candidateRevisionFloorByTurnId = new Map<string, number>();
     let semanticVerdict: SemanticVerdict = "none";
     let semanticLatencyMs = 0;
     let lastSemanticText = "";
@@ -324,8 +338,11 @@ export function attachTranscriptionWebSocket(
       semanticTimer = null;
       if (semanticHoldTimer !== null) clearTimeout(semanticHoldTimer);
       semanticHoldTimer = null;
+      if (semanticAbort) semanticVerdict = "aborted";
       semanticAbort?.abort();
       semanticAbort = null;
+      candidateAbort?.abort();
+      candidateAbort = null;
       if (graceTimer !== null) clearTimeout(graceTimer);
       graceTimer = null;
       if (prepareTimer !== null) clearTimeout(prepareTimer);
@@ -339,7 +356,16 @@ export function attachTranscriptionWebSocket(
       if (!transcript || transcript === lastProvisional || preparesSent >= maxPrepares) return;
       lastProvisional = transcript;
       preparesSent += 1;
-      send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
+      send(socket, { type: "answer-provisional", transcript, revision: preparesSent, speechEpoch });
+    };
+    const sendPauseProvisionalSnapshot = () => {
+      if (finalRequested || finishing || !streamSession || streamSession.failed) return;
+      const transcript = streamSession.committedText();
+      const maxPrepares = streaming?.maxPrepares ?? maxSpeculativeRevisions;
+      if (!transcript || transcript === lastProvisional || preparesSent >= maxPrepares) return;
+      lastProvisional = transcript;
+      preparesSent += 1;
+      send(socket, { type: "answer-provisional", transcript, revision: preparesSent, speechEpoch });
     };
     // A terminal compatibility result invalidates the browser's current candidate. Send a new revision
     // immediately during the existing pause grace, even when the transcript itself has not changed.
@@ -351,7 +377,7 @@ export function attachTranscriptionWebSocket(
       if (!transcript || preparesSent >= maxPrepares) return;
       lastProvisional = transcript;
       preparesSent += 1;
-      send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
+      send(socket, { type: "answer-provisional", transcript, revision: preparesSent, speechEpoch });
     };
     // Live caption (display-only, never logged or stored): throttled, sent only when the text changed.
     let captionsEnabled = false;
@@ -392,22 +418,11 @@ export function attachTranscriptionWebSocket(
       semanticChecks += 1;
       const startedAt = Date.now();
       semanticStartedAfterSilenceMs = Math.max(0, startedAt - silenceStartedAt);
-      const candidate = followUpCandidate;
-      if (candidate) lastAssessedCandidateRevision = candidate.revision;
-      const check = candidate && classifier.assess
-        ? classifier.assess({ question, answer: transcript, candidate: { question: candidate.question, anchor: candidate.anchor }, signal: controller.signal })
-        : classifier.isComplete({ question, answer: transcript, signal: controller.signal }).then((complete) => ({ complete, candidateCompatibility: "NONE" as CandidateCompatibility }));
-      check.then((assessment) => ({ ...assessment, kind: null }), (error: unknown) => ({ complete: false, candidateCompatibility: "NONE" as CandidateCompatibility, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const })).then((outcome) => {
+      classifier.isComplete({ question, answer: transcript, signal: controller.signal }).then((complete) => ({ complete, kind: null }), (error: unknown) => ({ complete: false, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const })).then((outcome) => {
         if (controller.signal.aborted) return;
         if (semanticAbort === controller) semanticAbort = null;
         semanticLatencyMs = Date.now() - startedAt;
         semanticVerdict = outcome.kind ?? (outcome.complete ? "complete" : "incomplete");
-        if (candidate && followUpCandidate?.turnId === candidate.turnId && followUpCandidate.revision === candidate.revision) {
-          const status = outcome.kind ? "NONE" : outcome.candidateCompatibility;
-          send(socket, { type: "follow-up-candidate-status", turnId: candidate.turnId, revision: candidate.revision, status });
-          logStreamDiagnostic({ status: "follow_up_candidate", compatibility: status, revision: candidate.revision });
-          if (status === "COVERED" || status === "INVALID" || status === "NONE") sendReplacementProvisional();
-        }
         if (!outcome.complete) return;
         // A transcript ending on a connector ("and", "because") is never trusted as finished, whatever the verdict.
         if (endsWithConnector(transcript)) return;
@@ -426,6 +441,29 @@ export function attachTranscriptionWebSocket(
           finishIfStillQuiet();
         }
       });
+    };
+    const runCandidateCompatibilityCheck = (candidate: FollowUpCandidateUpdate, transcript: string) => {
+      const classifier = streaming?.answerCompletion;
+      if (!classifier || candidateChecksInEpoch >= 2
+        || (lastAssessedCandidate?.turnId === candidate.turnId && lastAssessedCandidate.revision === candidate.revision)) return;
+      candidateAbort?.abort();
+      const controller = new AbortController();
+      candidateAbort = controller;
+      candidateChecksInEpoch += 1;
+      lastAssessedCandidate = { turnId: candidate.turnId, revision: candidate.revision };
+      const epochAtStart = speechEpoch;
+      const assessment = classifier.assess
+        ? classifier.assess({ question: interviewerQuestion!, answer: transcript, candidate: { question: candidate.question, anchor: candidate.anchor }, signal: controller.signal })
+        : Promise.resolve({ complete: false, candidateCompatibility: "NONE" as CandidateCompatibility });
+      assessment.then((result) => ({ status: result.candidateCompatibility, kind: null as "timeout" | "error" | null }), (error: unknown) => ({ status: "NONE" as CandidateCompatibility, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const }))
+        .then(({ status, kind }) => {
+          if (controller.signal.aborted || speechEpoch !== epochAtStart || followUpCandidate?.turnId !== candidate.turnId || followUpCandidate.revision !== candidate.revision) return;
+          if (candidateAbort === controller) candidateAbort = null;
+          const finalStatus = kind ? "NONE" : status;
+          send(socket, { type: "follow-up-candidate-status", turnId: candidate.turnId, revision: candidate.revision, status: finalStatus, speechEpoch });
+          logStreamDiagnostic({ status: "follow_up_candidate", compatibility: finalStatus, revision: candidate.revision, speechEpoch });
+          if (finalStatus === "COVERED" || finalStatus === "INVALID" || finalStatus === "NONE") sendReplacementProvisional();
+        });
     };
     let speculation: Speculation | null = null;
     let speculationOutcome: SpeculationOutcome = "none";
@@ -909,6 +947,12 @@ export function attachTranscriptionWebSocket(
                 const turnTranscript = segmentTranscript || streamSession?.committedText() || "";
                 if (finalRequested || finishing || !turnTranscript) return;
                 clearGrace();
+                // The tail is now committed. Send its changed snapshot at pause start, independent of the optional
+                // delayed prepare and semantic timers; identical text is still suppressed.
+                sendPauseProvisionalSnapshot();
+                if (followUpCandidate && interviewerQuestion && streaming.answerCompletion) {
+                  runCandidateCompatibilityCheck(followUpCandidate, streamSession?.committedText() || turnTranscript);
+                }
                 const graceMs = looksUnfinished(turnTranscript) ? (streaming.incompleteGraceMs ?? streaming.answerGraceMs) : streaming.answerGraceMs;
                 // Local-VAD turns arrive after their segment was transcribed: time grace and prepare from the pause, not from now.
                 const elapsedMs = info?.silenceStartedAt !== undefined ? Math.max(0, Date.now() - info.silenceStartedAt) : 0;
@@ -937,7 +981,7 @@ export function attachTranscriptionWebSocket(
                     if (!transcript || transcript === lastProvisional || preparesSent >= maxPrepares) return;
                     lastProvisional = transcript;
                     preparesSent += 1;
-                    send(socket, { type: "answer-provisional", transcript, revision: preparesSent });
+                    send(socket, { type: "answer-provisional", transcript, revision: preparesSent, speechEpoch });
                   };
                   const remainingPrepareMs = Math.max(0, prepareAfterMs - elapsedMs);
                   // Tail transcription can consume the entire preparation delay. Emit that final snapshot synchronously
@@ -1012,7 +1056,12 @@ export function attachTranscriptionWebSocket(
           else if (update.pauseStarted && !finalRequested && !finishing) void streamSession.endTurn(streaming?.flushTimeoutMs ?? 1_500);
         }
         if (update.speechResumed) {
+          speechEpoch += 1;
+          candidateChecksInEpoch = 0;
+          lastAssessedCandidate = null;
           silenceDetected = false;
+          candidateAbort?.abort();
+          candidateAbort = null;
           clearGrace();
           discardSpeculation();
           if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);
@@ -1039,21 +1088,37 @@ export function attachTranscriptionWebSocket(
           logStreamDiagnostic({ status: "invalid_message", field: "follow-up-candidate" });
           return;
         }
+        if (!candidateRevisionFloorByTurnId.has(candidate.turnId) && candidateRevisionFloorByTurnId.size >= maxCandidateTurnIdsPerAnswer) {
+          logStreamDiagnostic({ status: "follow_up_candidate_limit", limit: maxCandidateTurnIdsPerAnswer });
+          return;
+        }
+        if (candidate.revision <= (candidateRevisionFloorByTurnId.get(candidate.turnId) ?? 0)) return;
         if (followUpCandidate && candidate.turnId !== followUpCandidate.turnId) return;
-        if (followUpCandidate && candidate.revision < followUpCandidate.revision) return;
         followUpCandidate = candidate;
+        candidateRevisionFloorByTurnId.set(candidate.turnId, candidate.revision);
         logStreamDiagnostic({ status: "follow_up_candidate_updated", revision: candidate.revision });
-        // A candidate can arrive after the pause's normal check started without one. Assess it as soon
-        // as it arrives; this uses the existing bounded check budget and does not extend answer grace.
+        // Compatibility has its own per-speech-epoch budget and does not consume semantic completion checks.
         const current = sessionId ? sessions.get(sessionId) : undefined;
         if (graceTimer !== null && !finalRequested && !finishing && streamSession && !streamSession.failed
-          && !streamSession.turnActive && current?.vad.hasSpeech && candidate.revision !== lastAssessedCandidateRevision
-          && interviewerQuestion && streaming?.answerCompletion && semanticChecks < (streaming.maxSemanticChecks ?? 2)) {
+          && !streamSession.turnActive && current?.vad.hasSpeech && interviewerQuestion && streaming?.answerCompletion) {
           const transcript = streamSession.committedText();
-          if (transcript) {
-            lastSemanticText = transcript;
-            runSemanticCheck(streaming.answerCompletion, interviewerQuestion, transcript, Date.now(), 0);
-          }
+          if (transcript) runCandidateCompatibilityCheck(candidate, transcript);
+        }
+        return;
+      }
+
+      if (message.type === "follow-up-candidate-cleared" && sessionId) {
+        const cleared = sanitizeFollowUpCandidateClear(message);
+        if (!cleared) {
+          logStreamDiagnostic({ status: "invalid_message", field: "follow-up-candidate-cleared" });
+          return;
+        }
+        if (followUpCandidate?.turnId === cleared.turnId && cleared.revision >= followUpCandidate.revision) {
+          candidateAbort?.abort();
+          candidateAbort = null;
+          followUpCandidate = null;
+          candidateRevisionFloorByTurnId.set(cleared.turnId, Math.max(candidateRevisionFloorByTurnId.get(cleared.turnId) ?? 0, cleared.revision));
+          logStreamDiagnostic({ status: "follow_up_candidate_cleared", revision: cleared.revision });
         }
         return;
       }

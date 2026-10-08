@@ -236,16 +236,16 @@ describe("timing from the pause, not from text arrival", () => {
 describe("answer-provisional and captions", () => {
   const provisionals = (messages: Array<Record<string, any>>) => messages.filter((message) => message.type === "answer-provisional");
 
-  it("sends the committed transcript after the delay and before complete, and logs only the count", async () => {
+  it("sends the changed tail transcript immediately at pause start and logs only the count", async () => {
     const whisper = createWhisper(["Zeta provisional sentence."]);
-    const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_500, incompleteGraceMs: 1_500, prepareAfterMs: 300 }));
+    const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 2_500, incompleteGraceMs: 2_500, prepareAfterMs: 0 }));
     const { socket, messages, waitFor } = await connect();
     await speak(socket, 800, 0.05);
     const silenceStartedAt = Date.now();
     await speak(socket, 1_000, 0.001);
     const provisional = await waitFor("answer-provisional");
-    expect(provisional).toMatchObject({ transcript: "Zeta provisional sentence.", revision: 1 });
-    expect(provisional.at - silenceStartedAt).toBeGreaterThanOrEqual(550);
+    expect(provisional).toMatchObject({ transcript: "Zeta provisional sentence.", revision: 1, speechEpoch: 0 });
+    expect(provisional.at - silenceStartedAt).toBeLessThan(2_400);
     const complete = await waitFor("complete");
     expect(provisional.at).toBeLessThan(complete.at);
     expect(provisionals(messages)).toHaveLength(1);
@@ -253,17 +253,17 @@ describe("answer-provisional and captions", () => {
     expect(logs()).toContain('"preparesSent":1');
   });
 
-  it("is not sent when disabled", async () => {
+  it("sends the final pause snapshot even when delayed preparation is disabled", async () => {
     const whisper = createWhisper(["Quiet sentence."]);
     const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_000, incompleteGraceMs: 1_000, prepareAfterMs: 0 }));
     const { socket, messages, waitFor } = await connect();
     await speak(socket, 800, 0.05);
     await speak(socket, 600, 0.001);
     await waitFor("complete");
-    expect(provisionals(messages)).toHaveLength(0);
+    expect(provisionals(messages)).toMatchObject([{ transcript: "Quiet sentence.", revision: 1, speechEpoch: 0 }]);
   });
 
-  it("does not spend the reserved pause revision on consecutive short segments", async () => {
+  it("refreshes the provisional after resumed speech commits a changed tail", async () => {
     const whisper = createWhisper(["First clause,", "second clause,"]);
     const { connect } = await startServer(whisper.service, incremental({
       prepareAfterSpeechMs: 400,
@@ -280,11 +280,14 @@ describe("answer-provisional and captions", () => {
 
     await speak(socket, 500, 0.001);
     await waitFor("complete");
-    expect(provisionals(messages)).toHaveLength(1);
+    expect(provisionals(messages).map(({ transcript, revision, speechEpoch }) => [transcript, revision, speechEpoch])).toEqual([
+      ["First clause,", 1, 0],
+      ["First clause, second clause,", 2, 0],
+    ]);
     expect(logs()).not.toContain("First clause");
   });
 
-  it("is cancelled by resumed local speech", async () => {
+  it("keeps the emitted old-epoch snapshot but cancels its pending grace when speech resumes", async () => {
     const whisper = createWhisper(["Second sentence.", "More."]);
     const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 2_500, incompleteGraceMs: 2_500, prepareAfterMs: 900 }));
     const { socket, messages } = await connect();
@@ -293,7 +296,7 @@ describe("answer-provisional and captions", () => {
     await speak(socket, 500, 0.05);
     await delay(900);
     expect(messages.some((message) => message.type === "speech-resumed")).toBe(true);
-    expect(provisionals(messages)).toHaveLength(0);
+    expect(provisionals(messages)).toMatchObject([{ revision: 1, speechEpoch: 0 }]);
   });
 
   it("sends at most three per answer with increasing revisions", async () => {
@@ -305,7 +308,7 @@ describe("answer-provisional and captions", () => {
       await speak(socket, 700, 0.001);
     }
     await waitFor("complete", 6_000);
-    expect(provisionals(messages).map((message) => [message.transcript, message.revision])).toEqual([["One.", 1], ["One. Two.", 2], ["One. Two. Three.", 3]]);
+    expect(provisionals(messages).map((message) => [message.transcript, message.revision, message.speechEpoch])).toEqual([["One.", 1, 0], ["One. Two.", 2, 1], ["One. Two. Three.", 3, 2]]);
   }, 15_000);
 
   it("caps answer preparation at three revisions", async () => {
@@ -415,6 +418,94 @@ describe("semantic end of answer", () => {
     await speak(socket, 800, 0.05);
     await speak(socket, 600, 0.001);
     await expect(waitFor("follow-up-candidate-status")).resolves.toMatchObject({ type: "follow-up-candidate-status", turnId: "turn_12345678", revision: 1, status: "OPEN" });
+    expect(logs()).not.toContain("Why did the lock help");
+    expect(logs()).not.toContain("a lock");
+  });
+
+  it("assesses a new turn ID even when its revision matches the cleared candidate", async () => {
+    const assessments: string[] = [];
+    const service: AnswerCompletionService = {
+      isComplete: async () => false,
+      assess: async ({ candidate }) => {
+        assessments.push(candidate.question);
+        return { complete: false, candidateCompatibility: "OPEN" };
+      },
+    };
+    const { connect } = await startServer(createWhisper([answerText]).service, options(service, { answerGraceMs: 2_500, incompleteGraceMs: 2_500 }));
+    const { socket, messages, waitFor } = await connect({ question });
+    const candidate = (turnId: string) => socket.send(JSON.stringify({ type: "follow-up-candidate", turnId, revision: 1, question: "Why did the lock help?", anchor: "a lock" }));
+    candidate("turn_first_123");
+    await speak(socket, 800, 0.05);
+    await speak(socket, 600, 0.001);
+    await expect(waitFor("follow-up-candidate-status")).resolves.toMatchObject({ turnId: "turn_first_123", revision: 1, speechEpoch: 0, status: "OPEN" });
+
+    socket.send(JSON.stringify({ type: "follow-up-candidate-cleared", turnId: "turn_first_123", revision: 1 }));
+    candidate("turn_second_123");
+    const secondStatusDeadline = Date.now() + 800;
+    while (!messages.some((message) => message.type === "follow-up-candidate-status" && message.turnId === "turn_second_123") && Date.now() < secondStatusDeadline) await delay(10);
+    expect(messages.find((message) => message.type === "follow-up-candidate-status" && message.turnId === "turn_second_123")).toMatchObject({ revision: 1, speechEpoch: 0, status: "OPEN" });
+    expect(assessments).toHaveLength(2);
+  });
+
+  it("budgets compatibility independently and reports the current speech epoch", async () => {
+    const assessments: number[] = [];
+    let completionChecks = 0;
+    const service: AnswerCompletionService = {
+      isComplete: async () => { completionChecks += 1; return false; },
+      assess: async () => { assessments.push(Date.now()); return { complete: false, candidateCompatibility: "OPEN" }; },
+    };
+    const { connect } = await startServer(createWhisper([answerText, "More detail."]).service, options(service, {
+      answerGraceMs: 2_000, incompleteGraceMs: 2_000, semanticCheckAfterMs: 0, maxSemanticChecks: 1,
+    }));
+    const { socket, messages, waitFor } = await connect({ question });
+    const candidate = (revision: number) => socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision, question: "Why did the lock help?", anchor: "a lock" }));
+    candidate(1);
+    await speak(socket, 800, 0.05);
+    await speak(socket, 600, 0.001);
+    await expect(waitFor("follow-up-candidate-status")).resolves.toMatchObject({ revision: 1, speechEpoch: 0, status: "OPEN" });
+    candidate(2);
+    const revisionTwoDeadline = Date.now() + 800;
+    while (!messages.some((message) => message.type === "follow-up-candidate-status" && message.revision === 2) && Date.now() < revisionTwoDeadline) await delay(10);
+    expect(messages.find((message) => message.type === "follow-up-candidate-status" && message.revision === 2)).toMatchObject({ revision: 2, speechEpoch: 0, status: "OPEN" });
+    candidate(3);
+    await speak(socket, 500, 0.05);
+    await speak(socket, 700, 0.001);
+    await waitFor("complete");
+    expect(assessments).toHaveLength(3); // two checks in epoch 0, then the current candidate in epoch 1
+    expect(completionChecks).toBe(1); // the completion budget remains available after candidate checks
+    expect(messages.filter((message) => message.type === "follow-up-candidate-status").map(({ revision, speechEpoch }) => [revision, speechEpoch])).toEqual([[1, 0], [2, 0], [3, 1]]);
+    expect(logs()).not.toContain("Why did the lock help");
+    expect(logs()).not.toContain("a lock");
+  }, 12_000);
+
+  it("clears only a matching candidate at an equal or newer revision and ignores late assessment results", async () => {
+    const assessmentResolvers: Array<(value: { complete: boolean; candidateCompatibility: "OPEN" }) => void> = [];
+    const service: AnswerCompletionService = {
+      isComplete: async () => false,
+      assess: () => new Promise((resolve) => { assessmentResolvers.push(resolve); }),
+    };
+    const { connect } = await startServer(createWhisper([answerText]).service, options(service, { answerGraceMs: 1_500, incompleteGraceMs: 1_500 }));
+    const { socket, messages, waitFor } = await connect({ question });
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 2, question: "Why did the lock help?", anchor: "a lock" }));
+    await speak(socket, 800, 0.05);
+    await speak(socket, 600, 0.001);
+    const deadline = Date.now() + 800;
+    while (assessmentResolvers.length < 1 && Date.now() < deadline) await delay(10);
+    expect(assessmentResolvers).toHaveLength(1);
+    socket.send(JSON.stringify({ type: "follow-up-candidate-cleared", turnId: "turn_12345678", revision: 1 }));
+    await delay(30);
+    assessmentResolvers[0]!({ complete: false, candidateCompatibility: "OPEN" });
+    await expect(waitFor("follow-up-candidate-status")).resolves.toMatchObject({ revision: 2, status: "OPEN" });
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 3, question: "Why did the lock help?", anchor: "a lock" }));
+    const secondAssessmentDeadline = Date.now() + 800;
+    while (assessmentResolvers.length < 2 && Date.now() < secondAssessmentDeadline) await delay(10);
+    expect(assessmentResolvers).toHaveLength(2);
+    socket.send(JSON.stringify({ type: "follow-up-candidate-cleared", turnId: "turn_12345678", revision: 3 }));
+    await delay(20);
+    assessmentResolvers[1]!({ complete: false, candidateCompatibility: "OPEN" });
+    await waitFor("complete");
+    await delay(20);
+    expect(messages.filter((message) => message.type === "follow-up-candidate-status").map((message) => message.revision)).toEqual([2]);
     expect(logs()).not.toContain("Why did the lock help");
     expect(logs()).not.toContain("a lock");
   });

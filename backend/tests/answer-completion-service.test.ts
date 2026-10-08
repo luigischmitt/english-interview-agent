@@ -63,13 +63,17 @@ describe("OpenRouterAnswerCompletionService", () => {
   });
 
   it("aborts with the caller signal without reporting a timeout", async () => {
-    const hanging = ((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
-      init.signal!.addEventListener("abort", () => reject(new Error("aborted")));
-    })) as unknown as typeof fetch;
-    const controller = new AbortController();
-    const pending = service(hanging).isComplete({ ...input, signal: controller.signal });
-    controller.abort();
-    await expect(pending).rejects.toMatchObject({ kind: "error" });
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const hanging = ((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        init.signal!.addEventListener("abort", () => reject(new Error("aborted")));
+      })) as unknown as typeof fetch;
+      const controller = new AbortController();
+      const pending = service(hanging).isComplete({ ...input, signal: controller.signal });
+      controller.abort();
+      await expect(pending).rejects.toMatchObject({ kind: "error" });
+      expect(JSON.parse(String(info.mock.calls[0]?.[0]))).toMatchObject({ event: "interview_answer_completion_timing", outcome: "aborted" });
+    } finally { info.mockRestore(); }
   });
 
   it("never logs the key, the question or the answer, including in errors", async () => {
