@@ -419,6 +419,39 @@ describe("semantic end of answer", () => {
     expect(logs()).not.toContain("a lock");
   });
 
+  it.each(["COVERED", "INVALID", "NONE"] as const)("requests a replacement provisional immediately when candidate compatibility is %s", async (status) => {
+    const service: AnswerCompletionService = status === "NONE"
+      ? { isComplete: async () => false }
+      : {
+        isComplete: async () => false,
+        assess: async () => ({ complete: false, candidateCompatibility: status }),
+      };
+    const { connect } = await startServer(createWhisper([answerText]).service, options(service, {
+      answerGraceMs: 1_800,
+      incompleteGraceMs: 1_800,
+      prepareAfterMs: 250,
+      semanticCheckAfterMs: 100,
+    }));
+    const { socket, messages, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    const silenceStartedAt = Date.now();
+    await speak(socket, 600, 0.001);
+    const first = await waitFor("answer-provisional");
+    expect(first).toMatchObject({ revision: 1, transcript: answerText });
+
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 1, question: "Why did the lock help?", anchor: "a lock" }));
+    await expect(waitFor("follow-up-candidate-status")).resolves.toMatchObject({ revision: 1, status });
+    const replacementDeadline = Date.now() + 600;
+    while (!messages.some((message) => message.type === "answer-provisional" && message.revision === 2) && Date.now() < replacementDeadline) await delay(20);
+    const replacement = messages.find((message) => message.type === "answer-provisional" && message.revision === 2);
+    expect(replacement).toMatchObject({ revision: 2, transcript: answerText });
+
+    const complete = await waitFor("complete");
+    expect(complete.at - silenceStartedAt).toBeLessThan(2_200);
+    expect(messages.filter((message) => message.type === "answer-provisional").map((message) => message.revision)).toEqual([1, 2]);
+    expect(logs()).not.toContain(answerText);
+  });
+
   it.each([["error"], ["timeout"]] as const)("keeps the grace on a classifier %s", async (verdict) => {
     const fake = classifier(() => Promise.reject(new AnswerCompletionError(verdict, "x")));
     const { connect } = await startServer(createWhisper([answerText]).service, options(fake.service, { answerGraceMs: 1_000, incompleteGraceMs: 1_000 }));

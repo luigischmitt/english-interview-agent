@@ -97,7 +97,7 @@ export const mergeBelowCharacters: number;
  */
 export function groupInterviewerSentences(segments: string[]): { text: string; sentences: string[]; units: { text: string; caption: string }[] }[];
 export function playInterviewerSegments(segments: string[], options: SpeechPlaybackOptions): SpeechPlayback;
-export function prewarmInterviewerSpeech(segments: string[], options: SpeechPlaybackOptions): { promise: Promise<boolean>; cancel: () => void };
+export function prewarmInterviewerSpeech(segments: string[], options: SpeechPlaybackOptions): { promise: Promise<boolean>; firstChunkReady: Promise<boolean>; cancel: () => void };
 export function fetchSpeechBlob(text: string, options: SpeechPlaybackOptions): Promise<Blob>;
 export function clearRetainedSpeechBlobs(): void;
 export function resetSpeechFlights(): void;

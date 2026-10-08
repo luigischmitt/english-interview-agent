@@ -225,6 +225,26 @@ test("pre-synthesized speech is reused by an identical playback without a second
   clearRetainedSpeechBlobs();
 });
 
+test("a prewarm becomes playable when its first chunk is ready while later chunks are still in flight", async () => {
+  clearRetainedSpeechBlobs();
+  let calls = 0;
+  const prewarm = prewarmInterviewerSpeech(["Thanks for that.", "How did you measure the result after the launch, and which production metric gave you the clearest evidence that the change worked for customers?"], {
+    endpoint: "/speech-first-ready",
+    fetcher: async (_url, init) => {
+      calls += 1;
+      if (calls === 1) return { ok: true, blob: async () => new Blob([init.body]) };
+      return new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+    },
+    retainMs: 5_000,
+  });
+  assert.equal(await prewarm.firstChunkReady, true);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(calls, 2, "the next chunk starts in the background after chunk 1");
+  prewarm.cancel();
+  assert.equal(await prewarm.promise, false);
+  clearRetainedSpeechBlobs();
+});
+
 test("separately prepared transition and fixed question are reused by combined playback", async () => {
   clearRetainedSpeechBlobs();
   const calls = [];
