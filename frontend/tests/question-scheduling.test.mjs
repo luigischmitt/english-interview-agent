@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { plannedQuestionType, remainingPlannedQuestions, resolveSpeculativeFixedSelection, selectNextPlannedQuestion, selectNextPlannedQuestions } from "../src/lib/interview/question-scheduling.mjs";
+import { plannedQuestionType, remainingPlannedQuestions, resolveFixedPromptForAudio, resolveMonotonicFixedAction, resolveSpeculativeFixedSelection, selectNextPlannedQuestion, selectNextPlannedQuestions, shouldUseMonotonicFixedFallback } from "../src/lib/interview/question-scheduling.mjs";
 
 const questions = [
   { id: "introduction", prompt: "Introduction?", cue: "" },
@@ -72,4 +72,62 @@ test("speculative fixed questions distinguish resume, job, and bank; job questio
   ], "SKIP");
   assert.equal(jobFirst.question.id, "job-1");
   assert.deepEqual(jobFirst.skippedQuestionIds, []);
+});
+
+test("a skipped fixed question may deepen the second question while preserving the original fallback", () => {
+  const selection = resolveSpeculativeFixedSelection([
+    { id: "ownership", prompt: "Tell me about ownership.", cue: "" },
+    { id: "conflict", prompt: "Tell me about a conflict.", cue: "" },
+  ], "SKIP", null, "DEEPEN", "How did you resolve the conflict with your teammate?");
+  assert.equal(selection.question.id, "conflict");
+  assert.equal(selection.prompt, "How did you resolve the conflict with your teammate?");
+  assert.equal(selection.originalPrompt, "Tell me about a conflict.");
+  assert.equal(selection.adapted, true);
+  assert.equal(resolveFixedPromptForAudio(selection, false), "Tell me about a conflict.");
+  assert.equal(resolveFixedPromptForAudio(selection, true), "How did you resolve the conflict with your teammate?");
+});
+
+test("a second SKIP advances to the third planned question and records both skipped IDs", () => {
+  const selection = resolveSpeculativeFixedSelection([
+    { id: "ownership", prompt: "Tell me about ownership.", cue: "" },
+    { id: "conflict", prompt: "Tell me about a conflict.", cue: "" },
+    { id: "leadership", prompt: "Tell me about leadership.", cue: "" },
+  ], "SKIP", null, "SKIP");
+  assert.equal(selection.question.id, "leadership");
+  assert.deepEqual(selection.skippedQuestionIds, ["ownership", "conflict"]);
+});
+
+test("a second job question cannot be skipped and remains selected", () => {
+  const selection = resolveSpeculativeFixedSelection([
+    { id: "ownership", prompt: "Tell me about ownership.", cue: "" },
+    { id: "job-2", prompt: "How did you use the required stack?", cue: "" },
+    { id: "leadership", prompt: "Tell me about leadership.", cue: "" },
+  ], "SKIP", null, "SKIP");
+  assert.equal(selection.question.id, "job-2");
+  assert.deepEqual(selection.skippedQuestionIds, ["ownership"]);
+});
+
+test("a previously committed second SKIP survives a later revision that says KEEP", () => {
+  const planned = [
+    { id: "ownership", prompt: "Tell me about ownership.", cue: "" },
+    { id: "conflict", prompt: "Tell me about a conflict.", cue: "" },
+    { id: "leadership", prompt: "Tell me about leadership.", cue: "" },
+  ];
+  const committed = resolveSpeculativeFixedSelection(planned, "SKIP", null, "SKIP");
+  const later = resolveSpeculativeFixedSelection(planned, "SKIP", null, "KEEP", null, committed.skippedQuestionIds);
+  assert.equal(later.question.id, "leadership");
+  assert.deepEqual(later.skippedQuestionIds, ["ownership", "conflict"]);
+});
+
+test("SKIP stays committed across later revisions for non-job questions, while job questions remain unskippable", () => {
+  const question = { id: "ownership", prompt: "Tell me about ownership.", cue: "" };
+  const skipped = resolveMonotonicFixedAction(question, false, "SKIP");
+  assert.deepEqual(skipped, { action: "SKIP", skipCommitted: true });
+  assert.deepEqual(resolveMonotonicFixedAction(question, skipped.skipCommitted, "KEEP"), { action: "SKIP", skipCommitted: true });
+  assert.deepEqual(resolveMonotonicFixedAction({ ...question, id: "job-1" }, false, "SKIP"), { action: "SKIP", skipCommitted: false });
+});
+
+test("a committed SKIP still uses the fixed fallback when a newer speculative revision is pending or failed", () => {
+  assert.equal(shouldUseMonotonicFixedFallback(false, true), true);
+  assert.equal(shouldUseMonotonicFixedFallback(false, false), false);
 });

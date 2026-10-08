@@ -11,17 +11,57 @@ export function plannedQuestionType(question) {
 }
 
 /** Resolve the fixed question selected by speculative analysis, including the identity of any skipped item. */
-export function resolveSpeculativeFixedSelection(plannedQuestions, action, adaptedQuestion = null) {
+export function resolveSpeculativeFixedSelection(plannedQuestions, action, adaptedQuestion = null, secondAction = undefined, adaptedSecondQuestion = null, committedSkippedQuestionIds = []) {
   const first = plannedQuestions[0] ?? null;
   if (!first) return { question: null, skippedQuestionIds: [] };
-  if (action === "SKIP" && !isTailoredQuestion(first) && plannedQuestions[1]) {
-    return { question: plannedQuestions[1], skippedQuestionIds: [first.id] };
+  const committed = new Set(committedSkippedQuestionIds);
+  const firstCanSkip = !isTailoredQuestion(first) && plannedQuestions[1] !== undefined;
+  const firstSkipped = committed.has(first.id) || (action === "SKIP" && firstCanSkip);
+  if (firstSkipped && plannedQuestions[1]) {
+    const second = plannedQuestions[1];
+    const secondCanSkip = !isTailoredQuestion(second) && plannedQuestions[2] !== undefined;
+    const secondSkipped = committed.has(second.id) || (secondAction === "SKIP" && secondCanSkip);
+    if (secondSkipped && plannedQuestions[2]) {
+      const skippedQuestionIds = [...committed, first.id, second.id].filter((id, index, all) => all.indexOf(id) === index);
+      return {
+        question: plannedQuestions[2],
+        prompt: plannedQuestions[2].prompt,
+        adapted: false,
+        originalPrompt: plannedQuestions[2].prompt,
+        skippedQuestionIds,
+      };
+    }
+    const skippedQuestionIds = [...committed, first.id].filter((id, index, all) => all.indexOf(id) === index);
+    return {
+      question: second,
+      prompt: secondAction === "DEEPEN" && typeof adaptedSecondQuestion === "string" && adaptedSecondQuestion.trim() ? adaptedSecondQuestion.trim() : second.prompt,
+      adapted: secondAction === "DEEPEN" && typeof adaptedSecondQuestion === "string" && Boolean(adaptedSecondQuestion.trim()),
+      originalPrompt: second.prompt,
+      skippedQuestionIds,
+    };
   }
+  const skippedQuestionIds = [...committed].filter((id) => plannedQuestions.some((question) => question.id === id));
   return {
     question: first,
     prompt: action === "DEEPEN" && typeof adaptedQuestion === "string" && adaptedQuestion.trim() ? adaptedQuestion.trim() : first.prompt,
-    skippedQuestionIds: [],
+    adapted: action === "DEEPEN" && typeof adaptedQuestion === "string" && Boolean(adaptedQuestion.trim()),
+    originalPrompt: first.prompt,
+    skippedQuestionIds,
   };
+}
+
+export function resolveFixedPromptForAudio({ prompt, originalPrompt, adapted }, firstChunkReady) {
+  return adapted && !firstChunkReady ? originalPrompt : prompt;
+}
+
+export function resolveMonotonicFixedAction(question, skipAlreadyCommitted, action) {
+  const canSkip = question && !isTailoredQuestion(question);
+  const skipCommitted = Boolean(skipAlreadyCommitted || (canSkip && action === "SKIP"));
+  return { action: canSkip && skipCommitted ? "SKIP" : action, skipCommitted };
+}
+
+export function shouldUseMonotonicFixedFallback(hasValidCurrentAnalysis, skipAlreadyCommitted) {
+  return hasValidCurrentAnalysis === true || skipAlreadyCommitted === true;
 }
 
 /** Keep every unasked planned question, with vacancy-tailored questions first and bank order stable within each group. */

@@ -492,6 +492,49 @@ test("one utterance is synthesized once while sentence captions remain chunked",
   assert.equal(events.filter((event) => event.startsWith("fetch:")).length, 1);
 });
 
+test("reports silence between speech audio chunks", async () => {
+  const gaps = [];
+  const playback = playInterviewerSegments([`${"First clause. ".repeat(14)}Final thought.`, `${"Second clause. ".repeat(14)}Another thought.`], {
+    endpoint: "http://speech.test/api/v1/speech",
+    fetcher: async () => ({ ok: true, blob: async () => new Blob(["mp3"]) }),
+    makeAudio: () => ({
+      addEventListener(type, listener) { this.listeners ??= {}; this.listeners[type] = listener; },
+      removeEventListener() {}, removeAttribute() {}, load() {}, pause() {},
+      play() { this.listeners.playing(); this.listeners.ended(); return Promise.resolve(); },
+    }),
+    createObjectUrl: () => "blob:chunk-gap",
+    revokeObjectUrl: () => {},
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+    onInterChunkGap: (gapMs) => gaps.push(gapMs),
+  });
+
+  assert.deepEqual(await playback.promise, { status: "completed", voice: "network" });
+  assert.ok(gaps.length >= 1);
+  assert.ok(gaps.every((gapMs) => Number.isSafeInteger(gapMs) && gapMs >= 0));
+});
+
+test("reports question and final-chunk playback starts separately", async () => {
+  const events = [];
+  const playback = playInterviewerSegments(["How did you approach the migration?"], {
+    endpoint: "http://speech.test/api/v1/speech",
+    fetcher: async () => ({ ok: true, blob: async () => new Blob(["mp3"]) }),
+    makeAudio: () => ({
+      addEventListener(type, listener) { this.listeners ??= {}; this.listeners[type] = listener; },
+      removeEventListener() {}, removeAttribute() {}, load() {}, pause() {},
+      play() { this.listeners.playing(); this.listeners.ended(); return Promise.resolve(); },
+    }),
+    createObjectUrl: () => "blob:question-start",
+    revokeObjectUrl: () => {},
+    setTimeout: () => 1,
+    clearTimeout: () => {},
+    onQuestionStarted: () => events.push("question"),
+    onFinalChunkPlaybackStarted: () => events.push("final-chunk"),
+  });
+  assert.deepEqual(await playback.promise, { status: "completed", voice: "network" });
+  assert.deepEqual(events, ["question", "final-chunk"]);
+});
+
 test("caption chunks advance against one continuous audio track", async () => {
   const captions = [];
   let audio;
