@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { SessionExpiredNotice } from "@/components/auth/session-expired-notice";
 import { consumeRoomHandoff } from "@/lib/interview/room-handoff.mjs";
 import type { InterviewConfig } from "@/lib/interview/types";
+import { useLocale } from "@/lib/locale";
 
 import { InterviewRoom } from "../components/interview-room";
 
@@ -16,6 +17,7 @@ const setupPath = "/dashboard?view=interview-setup";
  * sessionStorage hand-off from the setup; without it (reload, direct visit) the user is sent back to the setup.
  */
 export default function InterviewClient() {
+  const { locale, t } = useLocale();
   const router = useRouter();
   const [config, setConfig] = useState<InterviewConfig | null>(null);
   const consumedRef = useRef(false);
@@ -29,12 +31,12 @@ export default function InterviewClient() {
     else router.replace(setupPath);
   }, [router]);
 
-  if (!config) return <div className="min-h-dvh bg-[var(--ds-ink)]" role="status" aria-label="Abrindo a sala de entrevista" />;
+  if (!config) return <div className="min-h-dvh bg-[var(--ds-ink)]" role="status" aria-label={t("Abrindo a sala de entrevista")} />;
 
   return (
-    <>
+    <div lang={locale === "en" ? "en" : "pt-BR"}>
       <SessionExpiredNotice />
       <InterviewRoom config={config} onLeave={() => router.replace("/dashboard")} />
-    </>
+    </div>
   );
 }

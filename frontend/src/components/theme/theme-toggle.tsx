@@ -1,7 +1,7 @@
 "use client";
 
-import { Monitor, Moon, Sun } from "lucide-react";
 import { useCallback, useEffect, useRef, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useLocale } from "@/lib/locale";
 
 import {
   applyColorScheme,
@@ -14,10 +14,10 @@ import {
 import "./theme-toggle.css";
 
 const OPTIONS = [
-  { value: "light", label: "Claro", icon: Sun },
-  { value: "dark", label: "Escuro", icon: Moon },
-  { value: "system", label: "Sistema", icon: Monitor },
-] as const satisfies readonly { value: ColorPreference; label: string; icon: unknown }[];
+  { value: "light", sourceLabel: "Claro" },
+  { value: "dark", sourceLabel: "Escuro" },
+  { value: "system", sourceLabel: "Sistema" },
+] as const satisfies readonly { value: ColorPreference; sourceLabel: string }[];
 
 const CHANGE_EVENT = "eia:color-preference-change";
 const DARK_QUERY = "(prefers-color-scheme: dark)";
@@ -47,6 +47,7 @@ const getSnapshot = (): ColorPreference => readStoredPreference(getStorage());
 let memoryPreference: ColorPreference | null = null;
 
 export function ThemeToggle({ className = "" }: { className?: string }) {
+  const { t } = useLocale();
   const stored = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const preference = memoryPreference ?? stored;
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
@@ -91,9 +92,10 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
   };
 
   return (
-    <div role="radiogroup" aria-label="Tema" className={`thm-toggle ${className}`}>
-      {OPTIONS.map(({ value, label, icon: Icon }, index) => {
+    <div role="radiogroup" aria-label={t("Tema da plataforma")} className={`thm-toggle ${className}`}>
+      {OPTIONS.map(({ value, sourceLabel }, index) => {
         const checked = preference === value;
+        const label = t(sourceLabel);
         return (
           <button
             key={value}
@@ -103,14 +105,12 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
             type="button"
             role="radio"
             aria-checked={checked}
-            aria-label={label}
-            title={label}
             tabIndex={checked ? 0 : -1}
             className="thm-item"
             onClick={() => select(value)}
             onKeyDown={(event) => onKeyDown(event, index)}
           >
-            <Icon className="size-4" aria-hidden="true" />
+            {label}
           </button>
         );
       })}

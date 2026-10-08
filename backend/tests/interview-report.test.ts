@@ -104,6 +104,28 @@ describe("final interview report service", () => {
     expect(JSON.stringify(providerLog)).not.toContain(input.turns[0]?.answer);
   });
 
+  it("generates report prose and a matching schema in the requested English locale", async () => {
+    let requestBody: unknown;
+    const englishReport = {
+      technicalContent: { summary: "You described bounded retries and basic monitoring.", strengths: [], gaps: [] },
+      englishCommunication: { clarity: "MOSTLY_CLEAR", patterns: [] },
+      priorities: [],
+    };
+    const service = makeService(async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return providerResponse(JSON.stringify(englishReport));
+    });
+
+    const report = await service.generate({ ...input, locale: "en" });
+    expect(report).toMatchObject({ locale: "en", technicalContent: englishReport.technicalContent });
+    const body = requestBody as { response_format: { json_schema: { schema: { properties: Record<string, unknown> } } }; messages: Array<{ content: string }> };
+    expect(body.messages[0].content).toContain("All user-facing report prose must be in clear English");
+    expect(JSON.parse(body.messages[1].content)).toMatchObject({ locale: "en" });
+    const schema = body.response_format.json_schema.schema.properties;
+    const englishPatternSchema = schema.englishCommunication as { properties: { patterns: { items: { properties: { suggestion: { description: string } } } } } };
+    expect(englishPatternSchema.properties.patterns.items.properties.suggestion.description).toContain("MUST be written in clear English");
+  });
+
   it("lets a technical priority repeat any competency linked by a validated finding of the same answer", async () => {
     const strength = { sequenceNumber: 2, evidence: "bounded retries", explanation: "Você conecta retries limitados à resiliência do serviço.", vacancyCompetency: "resilience" };
     const gap = { sequenceNumber: 2, evidence: "timeouts", explanation: "Você não explicou como mediria se os timeouts funcionam em produção.", vacancyCompetency: "observability" };

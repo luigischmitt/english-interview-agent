@@ -79,6 +79,8 @@ export interface ResumeDirectionService {
 }
 
 export type InterviewReportInput = {
+  /** Language for the user-facing analysis text. Defaults to Brazilian Portuguese for older clients. */
+  locale?: "pt-BR" | "en";
   roleContext: InterviewThinkingInput["roleContext"];
   /** User-approved, bounded summary only. Raw job descriptions never enter report analysis. */
   jobDirection?: ApprovedJobDirection;
@@ -86,6 +88,8 @@ export type InterviewReportInput = {
 };
 
 export type InterviewReport = {
+  /** Language used for user-facing report text; absent on legacy reports. */
+  locale?: "pt-BR" | "en";
   /** Exact bounded setup snapshot used to direct this report; absent on legacy sessions. */
   jobDirection?: ApprovedJobDirection;
   /** Safe aggregate counts only; optional for reports persisted before this field existed. */
@@ -138,6 +142,7 @@ export type InterviewTurnAnalysis = {
 };
 
 export type InterviewTurnAnalysisInput = {
+  locale?: "pt-BR" | "en";
   roleContext: InterviewThinkingInput["roleContext"];
   jobDirection?: ApprovedJobDirection;
   turn: InterviewReportInput["turns"][number];

@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { ReportDemo } from "@/components/landing/report-demo";
-import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 import "./landing.css";
 
@@ -95,11 +94,10 @@ export function PublicLanding() {
             <span>English Interview Agent</span>
           </Link>
           <div className="lp-nav-links">
+            <a href="#relatorio" className="lp-link">Relatório</a>
             <a href="#como-funciona" className="lp-link">Como funciona</a>
-            <a href="#relatorio" className="lp-link">O relatório</a>
           </div>
           <div className="lp-nav-actions">
-            <ThemeToggle />
             <Link href="/login" className="lp-link">Entrar</Link>
             <Link href="/signup" className="ds-btn lp-btn-green lp-nav-cta">
               <span className="lp-nav-cta-long">Fazer entrevista grátis</span>
@@ -207,8 +205,8 @@ export function PublicLanding() {
           </div>
           <nav className="lp-foot-col" aria-label="Produto">
             <h2>Produto</h2>
+            <a href="#relatorio">Relatório</a>
             <a href="#como-funciona">Como funciona</a>
-            <a href="#relatorio">O relatório</a>
             <Link href="/signup">Fazer entrevista grátis</Link>
           </nav>
           <nav className="lp-foot-col" aria-label="Conta">
@@ -220,9 +218,6 @@ export function PublicLanding() {
         <div className="lp-wrap lp-foot-base">
           <span>English Interview Agent © 2026</span>
           <span>Feito no Brasil, para vaga lá fora.</span>
-        </div>
-        <div className="lp-wrap lp-foot-theme">
-          <ThemeToggle />
         </div>
         <Image src="/landing/footer-mata-alpha.png" alt="" width={2172} height={724} className="lp-foot-img" />
       </footer>

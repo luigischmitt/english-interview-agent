@@ -1,3 +1,4 @@
+import { t } from "@/lib/locale";
 import { azureMetricReliability, type AzureMetricSummary, type AzureReportDimension } from "@/lib/interview/report-metrics.mjs";
 import { answerCountLabel, azureMetricCopy, azureReliabilityCopy, azureReportIntro, coverageHelp } from "@/lib/interview/report-metric-copy.mjs";
 import "./interview-report.css";
@@ -12,11 +13,11 @@ function Metric({ dimension, metric }: { dimension: AzureReportDimension; metric
   const limited = reliability === "insufficient" || reliability === "limited";
   return (
     <div className="rp-metric" data-limited={limited ? "true" : undefined}>
-      <dt className="ds-label">{label}</dt>
-      <dd className="rp-metric-value">{showValue && metric.mean !== null ? <>{metric.mean.toFixed(1)}<span className="rp-metric-unit"> / 100</span></> : "—"}</dd>
+      <dt className="ds-label">{t(label)}</dt>
+      <dd className="rp-metric-value">{showValue && metric.mean !== null ? <>{metric.mean.toFixed(1)}<span className="rp-metric-unit"> {t("/ 100")}</span></> : "—"}</dd>
       <p className="rp-hint mt-1">{answerCountLabel(metric.sampleCount)}</p>
-      {limited && <p className="rp-reliability">{azureReliabilityCopy[reliability]}</p>}
-      <p className="rp-hint mt-2">{help}</p>
+      {limited && <p className="rp-reliability">{t(azureReliabilityCopy[reliability])}</p>}
+      <p className="rp-hint mt-2">{t(help)}</p>
     </div>
   );
 }
@@ -27,13 +28,13 @@ export function AzureVoiceReport({ summary, coverage, step, title = "Sinais voca
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {step !== undefined && <span className="ds-step" aria-hidden="true">{step}</span>}
         <h2 id="voice-report-title" className="ds-h2">{title}</h2>
-        <span className="rp-badge">Experimental · Azure</span>
+        <span className="rp-badge">{t("Experimental · Azure")}</span>
       </div>
-      <p className="rp-hint mt-2">{azureReportIntro}</p>
+      <p className="rp-hint mt-2">{t(azureReportIntro)}</p>
       <dl className="rp-metrics">
         {dimensions.map((dimension) => <Metric key={dimension} dimension={dimension} metric={summary[dimension]} />)}
       </dl>
-      <p className="rp-hint mt-4">Cobertura: {coverage.available} de {coverage.total} respostas com sinais disponíveis.{coverage.pending ? ` ${coverage.pending} avaliação(ões) ainda em processamento; a conclusão da sessão não espera por elas.` : ""} {coverageHelp}</p>
+      <p className="rp-hint mt-4">{t("Cobertura: ")}{coverage.available} {t("de ")}{coverage.total} {t("respostas com sinais disponíveis.")}{coverage.pending ? ` ${coverage.pending} ${t("avaliação(ões) ainda em processamento; a conclusão da sessão não espera por elas.")}` : ""} {t(coverageHelp)}</p>
     </section>
   );
 }

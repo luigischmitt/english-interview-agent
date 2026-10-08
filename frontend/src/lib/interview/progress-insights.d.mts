@@ -45,5 +45,5 @@ export const defaultExercises: Record<PatternType, string>;
 export const minAnswersForProfile: number;
 export const minSessionsForTrends: number;
 export function sessionDurationMs(record: { startedAt: string | null; completedAt: string | null }): number | null;
-export function weeklySessions(sessions: Array<{ time: number | null }>, now?: number): ProgressInsights["weekly"];
-export function buildProgressInsights(records: ProgressRecord[], options?: { now?: number }): ProgressInsights;
+export function weeklySessions(sessions: Array<{ time: number | null }>, now?: number, locale?: "pt-BR" | "en"): ProgressInsights["weekly"];
+export function buildProgressInsights(records: ProgressRecord[], options?: { now?: number; locale?: "pt-BR" | "en" }): ProgressInsights;

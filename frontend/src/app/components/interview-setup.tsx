@@ -1,5 +1,7 @@
 "use client";
 
+
+import { getCurrentLocale, t } from "@/lib/locale";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft, ChevronDown, FileText, Leaf } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
@@ -13,7 +15,7 @@ import { synthesizeInterviewerQuestion } from "@/lib/interview/speech-playback.m
 import { voiceBlocksInterviewStart, type VoiceReadinessState } from "@/lib/interview/voice-readiness.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
-import { inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
+import { inAppMicBody, inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
 import { MicrophoneTest, type MicrophoneTestHandle } from "./microphone-test";
 import { readStoredMicrophoneDeviceId, storeMicrophoneDeviceId } from "@/lib/interview/mic-device.mjs";
 import { VoicePicker } from "./voice-picker";
@@ -171,7 +173,9 @@ export function InterviewSetup({
       if (jobAnalysisGenerationRef.current !== generation) return;
       const code = error instanceof JobDirectionRequestError ? error.code : "REQUEST_FAILED";
       const message = code === "INVALID_INPUT" || code === "INVALID_JOB_DIRECTION_REQUEST"
-        ? `Cole uma descrição com pelo menos ${jobDescriptionMinLength} caracteres para gerar o direcionamento.`
+        ? getCurrentLocale() === "en"
+          ? `Paste a job description with at least ${jobDescriptionMinLength} characters to generate the interview focus.`
+          : `Cole uma descrição com pelo menos ${jobDescriptionMinLength} caracteres para gerar o direcionamento.`
         : code === "JOB_DIRECTION_TIMEOUT"
           ? "A análise demorou mais do que o esperado. Tente novamente ou mude para “Manual”."
           : code === "JOB_DIRECTION_RATE_LIMITED"
@@ -355,7 +359,9 @@ export function InterviewSetup({
     } else if (result.status === "unavailable") {
       setAudioTestStatus({
         kind: "error",
-        message: `${result.message} Confira o volume e a conexão e tente novamente. Sua escolha com áudio foi mantida; as perguntas também ficam visíveis na sala.`,
+        message: getCurrentLocale() === "en"
+          ? `${t(result.message)} Check your volume and connection, then try again. Audio mode is still selected, and questions remain visible in the room.`
+          : `${result.message} Confira o volume e a conexão e tente novamente. Sua escolha com áudio foi mantida; as perguntas também ficam visíveis na sala.`,
       });
     } else {
       setAudioTestStatus({ kind: "idle" });
@@ -394,7 +400,9 @@ export function InterviewSetup({
     });
   };
 
-  const [cargoSummary, ...restSummary] = getInterviewSetupSummary({ ...config, voice }, seniorityLabels, focusLabels);
+  const localizedSeniorityLabels = Object.fromEntries(Object.entries(seniorityLabels).map(([key, label]) => [key, t(label)])) as typeof seniorityLabels;
+  const localizedFocusLabels = Object.fromEntries(Object.entries(focusLabels).map(([key, label]) => [key, t(label)])) as typeof focusLabels;
+  const [cargoSummary, ...restSummary] = getInterviewSetupSummary({ ...config, voice }, localizedSeniorityLabels, localizedFocusLabels);
 
   const toggleRoomOptions = () => setRoomOptionsOpen((open) => !open);
 
@@ -421,12 +429,11 @@ export function InterviewSetup({
     <main id="main-content" className={`isu-root mx-auto w-full min-w-0 max-w-6xl px-4 pb-[calc(var(--shl-bottom-nav-h,0px)+9rem)] pt-6 sm:px-8 sm:pt-8 lg:px-12 lg:pb-16 lg:pt-10`}>
       <button type="button" className="ds-btn ds-btn-quiet -ml-3 mb-6 min-h-10 gap-2 px-3 text-sm" onClick={onBack}>
         <ArrowLeft className="size-4" aria-hidden="true" />
-        Voltar à visão geral
-      </button>
+        {t("Voltar à visão geral ")}</button>
 
       <PageIntro
-        title="Configure sua entrevista."
-        description="Escolha o cargo, o foco e o tempo que você quer praticar."
+        title={t("Configure sua entrevista.")}
+        description={t("Escolha o cargo, o foco e o tempo que você quer praticar.")}
       />
 
       <form id="interview-setup-form" onSubmit={handleSubmit} className="mt-8 grid items-start gap-6 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-8" noValidate>
@@ -434,23 +441,23 @@ export function InterviewSetup({
           {/* 1. Essentials: what is being practiced, set manually or filled from a pasted job description */}
           <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 0 } as CSSProperties} aria-labelledby="interview-details-title">
             <div className="flex items-center gap-3">
-              <span className="ds-step" aria-hidden="true">1</span>
-              <h2 id="interview-details-title" className="ds-h2">Detalhes da entrevista</h2>
+              <span className="ds-step" aria-hidden="true">{t("1")}</span>
+              <h2 id="interview-details-title" className="ds-h2">{t("Detalhes da entrevista")}</h2>
             </div>
-            <p className="ds-body mt-2">Você pode mudar essas opções a cada nova sessão.</p>
+            <p className="ds-body mt-2">{t("Você pode mudar essas opções a cada nova sessão.")}</p>
 
             <div className="mt-6 flex flex-col gap-6">
               <fieldset className="flex min-w-0 flex-col gap-2">
-                <legend className="ds-label mb-2">Como definir a entrevista</legend>
+                <legend className="ds-label mb-2">{t("Como definir a entrevista")}</legend>
                 <SlidingSegmented
                   name="setup-mode"
-                  ariaLabel="Como definir a entrevista"
+                  ariaLabel={t("Como definir a entrevista")}
                   className="grid-cols-1 min-[520px]:grid-cols-3"
                   itemClassName="min-h-11"
                   options={[
-                    { value: "manual", label: "Manual" },
-                    { value: "auto", label: "Pela vaga" },
-                    { value: "resume", label: "Pelo currículo" },
+                    { value: "manual", label: t("Manual") },
+                    { value: "auto", label: t("Pela vaga") },
+                    { value: "resume", label: t("Pelo currículo") },
                   ]}
                   value={setupMode}
                   onChange={(value) => changeSetupMode(value as SetupMode)}
@@ -461,33 +468,33 @@ export function InterviewSetup({
               <div id="job-analysis-panel" className="ds-reveal" data-open={setupMode === "auto"} inert={setupMode !== "auto"}>
                 <div>
                   <div className="-mx-1 px-1 pb-1">
-                    <label htmlFor="job-description" className="ds-label block">Descrição da vaga</label>
-                    <p className="ds-small mt-1">A IA identifica o cargo, a senioridade e o foco, e resume as prioridades. Depois você ajusta o que quiser.</p>
+                    <label htmlFor="job-description" className="ds-label block">{t("Descrição da vaga")}</label>
+                    <p className="ds-small mt-1">{t("A IA identifica o cargo, a senioridade e o foco, e resume as prioridades. Depois você ajusta o que quiser.")}</p>
                     <textarea
                       id="job-description"
                       className="textarea ds-field mt-2 min-h-40 w-full resize-y rounded-2xl text-sm leading-6"
                       value={jobDescription}
                       maxLength={jobDescriptionMaxLength}
                       onChange={(event) => setJobDescription(event.target.value)}
-                      placeholder="Cole aqui a descrição da vaga…"
+                      placeholder={t("Cole aqui a descrição da vaga…")}
                       aria-describedby="job-description-help job-description-count"
                     />
                     <div className="mt-2 flex flex-col gap-1 sm:flex-row sm:justify-between">
-                      <p id="job-description-help" className="ds-small">O texto é enviado ao provedor de IA para análise e não é salvo pelo app.</p>
-                      <p id="job-description-count" className="ds-small tabular-nums">{jobDescription.length.toLocaleString("pt-BR")} / {jobDescriptionMaxLength.toLocaleString("pt-BR")}</p>
+                      <p id="job-description-help" className="ds-small">{t("O texto é enviado ao provedor de IA para análise e não é salvo pelo app.")}</p>
+                      <p id="job-description-count" className="ds-small tabular-nums">{jobDescription.length.toLocaleString("pt-BR")} {t("/ ")}{jobDescriptionMaxLength.toLocaleString("pt-BR")}</p>
                     </div>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
                       <button type="button" className="btn btn-sm ds-btn ds-btn-soft" onClick={() => void analyzeJobDescription()} disabled={jobDirectionStatus === "loading"}>
-                        {jobDirectionStatus === "loading" ? <><span className="loading loading-spinner loading-xs" aria-hidden="true" /> Analisando vaga…</> : config.jobDirection ? "Analisar novamente" : "Analisar vaga"}
+                        {jobDirectionStatus === "loading" ? <><span className="loading loading-spinner loading-xs" aria-hidden="true" /> {t("Analisando vaga…")}</> : config.jobDirection ? t("Analisar novamente") : t("Analisar vaga")}
                       </button>
                       {config.jobDirection && (
-                        <button type="button" className="btn btn-sm ds-btn ds-btn-quiet" onClick={clearAnalysis}>Limpar análise</button>
+                        <button type="button" className="btn btn-sm ds-btn ds-btn-quiet" onClick={clearAnalysis}>{t("Limpar análise")}</button>
                       )}
                     </div>
                     <div aria-live="polite">
                       {jobDirectionError && (
                         <div className="alert alert-warning mt-4" role="alert">
-                          <p>{jobDirectionError}</p>
+                          <p>{t(jobDirectionError)}</p>
                         </div>
                       )}
                     </div>
@@ -499,8 +506,8 @@ export function InterviewSetup({
               <div id="resume-analysis-panel" className="ds-reveal" data-open={setupMode === "resume"} inert={setupMode !== "resume"}>
                 <div>
                   <div className="-mx-1 px-1 pb-1">
-                    <label htmlFor="resume-file" className="ds-label block">Currículo em PDF</label>
-                    <p className="ds-small mt-1">A IA identifica experiências e projetos para criar perguntas específicas. Você revisa tudo antes de começar.</p>
+                    <label htmlFor="resume-file" className="ds-label block">{t("Currículo em PDF")}</label>
+                    <p className="ds-small mt-1">{t("A IA identifica experiências e projetos para criar perguntas específicas. Você revisa tudo antes de começar.")}</p>
                     <div className="card card-border mt-3 bg-base-100">
                       <div className="card-body gap-3 p-4 sm:p-5">
                         <div className="flex items-start gap-3">
@@ -508,8 +515,8 @@ export function InterviewSetup({
                             <FileText className="size-5" />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold">Envie uma versão com texto selecionável</p>
-                            <p className="ds-small mt-1">Somente PDF, até 5 MB e 20 páginas. O arquivo não é salvo pelo app.</p>
+                            <p className="text-sm font-semibold">{t("Envie uma versão com texto selecionável")}</p>
+                            <p className="ds-small mt-1">{t("Somente PDF, até 5 MB e 20 páginas. O arquivo não é salvo pelo app.")}</p>
                           </div>
                         </div>
                         <input
@@ -522,7 +529,7 @@ export function InterviewSetup({
                           aria-describedby="resume-file-help"
                         />
                         <p id="resume-file-help" className="ds-small">
-                          {resumeFile ? `${resumeFile.name} · ${(resumeFile.size / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB` : "Nenhum arquivo selecionado."}
+                          {resumeFile ? `${resumeFile.name} · ${(resumeFile.size / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB` : t("Nenhum arquivo selecionado.")}
                         </p>
                         <div className="card-actions items-center">
                           <button
@@ -532,18 +539,18 @@ export function InterviewSetup({
                             disabled={!resumeFile || !!validateResumeFile(resumeFile) || resumeDirectionStatus === "loading"}
                           >
                             {resumeDirectionStatus === "loading"
-                              ? <><span className="loading loading-spinner loading-xs" aria-hidden="true" /> Analisando currículo…</>
-                              : config.jobDirection ? "Analisar novamente" : "Analisar currículo"}
+                              ? <><span className="loading loading-spinner loading-xs" aria-hidden="true" /> {t("Analisando currículo…")}</>
+                              : config.jobDirection ? t("Analisar novamente") : t("Analisar currículo")}
                           </button>
                           {config.jobDirection && (
-                            <button type="button" className="btn btn-sm ds-btn ds-btn-quiet" onClick={clearAnalysis}>Remover análise</button>
+                            <button type="button" className="btn btn-sm ds-btn ds-btn-quiet" onClick={clearAnalysis}>{t("Remover análise")}</button>
                           )}
                         </div>
                       </div>
                     </div>
                     <div aria-live="polite">
                       {resumeDirectionError && (
-                        <div className="alert alert-warning mt-4" role="alert"><p>{resumeDirectionError}</p></div>
+                        <div className="alert alert-warning mt-4" role="alert"><p>{t(resumeDirectionError)}</p></div>
                       )}
                     </div>
                   </div>
@@ -554,45 +561,45 @@ export function InterviewSetup({
               {setupMode !== "resume" && (setupMode === "manual" || config.jobDirection) && (
                 <div className="ds-fade-in flex flex-col gap-6">
                   {setupMode !== "manual" && (
-                    <p className="ds-small -mb-2" role="status">Preenchido a partir da vaga. Ajuste o que não estiver certo.</p>
+                    <p className="ds-small -mb-2" role="status">{t("Preenchido a partir da vaga. Ajuste o que não estiver certo.")}</p>
                   )}
                   <div className="flex flex-col gap-2">
                     <label htmlFor="role-input" className="ds-label">
-                      Cargo para praticar <span className="text-danger" aria-hidden="true">*</span>
+                      {t("Cargo para praticar ")}<span className="text-danger" aria-hidden="true">{t("*")}</span>
                     </label>
                     <RoleCombobox
                       id="role-input"
                       value={config.role}
                       onChange={(role) => updateConfig("role", role)}
-                      placeholder="Escolha ou digite, ex.: Software Engineer"
+                      placeholder={t("Escolha ou digite, ex.: Software Engineer")}
                       invalid={roleInvalid}
                       describedBy={roleInvalid ? "role-error" : undefined}
                     />
                     {roleInvalid && (
-                      <span id="role-error" role="alert" className="ds-fade-in text-sm font-medium text-danger">Informe o cargo para o qual você quer praticar.</span>
+                      <span id="role-error" role="alert" className="ds-fade-in text-sm font-medium text-danger">{t("Informe o cargo para o qual você quer praticar.")}</span>
                     )}
                   </div>
 
                   <fieldset className="flex min-w-0 flex-col gap-2">
-                    <legend className="ds-label mb-2">Senioridade</legend>
+                    <legend className="ds-label mb-2">{t("Senioridade")}</legend>
                     <SlidingSegmented
                       name="seniority"
-                      ariaLabel="Senioridade"
+                      ariaLabel={t("Senioridade")}
                       className="grid-cols-2 min-[460px]:grid-cols-4"
-                      options={(Object.keys(seniorityLabels) as InterviewConfig["seniority"][]).map((value) => ({ value, label: seniorityLabels[value] }))}
+                      options={(Object.keys(seniorityLabels) as InterviewConfig["seniority"][]).map((value) => ({ value, label: t(seniorityLabels[value]) }))}
                       value={config.seniority}
                       onChange={(value) => updateConfig("seniority", value)}
                     />
                   </fieldset>
 
                   <fieldset className="flex min-w-0 flex-col gap-2">
-                    <legend className="ds-label mb-2">Foco da prática</legend>
+                    <legend className="ds-label mb-2">{t("Foco da prática")}</legend>
                     <SlidingSegmented
                       name="focus"
-                      ariaLabel="Foco da prática"
+                      ariaLabel={t("Foco da prática")}
                       className="grid-cols-1 min-[560px]:grid-cols-2"
                       itemClassName="min-h-11"
-                      options={(Object.keys(focusLabels) as InterviewConfig["focus"][]).map((value) => ({ value, label: focusLabels[value] }))}
+                      options={(Object.keys(focusLabels) as InterviewConfig["focus"][]).map((value) => ({ value, label: t(focusLabels[value]) }))}
                       value={config.focus}
                       onChange={(value) => updateConfig("focus", value)}
                     />
@@ -605,36 +612,36 @@ export function InterviewSetup({
                 <div>
                   {config.jobDirection && (
                     <fieldset className="-mx-1 rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-5" aria-labelledby="direction-found-title">
-                      <legend className="sr-only">Direcionamento da entrevista</legend>
-                      <h3 id="direction-found-title" className="ds-label">{setupMode === "resume" ? "Entrevista criada pelo currículo" : "Prioridades da vaga"}</h3>
-                      <p className="ds-small mt-1">{setupMode === "resume" ? "Currículo analisado. As oito perguntas personalizadas ficam ocultas e aparecem somente durante a entrevista." : "Revise o direcionamento geral. As oito perguntas específicas ficam ocultas e aparecem somente durante a entrevista."}</p>
+                      <legend className="sr-only">{t("Direcionamento da entrevista")}</legend>
+                      <h3 id="direction-found-title" className="ds-label">{t(setupMode === "resume" ? "Entrevista criada pelo currículo" : "Prioridades da vaga")}</h3>
+                      <p className="ds-small mt-1">{t(setupMode === "resume" ? "Currículo analisado. As oito perguntas personalizadas ficam ocultas e aparecem somente durante a entrevista." : "Revise o direcionamento geral. As oito perguntas específicas ficam ocultas e aparecem somente durante a entrevista.")}</p>
                       {setupMode !== "resume" && <div className="mt-4 grid gap-4">
                         <div className="flex flex-col gap-2">
-                          <label htmlFor="direction-emphasis" className="ds-label">Principal ênfase da entrevista</label>
+                          <label htmlFor="direction-emphasis" className="ds-label">{t("Principal ênfase da entrevista")}</label>
                           <textarea id="direction-emphasis" rows={2} maxLength={240} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.mainInterviewEmphasis} onChange={(event) => editJobDirection("mainInterviewEmphasis", event.target.value)} />
                         </div>
                         <div className="flex flex-col gap-2">
-                          <label htmlFor="direction-competencies" className="ds-label">Competências prioritárias</label>
+                          <label htmlFor="direction-competencies" className="ds-label">{t("Competências prioritárias")}</label>
                           <textarea id="direction-competencies" rows={Math.max(2, config.jobDirection.priorityCompetencies.length)} maxLength={5 * 101} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.priorityCompetencies.join("\n")} onChange={(event) => editJobDirection("priorityCompetencies", event.target.value)} aria-describedby="direction-competencies-help" />
-                          <p id="direction-competencies-help" className="ds-small">Uma competência por linha, até cinco.</p>
+                          <p id="direction-competencies-help" className="ds-small">{t("Uma competência por linha, até cinco.")}</p>
                         </div>
                         <div className="flex flex-col gap-2">
-                          <label htmlFor="direction-context" className="ds-label">Contexto de produto e equipe</label>
+                          <label htmlFor="direction-context" className="ds-label">{t("Contexto de produto e equipe")}</label>
                           <textarea id="direction-context" rows={2} maxLength={280} className="textarea ds-field w-full resize-y text-sm leading-6" value={config.jobDirection.productTeamContext} onChange={(event) => editJobDirection("productTeamContext", event.target.value)} />
                         </div>
                       </div>}
-                      {jobDirectionEditNote && <p className="ds-small mt-3 text-warning" role="status">{jobDirectionEditNote}</p>}
-                      {jobDirectionValidationError && <p className="ds-small mt-3 text-error" role="alert">{jobDirectionValidationError}</p>}
+                      {jobDirectionEditNote && <p className="ds-small mt-3 text-warning" role="status">{t(jobDirectionEditNote)}</p>}
+                      {jobDirectionValidationError && <p className="ds-small mt-3 text-error" role="alert">{t(jobDirectionValidationError)}</p>}
                     </fieldset>
                   )}
                 </div>
               </div>
 
               <fieldset className="flex min-w-0 flex-col gap-2">
-                <legend className="ds-label mb-2">Duração da sessão</legend>
+                <legend className="ds-label mb-2">{t("Duração da sessão")}</legend>
                 <SlidingSegmented
                   name="duration"
-                  ariaLabel="Duração da sessão"
+                  ariaLabel={t("Duração da sessão")}
                   className="grid-cols-4"
                   options={interviewDurationOptions.map((option) => ({ value: String(option), label: `${option} min` }))}
                   value={config.duration}
@@ -647,37 +654,37 @@ export function InterviewSetup({
           {/* 2. Interviewer audio mode and an optional real synthesis test. */}
           <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 1 } as CSSProperties} aria-labelledby="interviewer-audio-title">
             <div className="flex items-center gap-3">
-              <span className="ds-step" aria-hidden="true">2</span>
-              <h2 id="interviewer-audio-title" className="ds-h2">Como o entrevistador fala</h2>
+              <span className="ds-step" aria-hidden="true">{t("2")}</span>
+              <h2 id="interviewer-audio-title" className="ds-h2">{t("Como o entrevistador fala")}</h2>
             </div>
-            <p className="ds-body mt-2 max-w-2xl">Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.</p>
+            <p className="ds-body mt-2 max-w-2xl">{t("Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.")}</p>
 
             {inApp && (
               <div className="isu-inapp mt-5" role="note" aria-labelledby="inapp-title">
-                <p id="inapp-title" className="ds-label">{inAppMicTitle(inApp)}</p>
-                <p className="ds-small mt-1">Você está no navegador do {inApp.appLabel}. Se ele ainda não pediu o microfone, {inApp.platform === "android" ? <>abra Configurações → Apps → {inApp.settingsName} → Permissões e ative o Microfone</> : <>abra os Ajustes do iPhone → {inApp.settingsName} e ative o Microfone</>}. Ou abra esta página no {inApp.browserName}. “Somente texto” funciona em qualquer caso.</p>
+                <p id="inapp-title" className="ds-label">{t(inAppMicTitle(inApp))}</p>
+                <p className="ds-small mt-1">{inAppMicBody(inApp)}</p>
                 <div className="mt-3 flex flex-col gap-2 min-[460px]:flex-row">
-                  {inApp.openUrl && <a href={inApp.openUrl} className="ds-btn ds-btn-soft">Abrir no {inApp.browserName}</a>}
-                  <button type="button" className="ds-btn ds-btn-soft" onClick={() => void copy()}>{copied ? "Link copiado" : "Copiar link"}</button>
+                  {inApp.openUrl && <a href={inApp.openUrl} className="ds-btn ds-btn-soft">{t("Abrir no ")}{inApp.browserName}</a>}
+                  <button type="button" className="ds-btn ds-btn-soft" onClick={() => void copy()}>{t(copied ? "Link copiado" : "Copiar link")}</button>
                 </div>
-                <span className="sr-only" role="status">{copied ? "Link copiado" : ""}</span>
+                <span className="sr-only" role="status">{copied ? t("Link copiado") : ""}</span>
               </div>
             )}
 
             <fieldset className="mt-5 grid gap-3 sm:grid-cols-2">
-              <legend className="sr-only">Como o entrevistador fala</legend>
+              <legend className="sr-only">{t("Como o entrevistador fala")}</legend>
               <label className="ds-option">
                 <input type="radio" name="interviewer-audio-mode" value="audio" className="ds-radio" checked={getInterviewerAudioMode(config) === "audio"} onChange={() => updateInterviewerAudioMode("audio")} />
                 <span className="min-w-0">
-                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">Com áudio <span className="rounded-full bg-green-solid px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-on-green">Recomendado</span></span>
-                  <span className="ds-small mt-1 block">O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.</span>
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">{t("Com áudio ")}<span className="rounded-full bg-green-solid px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-on-green">{t("Recomendado")}</span></span>
+                  <span className="ds-small mt-1 block">{t("O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.")}</span>
                 </span>
               </label>
               <label className="ds-option">
                 <input type="radio" name="interviewer-audio-mode" value="text" className="ds-radio" checked={getInterviewerAudioMode(config) === "text"} onChange={() => updateInterviewerAudioMode("text")} />
                 <span className="min-w-0">
-                  <span className="block text-[15px] font-semibold">Somente texto</span>
-                  <span className="ds-small mt-1 block">O entrevistador não terá voz. A introdução e as perguntas aparecem por escrito.</span>
+                  <span className="block text-[15px] font-semibold">{t("Somente texto")}</span>
+                  <span className="ds-small mt-1 block">{t("O entrevistador não terá voz. A introdução e as perguntas aparecem por escrito.")}</span>
                 </span>
               </label>
             </fieldset>
@@ -687,10 +694,10 @@ export function InterviewSetup({
                 <VoiceReadinessStatus state={voiceReadiness} onRetry={onRetryVoice} />
                 <div className="flex flex-col gap-2 min-[460px]:flex-row min-[460px]:items-center">
                   <button type="button" className="ds-btn ds-btn-soft" onClick={() => void testAudio()} disabled={voiceReadiness !== "ready"}>
-                    {audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio"}
+                    {t(audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio")}
                   </button>
                   <p aria-live="polite" className={`text-sm leading-6 ${audioTestStatus.kind === "error" ? "font-medium text-danger" : audioTestStatus.kind === "success" ? "font-medium text-green" : "text-text-2"}`}>
-                    {audioTestStatus.message ?? (voiceReadiness === "ready" ? "Opcional: ouça uma frase curta antes de começar." : "O teste será liberado quando a voz estiver pronta.")}
+                    {t(audioTestStatus.message ?? (voiceReadiness === "ready" ? "Opcional: ouça uma frase curta antes de começar." : "O teste será liberado quando a voz estiver pronta."))}
                   </p>
                 </div>
               </div>
@@ -700,10 +707,10 @@ export function InterviewSetup({
           {/* 3. Candidate microphone: optional check, placed right after the interviewer audio choice */}
           <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 2 } as CSSProperties} aria-labelledby="microphone-title">
             <div className="flex items-center gap-3">
-              <span className="ds-step" aria-hidden="true">3</span>
-              <h2 id="microphone-title" className="ds-h2">Seu microfone</h2>
+              <span className="ds-step" aria-hidden="true">{t("3")}</span>
+              <h2 id="microphone-title" className="ds-h2">{t("Seu microfone")}</h2>
             </div>
-            <p className="ds-body mt-2 max-w-2xl">Se o navegador estiver usando o microfone errado, a entrevista não ouve você. Teste e escolha o certo. Você pode pular esta etapa.</p>
+            <p className="ds-body mt-2 max-w-2xl">{t("Se o navegador estiver usando o microfone errado, a entrevista não ouve você. Teste e escolha o certo. Você pode pular esta etapa.")}</p>
             <div className="mt-5">
               <MicrophoneTest ref={micTestRef} deviceId={microphoneDeviceId} onDeviceChange={chooseMicrophone} />
             </div>
@@ -712,30 +719,30 @@ export function InterviewSetup({
           {/* 4. Advanced: one level deeper, collapsed by default */}
           <section ref={roomOptionsRef} className="ds-card ds-enter scroll-mb-28 scroll-mt-24" style={{ "--i": 3 } as CSSProperties} aria-labelledby="room-options-title">
             <button type="button" className="isu-disclosure-button flex items-center gap-3 p-5 sm:px-7" aria-expanded={roomOptionsOpen} aria-controls="room-options-panel" onClick={toggleRoomOptions}>
-              <span className="ds-step" aria-hidden="true">4</span>
+              <span className="ds-step" aria-hidden="true">{t("4")}</span>
               <span className="min-w-0 flex-1">
-                <span id="room-options-title" className="ds-h2 block">Preferências da sala</span>
-                <span className="ds-small block">Voz do entrevistador, legendas, câmera e início da gravação. Os padrões já funcionam bem.</span>
+                <span id="room-options-title" className="ds-h2 block">{t("Preferências da sala")}</span>
+                <span className="ds-small block">{t("Voz do entrevistador, legendas, câmera e início da gravação. Os padrões já funcionam bem.")}</span>
               </span>
               <ChevronDown className="ds-chevron size-5 shrink-0 text-text-2" style={{ transform: roomOptionsOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
             </button>
             <div id="room-options-panel" className="ds-reveal" data-open={roomOptionsOpen} inert={!roomOptionsOpen} onTransitionEnd={handleRevealEnd}>
               <div>
                 <div className="px-5 pb-6 sm:px-7">
-                  <p className="ds-body">Essas opções mudam a voz, o que aparece e quando o microfone começa a capturar.</p>
+                  <p className="ds-body">{t("Essas opções mudam a voz, o que aparece e quando o microfone começa a capturar.")}</p>
                   <div className="mt-5">
                     <VoicePicker
                       value={voice}
                       onChange={chooseVoice}
                       onSampleStart={() => { cancelAudioTest(); setAudioTestStatus({ kind: "idle" }); }}
                       disabled={!config.playInterviewerAudio}
-                      disabledNote="Disponível com áudio. No modo somente texto o entrevistador não fala."
+                      disabledNote={t("Disponível com áudio. No modo somente texto o entrevistador não fala.")}
                     />
                   </div>
                   <div className="-mx-1 mt-4 grid gap-1 sm:grid-cols-2">
-                    <SettingToggle id="show-question-captions" label="Legendas das perguntas" description={config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis."} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel="Sempre visível" onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
-                    <SettingToggle id="candidate-camera" label="Prévia da câmera" description="Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo." checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
-                    <SettingToggle id="auto-capture-voice" label="Iniciar microfone automaticamente" description="Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala." checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
+                    <SettingToggle id="show-question-captions" label={t("Legendas das perguntas")} description={t(config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis.")} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel={t("Sempre visível")} onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
+                    <SettingToggle id="candidate-camera" label={t("Prévia da câmera")} description={t("Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo.")} checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
+                    <SettingToggle id="auto-capture-voice" label={t("Iniciar microfone automaticamente")} description={t("Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala.")} checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
                   </div>
                 </div>
               </div>
@@ -748,8 +755,7 @@ export function InterviewSetup({
           <aside className="isu-aside ds-mata px-6 py-7 sm:px-8" aria-labelledby="session-preview-title">
             <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.08em] text-on-panel-accent">
               <Leaf className="size-3.5 text-[color:var(--ds-brand-warm)]" aria-hidden="true" />
-              Sua sessão
-            </p>
+              {t("Sua sessão ")}</p>
             <h2
               id="session-preview-title"
               key={cargoSummary.value}
@@ -767,24 +773,22 @@ export function InterviewSetup({
             </dl>
             <button type="submit" className="ds-btn ds-btn-cta mt-7 hidden lg:flex" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint-desktop" : undefined}>
               {config.playInterviewerAudio && voiceReadiness === "warming" && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
-              {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
+              {t(startLabel)} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
             </button>
-            {startBlocked && <p id="start-hint-desktop" className="ds-hint ds-fade-in mt-3 hidden text-on-panel-accent lg:block">{startHint}</p>}
+            {startBlocked && <p id="start-hint-desktop" className="ds-hint ds-fade-in mt-3 hidden text-on-panel-accent lg:block">{t(startHint)}</p>}
             <button type="button" className="ds-btn ds-btn-quiet mt-2 hidden w-full text-on-panel-accent hover:text-[color:var(--ds-on-panel)] lg:flex" onClick={onBack}>
-              Cancelar
-            </button>
+              {t("Cancelar ")}</button>
           </aside>
           <p className="ds-small mt-4 px-2">
-            Você pode encerrar a qualquer momento. Uma resposta já iniciada pode terminar após o tempo planejado.
-          </p>
+            {t("Você pode encerrar a qualquer momento. Uma resposta já iniciada pode terminar após o tempo planejado. ")}</p>
         </div>
 
         {/* Mobile: the primary action stays reachable */}
         <div className="isu-bar fixed inset-x-0 z-20 px-4 pb-3 pt-3 lg:hidden">
-          {startBlocked && <p id="start-hint-mobile" className="ds-hint ds-fade-in mb-2 text-center text-text-2">{startHint}</p>}
+          {startBlocked && <p id="start-hint-mobile" className="ds-hint ds-fade-in mb-2 text-center text-text-2">{t(startHint)}</p>}
           <button type="submit" form="interview-setup-form" className="ds-btn ds-btn-cta-green" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint-mobile" : undefined}>
             {config.playInterviewerAudio && voiceReadiness === "warming" && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
-            {startLabel} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
+            {t(startLabel)} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
           </button>
         </div>
       </form>

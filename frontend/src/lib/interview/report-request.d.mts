@@ -4,4 +4,5 @@ import type { JobDirection } from "./job-direction.mjs";
 export function buildInterviewReportRequest<T extends Record<string, unknown>>(
   config: InterviewConfig,
   reportData: T,
-): T & { roleContext: { targetRole: string; seniority: string; focus: string }; jobDirection?: JobDirection };
+  locale?: "pt-BR" | "en",
+): T & { locale?: "en"; roleContext: { targetRole: string; seniority: string; focus: string }; jobDirection?: JobDirection };

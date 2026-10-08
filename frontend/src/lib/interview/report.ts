@@ -6,6 +6,7 @@ import type { JobDirection } from "./job-direction.mjs";
 import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";
 
 export type InterviewReport = {
+  locale?: "pt-BR" | "en";
   /** Exact bounded setup snapshot used to direct this report; absent on legacy sessions. */
   jobDirection?: JobDirection;
   /** Optional so previously persisted analysis JSON remains readable. */
@@ -79,11 +80,11 @@ export { answerOrdinalForSequence, pairInterviewTurns };
 
 export const interviewReportTimeoutMs = 65_000;
 
-export async function requestInterviewReport(config: InterviewConfig, turns: InterviewReportTurn[], endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"): Promise<InterviewReportResult> {
+export async function requestInterviewReport(config: InterviewConfig, turns: InterviewReportTurn[], endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001", locale: "pt-BR" | "en" = "pt-BR"): Promise<InterviewReportResult> {
   const response = await authorizedFetch(`${endpoint}/api/v1/thinking/report`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildInterviewReportRequest(config, { turns })),
+    body: JSON.stringify(buildInterviewReportRequest(config, { turns }, locale)),
     signal: AbortSignal.timeout(interviewReportTimeoutMs),
   });
   const data = await response.json().catch(() => null) as (InterviewReportResult | { error?: { message?: string } } | null);
@@ -112,11 +113,11 @@ function withDeadline(timeoutMs: number, signal?: AbortSignal): AbortSignal {
 }
 
 /** Analyze one submitted answer in the background; rejects on any failure. */
-export async function requestInterviewTurnAnalysis(config: InterviewConfig, turn: InterviewReportTurn, signal?: AbortSignal, endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"): Promise<InterviewTurnAnalysis> {
+export async function requestInterviewTurnAnalysis(config: InterviewConfig, turn: InterviewReportTurn, signal?: AbortSignal, endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001", locale: "pt-BR" | "en" = "pt-BR"): Promise<InterviewTurnAnalysis> {
   const response = await authorizedFetch(`${endpoint}/api/v1/thinking/report/turn`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildInterviewReportRequest(config, { turn })),
+    body: JSON.stringify(buildInterviewReportRequest(config, { turn }, locale)),
     signal: withDeadline(interviewTurnAnalysisTimeoutMs, signal),
   });
   const data = await response.json().catch(() => null) as (InterviewTurnAnalysis | { error?: { message?: string } } | null);
@@ -127,11 +128,11 @@ export async function requestInterviewTurnAnalysis(config: InterviewConfig, turn
 }
 
 /** Consolidate already analyzed answers into the same report shape as the full request. */
-export async function requestInterviewConsolidation(config: InterviewConfig, turns: InterviewReportTurn[], turnAnalyses: InterviewTurnAnalysis[], endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"): Promise<InterviewReportResult> {
+export async function requestInterviewConsolidation(config: InterviewConfig, turns: InterviewReportTurn[], turnAnalyses: InterviewTurnAnalysis[], endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001", locale: "pt-BR" | "en" = "pt-BR"): Promise<InterviewReportResult> {
   const response = await authorizedFetch(`${endpoint}/api/v1/thinking/report/consolidate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildInterviewReportRequest(config, { turns, turnAnalyses })),
+    body: JSON.stringify(buildInterviewReportRequest(config, { turns, turnAnalyses }, locale)),
     signal: withDeadline(interviewConsolidationTimeoutMs),
   });
   const data = await response.json().catch(() => null) as (InterviewReportResult | { error?: { message?: string } } | null);
@@ -166,6 +167,7 @@ export async function saveInterviewFeedback(interviewId: string, azureSummary: A
       status: "ready",
       azure_summary: azureSummary,
       analysis: {
+        locale: result.locale ?? "pt-BR",
         ...(result.jobDirection ? { jobDirection: result.jobDirection } : {}),
         evidenceReview: result.evidenceReview,
         technicalContent: result.technicalContent,

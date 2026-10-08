@@ -1,3 +1,4 @@
+import { t } from "@/lib/locale";
 import { Volume2 } from "lucide-react";
 
 import { voiceReadinessCopy, type VoiceReadinessState } from "@/lib/interview/voice-readiness.mjs";
@@ -27,8 +28,7 @@ export function VoiceReadinessStatus({
       <span className="min-w-0 text-sm font-medium leading-5">{voiceReadinessCopy[state]}</span>
       {state === "unavailable" && (
         <button type="button" className="btn btn-ghost btn-sm ml-auto shrink-0" onClick={onRetry}>
-          Tentar novamente
-        </button>
+          {t("Tentar novamente ")}</button>
       )}
     </div>
   );

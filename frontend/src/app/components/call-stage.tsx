@@ -1,5 +1,7 @@
 "use client";
 
+
+import { t } from "@/lib/locale";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Captions, CaptionsOff, Info, LoaderCircle, Mic, MicOff, PhoneOff, SkipForward, TriangleAlert, User, Video, VideoOff, X } from "lucide-react";
 
@@ -139,14 +141,14 @@ export function InterviewerTile({ speaking, advancing, caption, avatarState, spe
   children?: ReactNode;
 }) {
   return (
-    <section className="mt-tile mt-interviewer" data-speaking={speaking ? "true" : undefined} data-advancing={advancing ? "true" : undefined} aria-label="Entrevistador">
+    <section className="mt-tile mt-interviewer" data-speaking={speaking ? "true" : undefined} data-advancing={advancing ? "true" : undefined} aria-label={t("Entrevistador")}>
       <ToucanAvatar state={avatarState} speechFeed={speechFeed} candidateLevelRef={candidateLevelRef} />
       {caption !== null && (
         <p key={caption} className="mt-caption" lang="en" aria-live="polite">{caption}</p>
       )}
       <div className="mt-name">
         <SpeakingBars active={speaking} />
-        <span>Entrevistador</span>
+        <span>{t("Entrevistador")}</span>
       </div>
       {children}
     </section>
@@ -170,10 +172,10 @@ export function CandidateTile({ tileRef, stream, cameraRequesting, capturing, de
   }, [stream]);
 
   return (
-    <section ref={tileRef} className="mt-tile mt-candidate" data-capturing={capturing ? "true" : undefined} data-detected={detected ? "true" : undefined} aria-label="Você">
+    <section ref={tileRef} className="mt-tile mt-candidate" data-capturing={capturing ? "true" : undefined} data-detected={detected ? "true" : undefined} aria-label={t("Você")}>
       <span className="mt-glow" aria-hidden="true" />
       {stream ? (
-        <video ref={videoRef} className="mt-self-view" style={{ transform: "scaleX(-1)" }} autoPlay muted playsInline aria-label="Prévia local da sua câmera" />
+        <video ref={videoRef} className="mt-self-view" style={{ transform: "scaleX(-1)" }} autoPlay muted playsInline aria-label={t("Prévia local da sua câmera")} />
       ) : (
         <div className="mt-center">
           <span className="mt-avatar mt-avatar-you">
@@ -181,9 +183,9 @@ export function CandidateTile({ tileRef, stream, cameraRequesting, capturing, de
           </span>
         </div>
       )}
-      {cameraRequesting && <LoaderCircle className="mt-cam-spinner size-5" aria-label="Iniciando câmera" />}
+      {cameraRequesting && <LoaderCircle className="mt-cam-spinner size-5" aria-label={t("Iniciando câmera")} />}
       <div className="mt-name">
-        <span>Você</span>
+        <span>{t("Você")}</span>
         {!stream && <VideoOff className="size-3.5 opacity-70" aria-hidden="true" />}
       </div>
       {children}
@@ -208,7 +210,7 @@ export function Toast({ tone = "info", role = "status", children, actions, onDis
       {(actions || onDismiss) && (
         <div className="mt-toast-actions">
           {actions}
-          {onDismiss && <button type="button" className="mt-toast-x" onClick={onDismiss} aria-label="Fechar aviso"><X className="size-4" aria-hidden="true" /></button>}
+          {onDismiss && <button type="button" className="mt-toast-x" onClick={onDismiss} aria-label={t("Fechar aviso")}><X className="size-4" aria-hidden="true" /></button>}
         </div>
       )}
     </div>
@@ -263,33 +265,33 @@ export function CallDock(props: {
   }, []);
 
   const MicIcon = props.micState === "error" ? MicOff : Mic;
-  const cameraLabel = props.cameraOn ? "Desligar câmera" : props.cameraState === "requesting" ? "Cancelar câmera" : props.cameraState === "error" ? "Tentar câmera" : "Ligar câmera";
-  const captionsTip = props.captionsForced ? "Legendas necessárias agora" : props.captionsOn ? "Desativar legendas" : "Ativar legendas";
+  const cameraLabel = t(props.cameraOn ? "Desligar câmera" : props.cameraState === "requesting" ? "Cancelar câmera" : props.cameraState === "error" ? "Tentar câmera" : "Ligar câmera");
+  const captionsTip = t(props.captionsForced ? "Legendas necessárias agora" : props.captionsOn ? "Desativar legendas" : "Ativar legendas");
   return (
     <div className="mt-dock">
       <div className="mt-toasts" ref={toastsRef}>{props.toasts}</div>
-      <div className="mt-bar" role="toolbar" aria-label="Controles da entrevista">
+      <div className="mt-bar" role="toolbar" aria-label={t("Controles da entrevista")}>
         {props.recording && (
-          <button type="button" className="mt-btn" data-tip="Descartar gravação" aria-label="Descartar gravação" onClick={props.onDiscard}>
+          <button type="button" className="mt-btn" data-tip={t("Descartar gravação")} aria-label={t("Descartar gravação")} onClick={props.onDiscard}>
             <X className="size-5" aria-hidden="true" />
           </button>
         )}
         <button type="button" className="mt-btn mt-btn-mic" data-state={props.micState} data-tip={props.micLabel} aria-label={props.micLabel} disabled={props.micDisabled} onClick={props.onMic}>
           {props.pending ? <LoaderCircle className="size-5 motion-safe:animate-spin" aria-hidden="true" /> : <MicIcon className="size-5" aria-hidden="true" />}
-          {props.recording && <time className="sr-only" aria-label={`Tempo de gravação ${props.recordingTime}`}>{props.recordingTime}</time>}
+          {props.recording && <time className="sr-only" aria-label={`${t("Tempo de gravação: ")}${props.recordingTime}`}>{props.recordingTime}</time>}
         </button>
-        <button type="button" className="mt-btn" data-off={!props.captionsOn ? "true" : undefined} data-tip={captionsTip} aria-label="Legendas do entrevistador" aria-pressed={props.captionsOn} disabled={props.captionsForced} onClick={props.onCaptions}>
+        <button type="button" className="mt-btn" data-off={!props.captionsOn ? "true" : undefined} data-tip={captionsTip} aria-label={captionsTip} aria-pressed={props.captionsOn} disabled={props.captionsForced} onClick={props.onCaptions}>
           {props.captionsOn ? <Captions className="size-5" aria-hidden="true" /> : <CaptionsOff className="size-5" aria-hidden="true" />}
         </button>
-        <button type="button" className="mt-btn" data-off={!props.cameraOn ? "true" : undefined} data-tip={props.cameraOn ? "Desligar câmera" : props.cameraState === "requesting" ? "Cancelar câmera" : "Ligar câmera (prévia local, não é enviada nem salva)"} aria-label={cameraLabel} aria-pressed={props.cameraOn} disabled={props.cameraDisabled} onClick={props.onCamera}>
+        <button type="button" className="mt-btn" data-off={!props.cameraOn ? "true" : undefined} data-tip={props.cameraOn ? cameraLabel : props.cameraState === "requesting" ? cameraLabel : t("Ligar câmera (prévia local, não é enviada nem salva)")} aria-label={cameraLabel} aria-pressed={props.cameraOn} disabled={props.cameraDisabled} onClick={props.onCamera}>
           {props.cameraState === "requesting" ? <LoaderCircle className="size-5 motion-safe:animate-spin" aria-hidden="true" /> : props.cameraOn ? <Video className="size-5" aria-hidden="true" /> : <VideoOff className="size-5" aria-hidden="true" />}
         </button>
-        <button type="button" className="mt-btn" data-tip="Pular pergunta" aria-label="Pular sem enviar" onClick={props.onSkip} disabled={props.skipDisabled}>
+        <button type="button" className="mt-btn" data-tip={t("Pular pergunta")} aria-label={t("Pular sem enviar")} onClick={props.onSkip} disabled={props.skipDisabled}>
           <SkipForward className="size-5" aria-hidden="true" />
         </button>
-        <button type="button" className="mt-btn mt-btn-end" data-tip="Encerrar entrevista" aria-label="Encerrar entrevista" aria-haspopup="dialog" onClick={props.onEnd}>
+        <button type="button" className="mt-btn mt-btn-end" data-tip={t("Encerrar entrevista")} aria-label={t("Encerrar entrevista")} aria-haspopup="dialog" onClick={props.onEnd}>
           <PhoneOff className="size-5" aria-hidden="true" />
-          <span>Encerrar</span>
+          <span>{t("Encerrar")}</span>
         </button>
       </div>
     </div>

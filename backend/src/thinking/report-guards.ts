@@ -208,10 +208,10 @@ export function checkGrammarRuleLabel(suggestion: string, edit: EnglishEditAnaly
 
 /** A suggestion that talks about "correct project/product names" reveals a mis-heard proper noun. */
 export function suggestsFixingNames(suggestion: string): boolean {
-  return /nomes?\s+(?:corret|real|certo|exat|d[eo]s?\s+(?:projet|produt|ferrament|tecnolog))|nome\s+(?:correto|do projeto|do produto)|nomes? pr[óo]prios?/iu.test(suggestion);
+  return /nomes?\s+(?:corret|real|certo|exat|d[eo]s?\s+(?:projet|produt|ferrament|tecnolog))|nome\s+(?:correto|do projeto|do produto)|nomes? pr[óo]prios?|\b(?:fix|correct|verify|confirm)\s+(?:the\s+)?(?:project|product|company|technology|tool)?\s*names?\b/iu.test(suggestion);
 }
 
-const integrationClaim = /\b(?:integra\w*|implement\w*)\b|como (?:a |o )?[\p{L}\s]{0,30}(?:foi|era) (?:integrad|implementad)/iu;
+const integrationClaim = /\b(?:integra\w*|implement\w*|build\w*|develop\w*)\b|como (?:a |o )?[\p{L}\s]{0,30}(?:foi|era) (?:integrad|implementad)/iu;
 const integrationQuestion = /\b(?:integrat\w*|implement\w*|build\w*|built|how (?:did|do|would|will) you|how (?:was|is))\b/iu;
 
 /** A technical gap or priority about integration/implementation is unfair when the question did not ask for it. */
@@ -273,6 +273,9 @@ const genericExercisePatterns = [
   /pratique\s+(?:a\s+)?(?:usar|utilizar|usa)\s+[^"“:]{0,60}\bcorret\w*\s+em\s+(?:suas?\s+)?frases/iu,
   /resolvem\s+problemas\s+espec[íi]ficos\s+d[oa]\s+(?:cargo|vaga|posi[çc][ãa]o)/iu,
   /^\s*pratique\s+(?:falar|responder|explicar|se\s+comunicar)\s+(?:com\s+mais\s+clareza|de\s+forma\s+(?:mais\s+)?clara|melhor)\b/iu,
+  /^\s*practice\s+(?:explaining|describing)\s+how\s+(?:your|their)\s+(?:skills?|experience|expertise)\b/iu,
+  /^\s*practice\s+(?:using|applying)\s+[^"“:]{0,60}\bcorrectly\s+in\s+(?:your\s+)?sentences\b/iu,
+  /^\s*practice\s+(?:speaking|answering|explaining|communicating)\s+(?:more\s+clearly|better|with\s+more\s+clarity)\b/iu,
 ];
 
 /** A priority exercise that names no concrete structure or scenario (for example "Pratique explicar como suas habilidades...") is not actionable. */

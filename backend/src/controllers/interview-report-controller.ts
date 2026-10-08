@@ -14,6 +14,11 @@ function text(value: unknown, max: number): value is string {
 
 type RoleContext = InterviewReportInput["roleContext"];
 type ReportTurn = InterviewReportInput["turns"][number];
+type ReportLocale = NonNullable<InterviewReportInput["locale"]>;
+
+function parseLocale(value: unknown): ReportLocale | undefined | null {
+  return value === undefined ? undefined : value === "pt-BR" || value === "en" ? value : null;
+}
 
 function parseRoleContext(value: unknown): RoleContext | null {
   if (!isRecord(value)) return null;
@@ -52,21 +57,23 @@ function parseTurns(value: unknown): ReportTurn[] | null {
 }
 
 function parseInput(body: unknown): InterviewReportInput | null {
-  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turns", "jobDirection"].includes(key))) return null;
+  if (!isRecord(body) || Object.keys(body).some((key) => !["locale", "roleContext", "turns", "jobDirection"].includes(key))) return null;
+  const locale = parseLocale(body.locale);
   const roleContext = parseRoleContext(body.roleContext);
   const turns = parseTurns(body.turns);
   const jobDirection = body.jobDirection === undefined ? undefined : roleContext ? parseApprovedJobDirection(body.jobDirection, roleContext.targetRole, roleContext.seniority) : null;
   if (body.jobDirection !== undefined && !jobDirection) return null;
-  return roleContext && turns ? { roleContext, turns, ...(jobDirection ? { jobDirection } : {}) } : null;
+  return locale !== null && roleContext && turns ? { ...(locale ? { locale } : {}), roleContext, turns, ...(jobDirection ? { jobDirection } : {}) } : null;
 }
 
 function parseTurnInput(body: unknown): InterviewTurnAnalysisInput | null {
-  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turn", "jobDirection"].includes(key))) return null;
+  if (!isRecord(body) || Object.keys(body).some((key) => !["locale", "roleContext", "turn", "jobDirection"].includes(key))) return null;
+  const locale = parseLocale(body.locale);
   const roleContext = parseRoleContext(body.roleContext);
   const turn = parseTurn(body.turn);
   const jobDirection = body.jobDirection === undefined ? undefined : roleContext ? parseApprovedJobDirection(body.jobDirection, roleContext.targetRole, roleContext.seniority) : null;
   if (body.jobDirection !== undefined && !jobDirection) return null;
-  return roleContext && turn ? { roleContext, turn, ...(jobDirection ? { jobDirection } : {}) } : null;
+  return locale !== null && roleContext && turn ? { ...(locale ? { locale } : {}), roleContext, turn, ...(jobDirection ? { jobDirection } : {}) } : null;
 }
 
 /**
@@ -74,12 +81,13 @@ function parseTurnInput(body: unknown): InterviewTurnAnalysisInput | null {
  * individually against the matching answer by the service.
  */
 function parseConsolidationInput(body: unknown): InterviewReportConsolidationInput | null {
-  if (!isRecord(body) || Object.keys(body).some((key) => !["roleContext", "turns", "turnAnalyses", "jobDirection"].includes(key))) return null;
+  if (!isRecord(body) || Object.keys(body).some((key) => !["locale", "roleContext", "turns", "turnAnalyses", "jobDirection"].includes(key))) return null;
+  const locale = parseLocale(body.locale);
   const roleContext = parseRoleContext(body.roleContext);
   const turns = parseTurns(body.turns);
   const jobDirection = body.jobDirection === undefined ? undefined : roleContext ? parseApprovedJobDirection(body.jobDirection, roleContext.targetRole, roleContext.seniority) : null;
   if (body.jobDirection !== undefined && !jobDirection) return null;
-  if (!roleContext || !turns || !Array.isArray(body.turnAnalyses) || body.turnAnalyses.length !== turns.length) return null;
+  if (locale === null || !roleContext || !turns || !Array.isArray(body.turnAnalyses) || body.turnAnalyses.length !== turns.length) return null;
   const turnAnalyses: InterviewTurnAnalysis[] = [];
   for (const entry of body.turnAnalyses) {
     if (!isRecord(entry) || Object.keys(entry).some((key) => !["sequenceNumber", "technicalStrengths", "technicalGaps", "englishPatterns"].includes(key))
@@ -89,7 +97,7 @@ function parseConsolidationInput(body: unknown): InterviewReportConsolidationInp
     if (!lists.every((list) => Array.isArray(list) && list.length <= 8)) return null;
     turnAnalyses.push(entry as InterviewTurnAnalysis);
   }
-  return { roleContext, turns, turnAnalyses, ...(jobDirection ? { jobDirection } : {}) };
+  return { ...(locale ? { locale } : {}), roleContext, turns, turnAnalyses, ...(jobDirection ? { jobDirection } : {}) };
 }
 
 type ReportRoute<Input, Output> = {

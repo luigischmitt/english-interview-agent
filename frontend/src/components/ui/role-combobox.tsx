@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { t } from "@/lib/locale";
 import { ChevronDown } from "lucide-react";
 import { interviewRoles } from "@/lib/interview/roles";
 import { filterRoles } from "@/lib/interview/role-filter.mjs";
@@ -127,7 +128,7 @@ export function RoleCombobox({
       <button
         type="button"
         tabIndex={-1}
-        aria-label="Mostrar sugestões de cargo"
+        aria-label={t("Mostrar sugestões de cargo")}
         className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-[0.875rem] text-text-2"
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
@@ -143,7 +144,7 @@ export function RoleCombobox({
         <ChevronDown className="ds-chevron size-4" style={{ transform: expanded ? "rotate(180deg)" : undefined }} aria-hidden="true" />
       </button>
       {expanded && (
-        <ul id={listId} role="listbox" aria-label="Cargos sugeridos" className="ds-combo-list">
+        <ul id={listId} role="listbox" aria-label={t("Cargos sugeridos")} className="ds-combo-list">
           {options.map((role, index) => (
             <li
               key={role}

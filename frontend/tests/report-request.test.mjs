@@ -43,3 +43,8 @@ test("resume reports use the asked questions and answers without vacancy framing
   assert.equal("jobDirection" in result, false);
   assert.deepEqual(result.roleContext, { targetRole: config.role, seniority: config.seniority, focus: config.focus });
 });
+
+test("English report requests carry the selected locale", () => {
+  const result = buildInterviewReportRequest(config, { turns: [] }, "en");
+  assert.equal(result.locale, "en");
+});
