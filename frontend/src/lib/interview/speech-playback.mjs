@@ -692,17 +692,21 @@ export function playInterviewerSegments(segments, options) {
  */
 export function prewarmInterviewerSpeech(segments, options) {
   const chunks = groupInterviewerSentences(segments);
-  if (!chunks.length) return { promise: Promise.resolve(false), cancel() {} };
+  if (!chunks.length) return { promise: Promise.resolve(false), firstChunkReady: Promise.resolve(false), cancel() {} };
   const schedule = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
   const unschedule = options.clearTimeout ?? ((id) => clearTimeout(id));
   const requests = requestChunks(chunks, { ...options, retainMs: options.retainMs ?? 30_000, onSynthesisStarted: undefined });
   const timeoutId = schedule(() => requests.stop(), options.timeoutMs ?? 20_000);
+  // Playback can start as soon as chunk 1 exists; later chunks are already in flight and are consumed in order.
+  // Requiring the whole utterance here unnecessarily discards playable follow-ups with no latency benefit.
+  const firstChunkReady = requests.entries[0].promise.then(() => true, () => false);
   const promise = Promise.all(requests.entries.map((entry) => entry.promise)).then(() => true, () => false).finally(() => {
     unschedule(timeoutId);
     requests.stop();
   });
   return {
     promise,
+    firstChunkReady,
     cancel() {
       unschedule(timeoutId);
       requests.stop();

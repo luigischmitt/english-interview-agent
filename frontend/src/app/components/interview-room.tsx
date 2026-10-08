@@ -493,7 +493,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     });
     const input = buildDecisionInput(turns, answer);
     if (speculativeCallsRef.current.turn !== micTurnIdRef.current) speculativeCallsRef.current = { turn: micTurnIdRef.current, count: 0, revision: 0 };
-    if (speculativeCallsRef.current.count >= 3 || revision < 1 || revision > 3 || revision <= speculativeCallsRef.current.revision) return;
+    if (speculativeCallsRef.current.count >= 8 || revision < 1 || revision > 8 || revision <= speculativeCallsRef.current.revision) return;
     speculativeCallsRef.current.count += 1;
     speculativeCallsRef.current.revision = revision;
     speculativeAttemptedRef.current = true;
@@ -545,7 +545,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         let cancelSpeech: (() => void) | null = null;
         if (utterance) {
           const prewarm = prewarmInterviewerUtterance(utterance, config.voice);
-          speechReady = prewarm.promise;
+          // Starting the first chunk is enough for a zero-wait handoff; playback joins the remaining in-flight chunks.
+          speechReady = prewarm.firstChunkReady;
           cancelSpeech = prewarm.cancel;
           onCleanup(cancelSpeech);
           void prewarm.promise.then((ready) => {
