@@ -45,13 +45,32 @@ function containsNormalizedPhrase(haystack, needle) {
   return phrase.length > 0 && phrase.length <= source.length && source.some((_, index) => phrase.every((word, offset) => source[index + offset] === word));
 }
 
+/** COVERED and INVALID are sticky: once a candidate revision (or a newer one) is judged so in ANY epoch, it never plays. */
+function stickyTerminalStatus(statuses, revision) {
+  for (const [key, status] of statuses) {
+    if (status !== "COVERED" && status !== "INVALID") continue;
+    const statusRevision = Number(key.slice(key.indexOf(":") + 1));
+    if (Number.isSafeInteger(statusRevision) && statusRevision >= revision) return status;
+  }
+  return undefined;
+}
+
 /**
- * Status of a preparation's candidate judged in the FINAL speech epoch. A status recorded in an older epoch never counts:
- * the candidate must be re-checked against what the candidate said up to the final pause.
+ * Status of a preparation's candidate. A COVERED/INVALID judged in any epoch is sticky; any other status counts only
+ * when recorded in the FINAL speech epoch (the candidate must be re-checked against what was said up to the final pause).
+ * NONE (timeout/error) stays non-sticky.
  */
 export function finalEpochCandidateStatus(statuses, latestByEpoch, revision, finalSpeechEpoch) {
+  const sticky = stickyTerminalStatus(statuses, revision);
+  if (sticky) return sticky;
   if (!Number.isSafeInteger(finalSpeechEpoch)) return undefined;
   return candidateStatusFor(statuses, latestByEpoch, finalSpeechEpoch, revision, finalSpeechEpoch);
+}
+
+/** A COVERED/INVALID status retires every retained FOLLOW_UP preparation up to its revision, releasing its prewarmed audio. */
+export function discardCoveredFollowUps(registry, { revision, status }) {
+  if (status !== "COVERED" && status !== "INVALID") return 0;
+  return registry.discardWhere((value) => value?.decision?.decision === "FOLLOW_UP" && value.revision <= revision);
 }
 
 /** The final speech epoch advances monotonically from provisional snapshots and statuses; null (after a resume) adopts any epoch. */

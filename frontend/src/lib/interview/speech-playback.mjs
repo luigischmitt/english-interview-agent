@@ -59,6 +59,13 @@ function retainSpeechBlob(key, blob, retainMs) {
   retainedSpeechBlobs.set(key, { blob, timer });
 }
 
+function forgetRetainedSpeechBlob(key) {
+  const entry = retainedSpeechBlobs.get(key);
+  if (!entry) return;
+  clearTimeout(entry.timer);
+  retainedSpeechBlobs.delete(key);
+}
+
 /** Test hook: forgets retained blobs and their timers. */
 export function clearRetainedSpeechBlobs() {
   for (const entry of retainedSpeechBlobs.values()) clearTimeout(entry.timer);
@@ -727,6 +734,8 @@ export function prewarmInterviewerSpeech(segments, options) {
     cancel() {
       unschedule(timeoutId);
       requests.stop();
+      // A discarded preparation must not keep its (possibly minutes-long) retained audio in memory.
+      for (const chunk of chunks) forgetRetainedSpeechBlob(speechRequestFor(options, chunk.text).key);
     },
   };
 }

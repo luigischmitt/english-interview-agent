@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createNextTurnPreparationRegistry } from "../src/lib/interview/next-turn-preparation.mjs";
 import { shouldUseMonotonicFixedFallback } from "../src/lib/interview/question-scheduling.mjs";
-import { adoptSpeechEpoch, applyFollowUpCandidateClear, canUseCurrentEpochCandidate, candidateStatusFor, finalEpochCandidateStatus, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "../src/lib/interview/speculative-epoch.mjs";
+import { adoptSpeechEpoch, applyFollowUpCandidateClear, canUseCurrentEpochCandidate, candidateStatusFor, discardCoveredFollowUps, finalEpochCandidateStatus, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "../src/lib/interview/speculative-epoch.mjs";
 
 const candidate = { turnId: "turn-a", revision: 1, speechEpoch: 4, transcript: "I used Kafka.", decision: { decision: "FOLLOW_UP" }, anchor: "Kafka" };
 
@@ -233,4 +233,44 @@ test("A: the speech epoch only moves forward and adopts the first epoch after a 
   assert.equal(adoptSpeechEpoch(4, 3), 4);
   assert.equal(adoptSpeechEpoch(4, 5), 5);
   assert.equal(adoptSpeechEpoch(4, undefined), 4);
+});
+
+test("COVERED is sticky across epochs: the repro after a cough-triggered resume never plays the covered follow-up", () => {
+  const statuses = new Map();
+  const latest = new Map();
+  const registry = createNextTurnPreparationRegistry();
+  assert.equal(recordCandidateStatus(statuses, latest, { speechEpoch: 0, revision: 1, status: "COVERED" }, 0), true);
+  const value = { ...candidate, speechEpoch: 0, revision: 1 };
+  // Resume: epoch unknown (null); identical transcript, no new status.
+  const compatibility = finalEpochCandidateStatus(statuses, latest, 1, null);
+  assert.equal(compatibility, "COVERED");
+  assert.equal(canUseCurrentEpochCandidate({ value, finalTranscript: value.transcript, currentTurnId: "turn-a", currentSpeechEpoch: null, featureEnabled: true, compatibility }), false);
+  // Epoch 1 without a status for it must still reject.
+  assert.equal(canUseCurrentEpochCandidate({ value, finalTranscript: value.transcript, currentTurnId: "turn-a", currentSpeechEpoch: 1, featureEnabled: true, compatibility: finalEpochCandidateStatus(statuses, latest, 1, 1) }), false);
+  assert.equal(registry.stats().used, 0);
+});
+
+test("INVALID is sticky for older revisions too; NONE is not sticky", () => {
+  const statuses = new Map();
+  const latest = new Map();
+  recordCandidateStatus(statuses, latest, { speechEpoch: 0, revision: 2, status: "INVALID" }, 0);
+  assert.equal(finalEpochCandidateStatus(statuses, latest, 1, 1), "INVALID");
+  assert.equal(finalEpochCandidateStatus(statuses, latest, 3, 1), undefined);
+  const none = new Map();
+  const noneLatest = new Map();
+  recordCandidateStatus(none, noneLatest, { speechEpoch: 0, revision: 1, status: "NONE" }, 0);
+  assert.equal(finalEpochCandidateStatus(none, noneLatest, 1, 1), undefined);
+  assert.equal(canUseCurrentEpochCandidate({ value: { ...candidate, speechEpoch: 0 }, finalTranscript: candidate.transcript, currentTurnId: "turn-a", currentSpeechEpoch: 1, featureEnabled: true, compatibility: finalEpochCandidateStatus(none, noneLatest, 1, 1) }), true);
+});
+
+test("a COVERED/INVALID status discards retained follow-up preparations up to its revision, not NONE", async () => {
+  const registry = createNextTurnPreparationRegistry();
+  const cleaned = [];
+  for (const revision of [1, 2, 3]) {
+    const entry = registry.prepare({ transcript: `a${revision}`, preserveReady: true, run: async (_signal, onCleanup) => { onCleanup(() => cleaned.push(revision)); return { decision: { decision: "FOLLOW_UP" }, revision }; } });
+    await entry.promise;
+  }
+  assert.equal(discardCoveredFollowUps(registry, { revision: 2, status: "NONE" }), 0);
+  assert.equal(discardCoveredFollowUps(registry, { revision: 2, status: "COVERED" }), 2);
+  assert.deepEqual(cleaned.sort(), [1, 2]);
 });
