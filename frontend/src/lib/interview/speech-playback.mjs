@@ -59,6 +59,24 @@ function retainSpeechBlob(key, blob, retainMs) {
   retainedSpeechBlobs.set(key, { blob, timer });
 }
 
+// Live prewarms per request key: identical utterances share one retained blob, so it is only forgotten when the
+// last prewarm holding it is cancelled.
+const retainedSpeechHolders = new Map();
+
+function holdRetainedSpeechBlob(key) {
+  retainedSpeechHolders.set(key, (retainedSpeechHolders.get(key) ?? 0) + 1);
+}
+
+function releaseRetainedSpeechBlob(key) {
+  const holders = (retainedSpeechHolders.get(key) ?? 1) - 1;
+  if (holders > 0) {
+    retainedSpeechHolders.set(key, holders);
+    return;
+  }
+  retainedSpeechHolders.delete(key);
+  forgetRetainedSpeechBlob(key);
+}
+
 function forgetRetainedSpeechBlob(key) {
   const entry = retainedSpeechBlobs.get(key);
   if (!entry) return;
@@ -70,6 +88,7 @@ function forgetRetainedSpeechBlob(key) {
 export function clearRetainedSpeechBlobs() {
   for (const entry of retainedSpeechBlobs.values()) clearTimeout(entry.timer);
   retainedSpeechBlobs.clear();
+  retainedSpeechHolders.clear();
 }
 
 /** Test hook: aborts and forgets every in-flight speech request (e.g. ones left running in the background). */
@@ -720,6 +739,9 @@ export function prewarmInterviewerSpeech(segments, options) {
   const schedule = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay));
   const unschedule = options.clearTimeout ?? ((id) => clearTimeout(id));
   const requests = requestChunks(chunks, { ...options, retainMs: options.retainMs ?? 30_000, onSynthesisStarted: undefined });
+  const heldKeys = [...new Set(chunks.map((chunk) => speechRequestFor(options, chunk.text).key))];
+  for (const key of heldKeys) holdRetainedSpeechBlob(key);
+  let released = false;
   const timeoutId = schedule(() => requests.stop(), options.timeoutMs ?? 20_000);
   // Playback can start as soon as chunk 1 exists; later chunks are already in flight and are consumed in order.
   // Requiring the whole utterance here unnecessarily discards playable follow-ups with no latency benefit.
@@ -734,8 +756,11 @@ export function prewarmInterviewerSpeech(segments, options) {
     cancel() {
       unschedule(timeoutId);
       requests.stop();
-      // A discarded preparation must not keep its (possibly minutes-long) retained audio in memory.
-      for (const chunk of chunks) forgetRetainedSpeechBlob(speechRequestFor(options, chunk.text).key);
+      // A discarded preparation must not keep its (possibly minutes-long) retained audio in memory, unless another
+      // live prewarm of the same utterance still relies on it.
+      if (released) return;
+      released = true;
+      for (const key of heldKeys) releaseRetainedSpeechBlob(key);
     },
   };
 }

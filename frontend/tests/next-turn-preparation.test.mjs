@@ -358,11 +358,13 @@ test("follow-up audio is retained beyond 30 s and released when the preparation 
     await prewarm.promise;
     globalThis.setTimeout = real;
     assert.ok(delays.includes(4 * 60_000), "the retention timer is 4 minutes, not 30 s");
-    await prewarmInterviewerSpeech(["Tell me more about Kafka."], opts).promise;
+    const reuse = prewarmInterviewerSpeech(["Tell me more about Kafka."], opts);
+    await reuse.promise;
     assert.equal(calls.length, 1, "served from the retained blob");
     prewarm.cancel();
+    reuse.cancel();
     await prewarmInterviewerSpeech(["Tell me more about Kafka."], opts).promise;
-    assert.equal(calls.length, 2, "cancel released the retained audio");
+    assert.equal(calls.length, 2, "cancelling the last holder released the retained audio");
   } finally {
     globalThis.setTimeout = real;
     clearRetainedSpeechBlobs();
