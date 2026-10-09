@@ -41,3 +41,12 @@ test("resume sessions do not persist a vacancy-style direction", () => {
   const payload = buildInterviewSessionPayload({ ...config, interviewSource: "resume" }, "user-1", "now");
   assert.equal(Object.hasOwn(payload, "job_direction"), false);
 });
+
+test("resume sessions save a neutral label instead of the inferred role, seniority and focus", () => {
+  const payload = buildInterviewSessionPayload({ ...config, interviewSource: "resume" }, "user-1", "now");
+  assert.equal(payload.target_role, "Prática pelo currículo");
+  assert.equal(payload.seniority, null);
+  assert.equal(payload.focus, null);
+  const job = buildInterviewSessionPayload({ ...config, interviewSource: "job" }, "user-1", "now");
+  assert.deepEqual([job.target_role, job.seniority, job.focus], ["Backend Engineer", "mid-level", "reliability"]);
+});

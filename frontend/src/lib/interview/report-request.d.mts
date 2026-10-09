@@ -5,4 +5,4 @@ export function buildInterviewReportRequest<T extends Record<string, unknown>>(
   config: InterviewConfig,
   reportData: T,
   locale?: "pt-BR" | "en",
-): T & { locale?: "en"; roleContext: { targetRole: string; seniority: string; focus: string }; jobDirection?: JobDirection };
+): T & { locale?: "en"; roleContext: { targetRole: string; seniority?: string; focus?: string }; jobDirection?: JobDirection };

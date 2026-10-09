@@ -60,7 +60,7 @@ test("bounded previous-answer memory retains older themes through the last eight
   assert.equal(payload.previousAnswers.at(-1).question, "Question 9?");
 });
 
-test("resume next turns omit vacancy framing while keeping the inferred role context", () => {
+test("resume next turns omit vacancy framing and the inferred role, seniority and focus", () => {
   const payload = JSON.parse(serializeNextTurnRequest({
     config: {
       role: "Backend Engineer", seniority: "senior", focus: "technical-depth", interviewSource: "resume",
@@ -70,7 +70,8 @@ test("resume next turns omit vacancy framing while keeping the inferred role con
     remainingFixedQuestions: ["How did you test it?"], followUpUsed: false, askedQuestions: [],
   }));
   assert.equal("jobDirection" in payload, false);
-  assert.deepEqual(payload.roleContext, { targetRole: "Backend Engineer", seniority: "senior", focus: "technical-depth" });
+  assert.deepEqual(payload.roleContext, { targetRole: "the candidate's resume background" });
+  assert.equal(JSON.stringify(payload).includes("Backend Engineer"), false);
 });
 
 import { DEFAULT_INTERVIEWER_VOICE, INTERVIEWER_VOICE_OPTIONS, resolveInterviewerVoice } from "../src/lib/interview/voices.mjs";

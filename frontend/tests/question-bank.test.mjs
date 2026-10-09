@@ -233,3 +233,14 @@ test("broad project questions carry coverage metadata in every bank and tailored
   const tailored = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: qaDirection });
   assert.ok(tailored.filter((question) => question.id.startsWith("job-")).every((question) => question.coverage === undefined));
 });
+
+test("resume practice questions never name the inferred role or a role-based opening", () => {
+  const direction = { targetRole: "AI Researcher", suggestedSeniority: "senior", mainInterviewEmphasis: "Resume", priorityCompetencies: ["Resume"], productTeamContext: "Resume", tailoredQuestions: ["How did you evaluate your models?"] };
+  const config = { role: "AI Researcher", seniority: "senior", focus: "mixed", duration: "10", questionCount: null, interviewSource: "resume", jobDirection: direction };
+  const questions = getFixedInterviewQuestions(config);
+  assert.equal(questions[0].prompt, "Could you introduce yourself and walk me through the experience from your resume you'd most like to talk about?");
+  assert.equal(questions[1].prompt, "How did you evaluate your models?");
+  for (const question of questions) assert.ok(!question.prompt.includes("{role}") && !/AI Researcher|this role/u.test(question.prompt), question.prompt);
+  const fit = getFixedInterviewQuestions({ ...config, jobDirection: undefined }).map((question) => question.prompt);
+  assert.ok(fit.every((prompt) => !prompt.includes("{role}")));
+});

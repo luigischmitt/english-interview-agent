@@ -1,4 +1,5 @@
 import { isValidJobDirection } from "./job-direction.mjs";
+import { buildRoleContext } from "./resume-neutral.mjs";
 
 /** Builds every report-stage payload from the interview's approved snapshot, never the raw description. */
 export function buildInterviewReportRequest(config, reportData, locale = "pt-BR") {
@@ -13,7 +14,7 @@ export function buildInterviewReportRequest(config, reportData, locale = "pt-BR"
   return {
     ...reportData,
     ...(locale === "en" ? { locale: "en" } : {}),
-    roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
+    roleContext: buildRoleContext(config),
     ...(jobDirection ? { jobDirection } : {}),
   };
 }

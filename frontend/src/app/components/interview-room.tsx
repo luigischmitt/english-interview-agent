@@ -36,6 +36,7 @@ import { requestClosingReaction } from "@/lib/interview/closing-reaction-request
 import { useMicEngine } from "../hooks/use-mic-engine";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, pickInterviewClosing, type ClosingReason, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTimingEnabled } from "@/lib/interview/handoff-timing.mjs";
+import { buildRoleContext, isResumePractice, RESUME_PRACTICE_LABEL } from "@/lib/interview/resume-neutral.mjs";
 import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/interview/opening-timing.mjs";
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
@@ -525,7 +526,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     closingReaction.update(turn, answer, {
       currentQuestion: question.prompt,
       recent: recentAcknowledgementsRef.current,
-      roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
+      roleContext: buildRoleContext(config),
       onReady: (reaction) => {
         if (!config.playInterviewerAudio || leftRef.current || !mountedRef.current || micTurnIdRef.current !== turn) return;
         closingPrewarmCancelRef.current?.();
@@ -642,7 +643,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           hasThirdFixedQuestion: planned.length > 2,
           previousCandidate: speculativeCandidateRef.current,
           previousAnswers: input.previousAnswers,
-          roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
+          roleContext: buildRoleContext(config),
         }, signal) : { enabled: true, analysis: null };
         if (speculative.enabled) speculativeEnabledRef.current = true;
         // A pause/resume does not stale this analysis: its candidate can still be kept and validated in the final epoch.
@@ -1131,6 +1132,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
 
   const isAdvancing = phase === "advancing";
+  const resumePractice = isResumePractice(config);
   const seniorityLabel = config.seniority === "junior" ? t("Júnior") : config.seniority === "mid-level" ? t("Pleno") : config.seniority === "senior" ? t("Sênior") : "Staff / Lead";
   const focusLabel = t(config.focus === "technical-depth" ? "Profundidade técnica" : config.focus === "communication" ? "Comunicação e clareza" : config.focus === "behavioral" ? "Respostas comportamentais" : "Prática equilibrada");
   const persistenceLabel = persistenceState === "saved" ? "sessão salva na conta" : persistenceState === "local" ? "salva apenas no estado local da sessão; sincronização pendente" : "salvando na conta…";
@@ -1271,8 +1273,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       <div className="mt-call" hidden={phase === "ending"} aria-hidden={phase === "ending"} data-over={timeLimitReached ? "true" : undefined}>
         <header className="mt-top">
           <div className="mt-top-title">
-            <h1 className="mt-title"><span className="sr-only">{t("Entrevista em andamento: ")}</span>{config.role}</h1>
-            <p className="mt-sub">{seniorityLabel} {t("· ")}{focusLabel}</p>
+            <h1 className="mt-title"><span className="sr-only">{t("Entrevista em andamento: ")}</span>{resumePractice ? t(RESUME_PRACTICE_LABEL) : config.role}</h1>
+            {!resumePractice && <p className="mt-sub">{seniorityLabel} {t("· ")}{focusLabel}</p>}
           </div>
           <div className="mt-top-meta">
             <p className="mt-save" role="status" aria-live="polite" title={persistenceLabel}>

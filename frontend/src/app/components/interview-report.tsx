@@ -6,6 +6,7 @@ import { emptyEnglishEvidenceMessage, emptyReportEvidenceMessage, partialEvidenc
 import { clarityHelp, englishPatternsHelp, technicalContentHelp } from "@/lib/interview/report-metric-copy.mjs";
 import type { AzureMetricSummary } from "@/lib/interview/report-metrics.mjs";
 import type { InterviewConfig } from "@/lib/interview/types";
+import { RESUME_PRACTICE_LABEL } from "@/lib/interview/resume-neutral.mjs";
 import { deriveMainPoints, toSecondPerson } from "@/lib/interview/report-main-points.mjs";
 import { AzureVoiceReport } from "./azure-voice-report";
 import "./interview-report.css";
@@ -231,7 +232,9 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
         <h1 id="interview-complete-title" className="font-display text-balance rp-title">{t("Seu relatório de entrevista")}</h1>
         <p className="ds-body mt-3 max-w-[60ch]">{t(persistenceLabel)} {t("As respostas por voz foram transcritas; o áudio não é salvo.")}</p>
         <dl className="rp-facts">
-          <div><dt>{t("Cargo")}</dt><dd>{config.role}</dd></div>
+          {config.interviewSource === "resume"
+            ? <div><dt>{t("Modo")}</dt><dd>{t(RESUME_PRACTICE_LABEL)}</dd></div>
+            : <div><dt>{t("Cargo")}</dt><dd>{config.role}</dd></div>}
           <div><dt>{t("Tempo")}</dt><dd className="tabular-nums">{elapsed} {t("/ ")}{totalClock}</dd></div>
           <div><dt>{t("Respostas")}</dt><dd>{answerCount}</dd></div>
         </dl>

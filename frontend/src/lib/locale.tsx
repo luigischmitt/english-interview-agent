@@ -93,6 +93,7 @@ const englishCopy: Record<string, string> = {
   "Data indisponível": "Date unavailable",
   "Seu perfil aparece aqui assim que o relatório de uma prática ficar pronto.": "Your profile will appear here once a practice report is ready.",
   "Prática de entrevista": "Interview practice",
+  "Prática pelo currículo": "Resume practice",
   "prática concluída": "practice completed",
   "práticas concluídas": "practices completed",
   "Última prática em": "Last practice on",

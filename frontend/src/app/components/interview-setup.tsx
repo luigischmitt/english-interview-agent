@@ -402,7 +402,7 @@ export function InterviewSetup({
 
   const localizedSeniorityLabels = Object.fromEntries(Object.entries(seniorityLabels).map(([key, label]) => [key, t(label)])) as typeof seniorityLabels;
   const localizedFocusLabels = Object.fromEntries(Object.entries(focusLabels).map(([key, label]) => [key, t(label)])) as typeof focusLabels;
-  const [cargoSummary, ...restSummary] = getInterviewSetupSummary({ ...config, voice }, localizedSeniorityLabels, localizedFocusLabels);
+  const [cargoSummary, ...restSummary] = getInterviewSetupSummary({ ...config, voice, interviewSource: setupMode === "resume" ? "resume" : config.interviewSource }, localizedSeniorityLabels, localizedFocusLabels);
 
   const toggleRoomOptions = () => setRoomOptionsOpen((open) => !open);
 
@@ -761,7 +761,7 @@ export function InterviewSetup({
               key={cargoSummary.value}
               className="ds-fade-in mt-2 text-balance font-[family-name:var(--font-display)] text-[1.875rem] leading-[1.1] tracking-[-0.02em] [overflow-wrap:anywhere]"
             >
-              {cargoSummary.value}
+              {t(cargoSummary.value)}
             </h2>
             <dl className="mt-5 space-y-2.5 text-sm">
               {restSummary.map(({ label, value }) => (

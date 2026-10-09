@@ -1,6 +1,7 @@
 import { acquireInterviewerAudio, isAutoplayBlockedError, releaseInterviewerAudio } from "./audio-unlock.mjs";
 import { describeMedia, errorNameOf } from "./client-environment.mjs";
 import { describeRoleForSpeech, focusClause } from "./opening-copy.mjs";
+import { isResumePractice } from "./resume-neutral.mjs";
 
 export function composeOpeningUtterance(introduction, firstQuestion) {
   return [introduction.trim(), firstQuestion.trim()].filter(Boolean).join(" ");
@@ -9,6 +10,8 @@ export function composeOpeningUtterance(introduction, firstQuestion) {
 export function composeContextualOpening(config, firstQuestion) {
   const seniorityLabels = { junior: "junior", "mid-level": "mid-level", senior: "senior", staff: "staff-level" };
   const minutes = Number.parseInt(config.duration, 10) || 5;
+  // Resume practice has no target job: no role, seniority or focus is spoken.
+  if (isResumePractice(config)) return `Hi, I'm Tuk, and I'll be your interviewer today. We have about ${minutes} minutes for a practice interview based on your resume. ${firstQuestion.trim()}`;
   const { phrase, personal } = describeRoleForSpeech(config.role, seniorityLabels[config.seniority?.trim()]);
   // Keep the brand stylized as TUC in the UI, but use title case in speech so Kokoro says it as a name ("Tuk"), not as initials.
   return `Hi, I'm Tuk, and I'll be your interviewer today. We have about ${minutes} minutes ${personal ? "for your " : "for "}${phrase}${focusClause(config.focus)}. ${firstQuestion.trim()}`;

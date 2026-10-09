@@ -14,6 +14,7 @@ export function getInterviewSetupSummary(
     seniority: string;
     focus: string;
     duration: string;
+    interviewSource?: string;
     voice?: string;
     playInterviewerAudio: boolean;
     showQuestionCaptions: boolean;
