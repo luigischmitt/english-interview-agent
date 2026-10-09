@@ -553,6 +553,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           secondFixedQuestion: planned[1]?.prompt ?? null,
           firstFixedType: plannedQuestionType(planned[0]),
           secondFixedType: planned[1] ? plannedQuestionType(planned[1]) : null,
+          firstFixedCoverage: planned[0].coverage ?? null,
+          secondFixedCoverage: planned[1]?.coverage ?? null,
           hasThirdFixedQuestion: planned.length > 2,
           previousCandidate: speculativeCandidateRef.current,
           previousAnswers: input.previousAnswers,
