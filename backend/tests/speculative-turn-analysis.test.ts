@@ -271,7 +271,7 @@ describe("speculative turn analysis", () => {
     const snapshot = "I built a Kafka payment pipeline for customers, designed retries, monitored production alerts, and reduced processing latency by forty percent after launch with three teammates across two services.";
     const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, secondFixedAction: "KEEP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: null });
     const service = new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher);
-    await expect(service.analyze({ ...input, snapshot, secondFixedQuestion: "Tell me about a project you worked on?", secondFixedType: "resume" })).resolves.toMatchObject({ secondFixedAction: "SKIP" });
+    await expect(service.analyze({ ...input, snapshot, secondFixedQuestion: "Tell me about a project you worked on?", secondFixedType: "resume", hasThirdFixedQuestion: true })).resolves.toMatchObject({ secondFixedAction: "SKIP" });
     await expect(service.analyze({ ...input, snapshot, secondFixedQuestion: "What trade-off did you make in the Kafka pipeline?", secondFixedType: "resume" })).resolves.toMatchObject({ secondFixedAction: "KEEP" });
   });
 
@@ -346,5 +346,71 @@ describe("speculative turn analysis", () => {
       await expect(new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 5 }, slow).analyze(input)).resolves.toBeNull();
       expect(String(info.mock.calls.at(-1)?.[0])).toContain("timeout");
     } finally { info.mockRestore(); }
+  });
+});
+
+describe("broad project coverage", () => {
+  const projectQuestion = "Can you walk me through a project you built and the part you were responsible for?";
+  const described = "I built a payments dashboard for the finance team and designed the REST endpoints behind it. I also implemented the chart components and improved the loading time by caching results in Redis.";
+  const keep = { revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null };
+  const run = (extra: Record<string, unknown>, analysis: Record<string, unknown> = keep) => new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response(analysis)).analyze({ ...input, ...extra } as typeof input);
+  const base = { firstFixedQuestion: projectQuestion, firstFixedType: "bank" as const, snapshot: "Thanks for asking.", secondFixedQuestion: "How do you test changes?", secondFixedType: "bank" as const };
+
+  it("skips the planned project question when an earlier answer already described a project", async () => {
+    const result = await run({ ...base, firstFixedCoverage: "broad-project", previousAnswers: [{ question: "Tell me about yourself.", answer: described }] });
+    expect(result).toMatchObject({ fixedAction: "SKIP" });
+    expect(described).toContain(result?.fixedEvidenceAnchor);
+  });
+
+  it("skips when the current answer described the project, by metadata or by wording with a trailing clause", async () => {
+    expect(await run({ ...base, snapshot: described, firstFixedCoverage: "broad-project" })).toMatchObject({ fixedAction: "SKIP" });
+    expect(await run({ ...base, snapshot: described })).toMatchObject({ fixedAction: "SKIP" });
+    for (const question of [
+      "Can you describe a project you worked on from start to finish, including your part and the result?",
+      "Tell me about a project you led and your role?",
+      "Could you walk me through a project you built, and the result?",
+    ]) expect(await run({ ...base, firstFixedQuestion: question, snapshot: described })).toMatchObject({ fixedAction: "SKIP" });
+  });
+
+  it("applies the same rule to the second question only when a third question exists", async () => {
+    const second = { ...base, firstFixedQuestion: "How do you monitor services in production?", secondFixedQuestion: projectQuestion, secondFixedCoverage: "broad-project" as const, snapshot: described };
+    expect(await run({ ...second, hasThirdFixedQuestion: true })).toMatchObject({ secondFixedAction: "SKIP" });
+    expect(await run({ ...second, hasThirdFixedQuestion: false })).toMatchObject({ secondFixedAction: "KEEP" });
+  });
+
+  it("never skips a job question, even if flagged or worded as a broad project question", async () => {
+    expect(await run({ ...base, firstFixedType: "job", firstFixedCoverage: "broad-project", snapshot: described })).toMatchObject({ fixedAction: "KEEP" });
+    expect(await run({ ...base, firstFixedType: "job", snapshot: described, previousAnswers: [{ question: "Q", answer: described }] })).toMatchObject({ fixedAction: "KEEP" });
+  });
+
+  it("does not skip a specific challenge question about the same project", async () => {
+    const result = await run({ ...base, firstFixedQuestion: "What was the hardest challenge in that payments project, and how did you solve it?", snapshot: described, previousAnswers: [{ question: "Q", answer: described }] });
+    expect(result).toMatchObject({ fixedAction: "KEEP" });
+  });
+
+  it("does not skip on a mere project mention without substantive description", async () => {
+    expect(await run({ ...base, firstFixedCoverage: "broad-project", snapshot: "I worked on a payments project last year.", previousAnswers: [{ question: "Q", answer: "I built an app once and it was fun to build with friends at the university." }] })).toMatchObject({ fixedAction: "KEEP" });
+  });
+
+  it("accepts a DEEPEN whose anchor is only in an earlier answer", async () => {
+    const analysis = { ...keep, fixedAction: "DEEPEN", adaptedFixedQuestion: "How did you test the Redis caching you added to the dashboard?", fixedEvidenceAnchor: "caching results in Redis" };
+    const result = await run({ ...base, firstFixedQuestion: "How do you test your changes before sharing them?", firstFixedType: "bank", snapshot: "Yes, that was a nice team.", previousAnswers: [{ question: "Q", answer: described }] }, analysis);
+    expect(result).toMatchObject({ fixedAction: "DEEPEN", fixedEvidenceAnchor: "caching results in Redis" });
+  });
+
+  it("rejects a DEEPEN that changes the planned competency and logs the reason", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const analysis = { ...keep, fixedAction: "DEEPEN", adaptedFixedQuestion: "How did the dashboard design change after the team reviewed it?", fixedEvidenceAnchor: "payments dashboard" };
+      const result = await run({ ...base, firstFixedQuestion: "How do you test your changes before sharing them?", snapshot: described }, analysis);
+      expect(result).toMatchObject({ fixedAction: "KEEP", adaptedFixedQuestion: null });
+      expect(String(info.mock.calls.at(-1)?.[0])).toContain("deepen_competency_changed");
+    } finally { info.mockRestore(); }
+  });
+
+  it("does not reject a DEEPEN that only shares the project name with an asked question", async () => {
+    const analysis = { ...keep, fixedAction: "DEEPEN", adaptedFixedQuestion: "How did you decide which endpoints the payments dashboard needed?", fixedEvidenceAnchor: "payments dashboard" };
+    const result = await run({ ...base, firstFixedQuestion: "What technical decision did you make in a recent project?", snapshot: described, askedQuestions: ["Tell me about the payments dashboard you built?"] }, analysis);
+    expect(result).toMatchObject({ fixedAction: "DEEPEN" });
   });
 });

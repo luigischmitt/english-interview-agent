@@ -214,3 +214,15 @@ test("junior sessions never receive the system design question, and tailored que
   assert.deepEqual(questions.slice(4).map((question) => question.id), bank.slice(4).map((question) => question.id));
   assert.equal(new Set(questions.map((question) => question.prompt)).size, 15);
 });
+
+test("broad project questions carry coverage metadata in every bank and tailored questions never do", () => {
+  for (const [name, bank] of allBanks) {
+    assert.equal(bank.find((question) => question.id === "ownership").coverage, "broad-project", name);
+    assert.equal(bank[0].coverage, undefined, name);
+    for (const question of bank) assert.ok(question.coverage === undefined || question.coverage === "broad-project", `${name}/${question.id}`);
+  }
+  assert.equal(getQuestionBankForRole("Software Engineer", "junior").find((question) => question.id === "project-built").coverage, "broad-project");
+  assert.equal(genericJuniorQuestionBank.find((question) => question.id === "project-built").coverage, "broad-project");
+  const tailored = getFixedInterviewQuestions({ role: "QA Analyst", seniority: "mid-level", jobDirection: qaDirection });
+  assert.ok(tailored.filter((question) => question.id.startsWith("job-")).every((question) => question.coverage === undefined));
+});

@@ -3,12 +3,13 @@ import type { InterviewConfig } from "./types";
 import { serializeNextTurnRequest } from "./next-turn-payload.mjs";
 import { fallbackTurnDecision, parseTurnDecisionResponse, repeatTurnDecision, type ClarificationTurnDecision } from "./orchestration-policy.mjs";
 import type { ClarificationKind } from "./clarification-request.mjs";
+import { condensePreviousAnswer } from "./previous-answers.mjs";
 
 export type PreviousAnswer = { question: string; answer: string };
 
 /** Up to the last eight question/answer pairs that precede the pair currently being answered. */
 export function buildPreviousAnswers(pairs: PreviousAnswer[]): PreviousAnswer[] {
-  return pairs.slice(-9, -1).map((pair) => ({ question: pair.question.slice(0, 500), answer: pair.answer.slice(-300) }));
+  return pairs.slice(-9, -1).map((pair) => ({ question: pair.question.slice(0, 500), answer: condensePreviousAnswer(pair.answer) }));
 }
 
 export type TurnDecision = ClarificationTurnDecision | { decision: "FOLLOW_UP"; followUpQuestion: string; nextQuestion: null; acknowledgement: string | null } | { decision: "NEXT"; followUpQuestion: null; nextQuestion: string | null; acknowledgement: string | null };

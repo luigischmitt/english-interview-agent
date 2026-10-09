@@ -70,3 +70,13 @@ test("the response parser drops a repeated recent bridge but keeps the question"
   assert.equal(result?.nextQuestion, "How do you monitor a service?");
   assert.equal(result?.acknowledgement, null);
 });
+
+test("earlier answers keep their opening (where projects are described) and their ending within 500 characters", async () => {
+  const { condensePreviousAnswer } = await import("../src/lib/interview/previous-answers.mjs");
+  const answer = `I built a payments reconciliation service in Node.js and Postgres. ${"filler words ".repeat(80)}In the end we cut mismatches by half.`;
+  const condensed = condensePreviousAnswer(answer);
+  assert.ok(condensed.length <= 500 && condensed.includes(" … "));
+  assert.ok(condensed.startsWith("I built a payments reconciliation service"));
+  assert.ok(condensed.endsWith("we cut mismatches by half."));
+  assert.equal(condensePreviousAnswer("Short answer."), "Short answer.");
+});
