@@ -24,6 +24,7 @@ export type InterviewQuestion = {
   id: string;
   prompt: string;
   cue: string;
+  coverage?: "broad-project";
 };
 
 export type InterviewAnswers = Record<string, string>;

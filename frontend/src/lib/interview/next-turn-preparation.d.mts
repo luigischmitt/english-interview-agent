@@ -13,8 +13,11 @@ export type NextTurnPreparationRegistry<T> = {
     transcript: string;
     inputKey?: string;
     preserveReady?: boolean;
+    preservePending?: boolean;
+    maxPending?: number;
     run: (signal: AbortSignal, onCleanup: (cleanup: () => void) => void) => Promise<T | null>;
   }): NextTurnPreparationEntry<T> | null;
+  pendingCount(): number;
   abort(): void;
   take(input: { transcript: string; inputKey?: string }): NextTurnPreparationEntry<T> | null;
   takeReady(input: { transcript: string; inputKey?: string }): NextTurnPreparationEntry<T> | null;

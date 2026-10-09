@@ -2,7 +2,9 @@
 // Order: introduction, role-specific and behavioral questions (most representative first), closing.
 // Every prompt is a single spoken-friendly question (one "?", no line breaks, up to 220 characters).
 
-const q = (id, prompt, cue) => ({ id, prompt, cue });
+// `coverage: "broad-project"` marks a broad "describe a project/experience" question: a project already described in
+// an earlier answer makes it redundant, so the interviewer may skip it.
+const q = (id, prompt, cue, coverage) => (coverage ? { id, prompt, cue, coverage } : { id, prompt, cue });
 
 const introduction = q(
   "introduction",
@@ -18,6 +20,7 @@ const ownership = q(
   "ownership",
   "Can you describe a project you owned from start to finish, including your part and the result?",
   "Set the context, explain your contribution, and finish with the outcome.",
+  "broad-project",
 );
 const conflict = q(
   "conflict",
@@ -223,7 +226,7 @@ const technicalByRole = {
 // Junior technical questions: fundamentals and own experience. No large-scale design, leadership, or org-level strategy.
 const juniorTechnicalByRole = {
   "Software Engineer": [
-    q("project-built", "Can you walk me through a project you built and the part you were responsible for?", "Describe the goal, your part, and the tools you used."),
+    q("project-built", "Can you walk me through a project you built and the part you were responsible for?", "Describe the goal, your part, and the tools you used.", "broad-project"),
     q("debugging-bug", "Tell me about a bug you fixed. How did you find the cause?", "Explain your steps from the symptom to the fix."),
     q("testing-code", "How do you test your code before you ask someone to review it?", "Mention the kinds of tests you write and one example."),
     q("git-workflow", "How do you use Git and pull requests when you work with other developers?", "Describe branches, commits, and how you respond to review comments."),
@@ -233,7 +236,7 @@ const juniorTechnicalByRole = {
     q("simple-trade-off", "Tell me about a simple technical decision you made, like choosing between two libraries. Why did you choose one?", "Name the options and the reason behind your choice."),
   ],
   "Frontend Engineer": [
-    q("ui-project", "Can you describe a web interface you built and the part you were responsible for?", "Describe the goal, your part, and the technologies you used."),
+    q("ui-project", "Can you describe a web interface you built and the part you were responsible for?", "Describe the goal, your part, and the technologies you used.", "broad-project"),
     q("html-css-basics", "How do you build a layout that works well on both a phone and a desktop screen?", "Mention flexible layouts, breakpoints, and testing on devices."),
     q("browser-debugging", "Tell me about a bug you fixed in the browser. How did you find it?", "Mention the browser tools you used and the fix."),
     q("javascript-concept", "Can you explain a JavaScript or React concept you use often, like state or props, in simple words?", "Pick one concept and explain it with a short example."),
@@ -263,7 +266,7 @@ const juniorTechnicalByRole = {
     q("asking-help", "When do you ask a teammate for help, and how do you ask?", "Show that you try first and then ask a clear question."),
   ],
   "Mobile Engineer": [
-    q("mobile-project", "Can you describe a mobile app you built and the part you were responsible for?", "Describe the goal, your part, and the tools you used."),
+    q("mobile-project", "Can you describe a mobile app you built and the part you were responsible for?", "Describe the goal, your part, and the tools you used.", "broad-project"),
     q("mobile-bug", "Tell me about a bug or crash you fixed in a mobile app. How did you find the cause?", "Mention logs, the debugger, and the final fix."),
     q("screen-layout", "How do you build a screen that looks good on different phone sizes?", "Mention flexible layouts and testing on devices."),
     q("app-lifecycle", "Can you explain in simple words what happens when a user opens, leaves, and returns to your app?", "Describe the main states and what you save."),
@@ -293,7 +296,7 @@ const juniorTechnicalByRole = {
     q("learning-tool", "Tell me about a time you had to learn a new monitoring or infrastructure tool. How did you do it?", "Explain how you learned and how you applied it."),
   ],
   "Cloud Engineer": [
-    q("cloud-project", "Can you describe something you built or deployed in the cloud and your part in it?", "Describe the goal, the services, and your contribution."),
+    q("cloud-project", "Can you describe something you built or deployed in the cloud and your part in it?", "Describe the goal, the services, and your contribution.", "broad-project"),
     q("cloud-basics", "How would you explain the difference between a virtual machine and a managed service?", "Use a simple example and one trade-off."),
     q("iam-basics", "What does least privilege mean, and how did you apply it in a cloud account?", "Explain it simply with a short example."),
     q("cloud-troubleshooting", "A cloud application stopped working after a change. What do you check first?", "Walk through simple checks like logs, settings, and permissions."),
@@ -303,7 +306,7 @@ const juniorTechnicalByRole = {
     q("learning-tool", "Tell me about a time you had to learn a new cloud service quickly. How did you do it?", "Explain how you learned and how you applied it."),
   ],
   "Data Engineer": [
-    q("pipeline-built", "Can you describe a data pipeline or script you built and what it did?", "Describe the source, the steps, and the result."),
+    q("pipeline-built", "Can you describe a data pipeline or script you built and what it did?", "Describe the source, the steps, and the result.", "broad-project"),
     q("sql-explain", "Can you explain a SQL query you wrote that joined two tables?", "Describe the goal, the join, and how you checked the result."),
     q("data-cleaning", "How do you handle missing or duplicate values when you prepare data?", "Give a simple approach and a short example."),
     q("data-quality-checks", "How do you check that the data your job loaded is correct?", "Mention simple checks like counts and null values."),
@@ -313,7 +316,7 @@ const juniorTechnicalByRole = {
     q("learning-tool", "Tell me about a time you had to learn a new data tool. How did you do it?", "Explain how you learned and how you applied it."),
   ],
   "Data Scientist": [
-    q("analysis-project", "Can you describe a data science project you worked on and your part in it?", "Describe the question, the data, your method, and the result."),
+    q("analysis-project", "Can you describe a data science project you worked on and your part in it?", "Describe the question, the data, your method, and the result.", "broad-project"),
     q("data-cleaning", "How do you clean and prepare data before you train a model?", "Give a simple approach and a short example."),
     q("overfitting-basics", "What is overfitting, and how did you check for it in a project?", "Explain it simply, then give one practical method."),
     q("metric-choice", "How did you choose a metric to evaluate a model in one of your projects?", "Link the metric to the problem you were solving."),
@@ -333,7 +336,7 @@ const juniorTechnicalByRole = {
     q("learning-tool", "Tell me about a time you had to learn a new tool, like Power BI or Tableau. How did you do it?", "Explain how you learned and how you applied it."),
   ],
   "Machine Learning Engineer": [
-    q("ml-project", "Can you describe a machine learning project you built and your part in it?", "Describe the problem, the data, your model, and the result."),
+    q("ml-project", "Can you describe a machine learning project you built and your part in it?", "Describe the problem, the data, your model, and the result.", "broad-project"),
     q("train-test-split", "Why do we split data into training and test sets?", "Explain it simply and mention what could go wrong."),
     q("data-preparation", "How do you prepare data before you train a model?", "Give a simple approach and a short example."),
     q("model-metric", "How did you decide whether your model was good enough in a project?", "Link the metric to the problem you were solving."),
@@ -343,7 +346,7 @@ const juniorTechnicalByRole = {
     q("learning-tool", "Tell me about a time you had to learn a new ML library or technique. How did you do it?", "Explain how you learned and how you applied it."),
   ],
   "AI Engineer": [
-    q("ai-project", "Can you describe an AI feature or project you built and your part in it?", "Describe the goal, the model you used, and the result."),
+    q("ai-project", "Can you describe an AI feature or project you built and your part in it?", "Describe the goal, the model you used, and the result.", "broad-project"),
     q("prompt-basics", "How do you write a prompt that gives a clear and useful answer from a language model?", "Mention clear instructions, examples, and testing."),
     q("llm-wrong-answers", "A language model gives a wrong answer in your app. What do you do?", "Walk through simple checks and improvements."),
     q("rag-basics", "Can you explain in simple words what retrieval-augmented generation is?", "Use a short example of searching documents first."),
@@ -353,7 +356,7 @@ const juniorTechnicalByRole = {
     q("learning-tool", "Tell me about a time you had to learn a new AI tool or library quickly. How did you do it?", "Explain how you learned and how you applied it."),
   ],
   "AI Deployment Engineer": [
-    q("deploy-project", "Can you describe something you set up or deployed for a user or a customer and your part in it?", "Describe the goal, the steps, and the result."),
+    q("deploy-project", "Can you describe something you set up or deployed for a user or a customer and your part in it?", "Describe the goal, the steps, and the result.", "broad-project"),
     q("customer-question", "A customer asks for something you do not fully understand. What do you do?", "Show how you ask clear questions and confirm."),
     q("setup-troubleshooting", "A setup does not work on a customer's machine. How do you find the problem?", "Walk through simple checks, from logs to settings."),
     q("explaining-simply", "How do you explain a technical concept to someone who is not technical?", "Use plain words and a short example."),
@@ -383,7 +386,7 @@ const juniorTechnicalByRole = {
     q("asking-help", "When do you ask a teammate for help, and how do you ask?", "Show that you try first and then ask a clear question."),
   ],
   "Engineering Manager": [
-    q("team-project", "Can you describe a team project you worked on and your part in it?", "Describe the goal, your part, and how the team worked together."),
+    q("team-project", "Can you describe a team project you worked on and your part in it?", "Describe the goal, your part, and how the team worked together.", "broad-project"),
     q("planning-tasks", "How do you plan and organize your own tasks during a week?", "Mention priorities, estimates, and updating others."),
     q("status-updates", "How do you give a clear status update to your team when a task is late?", "Show how you share the problem early and propose a next step."),
     q("helping-teammate", "Tell me about a time you helped a teammate finish something. What did you do?", "Describe the situation, your help, and the result."),
@@ -395,7 +398,7 @@ const juniorTechnicalByRole = {
 };
 
 const genericJuniorTechnical = [
-  q("project-built", "Can you walk me through a project you built and the part you were responsible for?", "Describe the goal, your part, and the tools you used."),
+  q("project-built", "Can you walk me through a project you built and the part you were responsible for?", "Describe the goal, your part, and the tools you used.", "broad-project"),
   q("debugging-bug", "Tell me about a problem you fixed. How did you find the cause?", "Explain your steps from the symptom to the fix."),
   q("simple-trade-off", "Tell me about a simple decision you made, like choosing between two tools. Why did you choose one?", "Name the options and the reason behind your choice."),
   q("quality-check", "How do you check your work before you share it with others?", "Give two or three concrete habits and one example."),
@@ -410,6 +413,7 @@ const juniorOwnership = q(
   "ownership",
   "Can you describe a project you worked on from start to finish, including your part and the result?",
   "Set the context, explain your contribution, and finish with the outcome.",
+  "broad-project",
 );
 const juniorImpact = q(
   "impact",

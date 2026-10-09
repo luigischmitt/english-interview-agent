@@ -26,6 +26,12 @@ import { createTranscriptionService } from "./transcription/create-transcription
 import { createPronunciationAssessmentService } from "./transcription/create-pronunciation-assessment-service.js";
 import type { TranscriptionService } from "./transcription/types.js";
 
+/** Speculative analysis deadline; the call is off the critical path, so it gets 7 s unless SPECULATIVE_ANALYSIS_TIMEOUT_MS overrides it. */
+function speculativeAnalysisTimeoutMs(): number {
+  const value = Number(process.env.SPECULATIVE_ANALYSIS_TIMEOUT_MS);
+  return Number.isFinite(value) && value >= 1_000 && value <= 30_000 ? Math.round(value) : 7_000;
+}
+
 /** Resolved once at import so a missing SUPABASE_URL fails startup; null when BACKEND_AUTH_REQUIRED=false. */
 export const defaultAccessTokenVerifier = resolveAccessTokenVerifier();
 export const defaultTranscriptionConfig = loadTranscriptionConfig();
@@ -63,7 +69,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
   const resolvedJobDirectionService = jobDirectionService === undefined ? createJobDirectionService(resolvedThinkingConfig) : jobDirectionService;
   const resolvedResumeDirectionService = resumeDirectionService === undefined ? createResumeDirectionService({ ...resolvedThinkingConfig, timeoutMs: resolvedThinkingConfig.resumeDirectionTimeoutMs ?? resolvedThinkingConfig.timeoutMs }) : resumeDirectionService;
   const resolvedJobDirectionUserLimit = jobDirectionUserLimit ?? new JobDirectionUserLimit();
-  const speculativeService = resolvedThinkingConfig.openRouterApiKey ? new SpeculativeTurnAnalysisService({ apiKey: resolvedThinkingConfig.openRouterApiKey, model: resolvedThinkingConfig.model, timeoutMs: 5_000 }) : null;
+  const speculativeService = resolvedThinkingConfig.openRouterApiKey ? new SpeculativeTurnAnalysisService({ apiKey: resolvedThinkingConfig.openRouterApiKey, model: resolvedThinkingConfig.model, timeoutMs: speculativeAnalysisTimeoutMs() }) : null;
   const resolvedClosingReactionService = closingReactionService === undefined ? (resolvedThinkingConfig.openRouterApiKey ? createClosingReactionService(resolvedThinkingConfig) : null) : closingReactionService;
   const app = express();
 
