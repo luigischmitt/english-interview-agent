@@ -116,6 +116,11 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
   /** Why the session gave up (content-free); null while it is healthy. */
   get failureDetail(): SessionFailureDetail | null { return this.detail; }
   get failureReason(): StreamFailureReason | null { return this.failedReason; }
+  get hasGap(): boolean { return this.alive && this.segments.some((segment) => segment.state === "failed"); }
+
+  failOnGap(): void {
+    if (this.hasGap && this.gapDetail) this.markFailed("segment_failed", this.gapDetail);
+  }
   get turnCount(): number { return this.turnEnds; }
   get turnActive(): boolean { return this.activeTurn; }
   private get alive(): boolean { return !this.closed && !this.failed; }
@@ -236,7 +241,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       if (outcome !== "done") this.markFailed("segment_failed", "flush_timeout");
     }
     // The final transcript never has a gap: report the tolerated failure so the caller transcribes the full audio.
-    if (this.alive && this.gapDetail && this.segments.some((segment) => segment.state === "failed")) this.markFailed("segment_failed", this.gapDetail);
+    this.failOnGap();
     const complete = this.alive && this.segments.every((segment) => segment.state === "done" || segment.state === "skipped");
     const text = complete ? this.joined() : "";
     this.close();

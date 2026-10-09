@@ -506,7 +506,8 @@ export function attachTranscriptionWebSocket(
 
     // Silence path only: ambient_activity is ambiguous mid-band noise that only strong speech can cancel, so it is not speculated.
     const startSpeculation = (id: string, session: StreamingSession) => {
-      if (speculation || finalRequested || finishing || (streamSession && !streamSession.failed)) return;
+      // A session with a gap ends on full-audio Whisper anyway, so the speculative full-audio call is worth starting.
+      if (speculation || finalRequested || finishing || (streamSession && !streamSession.failed && !streamSession.hasGap)) return;
       if (session.vad.finalizationReason !== "silence" || session.bytes === 0 || !session.vad.hasSpeech
         || session.vad.speechDurationMs < session.config.minimumSpeechMs) return;
       const reservation = finalQueue.reserve();
@@ -845,6 +846,8 @@ export function attachTranscriptionWebSocket(
         }
       };
 
+      // A gap can never be part of the final answer: skip the incremental flush and reuse the full-audio path (and its speculation).
+      if (streamSession?.hasGap) streamSession.failOnGap?.();
       if (streamSession && !streamSession.failed) {
         finalizeIncremental(id, session, reason, triggeredBy === "semantic" ? "semantic_complete" : triggeredBy === "turn_end" ? "turn_end_grace" : "vad_silence", runWhisperFinalization);
         return;

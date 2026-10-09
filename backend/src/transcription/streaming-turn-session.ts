@@ -16,6 +16,10 @@ export interface StreamingTurnSession {
   readonly failureReason: StreamFailureReason | null;
   /** Content-free reason the session was abandoned (for the fallback log); null while healthy. */
   readonly failureDetail?: string | null;
+  /** A segment failed but the session continues: committed text has a gap, so the final transcript needs the full audio. */
+  readonly hasGap?: boolean;
+  /** Abandons a session with a gap (reported like any segment failure) so the answer is finalized from the full audio. */
+  failOnGap?(): void;
   readonly turnCount: number;
   readonly turnActive: boolean;
   setTurnObserver(observer: ((kind: "start" | "end", transcript: string) => void) | null): void;

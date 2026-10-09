@@ -324,6 +324,7 @@ describe("IncrementalWhisperSession", () => {
     expect(committed).toEqual(["After the gap.", "After the gap. Still going."]);
     expect(session.turnActive).toBe(true);
     expect(session.diagnostics()).toMatchObject({ segmentsFailed: 1, segmentsTranscribed: 2 });
+    expect(session.hasGap).toBe(true);
     // The gap never reaches the final answer: flush resolves empty so the whole audio is transcribed.
     const flushing = session.flush(1_000);
     if (calls.length > 4) calls[4]!.resolve("Tail.");
