@@ -54,6 +54,8 @@ export type IncrementalWhisperOptions = {
 /** Phrases Whisper tends to invent on near-silence; dropped only when the segment had little speech. */
 const hallucinations = new Set(["you", "thank you", "thanks", "thanks for watching", "thank you for watching", "bye", "bye bye", "the end"]);
 const hallucinationSpeechMs = 1_200;
+/** Consecutive background segment failures tolerated (each leaves a gap) before the whole session is abandoned. */
+const maxConsecutiveSegmentFailures = 3;
 
 /** Content-free reason the incremental session was abandoned (the caller then transcribes the full audio). */
 export type SessionFailureDetail = "segment_error" | "segment_timeout" | "flush_timeout";
@@ -96,9 +98,12 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
   private readonly controller = new AbortController();
   private readonly waiters = new Set<() => void>();
   private turnObserver: ((kind: "start" | "end", transcript: string) => void) | null = null;
-  private stats = { segmentsTranscribed: 0, segmentsSkipped: 0, tailMs: 0, maxSegmentLatencyMs: 0, segmentHedges: 0, segmentHedgeWins: 0, segmentRetries: 0, softCuts: 0, tailStartedAtSilence: 0 };
+  private stats = { segmentsTranscribed: 0, segmentsSkipped: 0, tailMs: 0, maxSegmentLatencyMs: 0, segmentHedges: 0, segmentHedgeWins: 0, segmentRetries: 0, segmentsFailed: 0, softCuts: 0, tailStartedAtSilence: 0 };
   private quietFrames = 0;
   private softCutPending = false;
+  private consecutiveFailures = 0;
+  // Reason of the first tolerated segment failure: reported as the session failure when the answer ends with that gap.
+  private gapDetail: SessionFailureDetail | null = null;
   private detail: SessionFailureDetail | null = null;
 
   constructor(private readonly options: IncrementalWhisperOptions) {}
@@ -230,6 +235,8 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
       clearTimeout(timer);
       if (outcome !== "done") this.markFailed("segment_failed", "flush_timeout");
     }
+    // The final transcript never has a gap: report the tolerated failure so the caller transcribes the full audio.
+    if (this.alive && this.gapDetail && this.segments.some((segment) => segment.state === "failed")) this.markFailed("segment_failed", this.gapDetail);
     const complete = this.alive && this.segments.every((segment) => segment.state === "done" || segment.state === "skipped");
     const text = complete ? this.joined() : "";
     this.close();
@@ -384,6 +391,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
         }
       }
       if (this.closed) return;
+      this.consecutiveFailures = 0;
       this.stats.maxSegmentLatencyMs = Math.max(this.stats.maxSegmentLatencyMs, this.now - startedAt);
       const guard = normalizeForGuard(text);
       if (!guard || (speechMs < hallucinationSpeechMs && hallucinations.has(guard))) {
@@ -397,7 +405,18 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
     } catch (error) {
       if (this.closed) return;
       segment.state = "failed";
-      this.markFailed("segment_failed", error instanceof TranscriptionUnavailableError && (error.providerStatus === "timeout" || error.providerStatus === "aborted") ? "segment_timeout" : "segment_error");
+      this.stats.segmentsFailed += 1;
+      this.consecutiveFailures += 1;
+      // A failed segment only leaves a gap in the provisional text (the final transcript falls back to the whole audio, see
+      // flush); a failed pause cut still ends its turn, judged on the committed text. Too many failures in a row abandon the session.
+      segment.text = "";
+      const detail = error instanceof TranscriptionUnavailableError && (error.providerStatus === "timeout" || error.providerStatus === "aborted") ? "segment_timeout" : "segment_error";
+      this.gapDetail ??= detail;
+      if (this.consecutiveFailures >= maxConsecutiveSegmentFailures) {
+        this.markFailed("segment_failed", detail);
+        return;
+      }
+      this.drain();
       return;
     } finally {
       wav.fill(0);
@@ -410,7 +429,7 @@ export class IncrementalWhisperSession implements StreamingTurnSession {
     if (this.closed || this.failed) return;
     while (this.committed < this.segments.length) {
       const segment = this.segments[this.committed]!;
-      if (segment.state !== "done" && segment.state !== "skipped") return;
+      if (segment.state !== "done" && segment.state !== "skipped" && segment.state !== "failed") return;
       this.committed += 1;
       if (segment.state === "done") {
         this.finals.push(segment.text);

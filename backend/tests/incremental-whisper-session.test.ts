@@ -278,7 +278,7 @@ describe("IncrementalWhisperSession", () => {
     expect(session.diagnostics()).toMatchObject({ segmentRetries: 1, segmentsTranscribed: 1 });
   });
 
-  it("fails after the retry also fails so the caller can fall back to the full audio, and flush resolves empty", async () => {
+  it("tolerates a pause cut whose retry also fails (the turn still ends) and reports the failure at flush, which resolves empty", async () => {
     const { session, calls, events } = build();
     session.markSpeech();
     feed(session, 10, speech);
@@ -287,12 +287,75 @@ describe("IncrementalWhisperSession", () => {
     await tick();
     calls[1]!.reject(new TranscriptionUnavailableError("boom", { providerStatus: "5xx", attempts: 2 }));
     await ending;
-    expect(session.failed).toBe(true);
+    expect(session.failed).toBe(false);
+    expect(events.failures).toEqual([]);
+    expect(events.turnEnds).toEqual([""]);
+    await expect(session.flush(1_000)).resolves.toBe("");
     expect(session.failureReason).toBe("segment_failed");
     expect(session.failureDetail).toBe("segment_error");
     expect(events.failures).toEqual(["segment_failed"]);
-    expect(events.turnEnds).toEqual([]);
-    await expect(session.flush(1_000)).resolves.toBe("");
+  });
+
+  const boom = () => new TranscriptionUnavailableError("boom", { providerStatus: "timeout", attempts: 2 });
+  async function failSegment(call: (index: number) => Call, index: number) {
+    call(index).reject(boom());
+    await tick();
+  }
+
+  it("tolerates one failed background segment: later segments keep committing and flush still falls back to full audio", async () => {
+    const committed: string[] = [];
+    const { session, calls, events } = build({ maxSegmentMs: 500, onSegmentCommitted: (transcript) => committed.push(transcript) });
+    session.markSpeech();
+    feed(session, 6, speech); // segment 1
+    feed(session, 6, speech); // segment 2
+    expect(calls).toHaveLength(2);
+    await failSegment((i) => calls[i]!, 0); // retry of segment 1 is calls[2]
+    expect(calls).toHaveLength(3);
+    calls[2]!.reject(boom());
+    await tick();
+    expect(session.failed).toBe(false);
+    expect(events.failures).toEqual([]);
+    calls[1]!.resolve("After the gap.");
+    await tick();
+    expect(session.committedText()).toBe("After the gap.");
+    feed(session, 6, speech); // segment 3
+    calls[3]!.resolve("Still going.");
+    await tick();
+    expect(committed).toEqual(["After the gap.", "After the gap. Still going."]);
+    expect(session.turnActive).toBe(true);
+    expect(session.diagnostics()).toMatchObject({ segmentsFailed: 1, segmentsTranscribed: 2 });
+    // The gap never reaches the final answer: flush resolves empty so the whole audio is transcribed.
+    const flushing = session.flush(1_000);
+    if (calls.length > 4) calls[4]!.resolve("Tail.");
+    await expect(flushing).resolves.toBe("");
+    expect(session.failureDetail).toBe("segment_timeout");
+    expect(events.failures).toEqual(["segment_failed"]);
+  });
+
+  it("fails after 3 consecutive failed background segments, and a success resets the count", async () => {
+    const { session, calls, events } = build({ maxSegmentMs: 500 });
+    session.markSpeech();
+    const failNext = async (index: number) => {
+      feed(session, 6, speech);
+      calls[index]!.reject(boom());
+      await tick();
+      calls[index + 1]!.reject(boom());
+      await tick();
+    };
+    await failNext(0);
+    await failNext(2);
+    expect(session.failed).toBe(false);
+    feed(session, 6, speech);
+    calls[4]!.resolve("ok");
+    await tick();
+    expect(session.committedText()).toBe("ok");
+    await failNext(5);
+    await failNext(7);
+    expect(session.failed).toBe(false);
+    await failNext(9);
+    expect(session.failed).toBe(true);
+    expect(events.failures).toEqual(["segment_failed"]);
+    expect(session.diagnostics()).toMatchObject({ segmentsFailed: 5 });
   });
 
   it("does not retry a request the provider rejected", async () => {
@@ -303,6 +366,7 @@ describe("IncrementalWhisperSession", () => {
     calls[0]!.reject(new TranscriptionUnavailableError("bad", { providerStatus: "rejected", attempts: 1 }));
     await ending;
     expect(calls).toHaveLength(1);
+    await session.flush(1_000);
     expect(session.failed).toBe(true);
   });
 
@@ -398,6 +462,7 @@ describe("IncrementalWhisperSession", () => {
     await ending;
     expect(calls[0]!.wav.every((byte) => byte === 0)).toBe(true);
     expect(calls[1]!.wav.every((byte) => byte === 0)).toBe(true);
+    await session.flush(1_000);
     expect(session.failureReason).toBe("segment_failed");
     expect(session.failureDetail).toBe("segment_timeout");
   });
