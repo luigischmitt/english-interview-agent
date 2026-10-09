@@ -422,6 +422,60 @@ describe("semantic end of answer", () => {
     expect(logs()).not.toContain("a lock");
   });
 
+  it("uses one assess() call per pause and sends the status before the semantic complete", async () => {
+    const isComplete = vi.fn(async () => true);
+    const assess = vi.fn(async () => ({ complete: true, candidateCompatibility: "OPEN" as const }));
+    const { connect } = await startServer(createWhisper([answerText]).service, options({ isComplete, assess }));
+    const { socket, messages, waitFor } = await connect({ question });
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 1, question: "Why did the lock help?", anchor: "a lock" }));
+    await speak(socket, 800, 0.05);
+    await speak(socket, 800, 0.001);
+    await waitFor("complete");
+    expect(assess).toHaveBeenCalledTimes(1);
+    expect(isComplete).not.toHaveBeenCalled();
+    const types = messages.map((message) => message.type);
+    expect(types).toContain("follow-up-candidate-status");
+    expect(types.indexOf("follow-up-candidate-status")).toBeLessThan(types.indexOf("finalizing"));
+    expect(types.indexOf("follow-up-candidate-status")).toBeLessThan(types.indexOf("complete"));
+    expect(messages.find((message) => message.type === "follow-up-candidate-status")).toMatchObject({ revision: 1, speechEpoch: 0, status: "OPEN" });
+    expect(logs()).toContain('"answerEndReason":"semantic_complete"');
+  }, 12_000);
+
+  it("still delivers the final epoch's status when the grace finalizes while the compatibility check is in flight", async () => {
+    const signals: AbortSignal[] = [];
+    const service: AnswerCompletionService = {
+      isComplete: async () => false,
+      assess: ({ signal }) => { signals.push(signal!); return delay(900).then(() => ({ complete: false, candidateCompatibility: "OPEN" as const })); },
+    };
+    const { connect } = await startServer(createWhisper([answerText]).service, options(service, { answerGraceMs: 400, incompleteGraceMs: 400, prepareAfterMs: 0 }));
+    const { socket, messages, waitFor } = await connect({ question });
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 1, question: "Why did the lock help?", anchor: "a lock" }));
+    await speak(socket, 800, 0.05);
+    await speak(socket, 700, 0.001);
+    await waitFor("complete");
+    expect(messages.some((message) => message.type === "follow-up-candidate-status")).toBe(false);
+    await expect(waitFor("follow-up-candidate-status")).resolves.toMatchObject({ revision: 1, speechEpoch: 0, status: "OPEN" });
+    expect(signals[0]!.aborted).toBe(false);
+  }, 12_000);
+
+  it("discards a compatibility result from an older speech epoch after speech resumes", async () => {
+    let calls = 0;
+    const service: AnswerCompletionService = {
+      isComplete: async () => false,
+      assess: () => { calls += 1; return calls === 1 ? delay(900).then(() => ({ complete: false, candidateCompatibility: "COVERED" as const })) : Promise.resolve({ complete: false, candidateCompatibility: "OPEN" as const }); },
+    };
+    const { connect } = await startServer(createWhisper([answerText, "More."]).service, options(service, { answerGraceMs: 4_000, incompleteGraceMs: 4_000, prepareAfterMs: 0 }));
+    const { socket, messages } = await connect({ question });
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 1, question: "Why did the lock help?", anchor: "a lock" }));
+    await speak(socket, 800, 0.05);
+    await speak(socket, 600, 0.001);
+    await speak(socket, 500, 0.05);
+    await speak(socket, 800, 0.001);
+    await delay(1_200);
+    const statuses = messages.filter((message) => message.type === "follow-up-candidate-status");
+    expect(statuses.map(({ speechEpoch, status }) => [speechEpoch, status])).toEqual([[1, "OPEN"]]);
+  }, 12_000);
+
   it("assesses a new turn ID even when its revision matches the cleared candidate", async () => {
     const assessments: string[] = [];
     const service: AnswerCompletionService = {
@@ -472,7 +526,7 @@ describe("semantic end of answer", () => {
     await speak(socket, 700, 0.001);
     await waitFor("complete");
     expect(assessments).toHaveLength(3); // two checks in epoch 0, then the current candidate in epoch 1
-    expect(completionChecks).toBe(1); // the completion budget remains available after candidate checks
+    expect(completionChecks).toBe(0); // epoch 0's single semantic check carried the candidate in one assess() call
     expect(messages.filter((message) => message.type === "follow-up-candidate-status").map(({ revision, speechEpoch }) => [revision, speechEpoch])).toEqual([[1, 0], [2, 0], [3, 1]]);
     expect(logs()).not.toContain("Why did the lock help");
     expect(logs()).not.toContain("a lock");
