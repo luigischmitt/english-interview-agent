@@ -147,8 +147,25 @@ export function composeAcknowledgedQuestion(acknowledgement: string | null | und
 export const ACKNOWLEDGEMENT_PHRASES = ["Okay.", "Got it.", "Alright.", "Mm-hm, okay.", "Thanks."];
 export const ACKNOWLEDGEMENT_MIN_WORDS = 5;
 
-export function composeInterviewClosing(): string {
-  return "Thanks for your time today. That brings us to the end of the interview. I’ll prepare your feedback now.";
+/** Mirrors the client's closing lines (frontend speech-playback.mjs), so every variant is cached ahead of the interview. */
+export const INTERVIEW_CLOSINGS: readonly string[] = [
+  "That’s all the time we have today. Thanks for your answers. I’ll prepare your feedback now.",
+  "We’re out of time, so let’s stop here. Thank you for talking with me. I’ll prepare your feedback now.",
+  "Our time is up for today. Thanks for your time and your answers. I’ll get your feedback ready now.",
+  "That’s the end of our time today. I appreciate your answers. Your feedback will be ready in a moment.",
+  "We’ve reached the end of our time. Thanks for the conversation. I’ll prepare your feedback now.",
+];
+
+/** Mirrors the client's closing lines for an interview that ends before the time is up (finished early, no more questions). */
+export const INTERVIEW_ENDED_CLOSINGS: readonly string[] = [
+  "That brings us to the end of the interview. Thanks for your answers. I’ll prepare your feedback now.",
+  "That’s everything I wanted to ask today. Thank you for talking with me. I’ll get your feedback ready now.",
+  "Let’s wrap up here. I appreciate your answers. Your feedback will be ready in a moment.",
+  "That’s the end of the interview. Thanks for the conversation. I’ll prepare your feedback now.",
+];
+
+export function composeInterviewClosing(reaction: string | null = null, closing: string = INTERVIEW_CLOSINGS[0]): string {
+  return [reaction?.trim(), closing.trim()].filter(Boolean).join(" ");
 }
 
 export function isAcknowledgeableAnswer(transcript: string): boolean {

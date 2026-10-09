@@ -162,6 +162,7 @@ describe("authenticated HTTP routes", () => {
     ["post", "/api/v1/thinking/job-direction"],
     ["post", "/api/v1/thinking/resume-direction"],
     ["post", "/api/v1/thinking/next-turn"],
+    ["post", "/api/v1/thinking/closing-reaction"],
     ["post", "/api/v1/thinking/report"],
     ["post", "/api/v1/thinking/report/turn"],
     ["post", "/api/v1/thinking/report/consolidate"],

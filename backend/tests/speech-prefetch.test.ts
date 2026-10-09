@@ -2,7 +2,7 @@ import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { loadSpeechConfig, type SpeechConfig } from "../src/speech/config.js";
-import { composeAcknowledgedQuestion, composeInterviewClosing, groupInterviewerSentences, interviewerChunkTexts, isAcknowledgeableAnswer, splitInterviewerSpeech, stripLeadingAcknowledgement } from "../src/speech/interviewer-chunking.js";
+import { composeAcknowledgedQuestion, composeInterviewClosing, groupInterviewerSentences, INTERVIEW_CLOSINGS, INTERVIEW_ENDED_CLOSINGS, interviewerChunkTexts, isAcknowledgeableAnswer, splitInterviewerSpeech, stripLeadingAcknowledgement } from "../src/speech/interviewer-chunking.js";
 import { InterviewerSpeechPrefetcher, staticSpeechTexts } from "../src/speech/interviewer-prefetcher.js";
 import { SpeechCache, speechCacheKey } from "../src/speech/speech-cache.js";
 import { normalizeTextForSpeech } from "../src/speech/text-normalization.js";
@@ -196,6 +196,9 @@ describe("server chunking is identical to the client's", () => {
     for (const answer of ["yes", "I don't know", "I used retries with backoff for the gateway."]) {
       expect(isAcknowledgeableAnswer(answer)).toBe(clientAck.isAcknowledgeableAnswer(answer));
     }
+    expect([...INTERVIEW_CLOSINGS]).toEqual([...client.INTERVIEW_CLOSINGS]);
+    expect([...INTERVIEW_ENDED_CLOSINGS]).toEqual([...client.INTERVIEW_ENDED_CLOSINGS]);
+    expect(composeInterviewClosing("So you traced it to the cache TTL.", INTERVIEW_CLOSINGS[2])).toBe(client.composeInterviewClosing("So you traced it to the cache TTL.", INTERVIEW_CLOSINGS[2]));
     expect(composeInterviewClosing()).toBe(client.composeInterviewClosing());
     expect([...clientAck.ACKNOWLEDGEMENT_PHRASES]).toEqual(["Okay.", "Got it.", "Alright.", "Mm-hm, okay.", "Thanks."]);
   });
@@ -238,7 +241,9 @@ describe("interviewer prefetcher", () => {
 
   it("lists the fixed phrases in their spoken form", () => {
     expect(staticSpeechTexts()).toContain("Okay.");
-    expect(staticSpeechTexts()).toContain(interviewerChunkTexts(composeInterviewClosing())[0]);
+    for (const closing of [...INTERVIEW_CLOSINGS, ...INTERVIEW_ENDED_CLOSINGS]) {
+      for (const text of interviewerChunkTexts(closing)) expect(staticSpeechTexts()).toContain(text);
+    }
   });
 });
 

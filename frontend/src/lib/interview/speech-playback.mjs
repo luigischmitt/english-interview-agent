@@ -18,8 +18,39 @@ export function composeAcknowledgedQuestion(acknowledgement, question) {
   return [acknowledgement?.trim(), question.trim()].filter(Boolean).join(" ");
 }
 
-export function composeInterviewClosing() {
-  return "Thanks for your time today. That brings us to the end of the interview. I’ll prepare your feedback now.";
+/** Closing lines (the time is up, feedback is next), rotated so two interviews in a row do not end the same way. Mirrored in the backend. */
+export const INTERVIEW_CLOSINGS = [
+  "That’s all the time we have today. Thanks for your answers. I’ll prepare your feedback now.",
+  "We’re out of time, so let’s stop here. Thank you for talking with me. I’ll prepare your feedback now.",
+  "Our time is up for today. Thanks for your time and your answers. I’ll get your feedback ready now.",
+  "That’s the end of our time today. I appreciate your answers. Your feedback will be ready in a moment.",
+  "We’ve reached the end of our time. Thanks for the conversation. I’ll prepare your feedback now.",
+];
+
+/** Closing lines when the interview ends before the time is up (the candidate finished, or no planned questions are left). Mirrored in the backend. */
+export const INTERVIEW_ENDED_CLOSINGS = [
+  "That brings us to the end of the interview. Thanks for your answers. I’ll prepare your feedback now.",
+  "That’s everything I wanted to ask today. Thank you for talking with me. I’ll get your feedback ready now.",
+  "Let’s wrap up here. I appreciate your answers. Your feedback will be ready in a moment.",
+  "That’s the end of the interview. Thanks for the conversation. I’ll prepare your feedback now.",
+];
+
+/** Why the interview closes: "time_up" (the time ran out) or "ended" (finished early, or no more questions). */
+export function closingLinesFor(reason = "time_up") {
+  return reason === "ended" ? INTERVIEW_ENDED_CLOSINGS : INTERVIEW_CLOSINGS;
+}
+
+/** A closing line of the set for `reason` other than `lastUsed` (the one the previous interview ended with in that set). */
+export function pickInterviewClosing(lastUsed = null, random = Math.random, reason = "time_up") {
+  const lines = closingLinesFor(reason);
+  const options = lines.filter((closing) => closing !== lastUsed);
+  const pool = options.length ? options : lines;
+  return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
+}
+
+/** What the interviewer says to close: an optional reaction to the last answer, then the closing line. */
+export function composeInterviewClosing(reaction = null, closing = INTERVIEW_CLOSINGS[0]) {
+  return [reaction?.trim(), closing.trim()].filter(Boolean).join(" ");
 }
 
 export function resolveSkippedQuestion(question) {
