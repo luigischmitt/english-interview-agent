@@ -93,6 +93,22 @@ function coverageEvidence(question: string, snapshot: string): string | null {
   return null;
 }
 
+/**
+ * Strong, model-independent coverage of a specific (non-job) question: an unhedged sentence of at least 12 words that uses
+ * the question's competency term and explains it concretely (the competency comes up at least twice in the answer, or the
+ * sentence carries an explanation marker or a number). Used only when the final action would be KEEP (a model KEEP or a rejected DEEPEN); a valid DEEPEN always wins.
+ */
+function strongCoverageEvidence(question: string, text: string): string | null {
+  const groups = questionCompetencies(question);
+  const excerpt = coverageEvidence(question, text);
+  if (!groups.length || !excerpt) return null;
+  const sentence = sentenceAround(text, excerpt);
+  if (sentence.split(/\s+/u).filter(Boolean).length < 12) return null;
+  const mentions = groups.every((group) => (text.match(new RegExp(group.term.source, "giu")) ?? []).length >= 2);
+  const explained = /:|\bby\s+\w+ing\b|\bbecause\b|\bso that\b|\d/iu.test(sentence);
+  return mentions || explained ? excerpt : null;
+}
+
 function validProviderShape(value: unknown, hasPreviousCandidate: boolean, hasSecondFixed: boolean): value is Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
@@ -199,6 +215,13 @@ export class SpeculativeTurnAnalysisService {
       } else if (value.fixedAction === "FIXED_KEEP") {
         if (value.adaptedFixedQuestion !== null || value.fixedEvidenceAnchor !== null) repairs.push("keep_fields");
       } else repairs.push("invalid_fixed_action");
+      // A specific question the answer already covered in depth would otherwise be asked again verbatim (model KEEP or a
+      // rejected DEEPEN). A valid DEEPEN was already accepted above; never for job-* questions.
+      if (fixed.fixedAction === "KEEP" && input.firstFixedType !== "job" && input.secondFixedQuestion) {
+        const priorContext = (input.previousAnswers ?? []).map((pair) => pair.answer).join("\n");
+        const evidence = strongCoverageEvidence(input.firstFixedQuestion, input.snapshot) ?? strongCoverageEvidence(input.firstFixedQuestion, priorContext);
+        if (evidence) { fixed = { fixedAction: "SKIP", adaptedFixedQuestion: null, fixedEvidenceAnchor: evidence }; repairs.push("covered_specific_competency"); }
+      }
 
       let second: Pick<SpeculativeTurnAnalysis, "secondFixedAction" | "adaptedSecondFixedQuestion" | "secondFixedEvidenceAnchor"> = { secondFixedAction: hasSecondFixed ? "KEEP" : null, adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: null };
       if (hasSecondFixed && input.secondFixedQuestion && input.secondFixedType) {
@@ -223,6 +246,10 @@ export class SpeculativeTurnAnalysisService {
           else repairs.push(!hasQuestionShape(value.adaptedSecondFixedQuestion, 220) ? "second_deepen_invalid_shape" : !anchor ? "second_deepen_anchor_missing" : !preservesPlannedCompetency(adapted, input.secondFixedQuestion) ? "second_deepen_competency_changed" : "second_deepen_repeats_asked_question");
         } else if (value.secondFixedAction !== "FIXED_KEEP") repairs.push("invalid_second_fixed_action");
         else if (value.adaptedSecondFixedQuestion !== null || value.secondFixedEvidenceAnchor !== null) repairs.push("second_keep_fields");
+        if (second.secondFixedAction === "KEEP" && input.secondFixedType !== "job" && input.hasThirdFixedQuestion === true) {
+          const evidence = strongCoverageEvidence(input.secondFixedQuestion, input.snapshot);
+          if (evidence) { second = { secondFixedAction: "SKIP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: evidence }; repairs.push("covered_second_specific_competency"); }
+        }
       } else if (value.secondFixedAction !== "FIXED_NONE") repairs.push("unexpected_second_fixed_action");
       if (value.revision !== input.revision) repairs.push("revision");
 

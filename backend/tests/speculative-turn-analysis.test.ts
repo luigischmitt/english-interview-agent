@@ -155,6 +155,27 @@ describe("speculative turn analysis", () => {
     ])("keeps the question when only generic words overlap: %s", async (_label, firstFixedQuestion, snapshot) => {
       await expect(run({}, { snapshot, firstFixedType: "bank", firstFixedQuestion })).resolves.toMatchObject({ fixedAction: "KEEP", fixedEvidenceAnchor: null });
     });
+    it.each([
+      ["monitoring explained with tools and thresholds", "How do you monitor a service in production?", "I built the reconciliation worker. For monitoring, I added Grafana dashboards for queue lag and error rate, and PagerDuty alerts when lag passed five minutes."],
+      ["mentoring explained with a routine and a result", "How have you mentored junior developers?", "I mentor two junior developers every week: we pair on code reviews, I set learning goals with them, and after three months one of them started leading small features alone."],
+    ])("turns a model KEEP into SKIP when the competency was explained in depth: %s", async (_label, firstFixedQuestion, snapshot) => {
+      await expect(run({}, { snapshot, firstFixedType: "bank", firstFixedQuestion })).resolves.toMatchObject({ fixedAction: "SKIP" });
+    });
+    it.each([
+      ["tests only mentioned", "How do you decide what to test?", "We moved from a monolith to services and I was responsible for the billing API and its tests."],
+      ["monitoring only mentioned", "How do you monitor a service in production?", "I worked on the billing service and we also had some monitoring there."],
+    ])("keeps a model KEEP when the competency is only mentioned: %s", async (_label, firstFixedQuestion, snapshot) => {
+      await expect(run({}, { snapshot, firstFixedType: "bank", firstFixedQuestion })).resolves.toMatchObject({ fixedAction: "KEEP" });
+    });
+    it("skips a covered specific question when the model DEEPEN is rejected (it would be asked verbatim)", async () => {
+      const snapshot = "For monitoring, I added Grafana dashboards for queue lag and error rate, and PagerDuty alerts when lag passed five minutes.";
+      await expect(run({ fixedAction: "DEEPEN", adaptedFixedQuestion: "Tell me more?", fixedEvidenceAnchor: "not in the answer" }, { snapshot, firstFixedType: "bank", firstFixedQuestion: "How do you monitor a service in production?" })).resolves.toMatchObject({ fixedAction: "SKIP" });
+    });
+    it("never turns a covered job question or a model DEEPEN into SKIP", async () => {
+      const snapshot = "For monitoring, I added Grafana dashboards for queue lag and error rate, and PagerDuty alerts when lag passed five minutes.";
+      await expect(run({}, { snapshot, firstFixedType: "job", firstFixedQuestion: "How do you monitor a service in production?" })).resolves.toMatchObject({ fixedAction: "KEEP" });
+      await expect(run({ fixedAction: "DEEPEN", adaptedFixedQuestion: "How would you monitor the queue lag if the traffic doubled?", fixedEvidenceAnchor: "PagerDuty alerts when lag passed five minutes" }, { snapshot, firstFixedType: "bank", firstFixedQuestion: "How do you monitor a service in production?" })).resolves.toMatchObject({ fixedAction: "DEEPEN" });
+    });
     it("preserves a valid model DEEPEN instead of a heuristic SKIP", async () => {
       const result = await run({ fixedAction: "DEEPEN", adaptedFixedQuestion: "What was the hardest technical challenge when you migrated the payments data?", fixedEvidenceAnchor: "payments migration" }, { snapshot: "Last year I worked on the payments migration at my company and it took six months.", firstFixedType: "bank", firstFixedQuestion: "What was the biggest technical challenge in your payments migration?" });
       expect(result).toMatchObject({ fixedAction: "DEEPEN" });
