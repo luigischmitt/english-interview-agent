@@ -19,6 +19,7 @@ export type NextTurnPreparationRegistry<T> = {
   take(input: { transcript: string; inputKey?: string }): NextTurnPreparationEntry<T> | null;
   takeReady(input: { transcript: string; inputKey?: string }): NextTurnPreparationEntry<T> | null;
   takeAnyReady(input: { accept: (value: T) => boolean }): NextTurnPreparationEntry<T> | null;
+  discardWhere(predicate: (value: T) => boolean): number;
   release(entry: NextTurnPreparationEntry<T> | null): void;
   hasPending(): boolean;
   stats(): { used: number; discarded: number };

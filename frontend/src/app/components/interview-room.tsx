@@ -37,7 +37,7 @@ import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTi
 import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/interview/opening-timing.mjs";
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
-import { canUseCurrentEpochCandidate, candidateStatusFor, recordCandidateStatus, waitForFirstChunk, waitForFirstChunks } from "@/lib/interview/speculative-epoch.mjs";
+import { applyFollowUpCandidateClear, canUseCurrentEpochCandidate, candidateStatusFor, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "@/lib/interview/speculative-epoch.mjs";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { useLocale, t } from "@/lib/locale";
 
@@ -104,7 +104,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const fixedHandoffTurnIdRef = useRef<string | null>(null);
   const speculativeCallsRef = useRef({ turn: "", count: 0, revision: 0 });
   const speculativeAttemptedRef = useRef(false);
-  const hasValidSpeculativeAnalysisRef = useRef(false);
   const speculativeCandidateRef = useRef<{ question: string; anchor: string } | null>(null);
   const speculativeFixedSkipRef = useRef(false);
   const speculativeFixedSkippedIdsRef = useRef(new Set<string>());
@@ -192,7 +191,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   useEffect(() => { excludedAssessmentsRef.current = excludedAssessments; }, [excludedAssessments]);
   useEffect(() => {
     speculativeAttemptedRef.current = false;
-    hasValidSpeculativeAnalysisRef.current = false;
     speculativeCandidateRef.current = null;
     speculativeFixedSkipRef.current = false;
     speculativeFixedSkippedIdsRef.current.clear();
@@ -523,7 +521,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       setFollowUpCandidateUpdate({ type: "follow-up-candidate-cleared", turnId: speculativeTurnIdRef.current, revision: speculativeCallsRef.current.revision, speechEpoch: previousSpeechEpoch });
     }
     currentSpeechEpochRef.current = speechEpoch;
-    hasValidSpeculativeAnalysisRef.current = false;
     const answer = provisionalTranscript.trim();
     if (!answer || timeLimitReached || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) return;
     if (followUpUsed) return;
@@ -568,9 +565,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         if (!speculative.enabled || speculative.analysis === null || speculative.analysis.revision !== revision) {
           speculativeCandidateRef.current = null;
           setFollowUpCandidateUpdate({ type: "follow-up-candidate-cleared", turnId: speculativeTurnIdRef.current, revision, speechEpoch });
+          applyFollowUpCandidateClear({ registry: nextTurnPreparation, statuses: candidateStatusesRef.current, latestByEpoch: latestCandidateStatusRevisionRef.current, speechEpoch, revision, currentSpeechEpoch: currentSpeechEpochRef.current });
           return null;
         }
-        hasValidSpeculativeAnalysisRef.current = true;
         let decision: TurnDecision;
         const monotonicAction = resolveMonotonicFixedAction(planned[0] ?? null, speculativeFixedSkipRef.current, speculative.analysis.fixedAction);
         speculativeFixedSkipRef.current = monotonicAction.skipCommitted;
@@ -588,6 +585,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         else {
           speculativeCandidateRef.current = null;
           setFollowUpCandidateUpdate({ type: "follow-up-candidate-cleared", turnId: speculativeTurnIdRef.current, revision, speechEpoch });
+          applyFollowUpCandidateClear({ registry: nextTurnPreparation, statuses: candidateStatusesRef.current, latestByEpoch: latestCandidateStatusRevisionRef.current, speechEpoch, revision, currentSpeechEpoch: currentSpeechEpochRef.current });
           const nextQuestion = fixedSelection.question ? fixedSelection.prompt ?? fixedSelection.question.prompt : null;
           decision = { decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: nextQuestion ? fixedHandoffPreparation.peek()?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) : null };
         }
@@ -772,7 +770,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       finishFixedPreparation("discarded");
       fixedPreparationSettled = true;
     }
-    if (!decision && clarificationHint === null && speculativeAttemptedRef.current && shouldUseMonotonicFixedFallback(hasValidSpeculativeAnalysisRef.current, speculativeFixedSkipRef.current)) {
+    if (!decision && clarificationHint === null && shouldUseMonotonicFixedFallback({ speculationAttempted: speculativeAttemptedRef.current, speculationEnabled: speculativeEnabledRef.current, skipCommitted: speculativeFixedSkipRef.current })) {
       // The feature's hard deadline: closing never waits for an unfinished model or synthesis request.
       const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
       const prepared = fixedHandoffPreparation.peek();
@@ -787,15 +785,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     }
     decision ??= await decideNextTurn({ ...decisionInput, signal: abortController.signal });
     if (preparedTurn && config.playInterviewerAudio && preparedTurn.speechReady) {
-      const readiness = await waitForFirstChunks(
-        preparedTurn.adaptedFixedQuestion
-          ? [preparedTurn.speechReady, preparedTurn.fixedQuestionAudioReady]
-          : [preparedTurn.speechReady],
-        400,
-      );
-      const firstChunkReady = readiness[0] === true;
-      const adaptedQuestionReady = preparedTurn.adaptedFixedQuestion && readiness[1] === true;
-      if (preparedTurn.adaptedFixedQuestion && !adaptedQuestionReady && preparedTurn.originalFixedPrompt && decision?.decision === "NEXT") {
+      const { firstChunkReady, adaptedQuestionReady } = await waitForPreparedTurnAudio({ decision, speechReady: preparedTurn.speechReady, adaptedFixedQuestion: preparedTurn.adaptedFixedQuestion, fixedQuestionAudioReady: preparedTurn.fixedQuestionAudioReady }, 400);
+      if (decision?.decision === "NEXT" && preparedTurn.adaptedFixedQuestion && !adaptedQuestionReady && preparedTurn.originalFixedPrompt) {
         decision = { ...decision, nextQuestion: resolveFixedPromptForAudio({ prompt: decision.nextQuestion ?? undefined, originalPrompt: preparedTurn.originalFixedPrompt, adapted: true }, adaptedQuestionReady) ?? preparedTurn.originalFixedPrompt };
         preparedTurn.cancelSpeech?.();
         reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "discarded", preparationReason: "adapted_fixed_audio_not_ready", revision: preparedTurn.revision });

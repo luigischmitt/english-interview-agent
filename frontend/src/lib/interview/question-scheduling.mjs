@@ -60,8 +60,13 @@ export function resolveMonotonicFixedAction(question, skipAlreadyCommitted, acti
   return { action: canSkip && skipCommitted ? "SKIP" : action, skipCommitted };
 }
 
-export function shouldUseMonotonicFixedFallback(hasValidCurrentAnalysis, skipAlreadyCommitted) {
-  return hasValidCurrentAnalysis === true || skipAlreadyCommitted === true;
+/**
+ * Once speculation was attempted in an answer (and the feature is enabled), finalization never waits for a full
+ * `decideNextTurn`: it uses the pre-synthesized fixed question with committed skips. The legacy decision call is only for
+ * answers where speculation is disabled or unavailable for the whole answer.
+ */
+export function shouldUseMonotonicFixedFallback({ speculationAttempted, speculationEnabled, skipCommitted } = {}) {
+  return skipCommitted === true || (speculationAttempted === true && speculationEnabled === true);
 }
 
 /** Keep every unasked planned question, with vacancy-tailored questions first and bank order stable within each group. */

@@ -12,7 +12,7 @@ export function resolveSpeculativeFixedSelection(
 ): { question: InterviewQuestion | null; prompt?: string; adapted?: boolean; originalPrompt?: string; skippedQuestionIds: string[] };
 export function resolveFixedPromptForAudio(selection: { prompt?: string; originalPrompt?: string; adapted?: boolean }, firstChunkReady: boolean): string | undefined;
 export function resolveMonotonicFixedAction(question: Pick<InterviewQuestion, "id"> | null, skipAlreadyCommitted: boolean, action: "KEEP" | "SKIP" | "DEEPEN"): { action: "KEEP" | "SKIP" | "DEEPEN"; skipCommitted: boolean };
-export function shouldUseMonotonicFixedFallback(hasValidCurrentAnalysis: boolean, skipAlreadyCommitted: boolean): boolean;
+export function shouldUseMonotonicFixedFallback(state?: { speculationAttempted?: boolean; speculationEnabled?: boolean; skipCommitted?: boolean }): boolean;
 
 export function remainingPlannedQuestions(questions: InterviewQuestion[], askedQuestionIds: Iterable<string>): InterviewQuestion[];
 export function selectNextPlannedQuestion(input: {

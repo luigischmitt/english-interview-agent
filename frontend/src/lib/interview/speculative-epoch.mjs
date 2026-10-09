@@ -23,7 +23,9 @@ export function candidateStatusFor(statuses, latestByEpoch, speechEpoch, revisio
 
 export function canUseCurrentEpochCandidate({ value, finalTranscript, currentTurnId, currentSpeechEpoch, featureEnabled, compatibility }) {
   if (!value || value.turnId !== currentTurnId || value.speechEpoch !== currentSpeechEpoch) return false;
-  if (compatibility === "COVERED" || compatibility === "INVALID" || compatibility === "NONE") return false;
+  if (compatibility === "COVERED" || compatibility === "INVALID") return false;
+  // NONE speaks only about follow-up candidates; an exact-transcript NEXT preparation stays usable.
+  if (compatibility === "NONE" && value.decision?.decision === "FOLLOW_UP") return false;
   if (String(value.transcript ?? "").trim() === String(finalTranscript ?? "").trim()) return true;
   return featureEnabled === true
     && value.decision?.decision === "FOLLOW_UP"
@@ -54,4 +56,23 @@ export async function waitForFirstChunks(speechReadiness, timeoutMs = 400, timer
   await Promise.race([Promise.all(readyPromises).then(() => "ready"), timeout]);
   timers.clearTimeout(timeoutId);
   return results;
+}
+
+/**
+ * The frontend resolved a revision to "no follow-up candidate" (analysis said NONE, failed, or yielded a fixed question):
+ * record a local terminal NONE for it and discard retained FOLLOW_UP preparations of older revisions in the same epoch.
+ */
+export function applyFollowUpCandidateClear({ registry, statuses, latestByEpoch, speechEpoch, revision, currentSpeechEpoch }) {
+  recordCandidateStatus(statuses, latestByEpoch, { speechEpoch, revision, status: "NONE" }, currentSpeechEpoch);
+  return registry.discardWhere((value) => value?.decision?.decision === "FOLLOW_UP" && value.speechEpoch === speechEpoch && value.revision < revision);
+}
+
+/**
+ * Bounded wait for a prepared turn's audio. A FOLLOW_UP waits only for its own speech; the unrelated adapted fixed-question
+ * audio counts only when the chosen decision is NEXT.
+ */
+export async function waitForPreparedTurnAudio({ decision, speechReady, adaptedFixedQuestion, fixedQuestionAudioReady }, timeoutMs = 400, timers = globalThis) {
+  const needsFixed = decision?.decision === "NEXT" && adaptedFixedQuestion === true;
+  const readiness = await waitForFirstChunks(needsFixed ? [speechReady, fixedQuestionAudioReady] : [speechReady], timeoutMs, timers);
+  return { firstChunkReady: readiness[0] === true, adaptedQuestionReady: needsFixed && readiness[1] === true };
 }

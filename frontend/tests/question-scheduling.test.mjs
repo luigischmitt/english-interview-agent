@@ -128,6 +128,17 @@ test("SKIP stays committed across later revisions for non-job questions, while j
 });
 
 test("a committed SKIP still uses the fixed fallback when a newer speculative revision is pending or failed", () => {
-  assert.equal(shouldUseMonotonicFixedFallback(false, true), true);
-  assert.equal(shouldUseMonotonicFixedFallback(false, false), false);
+  assert.equal(shouldUseMonotonicFixedFallback({ speculationAttempted: false, speculationEnabled: false, skipCommitted: true }), true);
+  assert.equal(shouldUseMonotonicFixedFallback({ speculationAttempted: false, speculationEnabled: false, skipCommitted: false }), false);
+});
+
+test("B3: once speculation was attempted in an enabled feature, finalization never needs decideNextTurn", () => {
+  // Pause-start snapshot rev N still in flight (or timed out), rev N-1 rejected, nothing skipped: no valid current analysis.
+  assert.equal(shouldUseMonotonicFixedFallback({ speculationAttempted: true, speculationEnabled: true, skipCommitted: false }), true);
+  // Analysis timeout/failure also leaves the attempt recorded: still the fixed fallback.
+  assert.equal(shouldUseMonotonicFixedFallback({ speculationAttempted: true, speculationEnabled: true }), true);
+  // Legacy path: feature disabled/unavailable for the whole answer, or never attempted.
+  assert.equal(shouldUseMonotonicFixedFallback({ speculationAttempted: true, speculationEnabled: false, skipCommitted: false }), false);
+  assert.equal(shouldUseMonotonicFixedFallback({ speculationAttempted: false, speculationEnabled: true, skipCommitted: false }), false);
+  assert.equal(shouldUseMonotonicFixedFallback(), false);
 });
