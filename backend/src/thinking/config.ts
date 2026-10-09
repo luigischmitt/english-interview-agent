@@ -5,7 +5,10 @@ export const defaultOrchestrationHedgeAfterMs = 2_500;
 export const defaultBridgeTimeoutMs = 1_800;
 export const defaultInterviewReportTimeoutMs = 45_000;
 /** Resume analysis can use one provider retry while staying within this single overall deadline. */
-export const defaultResumeDirectionTimeoutMs = 28_000;
+export const defaultResumeDirectionTimeoutMs = 30_000;
+/** A second, provider-excluding resume attempt starts in parallel when the first has not answered after this long. */
+// Healthy resume analyses take ~10.5–14.5 s, so a 13 s hedge rarely duplicates a healthy call and still leaves ~17 s of the 30 s budget.
+export const defaultResumeDirectionHedgeAfterMs = 13_000;
 /** Per-answer analysis is background work; measured provider responses need more than six seconds. */
 export const defaultInterviewTurnAnalysisTimeoutMs = 12_000;
 export const maxInterviewTurnAnalysisTimeoutMs = 12_000;
@@ -23,6 +26,8 @@ export type ThinkingConfig = {
   reportTimeoutMs?: number;
   /** Total deadline shared by initial resume analysis and its one provider retry. */
   resumeDirectionTimeoutMs?: number;
+  /** Delay before the parallel resume hedge attempt starts. */
+  resumeDirectionHedgeAfterMs?: number;
   /** Timeout of the small bridge call that follows a next-turn decision (300–5000 ms; defaults to 1800). */
   bridgeTimeoutMs?: number;
   /** Merge bridge writing into the decision call by default; `separate` keeps the rollback path. */
@@ -61,6 +66,12 @@ function parseResumeDirectionTimeout(value: string | undefined): number {
   return timeout;
 }
 
+function parseResumeDirectionHedgeAfter(value: string | undefined): number {
+  const delay = parsePositiveNumber(value, defaultResumeDirectionHedgeAfterMs);
+  if (delay < 1_000 || delay > 20_000) throw new Error("Resume direction hedge delay must be between 1000 and 20000 milliseconds.");
+  return delay;
+}
+
 function normalizeBridgeTimeout(value: string | undefined): number {
   const parsed = value === undefined || value.trim() === "" ? Number.NaN : Number(value);
   return Number.isFinite(parsed) ? Math.min(5_000, Math.max(300, Math.round(parsed))) : defaultBridgeTimeoutMs;
@@ -91,6 +102,7 @@ export function loadThinkingConfig(environment = process.env): ThinkingConfig {
     bridgeMode: parseBridgeMode(environment.INTERVIEW_BRIDGE_MODE),
     reportTimeoutMs: parseReportTimeout(environment.INTERVIEW_REPORT_TIMEOUT_MS),
     resumeDirectionTimeoutMs: parseResumeDirectionTimeout(environment.INTERVIEW_RESUME_DIRECTION_TIMEOUT_MS),
+    resumeDirectionHedgeAfterMs: parseResumeDirectionHedgeAfter(environment.INTERVIEW_RESUME_DIRECTION_HEDGE_AFTER_MS),
     diagnosticsEnabled: environment.INTERVIEW_REASONING_DIAGNOSTICS?.trim().toLowerCase() === "true",
     speculativeHandoffEnabled: parseSpeculativeHandoff(environment.INTERVIEW_SPECULATIVE_HANDOFF),
   };

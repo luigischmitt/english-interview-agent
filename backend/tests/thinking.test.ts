@@ -66,6 +66,7 @@ describe("thinking configuration", () => {
       bridgeMode: "merged",
       reportTimeoutMs: defaultInterviewReportTimeoutMs,
       resumeDirectionTimeoutMs: defaultResumeDirectionTimeoutMs,
+      resumeDirectionHedgeAfterMs: 13_000,
       diagnosticsEnabled: false,
       speculativeHandoffEnabled: false,
     });
@@ -90,6 +91,7 @@ describe("thinking configuration", () => {
       bridgeMode: "merged",
       reportTimeoutMs: 45_000,
       resumeDirectionTimeoutMs: defaultResumeDirectionTimeoutMs,
+      resumeDirectionHedgeAfterMs: 13_000,
       diagnosticsEnabled: true,
       speculativeHandoffEnabled: false,
     });

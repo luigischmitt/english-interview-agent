@@ -195,7 +195,7 @@ export function InterviewSetup({
     setResumeDirectionError("");
     setJobDirectionValidationError("");
     try {
-      const direction = await requestResumeDirection(resumeFile, authorizedFetch, `${backendBaseUrl}/api/v1/thinking/resume-direction`);
+      const direction = await requestResumeDirection(resumeFile, authorizedFetch, `${backendBaseUrl}/api/v1/thinking/resume-direction`, reportAudioDiagnostic);
       if (resumeAnalysisGenerationRef.current !== generation) return;
       setConfig((current) => ({ ...applyJobAnalysis(current, direction), interviewSource: "resume" }));
       setParkedResumeSetup(undefined);

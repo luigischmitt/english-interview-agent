@@ -15,7 +15,7 @@ const standardFontDataUrl = `${join(process.cwd(), "node_modules/pdfjs-dist/stan
 
 type PdfExtraction = { text: string; pageCount: number };
 export type ResumePdfExtractor = (buffer: Buffer) => Promise<PdfExtraction>;
-type ResumeLease = { release: () => void };
+type ResumeLease = { release: (outcome?: "success" | "failure") => void };
 
 class ResumePdfLimitError extends Error {
   constructor(readonly reason: "too_many_pages" | "content_too_large", readonly pageCount: number, readonly extractedChars: number) {
@@ -99,11 +99,12 @@ export const extractResumePdf: ResumePdfExtractor = async (buffer) => {
   }
 };
 
-function releaseResumeLease(response: Parameters<RequestHandler>[1]): void {
+/** Only a completed analysis starts the per-user cooldown; any rejection or failure lets the user retry immediately. */
+function releaseResumeLease(response: Parameters<RequestHandler>[1], outcome: "success" | "failure" = "failure"): void {
   const lease = response.locals.resumeDirectionLease as ResumeLease | undefined;
   if (!lease) return;
   delete response.locals.resumeDirectionLease;
-  lease.release();
+  lease.release(outcome);
 }
 
 function acquireResumeLease(userLimit: JobDirectionUserLimit): RequestHandler {
@@ -115,6 +116,7 @@ function acquireResumeLease(userLimit: JobDirectionUserLimit): RequestHandler {
     }
     const lease = userLimit.acquire(userId);
     if (!lease.allowed) {
+      logRejected(`rate_limited_${lease.reason}`);
       response.setHeader("Retry-After", String(lease.retryAfterSeconds));
       error(response, 429, "RESUME_DIRECTION_RATE_LIMITED", "A análise de currículo está temporariamente limitada. Tente novamente em instantes.");
       return;
@@ -206,9 +208,10 @@ export function createResumeDirectionHandlers(
         error(response, caught.status, caught.code, caught.message);
         return;
       }
+      logRejected("unexpected_error", 0, 0);
       error(response, 502, "RESUME_DIRECTION_PROVIDER_UNAVAILABLE", "Não foi possível analisar o currículo agora.");
     } finally {
-      releaseResumeLease(response);
+      releaseResumeLease(response, response.statusCode === 200 ? "success" : "failure");
     }
   };
 

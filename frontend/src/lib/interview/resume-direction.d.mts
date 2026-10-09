@@ -10,4 +10,5 @@ export function requestResumeDirection(
   file: File,
   fetcher: typeof fetch,
   endpoint?: string,
+  onDiagnostic?: (event: { kind: "resume_analysis"; [field: string]: unknown }) => void,
 ): Promise<JobDirectionAnalysis>;

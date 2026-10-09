@@ -74,3 +74,39 @@ test("client timeout outlasts the backend maximum budget and maps an abort to th
   assert.ok(signal instanceof AbortSignal);
   await assert.rejects(requestResumeDirection(pdf(), async () => { throw new TypeError("network"); }), { code: "REQUEST_FAILED" });
 });
+
+test("reports content-free diagnostics for each failure stage and for success", async () => {
+  const events = [];
+  const onDiagnostic = (event) => events.push(event);
+  const url = "https://backend.test/resume-direction";
+  const run = (fetcher, file = pdf()) => requestResumeDirection(file, fetcher, url, onDiagnostic).catch(() => undefined);
+
+  await run(async () => new Response(JSON.stringify({ error: { code: "RESUME_DIRECTION_TIMEOUT", message: "PRIVATE" } }), { status: 504 }));
+  await run(async () => { throw new TypeError("network"); });
+  await run(async () => { const error = new Error("late"); error.name = "TimeoutError"; throw error; });
+  await run(async () => new Response(JSON.stringify({ ...direction, tailoredQuestions: direction.tailoredQuestions.slice(0, 7) }), { status: 200 }));
+  await run(async () => new Response(JSON.stringify({ ...direction, targetRole: "" }), { status: 200 }));
+  await run(async () => new Response("not json", { status: 200 }));
+  await run(async () => new Response("{}", { status: 200 }), pdf("resume.txt", 64, "text/plain"));
+  await run(async () => new Response(JSON.stringify(direction), { status: 200 }));
+
+  assert.deepEqual(events.map((event) => [event.resumeStage, event.resumeCode, event.resumeReason, event.httpStatus]), [
+    ["response", "RESUME_DIRECTION_TIMEOUT", undefined, 504],
+    ["request", "REQUEST_FAILED", undefined, undefined],
+    ["request", "RESUME_DIRECTION_TIMEOUT", undefined, 504],
+    ["validation", "INVALID_RESPONSE", "INVALID_QUESTIONS", 200],
+    ["validation", "INVALID_RESPONSE", "INVALID_PROFILE", 200],
+    ["validation", "INVALID_RESPONSE", undefined, 200],
+    ["file", "INVALID_RESUME_REQUEST", undefined, 400],
+    ["success", undefined, undefined, 200],
+  ]);
+  assert.equal(events[3].receivedQuestions, 7);
+  assert.equal(events[3].validQuestions, 7);
+  assert.ok(events.every((event) => event.kind === "resume_analysis" && Number.isFinite(event.elapsedMs)));
+  assert.ok(!JSON.stringify(events).includes("PRIVATE"));
+});
+
+test("a throwing diagnostics callback never changes the outcome", async () => {
+  const result = await requestResumeDirection(pdf(), async () => new Response(JSON.stringify(direction), { status: 200 }), undefined, () => { throw new Error("boom"); });
+  assert.equal(result.tailoredQuestions.length, 8);
+});
