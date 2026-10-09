@@ -70,7 +70,10 @@ export function composeOpeningUtterance(introduction: string, firstQuestion: str
 export function composeContextualOpening(config: { role?: string; seniority?: string; focus?: string; duration: string }, firstQuestion: string): string;
 export function composeAcknowledgedQuestion(acknowledgement: string | null, question: string): string;
 export const INTERVIEW_CLOSINGS: readonly string[];
-export function pickInterviewClosing(lastUsed?: string | null, random?: () => number): string;
+export const INTERVIEW_ENDED_CLOSINGS: readonly string[];
+export type ClosingReason = "time_up" | "ended";
+export function closingLinesFor(reason?: ClosingReason): readonly string[];
+export function pickInterviewClosing(lastUsed?: string | null, random?: () => number, reason?: ClosingReason): string;
 export function composeInterviewClosing(reaction?: string | null, closing?: string): string;
 export function resolveSkippedQuestion(question: string): { question: string; acknowledgement: string };
 export function splitInterviewerSpeech(text: string): string[];

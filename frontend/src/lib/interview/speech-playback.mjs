@@ -27,10 +27,24 @@ export const INTERVIEW_CLOSINGS = [
   "We’ve reached the end of our time. Thanks for the conversation. I’ll prepare your feedback now.",
 ];
 
-/** A closing line other than `lastUsed` (the one the previous interview ended with). */
-export function pickInterviewClosing(lastUsed = null, random = Math.random) {
-  const options = INTERVIEW_CLOSINGS.filter((closing) => closing !== lastUsed);
-  const pool = options.length ? options : INTERVIEW_CLOSINGS;
+/** Closing lines when the interview ends before the time is up (the candidate finished, or no planned questions are left). Mirrored in the backend. */
+export const INTERVIEW_ENDED_CLOSINGS = [
+  "That brings us to the end of the interview. Thanks for your answers. I’ll prepare your feedback now.",
+  "That’s everything I wanted to ask today. Thank you for talking with me. I’ll get your feedback ready now.",
+  "Let’s wrap up here. I appreciate your answers. Your feedback will be ready in a moment.",
+  "That’s the end of the interview. Thanks for the conversation. I’ll prepare your feedback now.",
+];
+
+/** Why the interview closes: "time_up" (the time ran out) or "ended" (finished early, or no more questions). */
+export function closingLinesFor(reason = "time_up") {
+  return reason === "ended" ? INTERVIEW_ENDED_CLOSINGS : INTERVIEW_CLOSINGS;
+}
+
+/** A closing line of the set for `reason` other than `lastUsed` (the one the previous interview ended with in that set). */
+export function pickInterviewClosing(lastUsed = null, random = Math.random, reason = "time_up") {
+  const lines = closingLinesFor(reason);
+  const options = lines.filter((closing) => closing !== lastUsed);
+  const pool = options.length ? options : lines;
   return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
 }
 

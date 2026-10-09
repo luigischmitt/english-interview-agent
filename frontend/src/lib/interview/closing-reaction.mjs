@@ -2,6 +2,7 @@
 // cache TTL.") is prepared so the interviewer can react before closing. It is only ever used if it is ready, never waited for
 // longer than a short cap, and only when it still matches what the candidate finally said.
 
+import { stripLeadingAcknowledgement } from "./acknowledgement.mjs";
 import { hasTimeForNextQuestion } from "./session-policy.mjs";
 
 /** The answer being given will end after "now": assume this much more time passes (answer tail + handoff) before it is final. */
@@ -72,22 +73,25 @@ export function createClosingReactionTracker({ request, onReaction, maxCalls = M
       entries.push(entry);
       return true;
     },
-    /** The newest ready reaction, if any (no waiting). */
-    peek() {
+    /** The newest ready reaction of the answer in `key`, if any (no waiting). Entries of another turn are never returned. */
+    peek(key) {
+      if (turnKey === null || turnKey !== key) return null;
       for (let index = entries.length - 1; index >= 0; index -= 1) if (entries[index].state === "ready") return { reaction: entries[index].reaction, snapshot: entries[index].snapshot };
       return null;
     },
     /**
-     * The reaction for the final transcript: the newest ready one that is still compatible. A pending newest call is awaited
+     * The reaction for the final transcript of the answer in `key`: the newest ready one that is still compatible. A pending newest call is awaited
      * for at most `waitMs`; never longer. Resolves null when nothing usable is ready.
      */
-    async resolve(finalTranscript, { waitMs = CLOSING_REACTION_MAX_WAIT_MS } = {}) {
+    async resolve(key, finalTranscript, { waitMs = CLOSING_REACTION_MAX_WAIT_MS } = {}) {
+      if (turnKey === null || turnKey !== key) return null;
       const newest = entries[entries.length - 1];
       if (newest?.state === "pending" && waitMs > 0) {
         let timer;
         await Promise.race([newest.promise, new Promise((resolve) => { timer = setTimeout(resolve, Math.min(waitMs, CLOSING_REACTION_MAX_WAIT_MS)); })]);
         clearTimeout(timer);
       }
+      if (turnKey !== key) return null;
       for (let index = entries.length - 1; index >= 0; index -= 1) {
         const entry = entries[index];
         if (entry.state === "ready" && isReactionCompatible(entry.reaction, entry.snapshot, finalTranscript)) return entry.reaction;
@@ -98,4 +102,23 @@ export function createClosingReactionTracker({ request, onReaction, maxCalls = M
     /** Aborts pending calls and forgets everything. */
     cancel() { reset(); turnKey = null; },
   };
+}
+
+/**
+ * What the interviewer says before the closing line, as text: the optional instant acknowledgement (audio only; text-only
+ * shows a word), then the prepared reaction of THIS turn when it is ready and still matches the answer. Null when there is
+ * nothing to say. `acknowledge=false` means the acknowledgement already played, so a leading "Okay." of the reaction is dropped.
+ * `deps`: `tracker`, `key` (the answer's mic turn), `answer`, `acknowledge`, `canAcknowledge` (the answer is long enough),
+ * `playAcknowledgement()` (starts it; true when it will be heard), `audio` (the interviewer is spoken), `pickWord()` (text-only word).
+ */
+export async function composeClosingLead({ tracker, key, answer, acknowledge, canAcknowledge, playAcknowledgement, audio, pickWord }) {
+  const ready = tracker.peek(key);
+  const skipAcknowledgement = ready !== null && startsWithAcknowledgement(ready.reaction);
+  let spoken = false;
+  if (acknowledge && !skipAcknowledgement && canAcknowledge) spoken = playAcknowledgement() === true;
+  let reaction = await tracker.resolve(key, answer);
+  if (reaction && (spoken || !acknowledge) && startsWithAcknowledgement(reaction)) reaction = stripLeadingAcknowledgement(reaction) || null;
+  if (audio) return reaction;
+  const word = acknowledge && canAcknowledge && !(reaction && startsWithAcknowledgement(reaction)) ? pickWord() : null;
+  return [word, reaction].filter(Boolean).join(" ") || null;
 }

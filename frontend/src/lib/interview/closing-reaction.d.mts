@@ -7,8 +7,8 @@ export function isReactionCompatible(reaction: string, snapshot: string, finalTr
 export function startsWithAcknowledgement(text: string): boolean;
 export type ClosingReactionTracker<Context = unknown> = {
   update(key: string, snapshot: string, context?: Context): boolean;
-  peek(): { reaction: string; snapshot: string } | null;
-  resolve(finalTranscript: string, options?: { waitMs?: number }): Promise<string | null>;
+  peek(key: string): { reaction: string; snapshot: string } | null;
+  resolve(key: string, finalTranscript: string, options?: { waitMs?: number }): Promise<string | null>;
   readonly callCount: number;
   cancel(): void;
 };
@@ -20,3 +20,13 @@ export function createClosingReactionTracker<Context = unknown>(options: {
   growthRatio?: number;
   minNewWords?: number;
 }): ClosingReactionTracker<Context>;
+export function composeClosingLead<Context = unknown>(input: {
+  tracker: ClosingReactionTracker<Context>;
+  key: string;
+  answer: string;
+  acknowledge: boolean;
+  canAcknowledge: boolean;
+  playAcknowledgement: () => boolean;
+  audio: boolean;
+  pickWord: () => string | null;
+}): Promise<string | null>;

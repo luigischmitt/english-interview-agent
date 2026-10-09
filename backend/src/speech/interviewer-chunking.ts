@@ -156,6 +156,14 @@ export const INTERVIEW_CLOSINGS: readonly string[] = [
   "We’ve reached the end of our time. Thanks for the conversation. I’ll prepare your feedback now.",
 ];
 
+/** Mirrors the client's closing lines for an interview that ends before the time is up (finished early, no more questions). */
+export const INTERVIEW_ENDED_CLOSINGS: readonly string[] = [
+  "That brings us to the end of the interview. Thanks for your answers. I’ll prepare your feedback now.",
+  "That’s everything I wanted to ask today. Thank you for talking with me. I’ll get your feedback ready now.",
+  "Let’s wrap up here. I appreciate your answers. Your feedback will be ready in a moment.",
+  "That’s the end of the interview. Thanks for the conversation. I’ll prepare your feedback now.",
+];
+
 export function composeInterviewClosing(reaction: string | null = null, closing: string = INTERVIEW_CLOSINGS[0]): string {
   return [reaction?.trim(), closing.trim()].filter(Boolean).join(" ");
 }
