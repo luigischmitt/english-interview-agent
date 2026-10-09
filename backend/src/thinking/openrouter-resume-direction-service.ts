@@ -2,12 +2,15 @@ import { ThinkingServiceError } from "./errors.js";
 import { maxApprovedTailoredQuestions, maxTailoredQuestionLength, normalizeTailoredQuestions, normalizeTargetRole } from "./job-direction-normalization.js";
 import { pinnedOpenRouterFetch, pinnedProviderFromEnvironment } from "./openrouter-routing.js";
 import { parseOpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
+import { defaultResumeDirectionHedgeAfterMs } from "./config.js";
 import type { JobFocus, ResumeDirectionAnalysis, ResumeDirectionInput, ResumeDirectionService } from "./types.js";
 
 type ResumeDirectionServiceOptions = {
   key: string;
   model: string;
   timeoutMs: number;
+  /** Delay before the parallel hedge attempt starts; defaults to 10 s. */
+  hedgeAfterMs?: number;
   fetchImplementation?: typeof fetch;
 };
 
@@ -27,6 +30,12 @@ const minimumDistinctDimensions = 5;
 const maximumValidatedQuestionsPerDimension = 3;
 const maxQuestionsPerSubjectWhenAlternativesExist = 4;
 const richResumeCharacterThreshold = 800;
+
+type AttemptLabel = "A" | "B";
+type FailureKind = "timeout" | "network" | "http" | "rate_limited" | "invalid";
+type AttemptOutcome =
+  | { label: AttemptLabel; status: "success"; result: ResumeDirectionAnalysis; usage?: OpenRouterUsagePayload }
+  | { label: AttemptLabel; status: "failed"; kind: FailureKind; error: ThinkingServiceError; provider?: string; providerNote?: string };
 
 const schema = {
   type: "object",
@@ -212,102 +221,127 @@ export class OpenRouterResumeDirectionService implements ResumeDirectionService 
 
   async analyze(input: ResumeDirectionInput): Promise<ResumeDirectionAnalysis> {
     const startedAt = Date.now();
-    let ignoredProvider: string | undefined;
-    let lastInvalid: ResumeDirectionInvalidResponse | undefined;
-    let deadlineExpired = false;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const remainingMs = this.options.timeoutMs - (Date.now() - startedAt);
-      if (remainingMs <= 0) { deadlineExpired = true; break; }
-      // Reserve half of the configured total budget for each provider attempt. A quick
-      // failure still leaves its full share available to the retry; a slow first call
-      // cannot consume the retry's share.
-      const attemptBudgetMs = Math.min(Math.ceil(this.options.timeoutMs / 2), remainingMs);
-      const signal = AbortSignal.timeout(attemptBudgetMs);
-      let response: Response;
-      try {
-        response = await this.fetchImplementation("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${this.options.key}`,
-            "Content-Type": "application/json",
-            // OpenRouter documents this opt-in metadata as containing the selected endpoint/provider.
-            "X-OpenRouter-Metadata": "enabled",
-          },
-          body: JSON.stringify({
-            model: this.options.model,
-            messages: [
-              { role: "system", content: resumeDirectionSystemPrompt },
-              { role: "user", content: JSON.stringify({ resume: input.resumeText }) },
-            ],
-            temperature: 0,
-            max_tokens: 1_400,
-            usage: { include: true },
-            provider: { require_parameters: true, data_collection: "deny", ...(ignoredProvider ? { ignore: [ignoredProvider] } : {}) },
-            response_format: { type: "json_schema", json_schema: { name: "resume_interview_direction", strict: true, schema } },
-          }),
-          signal,
-        });
-      } catch (error) {
-        const timedOut = signal.aborted || isAbortError(error);
-        if (attempt === 0) {
-          ignoredProvider = this.inferredPinnedProvider;
-          this.logTiming(startedAt, input, timedOut ? "timeout_retry" : "provider_error_retry", 0, undefined, ignoredProvider ? undefined : "provider_unknown");
+    // A plain controller and timer (not AbortSignal.timeout, which is weakly referenced and unreliable inside AbortSignal.any).
+    const deadlineController = new AbortController();
+    const deadlineTimer = setTimeout(() => deadlineController.abort(new DOMException("Resume analysis timed out.", "TimeoutError")), this.options.timeoutMs);
+    const deadline = deadlineController.signal;
+    const hedgeAfterMs = Math.min(this.options.hedgeAfterMs ?? defaultResumeDirectionHedgeAfterMs, this.options.timeoutMs);
+    const controllers = new Map<AttemptLabel, AbortController>();
+    const running = new Map<AttemptLabel, Promise<AttemptOutcome>>();
+    const failures: Array<Extract<AttemptOutcome, { status: "failed" }>> = [];
+    let started = 0;
+
+    const start = (label: AttemptLabel, ignoredProvider: string | undefined, reason?: string, providerNote?: string) => {
+      const controller = new AbortController();
+      controllers.set(label, controller);
+      started += 1;
+      if (label === "B") this.logTiming(startedAt, input, "hedge_started", 0, undefined, [reason, providerNote].filter(Boolean).join(","));
+      running.set(label, this.runAttempt(label, input, ignoredProvider, AbortSignal.any([deadline, controller.signal]), deadline, startedAt));
+    };
+
+    start("A", undefined);
+    let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+    const hedgeDelay = new Promise<"hedge">((resolve) => { hedgeTimer = setTimeout(() => resolve("hedge"), hedgeAfterMs); });
+    try {
+      while (running.size > 0) {
+        const raced = await Promise.race([...running.values(), ...(started < 2 ? [hedgeDelay] : [])]);
+        if (raced === "hedge") {
+          start("B", this.inferredPinnedProvider, "slow");
           continue;
         }
-        this.logTiming(startedAt, input, timedOut ? "timeout" : "provider_error", 0, undefined, "retry");
-        if (timedOut) throw new ThinkingServiceError("RESUME_DIRECTION_TIMEOUT", 504, "A análise do currículo demorou mais do que o esperado.", { cause: error });
-        throw new ThinkingServiceError("RESUME_DIRECTION_PROVIDER_UNAVAILABLE", 502, "Não foi possível analisar o currículo agora.", { cause: error });
-      }
-
-      if (response.status === 429) {
-        await response.body?.cancel();
-        this.logTiming(startedAt, input, "rate_limited", 0, undefined, attempt ? "retry" : undefined);
-        throw new ThinkingServiceError("RESUME_DIRECTION_RATE_LIMITED", 503, "A análise está temporariamente ocupada. Tente novamente em instantes.");
-      }
-      if (!response.ok) {
-        await response.body?.cancel();
-        this.logTiming(startedAt, input, "provider_error", 0, undefined, attempt ? "retry" : undefined);
-        throw new ThinkingServiceError("RESUME_DIRECTION_PROVIDER_UNAVAILABLE", 502, "Não foi possível analisar o currículo agora.");
-      }
-
-      let body: OpenRouterResponse | undefined;
-      try {
-        body = await response.json() as OpenRouterResponse;
-        if (signal.aborted) throw new DOMException("Resume analysis timed out.", "TimeoutError");
-        const result = parseResumeDirection(body.choices?.[0]?.message?.content, input);
-        this.logTiming(startedAt, input, "success", result.tailoredQuestions.length, body.usage, attempt ? "retry_success" : undefined);
-        return result;
-      } catch (error) {
-        if (!(error instanceof ResumeDirectionInvalidResponse)) {
-          if (signal.aborted || isAbortError(error)) {
-            if (attempt === 0) {
-              ignoredProvider = this.responseProvider(body) ?? this.inferredPinnedProvider;
-              this.logTiming(startedAt, input, "timeout_retry", 0, body?.usage, this.unmappedProviderNote(body, ignoredProvider));
-              continue;
-            }
-            this.logTiming(startedAt, input, "timeout", 0, body?.usage, attempt ? "retry" : undefined);
-            throw new ThinkingServiceError("RESUME_DIRECTION_TIMEOUT", 504, "A análise do currículo demorou mais do que o esperado.", { cause: error });
+        running.delete(raced.label);
+        if (raced.status === "success") {
+          const loser = raced.label === "A" ? "B" : "A";
+          if (running.has(loser)) {
+            controllers.get(loser)?.abort();
+            this.logTiming(startedAt, input, "hedge_cancelled", 0, undefined, loser);
           }
-          const invalid = invalidProviderResponse("invalid_shape", error);
-          lastInvalid = invalid;
-        } else {
-          lastInvalid = error;
+          this.logTiming(startedAt, input, "success", raced.result.tailoredQuestions.length, raced.usage, started > 1 ? `hedge_won_${raced.label}` : undefined);
+          return raced.result;
         }
-        const reason = lastInvalid.reason;
-        const provider = this.responseProvider(body) ?? this.inferredPinnedProvider;
-        if (attempt === 0) {
-          ignoredProvider = provider;
-          this.logTiming(startedAt, input, "invalid_response_retry", 0, body?.usage, this.unmappedProviderNote(body, provider), reason);
-          continue;
+        failures.push(raced);
+        if (started < 2) {
+          // A fast failure of A: hedge now instead of waiting. HTTP-level provider errors stay final, as before.
+          if (raced.kind === "http" || raced.kind === "rate_limited") throw raced.error;
+          start("B", raced.provider ?? this.inferredPinnedProvider, "fast_failure", raced.providerNote);
         }
-        this.logTiming(startedAt, input, "invalid_response", 0, body?.usage, attempt ? "retry_failed" : undefined, reason);
-        throw lastInvalid;
       }
+    } finally {
+      if (hedgeTimer) clearTimeout(hedgeTimer);
+      clearTimeout(deadlineTimer);
+      for (const controller of controllers.values()) controller.abort();
     }
-    this.logTiming(startedAt, input, "timeout");
-    if (deadlineExpired) throw new ThinkingServiceError("RESUME_DIRECTION_TIMEOUT", 504, "A análise do currículo demorou mais do que o esperado.");
-    if (lastInvalid) throw lastInvalid;
-    throw new ThinkingServiceError("RESUME_DIRECTION_TIMEOUT", 504, "A análise do currículo demorou mais do que o esperado.");
+
+    const timeout = failures.find((failure) => failure.kind === "timeout");
+    if (timeout || deadline.aborted) throw timeout?.error ?? new ThinkingServiceError("RESUME_DIRECTION_TIMEOUT", 504, "A análise do currículo demorou mais do que o esperado.");
+    const invalid = [...failures].reverse().find((failure) => failure.kind === "invalid");
+    throw (invalid ?? failures[failures.length - 1])?.error ?? new ThinkingServiceError("RESUME_DIRECTION_PROVIDER_UNAVAILABLE", 502, "Não foi possível analisar o currículo agora.");
+  }
+
+  /** One provider call. Never throws: every failure is returned (and logged without content) for the coordinator. */
+  private async runAttempt(label: AttemptLabel, input: ResumeDirectionInput, ignoredProvider: string | undefined, signal: AbortSignal, deadline: AbortSignal, startedAt: number): Promise<AttemptOutcome> {
+    const attemptStartedAt = Date.now();
+    const fail = (kind: FailureKind, error: ThinkingServiceError, outcome: string, usage?: OpenRouterUsagePayload, provider?: string, invalidReason?: string, providerNote?: string): AttemptOutcome => {
+      this.logTiming(startedAt, input, outcome, 0, usage, `${label}_${Date.now() - attemptStartedAt}ms`, invalidReason);
+      return { label, status: "failed", kind, error, provider, providerNote };
+    };
+    const timeoutError = (cause?: unknown) => new ThinkingServiceError("RESUME_DIRECTION_TIMEOUT", 504, "A análise do currículo demorou mais do que o esperado.", cause === undefined ? undefined : { cause });
+    // A cancelled loser also aborts; only the shared deadline counts as a timeout.
+    const aborted = (error: unknown) => signal.aborted || isAbortError(error);
+
+    let response: Response;
+    try {
+      response = await this.fetchImplementation("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.options.key}`,
+          "Content-Type": "application/json",
+          // OpenRouter documents this opt-in metadata as containing the selected endpoint/provider.
+          "X-OpenRouter-Metadata": "enabled",
+        },
+        body: JSON.stringify({
+          model: this.options.model,
+          messages: [
+            { role: "system", content: resumeDirectionSystemPrompt },
+            { role: "user", content: JSON.stringify({ resume: input.resumeText }) },
+          ],
+          temperature: 0,
+          max_tokens: 1_400,
+          usage: { include: true },
+          provider: { require_parameters: true, data_collection: "deny", ...(ignoredProvider ? { ignore: [ignoredProvider] } : {}) },
+          response_format: { type: "json_schema", json_schema: { name: "resume_interview_direction", strict: true, schema } },
+        }),
+        signal,
+      });
+    } catch (error) {
+      if (aborted(error)) return fail("timeout", timeoutError(error), deadline.aborted ? "timeout" : "cancelled");
+      return fail("network", new ThinkingServiceError("RESUME_DIRECTION_PROVIDER_UNAVAILABLE", 502, "Não foi possível analisar o currículo agora.", { cause: error }), "provider_error");
+    }
+
+    if (response.status === 429) {
+      await response.body?.cancel();
+      return fail("rate_limited", new ThinkingServiceError("RESUME_DIRECTION_RATE_LIMITED", 503, "A análise está temporariamente ocupada. Tente novamente em instantes."), "rate_limited");
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      return fail("http", new ThinkingServiceError("RESUME_DIRECTION_PROVIDER_UNAVAILABLE", 502, "Não foi possível analisar o currículo agora."), "provider_error");
+    }
+
+    let body: OpenRouterResponse | undefined;
+    try {
+      body = await response.json() as OpenRouterResponse;
+      if (signal.aborted) throw new DOMException("Resume analysis timed out.", "TimeoutError");
+      const result = parseResumeDirection(body.choices?.[0]?.message?.content, input);
+      this.logTiming(startedAt, input, "attempt_success", result.tailoredQuestions.length, undefined, `${label}_${Date.now() - attemptStartedAt}ms`);
+      return { label, status: "success", result, usage: body.usage };
+    } catch (error) {
+      if (!(error instanceof ResumeDirectionInvalidResponse) && aborted(error)) {
+        return fail("timeout", timeoutError(error), deadline.aborted ? "timeout" : "cancelled", body?.usage);
+      }
+      const invalid = error instanceof ResumeDirectionInvalidResponse ? error : invalidProviderResponse("invalid_shape", error);
+      const provider = this.responseProvider(body) ?? this.inferredPinnedProvider;
+      return fail("invalid", invalid, "invalid_response", body?.usage, provider, invalid.reason, this.unmappedProviderNote(body, provider));
+    }
   }
 
   private responseProvider(body: OpenRouterResponse | undefined): string | undefined {
@@ -349,7 +383,7 @@ export class OpenRouterResumeDirectionService implements ResumeDirectionService 
   }
 }
 
-export function createResumeDirectionService(config: { openRouterApiKey: string | null; model: string; timeoutMs: number }): ResumeDirectionService | null {
+export function createResumeDirectionService(config: { openRouterApiKey: string | null; model: string; timeoutMs: number; hedgeAfterMs?: number }): ResumeDirectionService | null {
   if (!config.openRouterApiKey) return null;
-  return new OpenRouterResumeDirectionService({ key: config.openRouterApiKey, model: config.model, timeoutMs: config.timeoutMs });
+  return new OpenRouterResumeDirectionService({ key: config.openRouterApiKey, model: config.model, timeoutMs: config.timeoutMs, hedgeAfterMs: config.hedgeAfterMs });
 }

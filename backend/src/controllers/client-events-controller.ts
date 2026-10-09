@@ -5,12 +5,16 @@ export const maxClientEventsPerRequest = 20;
 /** Global safety valve against log flooding (events per minute, per process). */
 export const maxClientEventsPerMinute = 1_200;
 
-const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "playback_ended", "playback_error", "playback_timeout", "unlock", "mic_open", "mic_close", "mic_error", "mic_level_check", "audio_session", "ack_preloaded", "ack_play", "ack_play_resolved", "ack_play_failed", "ack_ended", "ack_skipped", "ack_overlap", "ack_question_gap", "turn_preparation", "handoff_timing", "question_start_timing", "transcription_failure"] as const;
+const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "playback_ended", "playback_error", "playback_timeout", "unlock", "mic_open", "mic_close", "mic_error", "mic_level_check", "audio_session", "ack_preloaded", "ack_play", "ack_play_resolved", "ack_play_failed", "ack_ended", "ack_skipped", "ack_overlap", "ack_question_gap", "turn_preparation", "handoff_timing", "question_start_timing", "transcription_failure", "resume_analysis"] as const;
 /** Why an instant acknowledgement was not spoken. */
 const ackSkipReasons = ["not_loaded", "not_applicable", "question_started"] as const;
 const preparationTypes = ["fixed", "speculative"] as const;
 const preparationOutcomes = ["started", "ready", "decision_ready", "prepared_used", "prepared_discarded", "failed", "used", "discarded", "closing"] as const;
 const preparationReasons = ["capture_ended", "speech_resumed", "unavailable", "mismatch", "speculative_not_ready", "question_started", "leaving", "new_turn", "skip"] as const;
+/** Client-side resume analysis stage and the closed set of codes (backend error codes plus client-only ones). */
+const resumeStages = ["file", "request", "response", "validation", "success"] as const;
+const resumeCodes = ["INVALID_RESUME_REQUEST", "RESUME_FILE_TOO_LARGE", "RESUME_TOO_MANY_PAGES", "RESUME_CONTENT_TOO_LARGE", "RESUME_INVALID_PDF", "RESUME_INSUFFICIENT_CONTENT", "RESUME_DIRECTION_TIMEOUT", "RESUME_DIRECTION_RATE_LIMITED", "RESUME_DIRECTION_INVALID_PROVIDER_RESPONSE", "RESUME_DIRECTION_PROVIDER_UNAVAILABLE", "RESUME_DIRECTION_NOT_CONFIGURED", "UNAUTHENTICATED", "INVALID_RESPONSE", "REQUEST_FAILED", "other"] as const;
+const resumeReasons = ["INVALID_PROFILE", "INVALID_QUESTIONS", "INVALID_FOCUS", "INVALID_RESPONSE"] as const;
 const failureReasons = ["connection", "timeout", "setup", "unsupported", "closed", "slow", "buffer", "microphone"] as const;
 const errorNames = ["NotAllowedError", "NotSupportedError", "AbortError", "NotFoundError", "InvalidStateError", "EncodingError", "NotReadableError", "SecurityError", "OverconstrainedError", "TypeError", "Error", "MediaError", "other"] as const;
 const audioContextStates = ["suspended", "running", "closed", "interrupted", "none"] as const;
@@ -36,6 +40,9 @@ const enumFields: Record<string, readonly string[]> = {
   outcome: preparationOutcomes,
   preparationReason: preparationReasons,
   failureReason: failureReasons,
+  resumeStage: resumeStages,
+  resumeCode: resumeCodes,
+  resumeReason: resumeReasons,
 };
 // Numeric fields with their inclusive [min, max] range.
 const numberFields: Record<string, readonly [number, number]> = {
@@ -75,6 +82,9 @@ const numberFields: Record<string, readonly [number, number]> = {
   playbackStartMs: [0, 3_600_000],
   unaccountedMs: [0, 3_600_000],
   revision: [0, 1_000_000],
+  httpStatus: [0, 599],
+  receivedQuestions: [0, 1_000],
+  validQuestions: [0, 1_000],
 };
 const booleanFields = ["mediaMuted", "mediaPaused", "micActive", "pooled", "audioSessionPresent", "prepared"] as const;
 

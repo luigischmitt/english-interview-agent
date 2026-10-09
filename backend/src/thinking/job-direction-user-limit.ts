@@ -5,7 +5,7 @@ type UserEntry = {
 };
 
 export type JobDirectionLimitResult =
-  | { allowed: true; release: () => void }
+  | { allowed: true; release: (outcome?: "success" | "failure") => void }
   | { allowed: false; retryAfterSeconds: number; reason: "in_flight" | "cooldown" | "capacity" };
 
 export type JobDirectionUserLimitOptions = {
@@ -19,7 +19,7 @@ const defaultCooldownMs = 5_000;
 const defaultIdleTtlMs = 60_000;
 const defaultMaxTrackedUsers = 5_000;
 
-/** One request per authenticated user at a time, followed by a small per-instance cooldown. */
+/** One request per authenticated user at a time. A successful request is followed by a small per-instance cooldown; a failed one is not, so the user can retry right away. */
 export class JobDirectionUserLimit {
   private readonly users = new Map<string, UserEntry>();
   private readonly cooldownMs: number;
@@ -54,14 +54,14 @@ export class JobDirectionUserLimit {
     let released = false;
     return {
       allowed: true,
-      release: () => {
+      release: (outcome = "success") => {
         if (released) return;
         released = true;
         const activeEntry = this.users.get(userId);
         if (activeEntry !== entry) return;
         const releasedAt = this.now();
         entry.inFlight = false;
-        entry.cooldownUntilMs = releasedAt + this.cooldownMs;
+        entry.cooldownUntilMs = outcome === "failure" ? 0 : releasedAt + this.cooldownMs;
         entry.lastActivityAtMs = releasedAt;
       },
     };

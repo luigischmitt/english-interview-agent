@@ -38,6 +38,12 @@ describe("sanitizeClientEvent", () => {
     expect(sanitizeClientEvent({ kind: "mic_level_check", peakLevel: 3, inputDeviceKind: "iPhone de Lucas" })).toEqual({ kind: "mic_level_check" });
   });
 
+  it("keeps only allowlisted resume analysis stage, code, status and counts", () => {
+    expect(sanitizeClientEvent({ kind: "resume_analysis", resumeStage: "validation", resumeCode: "INVALID_RESPONSE", resumeReason: "INVALID_QUESTIONS", httpStatus: 200, elapsedMs: 11_800, receivedQuestions: 8, validQuestions: 7, fileName: "cv.pdf", question: "secret" }))
+      .toEqual({ kind: "resume_analysis", resumeStage: "validation", resumeCode: "INVALID_RESPONSE", resumeReason: "INVALID_QUESTIONS", httpStatus: 200, elapsedMs: 11_800, receivedQuestions: 8, validQuestions: 7 });
+    expect(sanitizeClientEvent({ kind: "resume_analysis", resumeStage: "free text", resumeCode: "Maria Silva", httpStatus: 9_999 })).toEqual({ kind: "resume_analysis" });
+  });
+
   it("keeps content-free acknowledgement diagnostics with their timing fields", () => {
     expect(sanitizeClientEvent({ kind: "ack_play", answerToAckMs: 452, phrase: "Okay.", text: "secret" })).toEqual({ kind: "ack_play", answerToAckMs: 452 });
     expect(sanitizeClientEvent({ kind: "ack_ended", ackDurationMs: 640 })).toEqual({ kind: "ack_ended", ackDurationMs: 640 });

@@ -75,8 +75,10 @@ export function createJobDirectionController(service: JobDirectionService | null
       return;
     }
 
+    let outcome: "success" | "failure" = "failure";
     try {
       response.status(200).json(await service.analyze(input));
+      outcome = "success";
     } catch (error) {
       if (error instanceof ThinkingServiceError && error.code.startsWith("JOB_DIRECTION_")) {
         response.status(error.status).json({ error: { code: error.code, message: error.message } });
@@ -84,7 +86,7 @@ export function createJobDirectionController(service: JobDirectionService | null
       }
       response.status(502).json({ error: { code: "JOB_DIRECTION_PROVIDER_UNAVAILABLE", message: "Não foi possível analisar a vaga agora." } });
     } finally {
-      lease.release();
+      lease.release(outcome);
     }
   };
 }

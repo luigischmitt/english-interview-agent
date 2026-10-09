@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createResumeDirectionHandlers, extractResumePdf, maximumResumeBytes, redactResumeContactDetails } from "../src/controllers/resume-direction-controller.js";
 import { JobDirectionUserLimit } from "../src/thinking/job-direction-user-limit.js";
 import { maxResumeTailoredQuestions, OpenRouterResumeDirectionService, openRouterProviderSlug, parseResumeDirection, resumeQuestionDimensions } from "../src/thinking/openrouter-resume-direction-service.js";
-import { defaultResumeDirectionTimeoutMs, loadThinkingConfig } from "../src/thinking/config.js";
+import { ThinkingServiceError } from "../src/thinking/errors.js";
+import { defaultResumeDirectionHedgeAfterMs, defaultResumeDirectionTimeoutMs, loadThinkingConfig } from "../src/thinking/config.js";
 import type { ResumeDirectionInput, ResumeDirectionService } from "../src/thinking/types.js";
 
 const resumeText = "Backend Engineer at Acme. Built a distributed payments platform with Node.js and PostgreSQL. Led observability improvements and reduced incidents by 30 percent. Collaborated with product and support teams across releases.";
@@ -183,9 +184,9 @@ describe("resume direction validation", () => {
 });
 
 describe("OpenRouter resume direction service", () => {
-  it("uses a dedicated 28-second default and honors its dedicated environment override", () => {
-    expect(defaultResumeDirectionTimeoutMs).toBe(28_000);
-    expect(loadThinkingConfig({}).resumeDirectionTimeoutMs).toBe(28_000);
+  it("uses a dedicated 30-second default and honors its dedicated environment override", () => {
+    expect(defaultResumeDirectionTimeoutMs).toBe(30_000);
+    expect(loadThinkingConfig({}).resumeDirectionTimeoutMs).toBe(30_000);
     expect(loadThinkingConfig({ INTERVIEW_RESUME_DIRECTION_TIMEOUT_MS: "26000" }).resumeDirectionTimeoutMs).toBe(26_000);
     expect(() => loadThinkingConfig({ INTERVIEW_RESUME_DIRECTION_TIMEOUT_MS: "24000" })).toThrow(/between 25000 and 30000/iu);
     expect(() => loadThinkingConfig({ INTERVIEW_RESUME_DIRECTION_TIMEOUT_MS: "31000" })).toThrow(/between 25000 and 30000/iu);
@@ -266,30 +267,121 @@ describe("OpenRouter resume direction service", () => {
     expect(call).toBe(2);
   });
 
-  it("retries once after an attempt timeout, excluding the inferred pinned provider", async () => {
-    vi.stubEnv("OPENROUTER_PINNED_PROVIDER", "parasail");
-    let call = 0;
-    const sent: Array<Record<string, unknown>> = [];
-    const fetchImplementation = vi.fn<typeof fetch>(async (_input, init) => {
-      sent.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      call += 1;
-      if (call === 1) {
-        return new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
-        });
-      }
-      return Response.json({ choices: [{ message: { content: JSON.stringify(providerResult) } }] });
+  it("configures the hedge delay with a bounded environment override", () => {
+    expect(loadThinkingConfig({}).resumeDirectionHedgeAfterMs).toBe(defaultResumeDirectionHedgeAfterMs);
+    expect(loadThinkingConfig({ INTERVIEW_RESUME_DIRECTION_HEDGE_AFTER_MS: "8000" }).resumeDirectionHedgeAfterMs).toBe(8_000);
+    expect(() => loadThinkingConfig({ INTERVIEW_RESUME_DIRECTION_HEDGE_AFTER_MS: "500" })).toThrow(/hedge/iu);
+  });
+
+  it("job-direction limit: a failed release waives the cooldown, a success keeps it", () => {
+    let now = 0;
+    const limit = new JobDirectionUserLimit({ cooldownMs: 5_000, now: () => now });
+    const first = limit.acquire("u");
+    if (!first.allowed) throw new Error("expected lease");
+    expect(limit.acquire("u")).toMatchObject({ allowed: false, reason: "in_flight" });
+    first.release("failure");
+    const second = limit.acquire("u");
+    expect(second.allowed).toBe(true);
+    if (second.allowed) second.release("success");
+    expect(limit.acquire("u")).toMatchObject({ allowed: false, reason: "cooldown" });
+  });
+
+  describe("hedged attempts", () => {
+    const ok = () => Response.json({ choices: [{ message: { content: JSON.stringify(providerResult) } }] });
+    const hang = (init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
     });
-    vi.stubGlobal("fetch", fetchImplementation);
-    try {
-      const service = new OpenRouterResumeDirectionService({ key: "test-key", model: "test-model", timeoutMs: 1_000 });
-      await expect(service.analyze({ resumeText, pageCount: 2 })).resolves.toMatchObject({ tailoredQuestions: expect.arrayContaining([expect.any(String)]) });
+    const quiet = () => vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    it("starts B at the threshold, excluding the pinned provider, and B wins while A is cancelled", async () => {
+      vi.stubEnv("OPENROUTER_PINNED_PROVIDER", "parasail");
+      const info = quiet();
+      const sent: Array<Record<string, any>> = [];
+      let aborted = false;
+      const fetchImplementation = vi.fn<typeof fetch>(async (_input, init) => {
+        sent.push(JSON.parse(String(init?.body)));
+        if (sent.length === 1) { init?.signal?.addEventListener("abort", () => { aborted = true; }); return hang(init); }
+        return ok();
+      });
+      vi.stubGlobal("fetch", fetchImplementation);
+      try {
+        const service = new OpenRouterResumeDirectionService({ key: "k", model: "m", timeoutMs: 2_000, hedgeAfterMs: 100 });
+        const started = Date.now();
+        await expect(service.analyze({ resumeText, pageCount: 2 })).resolves.toMatchObject({ tailoredQuestions: expect.any(Array) });
+        expect(Date.now() - started).toBeGreaterThanOrEqual(95);
+        expect(Date.now() - started).toBeLessThan(1_000);
+        expect(sent).toHaveLength(2);
+        expect(sent[0]?.provider.ignore).toBeUndefined();
+        expect(sent[1]?.provider).toMatchObject({ ignore: ["parasail"] });
+        expect(aborted).toBe(true);
+        const logs = info.mock.calls.map(String).join("\n");
+        expect(logs).toContain("hedge_started");
+        expect(logs).toContain("hedge_won_B");
+      } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); info.mockRestore(); }
+    });
+
+    it("does not start B when A answers before the threshold", async () => {
+      const info = quiet();
+      let call = 0;
+      const service = new OpenRouterResumeDirectionService({ key: "k", model: "m", timeoutMs: 2_000, hedgeAfterMs: 500, fetchImplementation: async () => { call += 1; return ok(); } });
+      await expect(service.analyze({ resumeText, pageCount: 2 })).resolves.toBeDefined();
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      expect(call).toBe(1);
+      expect(info.mock.calls.map(String).join("\n")).not.toContain("hedge_started");
+      info.mockRestore();
+    });
+
+    it("keeps waiting for B when A is invalid, and a fast A failure starts B immediately", async () => {
+      const info = quiet();
+      let call = 0;
+      const started = Date.now();
+      const service = new OpenRouterResumeDirectionService({
+        key: "k", model: "m", timeoutMs: 2_000, hedgeAfterMs: 1_500,
+        fetchImplementation: async () => {
+          call += 1;
+          if (call === 1) return Response.json({ choices: [{ message: { content: "not json" } }] });
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          return ok();
+        },
+      });
+      await expect(service.analyze({ resumeText, pageCount: 2 })).resolves.toBeDefined();
       expect(call).toBe(2);
-      expect(sent[1]?.provider).toMatchObject({ ignore: ["parasail"] });
-    } finally {
-      vi.unstubAllGlobals();
-      vi.unstubAllEnvs();
-    }
+      expect(Date.now() - started).toBeLessThan(1_000);
+      expect(info.mock.calls.map(String).join("\n")).toContain("fast_failure");
+      info.mockRestore();
+    });
+
+    it("keeps A when B is invalid and A answers later", async () => {
+      const info = quiet();
+      let call = 0;
+      const service = new OpenRouterResumeDirectionService({
+        key: "k", model: "m", timeoutMs: 2_000, hedgeAfterMs: 50,
+        fetchImplementation: async () => {
+          call += 1;
+          if (call === 1) { await new Promise((resolve) => setTimeout(resolve, 300)); return ok(); }
+          return Response.json({ choices: [{ message: { content: "not json" } }] });
+        },
+      });
+      await expect(service.analyze({ resumeText, pageCount: 2 })).resolves.toBeDefined();
+      expect(call).toBe(2);
+      info.mockRestore();
+    });
+
+    it("times out at the shared deadline when both attempts hang", async () => {
+      const info = quiet();
+      const started = Date.now();
+      const service = new OpenRouterResumeDirectionService({ key: "k", model: "m", timeoutMs: 400, hedgeAfterMs: 100, fetchImplementation: async (_url, init) => hang(init) });
+      await expect(service.analyze({ resumeText, pageCount: 2 })).rejects.toMatchObject({ code: "RESUME_DIRECTION_TIMEOUT", status: 504 });
+      expect(Date.now() - started).toBeLessThan(700);
+      info.mockRestore();
+    });
+
+    it("fails with the invalid-response error when both attempts are invalid", async () => {
+      const info = quiet();
+      const service = new OpenRouterResumeDirectionService({ key: "k", model: "m", timeoutMs: 1_000, fetchImplementation: async () => Response.json({ choices: [{ message: { content: "not json" } }] }) });
+      await expect(service.analyze({ resumeText, pageCount: 2 })).rejects.toMatchObject({ code: "RESUME_DIRECTION_INVALID_PROVIDER_RESPONSE" });
+      info.mockRestore();
+    });
   });
 
   it("maps OpenRouter display names to provider slugs", () => {
@@ -413,7 +505,24 @@ describe("POST resume direction controller", () => {
     expect(analyzedText).not.toContain("99999-9999");
   });
 
+  it("waives the cooldown after a failed analysis but keeps it after a success", async () => {
+    let now = 1_000;
+    const limit = new JobDirectionUserLimit({ cooldownMs: 5_000, now: () => now });
+    const failing = vi.fn<ResumeDirectionService["analyze"]>(async () => { throw new ThinkingServiceError("RESUME_DIRECTION_TIMEOUT", 504, "x"); });
+    const failingApp = testApp({ analyze: failing }, undefined, limit);
+    const attach = (app: ReturnType<typeof testApp>) => request(app).post("/resume").attach("resume", Buffer.from("%PDF-x"), { filename: "resume.pdf", contentType: "application/pdf" });
+    expect((await attach(failingApp)).status).toBe(504);
+    expect((await attach(failingApp)).status).toBe(504);
+    const succeeding = testApp({ analyze: async () => parseResumeDirection(JSON.stringify(providerResult), { resumeText, pageCount: 2 }) }, undefined, limit);
+    expect((await attach(succeeding)).status).toBe(200);
+    const cooled = await attach(succeeding);
+    expect(cooled.status).toBe(429);
+    now += 5_000;
+    expect((await attach(succeeding)).status).toBe(200);
+  });
+
   it("rejects a concurrent request before PDF extraction or model analysis", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     let finishAnalysis: ((value: ReturnType<typeof parseResumeDirection>) => void) | undefined;
     const pending = new Promise<ReturnType<typeof parseResumeDirection>>((resolve) => { finishAnalysis = resolve; });
     const analyze = vi.fn<ResumeDirectionService["analyze"]>(() => pending);
@@ -426,6 +535,8 @@ describe("POST resume direction controller", () => {
     const second = await request(app).post("/resume")
       .attach("resume", Buffer.from("%PDF-second"), { filename: "resume.pdf", contentType: "application/pdf" });
     expect(second.status).toBe(429);
+    expect(info.mock.calls.map(([line]) => String(line)).join("\n")).toContain('"outcome":"rate_limited_in_flight"');
+    info.mockRestore();
     finishAnalysis?.(parseResumeDirection(JSON.stringify(providerResult), { resumeText, pageCount: 2 }));
     expect((await firstResponse).status).toBe(200);
   });
