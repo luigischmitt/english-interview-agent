@@ -32,7 +32,7 @@ import { useInterviewSession } from "../hooks/use-interview-session";
 import { createInterviewerAcknowledgements, prewarmFixedInterviewerUtterance, prewarmInterviewerClosing, prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { isAcknowledgeableAnswer, pickAcknowledgement, stripLeadingAcknowledgement } from "@/lib/interview/acknowledgement.mjs";
 import { createClosingReactionTracker, isLastAnswerExpected, startsWithAcknowledgement } from "@/lib/interview/closing-reaction.mjs";
-import { requestClosingReaction } from "@/lib/interview/closing-reaction";
+import { requestClosingReaction } from "@/lib/interview/closing-reaction-request";
 import { useMicEngine } from "../hooks/use-mic-engine";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, pickInterviewClosing, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTimingEnabled } from "@/lib/interview/handoff-timing.mjs";
