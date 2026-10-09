@@ -441,6 +441,24 @@ describe("semantic end of answer", () => {
     expect(logs()).toContain('"answerEndReason":"semantic_complete"');
   }, 12_000);
 
+  it("a newer candidate during the merged call neither aborts it nor loses the semantic complete, and is checked after it", async () => {
+    const signals: AbortSignal[] = [];
+    const service: AnswerCompletionService = {
+      isComplete: async () => false,
+      assess: ({ signal, candidate }) => { signals.push(signal!); const first = signals.length === 1; return delay(first ? 500 : 50).then(() => ({ complete: first, candidateCompatibility: candidate?.anchor === "a lock" ? "COVERED" as const : "OPEN" as const })); },
+    };
+    const { connect } = await startServer(createWhisper([answerText]).service, options(service));
+    const { socket, messages, waitFor } = await connect({ question });
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 1, question: "Why did the lock help?", anchor: "a lock" }));
+    await speak(socket, 800, 0.05);
+    await speak(socket, 800, 0.001);
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 2, question: "How did you test the race?", anchor: "the race condition" }));
+    await waitFor("complete");
+    expect(signals[0]!.aborted).toBe(false);
+    expect(logs()).toContain('"answerEndReason":"semantic_complete"');
+    expect(messages.some((message) => message.type === "follow-up-candidate-status" && message.revision === 1)).toBe(false);
+  }, 12_000);
+
   it("still delivers the final epoch's status when the grace finalizes while the compatibility check is in flight", async () => {
     const signals: AbortSignal[] = [];
     const service: AnswerCompletionService = {
@@ -567,7 +585,8 @@ describe("semantic end of answer", () => {
         return Promise.resolve({ complete: false, candidateCompatibility: "OPEN" as const });
       },
     };
-    const { connect } = await startServer(createWhisper([answerText]).service, options(service, { answerGraceMs: 3_000, incompleteGraceMs: 3_000 }));
+    // No semantic check is scheduled, so the standalone compatibility check runs (a merged call is never superseded).
+    const { connect } = await startServer(createWhisper([answerText]).service, options(service, { answerGraceMs: 3_000, incompleteGraceMs: 3_000, prepareAfterMs: 0 }));
     const { socket, messages } = await connect({ question });
     const candidate = (revision: number) => socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision, question: "Why did the lock help?", anchor: "a lock" }));
     candidate(1);

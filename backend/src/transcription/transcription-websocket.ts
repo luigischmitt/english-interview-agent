@@ -340,6 +340,8 @@ export function attachTranscriptionWebSocket(
     let semanticHeldMs = 0;
     let followUpCandidate: FollowUpCandidateUpdate | null = null;
     let closeAfterCandidate: (() => void) | null = null;
+    // The in-flight assess() call that also decides completion: a newer candidate must not abort it (it would lose the verdict).
+    let mergedCandidateAbort: AbortController | null = null;
     // An in-flight compatibility check that never produced a result must be re-runnable at the next pause in the same epoch.
     // Deliberately not part of clearGrace: finalizing must let the final epoch's check finish and report its status.
     const abortCandidateCheck = () => {
@@ -440,7 +442,8 @@ export function attachTranscriptionWebSocket(
       if (candidateAbort === controller) candidateAbort = null;
       try {
         if (controller.signal.aborted || speechEpoch !== epochAtStart || followUpCandidate?.turnId !== candidate.turnId || followUpCandidate.revision !== candidate.revision) return;
-        const finalStatus = kind ? "NONE" : status;
+        // Text with a gap may miss the very part that answered the candidate: never vouch for it as OPEN (or COVERED).
+        const finalStatus = kind || streamSession?.hasGap ? "NONE" : status;
         send(socket, { type: "follow-up-candidate-status", turnId: candidate.turnId, revision: candidate.revision, status: finalStatus, speechEpoch });
         logStreamDiagnostic({ status: "follow_up_candidate", compatibility: finalStatus, revision: candidate.revision, speechEpoch });
         if (finalStatus === "COVERED" || finalStatus === "INVALID" || finalStatus === "NONE") sendReplacementProvisional();
@@ -467,6 +470,7 @@ export function attachTranscriptionWebSocket(
         candidateAbort?.abort();
         const candidateController = new AbortController();
         candidateAbort = candidateController;
+        mergedCandidateAbort = candidateController;
         candidateChecksInEpoch += 1;
         lastAssessedCandidate = { turnId: candidate.turnId, revision: candidate.revision };
         providerSignal = candidateController.signal;
@@ -477,7 +481,13 @@ export function attachTranscriptionWebSocket(
         : classifier.isComplete({ question, answer: transcript, signal: providerSignal }).then((complete) => ({ complete, candidateCompatibility: "NONE" as CandidateCompatibility }));
       const candidateController = merged ? candidateAbort : null;
       settleAssessment(call).then((outcome) => {
-        if (merged && candidate && candidateController) deliverCandidateStatus(candidate, epochAtStart, candidateController, outcome.status, outcome.kind);
+        if (merged && candidate && candidateController) {
+          if (mergedCandidateAbort === candidateController) mergedCandidateAbort = null;
+          deliverCandidateStatus(candidate, epochAtStart, candidateController, outcome.status, outcome.kind);
+          // A newer candidate that arrived meanwhile still gets its own check while the pause lasts.
+          const latest = followUpCandidate;
+          if (!candidateController.signal.aborted && latest && latest.revision !== candidate.revision) recheckCandidateInGrace(latest);
+        }
         if (controller.signal.aborted) return;
         if (semanticAbort === controller) semanticAbort = null;
         semanticLatencyMs = Date.now() - startedAt;
@@ -501,6 +511,13 @@ export function attachTranscriptionWebSocket(
           finishIfStillQuiet();
         }
       });
+    };
+    const recheckCandidateInGrace = (candidate: FollowUpCandidateUpdate) => {
+      const current = sessionId ? sessions.get(sessionId) : undefined;
+      if (graceTimer === null || finalRequested || finishing || !streamSession || streamSession.failed
+        || streamSession.turnActive || !current?.vad.hasSpeech || !interviewerQuestion || !streaming?.answerCompletion) return;
+      const transcript = streamSession.committedText();
+      if (transcript) runCandidateCompatibilityCheck(candidate, transcript);
     };
     const runCandidateCompatibilityCheck = (candidate: FollowUpCandidateUpdate, transcript: string) => {
       const classifier = streaming?.answerCompletion;
@@ -1168,12 +1185,9 @@ export function attachTranscriptionWebSocket(
         candidateRevisionFloorByTurnId.set(candidate.turnId, candidate.revision);
         logStreamDiagnostic({ status: "follow_up_candidate_updated", revision: candidate.revision });
         // Compatibility has its own per-speech-epoch budget and does not consume semantic completion checks.
-        const current = sessionId ? sessions.get(sessionId) : undefined;
-        if (graceTimer !== null && !finalRequested && !finishing && streamSession && !streamSession.failed
-          && !streamSession.turnActive && current?.vad.hasSpeech && interviewerQuestion && streaming?.answerCompletion) {
-          const transcript = streamSession.committedText();
-          if (transcript) runCandidateCompatibilityCheck(candidate, transcript);
-        }
+        // A running merged call is left alone (it also decides completion); it re-checks the newest candidate when it settles.
+        if (mergedCandidateAbort && candidateAbort === mergedCandidateAbort) return;
+        recheckCandidateInGrace(candidate);
         return;
       }
 
