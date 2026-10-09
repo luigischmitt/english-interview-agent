@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { requestResumeDirection, resumeMaxBytes, validateResumeFile } from "../src/lib/interview/resume-direction.mjs";
+import { requestResumeDirection, resumeDirectionClientTimeoutMs, resumeMaxBytes, validateResumeFile } from "../src/lib/interview/resume-direction.mjs";
 
 const direction = {
   targetRole: "Backend Engineer",
@@ -59,4 +59,18 @@ test("accepts a full eight-question resume plan", async () => {
   const tailoredQuestions = Array(8).fill(0).map((_, index) => `In project number ${index + 1}, what technical decision did you make?`);
   const result = await requestResumeDirection(pdf(), async () => new Response(JSON.stringify({ ...direction, tailoredQuestions }), { status: 200 }));
   assert.equal(result.tailoredQuestions.length, 8);
+});
+
+test("client timeout outlasts the backend maximum budget and maps an abort to the timeout code", async () => {
+  assert.ok(resumeDirectionClientTimeoutMs >= 30_000 + 3_000);
+  let signal;
+  await assert.rejects(
+    requestResumeDirection(pdf(), async (_url, init) => {
+      signal = init.signal;
+      throw new DOMException("timed out", "TimeoutError");
+    }),
+    { code: "RESUME_DIRECTION_TIMEOUT", status: 504 },
+  );
+  assert.ok(signal instanceof AbortSignal);
+  await assert.rejects(requestResumeDirection(pdf(), async () => { throw new TypeError("network"); }), { code: "REQUEST_FAILED" });
 });

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createResumeDirectionHandlers, extractResumePdf, maximumResumeBytes, redactResumeContactDetails } from "../src/controllers/resume-direction-controller.js";
 import { JobDirectionUserLimit } from "../src/thinking/job-direction-user-limit.js";
-import { maxResumeTailoredQuestions, OpenRouterResumeDirectionService, parseResumeDirection, resumeQuestionDimensions } from "../src/thinking/openrouter-resume-direction-service.js";
+import { maxResumeTailoredQuestions, OpenRouterResumeDirectionService, openRouterProviderSlug, parseResumeDirection, resumeQuestionDimensions } from "../src/thinking/openrouter-resume-direction-service.js";
 import { defaultResumeDirectionTimeoutMs, loadThinkingConfig } from "../src/thinking/config.js";
 import type { ResumeDirectionInput, ResumeDirectionService } from "../src/thinking/types.js";
 
@@ -290,6 +290,44 @@ describe("OpenRouter resume direction service", () => {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();
     }
+  });
+
+  it("maps OpenRouter display names to provider slugs", () => {
+    expect(openRouterProviderSlug("Novita AI")).toBe("novita");
+    expect(openRouterProviderSlug("Google")).toBe("google-vertex");
+    expect(openRouterProviderSlug("  Google   Vertex ")).toBe("google-vertex");
+    expect(openRouterProviderSlug("Fireworks")).toBe("fireworks");
+    expect(openRouterProviderSlug("Some New Provider")).toBe("some-new-provider");
+    expect(openRouterProviderSlug("parasail/fp8")).toBe("parasail-fp8");
+    expect(openRouterProviderSlug("???")).toBeUndefined();
+    expect(openRouterProviderSlug("")).toBeUndefined();
+    expect(openRouterProviderSlug(undefined)).toBeUndefined();
+  });
+
+  it("ignores the mapped provider on retry and logs content-free when the name cannot be mapped", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const run = async (provider: string) => {
+      const sent: Array<Record<string, any>> = [];
+      let call = 0;
+      const service = new OpenRouterResumeDirectionService({
+        key: "test-key", model: "test-model", timeoutMs: 1_000,
+        fetchImplementation: async (_input, init) => {
+          sent.push(JSON.parse(String(init?.body)));
+          call += 1;
+          if (call === 1) return Response.json({ provider, choices: [{ message: { content: "not json" } }] });
+          return Response.json({ choices: [{ message: { content: JSON.stringify(providerResult) } }] });
+        },
+      });
+      await service.analyze({ resumeText, pageCount: 2 });
+      return sent;
+    };
+    expect((await run("Novita AI"))[1]?.provider.ignore).toEqual(["novita"]);
+    expect(info.mock.calls.map(String).join("\n")).not.toContain("provider_unmappable");
+    expect((await run("???"))[1]?.provider.ignore).toBeUndefined();
+    const logged = info.mock.calls.map(String).join("\n");
+    expect(logged).toContain("provider_unmappable");
+    expect(logged).not.toContain("???");
+    info.mockRestore();
   });
 
   it("retries once after a first-attempt network error", async () => {

@@ -176,6 +176,27 @@ export function parseResumeDirection(content: unknown, input: ResumeDirectionInp
   };
 }
 
+// OpenRouter metadata returns display names; provider.ignore needs slugs (https://openrouter.ai/api/v1/providers, checked
+// 2026-10-08: "Google" is google-vertex, "AtlasCloud" is atlas-cloud). Explicit exceptions first, then a generic
+// lowercase / dash normalization. Names that yield no valid slug are reported as unmappable.
+const openRouterProviderSlugExceptions: Record<string, string> = {
+  "novita ai": "novita",
+  "nebius ai studio": "nebius",
+  "google ai studio": "google-ai-studio",
+  "google": "google-vertex",
+  "google vertex": "google-vertex",
+  "amazon bedrock": "amazon-bedrock",
+  "together ai": "together",
+  "atlascloud": "atlas-cloud",
+};
+
+export function openRouterProviderSlug(name: string | undefined): string | undefined {
+  if (!name || name.length > 80) return undefined;
+  const normalized = name.trim().toLowerCase().replace(/\s+/gu, " ");
+  const slug = openRouterProviderSlugExceptions[normalized] ?? normalized.replace(/[^a-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "");
+  return /^[a-z0-9][a-z0-9._-]{0,63}$/u.test(slug) ? slug : undefined;
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
 }
@@ -261,7 +282,7 @@ export class OpenRouterResumeDirectionService implements ResumeDirectionService 
           if (signal.aborted || isAbortError(error)) {
             if (attempt === 0) {
               ignoredProvider = this.responseProvider(body) ?? this.inferredPinnedProvider;
-              this.logTiming(startedAt, input, "timeout_retry", 0, body?.usage, ignoredProvider ? undefined : "provider_unknown");
+              this.logTiming(startedAt, input, "timeout_retry", 0, body?.usage, this.unmappedProviderNote(body, ignoredProvider));
               continue;
             }
             this.logTiming(startedAt, input, "timeout", 0, body?.usage, attempt ? "retry" : undefined);
@@ -276,7 +297,7 @@ export class OpenRouterResumeDirectionService implements ResumeDirectionService 
         const provider = this.responseProvider(body) ?? this.inferredPinnedProvider;
         if (attempt === 0) {
           ignoredProvider = provider;
-          this.logTiming(startedAt, input, "invalid_response_retry", 0, body?.usage, provider ? undefined : "provider_unknown", reason);
+          this.logTiming(startedAt, input, "invalid_response_retry", 0, body?.usage, this.unmappedProviderNote(body, provider), reason);
           continue;
         }
         this.logTiming(startedAt, input, "invalid_response", 0, body?.usage, attempt ? "retry_failed" : undefined, reason);
@@ -297,10 +318,20 @@ export class OpenRouterResumeDirectionService implements ResumeDirectionService 
     const selected = Array.isArray(available)
       ? available.find((endpoint) => endpoint && typeof endpoint === "object" && !Array.isArray(endpoint) && endpoint.selected === true)?.provider
       : undefined;
-    const provider = bodyProvider ?? (typeof selected === "string" ? selected : undefined);
-    if (!provider || provider.length > 80) return undefined;
-    const slug = provider.trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "");
-    return /^[a-z0-9][a-z0-9._-]{0,63}$/u.test(slug) ? slug : undefined;
+    return openRouterProviderSlug(bodyProvider ?? (typeof selected === "string" ? selected : undefined));
+  }
+
+  /** Content-free note for logs when a retry cannot exclude the failing provider. */
+  private unmappedProviderNote(body: OpenRouterResponse | undefined, slug: string | undefined): string | undefined {
+    if (slug) return undefined;
+    return this.responseProviderName(body) ? "provider_unmappable" : "provider_unknown";
+  }
+
+  private responseProviderName(body: OpenRouterResponse | undefined): string | undefined {
+    if (typeof body?.provider === "string" && body.provider.trim()) return body.provider;
+    const available = body?.openrouter_metadata?.endpoints?.available;
+    const selected = Array.isArray(available) ? available.find((endpoint) => endpoint?.selected === true)?.provider : undefined;
+    return typeof selected === "string" && selected.trim() ? selected : undefined;
   }
 
   private logTiming(startedAt: number, input: ResumeDirectionInput, outcome: string, questionCount = 0, usage?: OpenRouterUsagePayload, retry?: string, invalidReason?: string): void {
