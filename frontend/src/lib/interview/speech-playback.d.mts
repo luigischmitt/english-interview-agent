@@ -37,6 +37,12 @@ export type SpeechPlaybackOptions = {
   onSynthesisStarted?: () => void;
   onSynthesisCompleted?: () => void;
   onPlaybackStarted?: () => void;
+  /** playInterviewerSegments only: elapsed silence between one audio chunk ending and the next beginning. */
+  onInterChunkGap?: (gapMs: number) => void;
+  /** playInterviewerSegments only: fired when a question-ending audio chunk begins playing. */
+  onQuestionStarted?: () => void;
+  /** playInterviewerSegments only: fired when the final audio chunk begins playing. */
+  onFinalChunkPlaybackStarted?: () => void;
   /** playInterviewerSegments only: fired once when the final chunk is playing and at most `finalChunkLeadMs` of it remains (at its start if shorter). */
   onFinalChunkStarted?: () => void;
   finalChunkLeadMs?: number;

@@ -1,6 +1,6 @@
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 
-export type SpeculativeTurnAnalysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null };
+export type SpeculativeTurnAnalysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction?: "KEEP" | "SKIP" | "DEEPEN"; adaptedSecondFixedQuestion?: string | null; secondFixedEvidenceAnchor?: string | null };
 
 export async function requestSpeculativeHandoffStatus(signal?: AbortSignal): Promise<boolean> {
   try {

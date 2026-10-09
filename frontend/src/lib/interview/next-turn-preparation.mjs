@@ -107,6 +107,24 @@ export function createNextTurnPreparationRegistry() {
       return entry;
     },
 
+    /** Discards every retained or current ready entry whose value matches (cancelling its prewarmed audio). Returns the count. */
+    discardWhere(predicate) {
+      let count = 0;
+      const keep = [];
+      for (const entry of retainedReady) {
+        if (entry.settled === "ready" && !entry.used && predicate(entry.value)) { discard(entry); count += 1; }
+        else keep.push(entry);
+      }
+      retainedReady = keep;
+      if (current && current.settled === "ready" && !current.used && predicate(current.value)) {
+        const entry = current;
+        current = null;
+        discard(entry);
+        count += 1;
+      }
+      return count;
+    },
+
     /** The prepared value was unusable after all (it resolved to nothing): count it as discarded instead of used. */
     release(entry) {
       if (!entry?.used) return;

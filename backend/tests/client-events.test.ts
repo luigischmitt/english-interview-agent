@@ -53,8 +53,8 @@ describe("sanitizeClientEvent", () => {
       .toEqual({ kind: "turn_preparation", preparationType: "speculative", outcome: "prepared_used", preparationReason: "mismatch", usedCount: 1, discardedCount: 2 });
     expect(sanitizeClientEvent({ kind: "turn_preparation", preparationType: "fixed", outcome: "used", plannedCount: 2, readyCount: 1, startedBeforeCompleteMs: 90000, readyBeforeCompleteMs: 3000, usedIndex: 0, question: "secret" }))
       .toEqual({ kind: "turn_preparation", preparationType: "fixed", outcome: "used", plannedCount: 2, readyCount: 1, startedBeforeCompleteMs: 90000, readyBeforeCompleteMs: 3000, usedIndex: 0 });
-    expect(sanitizeClientEvent({ kind: "question_start_timing", confirmationToFirstAudioMs: 120, confirmationToQuestionStartMs: 850, transitionDurationMs: 730, text: "secret" }))
-      .toEqual({ kind: "question_start_timing", confirmationToFirstAudioMs: 120, confirmationToQuestionStartMs: 850, transitionDurationMs: 730 });
+    expect(sanitizeClientEvent({ kind: "question_start_timing", confirmationToFirstAudioMs: 120, confirmationToQuestionAudioMs: 850, confirmationToFinalChunkStartMs: 1_100, firstAudioToFinalChunkStartMs: 980, maxInterChunkGapMs: 80, text: "secret" }))
+      .toEqual({ kind: "question_start_timing", confirmationToFirstAudioMs: 120, confirmationToQuestionAudioMs: 850, confirmationToFinalChunkStartMs: 1_100, firstAudioToFinalChunkStartMs: 980, maxInterChunkGapMs: 80 });
     expect(sanitizeClientEvent({ kind: "transcription_failure", failureReason: "timeout", code: "free text" }))
       .toEqual({ kind: "transcription_failure", failureReason: "timeout" });
     expect(sanitizeClientEvent({ kind: "transcription_failure", failureReason: "answer text" })).toEqual({ kind: "transcription_failure" });

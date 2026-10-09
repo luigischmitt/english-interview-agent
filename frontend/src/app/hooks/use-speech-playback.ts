@@ -63,7 +63,7 @@ export function createInterviewerAcknowledgements(onChunkAudio: SpeechPlaybackOp
   return createAcknowledgementPlayer({ endpoint: speechEndpoint, fetcher: authorizedFetch, voice, onChunkAudio, onDiagnostic: reportAudioDiagnostic });
 }
 
-export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void, speed = 1, onChunkAudio?: SpeechPlaybackOptions["onChunkAudio"], waitBeforePlayback?: () => Promise<unknown>, voice?: string) {
+export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void, speed = 1, onChunkAudio?: SpeechPlaybackOptions["onChunkAudio"], waitBeforePlayback?: () => Promise<unknown>, voice?: string, onInterChunkGap?: (gapMs: number) => void, onQuestionStarted?: () => void, onFinalChunkPlaybackStarted?: () => void) {
   const [activeSegment, setActiveSegment] = useState<string | null>(null);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
   // The browser refused to start audio without a tap; the room offers a button whose click unlocks and replays.
@@ -75,6 +75,10 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
   // Read through a ref so a new callback identity never restarts the utterance.
   const onFinalChunkStartedRef = useRef(onFinalChunkStarted);
   useEffect(() => { onFinalChunkStartedRef.current = onFinalChunkStarted; }, [onFinalChunkStarted]);
+  const onQuestionStartedRef = useRef(onQuestionStarted);
+  useEffect(() => { onQuestionStartedRef.current = onQuestionStarted; }, [onQuestionStarted]);
+  const onFinalChunkPlaybackStartedRef = useRef(onFinalChunkPlaybackStarted);
+  useEffect(() => { onFinalChunkPlaybackStartedRef.current = onFinalChunkPlaybackStarted; }, [onFinalChunkPlaybackStarted]);
   // The avatar's lip-sync feed; a ref, so it never restarts the utterance either.
   const onChunkAudioRef = useRef(onChunkAudio);
   useEffect(() => { onChunkAudioRef.current = onChunkAudio; }, [onChunkAudio]);
@@ -103,11 +107,14 @@ export function useSpeechPlayback(segments: string[], onReady: () => void, enabl
     onSynthesisStarted: () => onTimingEvent?.("synthesis-started"),
     onSynthesisCompleted: () => onTimingEvent?.("synthesis-completed"),
     onPlaybackStarted: () => onTimingEvent?.("playback-started"),
+    onInterChunkGap,
     onFinalChunkStarted: () => onFinalChunkStartedRef.current?.(),
+    onQuestionStarted: () => onQuestionStartedRef.current?.(),
+    onFinalChunkPlaybackStarted: () => onFinalChunkPlaybackStartedRef.current?.(),
     onChunkAudio: (chunk) => onChunkAudioRef.current?.(chunk),
     beforePlayback: () => waitBeforePlaybackRef.current?.(),
     onDiagnostic: reportAudioDiagnostic,
-  }), [onTimingEvent, speed, voice]);
+  }), [onInterChunkGap, onTimingEvent, speed, voice]);
 
   useEffect(() => {
     let cancelled = false;

@@ -580,13 +580,27 @@ export function playInterviewerSegments(segments, options) {
 
   const handoffLeadMs = options.finalChunkLeadMs ?? finalChunkLeadMs;
   let finalChunkAnnounced = false;
+  let previousChunkEndedAt = null;
   const playChunk = (item, chunk, isFirst, isLast, chunkIndex) => new Promise((resolve, reject) => {
     const audio = item.audio;
     const words = chunk.text.split(/\s+/u).length;
     const playbackTimeoutMs = options.playbackTimeoutMs ?? Math.min(45_000, Math.max(12_000, words * 800));
-    const updateCaption = createCaptionUpdater(chunk.units, () => audio, () => cancelled, options.onSegment);
-    const diagnose = createChunkDiagnostics(options, chunkIndex, chunks.length, () => audio);
+    let questionStartAnnounced = false;
     let playingStarted = false;
+    let activeCaption = "";
+    const announceQuestionStart = () => {
+      if (!questionStartAnnounced && playingStarted && /\?["'”’)]*\s*$/u.test(activeCaption)) {
+        questionStartAnnounced = true;
+        options.onQuestionStarted?.();
+      }
+    };
+    const onSegment = (segment) => {
+      options.onSegment?.(segment);
+      activeCaption = segment;
+      announceQuestionStart();
+    };
+    const updateCaption = createCaptionUpdater(chunk.units, () => audio, () => cancelled, onSegment);
+    const diagnose = createChunkDiagnostics(options, chunkIndex, chunks.length, () => audio);
     // Zero-wait handoff: tells the caller the utterance is about to end (final chunk, <= handoffLeadMs left) once.
     const announceFinalChunk = () => {
       if (!isLast || !playingStarted || finalChunkAnnounced || cancelled) return;
@@ -596,12 +610,15 @@ export function playInterviewerSegments(segments, options) {
       options.onFinalChunkStarted?.();
     };
     const onTimeUpdate = () => { updateCaption(); announceFinalChunk(); };
-    const onEnded = () => { diagnose("playback_ended"); finish(resolve, "ended"); };
+    const onEnded = () => { diagnose("playback_ended"); previousChunkEndedAt = globalThis.performance?.now?.() ?? Date.now(); finish(resolve, "ended"); };
     const onError = () => { diagnose("playback_error", { errorName: "MediaError" }); finish(reject, new Error("Audio playback failed.")); };
     const onPlaying = () => {
       diagnose("playback_playing");
       playingStarted = true;
       if (isFirst) options.onPlaybackStarted?.();
+      else if (previousChunkEndedAt !== null) options.onInterChunkGap?.(Math.max(0, Math.round((globalThis.performance?.now?.() ?? Date.now()) - previousChunkEndedAt)));
+      announceQuestionStart();
+      if (isLast) options.onFinalChunkPlaybackStarted?.();
       announceFinalChunk();
     };
     const timer = schedule(() => { diagnose("playback_timeout"); finish(reject, Object.assign(new Error("playback timeout"), { isPlaybackTimeout: true })); }, playbackTimeoutMs);
@@ -622,7 +639,7 @@ export function playInterviewerSegments(segments, options) {
     audio.addEventListener("playing", onPlaying, { once: true });
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("durationchange", onTimeUpdate);
-    if (chunk.sentences.length && !cancelled) options.onSegment?.(chunk.sentences[0]);
+    if (chunk.sentences.length && !cancelled) onSegment(chunk.sentences[0]);
     diagnose("playback_start");
     item.playing = true;
     Promise.resolve(audio.play()).then(

@@ -32,6 +32,7 @@ type StreamMessage = {
   committed?: string;
   partial?: string;
   revision?: number;
+  speechEpoch?: number;
   turnId?: string;
   blockCount?: number;
   assessedBlockCount?: number;
@@ -40,8 +41,8 @@ type StreamMessage = {
   timing?: { speechEndToFinalizationMs?: number };
 };
 
-export type FollowUpCandidateUpdate = { type: "follow-up-candidate"; turnId: string; revision: number; question: string; anchor: string };
-export type FollowUpCandidateStatus = { type: "follow-up-candidate-status"; turnId: string; revision: number; status: "OPEN" | "COVERED" | "INVALID" | "NONE" };
+export type FollowUpCandidateUpdate = { type: "follow-up-candidate"; turnId: string; revision: number; speechEpoch: number; question: string; anchor: string } | { type: "follow-up-candidate-cleared"; turnId: string; revision: number; speechEpoch: number };
+export type FollowUpCandidateStatus = { type: "follow-up-candidate-status"; turnId: string; revision: number; speechEpoch: number; status: "OPEN" | "COVERED" | "INVALID" | "NONE" };
 
 type HandoffTimingEvent = "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed" | "listening";
 
@@ -92,7 +93,7 @@ type MicrophoneCaptureProps = {
   onAssessmentChange?: (attemptId: string, state: VoiceAssessmentState, context: AssessmentContext) => void;
   onCaptureStateChange?: (state: VoiceCaptureState) => void;
   /** The backend expects the answer to end soon with this text (never submitted). */
-  onProvisionalAnswer?: (transcript: string, revision: number) => void;
+  onProvisionalAnswer?: (transcript: string, revision: number, speechEpoch: number) => void;
   /** The speaker resumed after a pause, so any provisional answer is stale. */
   onSpeechResumed?: () => void;
   followUpCandidate?: FollowUpCandidateUpdate | null;
@@ -313,16 +314,18 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     }
     if (message.type === "answer-provisional") {
       const { transcript, revision } = message;
-      if (typeof transcript === "string" && typeof revision === "number" && Number.isInteger(revision) && revision >= 1 && revision <= 8 && !finalizationRequestedRef.current) {
-        onProvisionalAnswerRef.current?.(transcript, revision);
+      const speechEpoch = message.speechEpoch;
+      if (typeof transcript === "string" && typeof revision === "number" && Number.isInteger(revision) && revision >= 1 && revision <= 8 && typeof speechEpoch === "number" && Number.isSafeInteger(speechEpoch) && speechEpoch >= 0 && !finalizationRequestedRef.current) {
+        onProvisionalAnswerRef.current?.(transcript, revision, speechEpoch);
       }
       return;
     }
     if (message.type === "follow-up-candidate-status") {
       const status = message.status;
       if (typeof message.turnId === "string" && typeof message.revision === "number" && Number.isInteger(message.revision) && message.revision >= 1 && message.revision <= 8
+        && Number.isSafeInteger(message.speechEpoch) && message.speechEpoch! >= 0
         && (status === "OPEN" || status === "COVERED" || status === "INVALID" || status === "NONE")) {
-        onFollowUpCandidateStatusRef.current?.({ type: "follow-up-candidate-status", turnId: message.turnId, revision: message.revision, status });
+        onFollowUpCandidateStatusRef.current?.({ type: "follow-up-candidate-status", turnId: message.turnId, revision: message.revision, speechEpoch: message.speechEpoch!, status });
       }
       return;
     }
