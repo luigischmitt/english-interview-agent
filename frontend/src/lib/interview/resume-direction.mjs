@@ -2,6 +2,11 @@ import { isValidJobDirection, isValidTailoredQuestion, maxTailoredQuestions } fr
 
 export const resumeMaxBytes = 5 * 1024 * 1024;
 
+// The backend spends up to INTERVIEW_RESUME_DIRECTION_TIMEOUT_MS (default 28 s, allowed range 25-30 s) on the provider
+// alone, split across two attempts, and the same request also covers PDF upload and text extraction. The client must
+// outlast the backend's worst case (30 s) so it receives the backend's own timeout/error response instead of aborting first.
+export const resumeDirectionClientTimeoutMs = 35_000;
+
 const focuses = ["technical-depth", "communication", "behavioral", "mixed"];
 const resumeEmphasis = "Experiências, projetos e decisões descritos no currículo.";
 const resumeContext = "Entrevista orientada exclusivamente pelo currículo enviado.";
@@ -39,8 +44,10 @@ export async function requestResumeDirection(file, fetcher, endpoint = "http://l
 
   let response;
   try {
-    response = await fetcher(endpoint, { method: "POST", body: form, signal: AbortSignal.timeout(25_000) });
-  } catch {
+    response = await fetcher(endpoint, { method: "POST", body: form, signal: AbortSignal.timeout(resumeDirectionClientTimeoutMs) });
+  } catch (error) {
+    // Same code the backend uses, so the setup screen shows the "took longer than expected" copy.
+    if (error instanceof Error && error.name === "TimeoutError") throw new ResumeDirectionRequestError("RESUME_DIRECTION_TIMEOUT", 504);
     throw new ResumeDirectionRequestError("REQUEST_FAILED");
   }
 

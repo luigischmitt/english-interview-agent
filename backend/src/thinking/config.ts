@@ -4,6 +4,8 @@ export const defaultOrchestrationTimeoutMs = 6_000;
 export const defaultOrchestrationHedgeAfterMs = 2_500;
 export const defaultBridgeTimeoutMs = 1_800;
 export const defaultInterviewReportTimeoutMs = 45_000;
+/** Resume analysis can use one provider retry while staying within this single overall deadline. */
+export const defaultResumeDirectionTimeoutMs = 28_000;
 /** Per-answer analysis is background work; measured provider responses need more than six seconds. */
 export const defaultInterviewTurnAnalysisTimeoutMs = 12_000;
 export const maxInterviewTurnAnalysisTimeoutMs = 12_000;
@@ -19,6 +21,8 @@ export type ThinkingConfig = {
   /** Start one identical hedge request after this many ms without a response; 0 disables. Defaults to 2500. */
   orchestrationHedgeAfterMs?: number;
   reportTimeoutMs?: number;
+  /** Total deadline shared by initial resume analysis and its one provider retry. */
+  resumeDirectionTimeoutMs?: number;
   /** Timeout of the small bridge call that follows a next-turn decision (300–5000 ms; defaults to 1800). */
   bridgeTimeoutMs?: number;
   /** Merge bridge writing into the decision call by default; `separate` keeps the rollback path. */
@@ -51,6 +55,12 @@ function parseReportTimeout(value: string | undefined): number {
   return timeout;
 }
 
+function parseResumeDirectionTimeout(value: string | undefined): number {
+  const timeout = parsePositiveNumber(value, defaultResumeDirectionTimeoutMs);
+  if (timeout < 25_000 || timeout > 30_000) throw new Error("Resume direction timeout must be between 25000 and 30000 milliseconds.");
+  return timeout;
+}
+
 function normalizeBridgeTimeout(value: string | undefined): number {
   const parsed = value === undefined || value.trim() === "" ? Number.NaN : Number(value);
   return Number.isFinite(parsed) ? Math.min(5_000, Math.max(300, Math.round(parsed))) : defaultBridgeTimeoutMs;
@@ -80,6 +90,7 @@ export function loadThinkingConfig(environment = process.env): ThinkingConfig {
     bridgeTimeoutMs: normalizeBridgeTimeout(environment.INTERVIEW_BRIDGE_TIMEOUT_MS),
     bridgeMode: parseBridgeMode(environment.INTERVIEW_BRIDGE_MODE),
     reportTimeoutMs: parseReportTimeout(environment.INTERVIEW_REPORT_TIMEOUT_MS),
+    resumeDirectionTimeoutMs: parseResumeDirectionTimeout(environment.INTERVIEW_RESUME_DIRECTION_TIMEOUT_MS),
     diagnosticsEnabled: environment.INTERVIEW_REASONING_DIAGNOSTICS?.trim().toLowerCase() === "true",
     speculativeHandoffEnabled: parseSpeculativeHandoff(environment.INTERVIEW_SPECULATIVE_HANDOFF),
   };
