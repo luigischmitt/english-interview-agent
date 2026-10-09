@@ -94,8 +94,11 @@ export class OpenRouterAnswerCompletionService implements AnswerCompletionServic
   private async request({ question, answer, signal }: AnswerCompletionInput, candidate: FollowUpCandidate | null): Promise<AnswerCompletionAssessment> {
     const startedAt = Date.now();
     let usage: OpenRouterUsage = parseOpenRouterUsage(undefined);
-    let outcome: "success" | "timeout" | "error" = "error";
-    if (signal?.aborted) throw new AnswerCompletionError("error", "Answer completion check aborted");
+    let outcome: "success" | "timeout" | "error" | "aborted" = "error";
+    if (signal?.aborted) {
+      outcome = "aborted";
+      throw new AnswerCompletionError("error", "Answer completion check aborted");
+    }
     const controller = new AbortController();
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, this.config.timeoutMs);
@@ -142,7 +145,10 @@ export class OpenRouterAnswerCompletionService implements AnswerCompletionServic
         outcome = "timeout";
         throw new AnswerCompletionError("timeout", "Answer completion timed out");
       }
-      if (signal?.aborted) throw new AnswerCompletionError("error", "Answer completion check aborted");
+      if (signal?.aborted) {
+        outcome = "aborted";
+        throw new AnswerCompletionError("error", "Answer completion check aborted");
+      }
       throw new AnswerCompletionError("error", "Answer completion failed");
     } finally {
       clearTimeout(timeout);
