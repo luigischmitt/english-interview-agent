@@ -81,3 +81,17 @@ test("registry: an OPEN follow-up wins over a newer fallback-only preparation", 
   assert.equal(entry.viaFallback, false);
   assert.equal(entry.value.revision, 1);
 });
+
+test("a newer ready analysis or a committed skip blocks lending an older follow-up's fixed decision", () => {
+  const value = { turnId: "t1", revision: 2, speechEpoch: 0, decision: { decision: "FOLLOW_UP" }, nextPlannedQuestionId: "q2" };
+  const base = { value, currentTurnId: "t1", currentSpeechEpoch: 0, featureEnabled: true };
+  assert.equal(canUseFixedDecisionFromFollowUp(base), true);
+  assert.equal(canUseFixedDecisionFromFollowUp({ ...base, newestReadyRevision: 3 }), false);
+  assert.equal(canUseFixedDecisionFromFollowUp({ ...base, committedSkippedIds: new Set(["q2"]) }), false);
+});
+
+test("a retired follow-up never plays, even when the final transcript is identical", () => {
+  const value = { turnId: "t1", revision: 5, speechEpoch: 0, transcript: "Same answer.", decision: { decision: "FOLLOW_UP" }, followUpReleased: true };
+  assert.equal(canUseCurrentEpochCandidate({ value, finalTranscript: "Same answer.", currentTurnId: "t1", currentSpeechEpoch: 1, featureEnabled: true }), false);
+  assert.equal(canUseCurrentEpochCandidate({ value: { ...value, followUpReleased: false }, finalTranscript: "Same answer.", currentTurnId: "t1", currentSpeechEpoch: 1, featureEnabled: true }), true);
+});

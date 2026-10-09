@@ -2,6 +2,7 @@ import type { InterviewQuestion } from "./types";
 
 type PreparedFixedDecision = {
   turnId?: string;
+  revision?: number;
   speechEpoch?: number;
   decision?: { decision?: string } | null;
   nextPlannedQuestionId?: string | null;
@@ -16,6 +17,8 @@ export function canUseFixedDecisionFromFollowUp(input: {
   currentTurnId: string | undefined;
   currentSpeechEpoch: number | null | undefined;
   featureEnabled: boolean;
+  newestReadyRevision?: number;
+  committedSkippedIds?: ReadonlySet<string>;
 }): boolean;
 export function resolveFixedFromFollowUp(input: {
   value: PreparedFixedDecision | null | undefined;

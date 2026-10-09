@@ -24,6 +24,8 @@ export function candidateStatusFor(statuses, latestByEpoch, speechEpoch, revisio
 export function canUseCurrentEpochCandidate({ value, finalTranscript, currentTurnId, currentSpeechEpoch, featureEnabled, compatibility }) {
   // A preparation from an earlier speech epoch survives pauses, but a preparation from a later epoch than the final one cannot exist.
   if (!value || value.turnId !== currentTurnId) return false;
+  // A retired follow-up (covered, invalid or cleared) never plays, even on an identical transcript.
+  if (value.followUpReleased === true) return false;
   if (Number.isSafeInteger(currentSpeechEpoch) && value.speechEpoch > currentSpeechEpoch) return false;
   if (!Number.isSafeInteger(currentSpeechEpoch) && value.decision?.decision === "FOLLOW_UP" && String(value.transcript ?? "").trim() !== String(finalTranscript ?? "").trim()) return false;
   if (compatibility === "COVERED" || compatibility === "INVALID") return false;

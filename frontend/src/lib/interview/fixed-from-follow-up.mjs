@@ -5,11 +5,14 @@ import { plannedQuestionType } from "./question-scheduling.mjs";
  * the next fixed question (KEEP / SKIP / DEEPEN). Only a preparation of the current turn, from an epoch that can exist, with
  * the feature enabled and a fixed question selected may lend that decision. Staleness of the follow-up itself is irrelevant.
  */
-export function canUseFixedDecisionFromFollowUp({ value, currentTurnId, currentSpeechEpoch, featureEnabled }) {
+export function canUseFixedDecisionFromFollowUp({ value, currentTurnId, currentSpeechEpoch, featureEnabled, newestReadyRevision = 0, committedSkippedIds = new Set() }) {
   if (featureEnabled !== true || !value || value.turnId !== currentTurnId) return false;
   if (value.decision?.decision !== "FOLLOW_UP") return false;
   if (Number.isSafeInteger(currentSpeechEpoch) && value.speechEpoch > currentSpeechEpoch) return false;
-  return typeof value.nextPlannedQuestionId === "string" && value.nextPlannedQuestionId.length > 0;
+  // A newer analysis (of any decision) supersedes this one's fixed decision, and a committed skip is never undone.
+  if ((value.revision ?? 0) < newestReadyRevision) return false;
+  if (typeof value.nextPlannedQuestionId !== "string" || value.nextPlannedQuestionId.length === 0) return false;
+  return !committedSkippedIds.has(value.nextPlannedQuestionId);
 }
 
 /**

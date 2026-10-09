@@ -831,6 +831,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     } else if (clarificationHint === null) {
       // Use the decision prepared during the answer grace only for exactly this transcript and these inputs.
       const discardedBefore = nextTurnPreparation.stats().discarded;
+      const newestReadyRevision = Math.max(0, ...nextTurnPreparation.readyValues().map((value) => value?.revision ?? 0));
       const prepared = speculativeAttemptedRef.current
         ? nextTurnPreparation.takeAnyReady({ accept: (value) => {
             return canUseCurrentEpochCandidate({
@@ -846,6 +847,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             currentTurnId: speculativeTurnIdRef.current,
             currentSpeechEpoch: currentSpeechEpochRef.current,
             featureEnabled: speculativeEnabledRef.current,
+            newestReadyRevision,
+            committedSkippedIds: speculativeFixedSkippedIdsRef.current,
         }) })
         : nextTurnPreparation.take({ transcript: savedAnswer, inputKey: decisionInputKey(decisionInput) });
       if (prepared?.viaFallback) {
