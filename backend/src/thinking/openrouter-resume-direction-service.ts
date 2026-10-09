@@ -9,7 +9,7 @@ type ResumeDirectionServiceOptions = {
   key: string;
   model: string;
   timeoutMs: number;
-  /** Delay before the parallel hedge attempt starts; defaults to 10 s. */
+  /** Delay before the parallel hedge attempt starts; defaults to 13 s (healthy calls take ~10.5–14.5 s). */
   hedgeAfterMs?: number;
   fetchImplementation?: typeof fetch;
 };

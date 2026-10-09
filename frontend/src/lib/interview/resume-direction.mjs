@@ -3,8 +3,8 @@ import { isValidJobDirection, isValidTailoredQuestion, maxTailoredQuestions } fr
 export const resumeMaxBytes = 5 * 1024 * 1024;
 
 // The backend spends up to INTERVIEW_RESUME_DIRECTION_TIMEOUT_MS (default 30 s, allowed range 25-30 s) on the provider
-// alone, split across two attempts (about 60% / the remainder), and the same request also covers PDF upload and text
-// extraction. The client must outlast the backend's worst case (30 s) so it receives the backend's own timeout/error
+// alone (a first attempt plus a parallel hedge on another provider after ~13 s, sharing that budget), and the same
+// request also covers PDF upload and text extraction. The client must outlast the backend's worst case (30 s) so it receives the backend's own timeout/error
 // response instead of aborting first.
 export const resumeDirectionClientTimeoutMs = 35_000;
 
