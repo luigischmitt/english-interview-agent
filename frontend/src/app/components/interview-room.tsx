@@ -564,9 +564,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         if (speculative.enabled) speculativeEnabledRef.current = true;
         if (signal.aborted || speculativeCallsRef.current.revision !== revision || currentSpeechEpochRef.current !== speechEpoch) return null;
         if (!speculative.enabled || speculative.analysis === null || speculative.analysis.revision !== revision) {
-          speculativeCandidateRef.current = null;
-          setFollowUpCandidateUpdate({ type: "follow-up-candidate-cleared", turnId: speculativeTurnIdRef.current, revision, speechEpoch });
-          applyFollowUpCandidateClear({ registry: nextTurnPreparation, statuses: candidateStatusesRef.current, latestByEpoch: latestCandidateStatusRevisionRef.current, speechEpoch, revision, currentSpeechEpoch: currentSpeechEpochRef.current });
+          // A failed or timed-out analysis says nothing about the previous candidate: keep it and its prepared audio
+          // (the backend compatibility check still guards it). Only an explicit NONE/NEXT result clears it.
           return null;
         }
         let decision: TurnDecision;
