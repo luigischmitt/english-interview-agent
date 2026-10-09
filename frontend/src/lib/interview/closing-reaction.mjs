@@ -38,6 +38,14 @@ export function startsWithAcknowledgement(text) {
   return /^\s*(?:okay|ok|alright|all right|got it|gotcha|right|sure|understood|i see|mm-?hm+|thanks|thank you)\b/iu.test(String(text ?? ""));
 }
 
+/** The texts a ready reaction may be spoken as: itself, plus its form without a leading acknowledgement (used when "Okay." already played). */
+export function closingReactionVariants(reaction) {
+  const text = String(reaction ?? "").trim();
+  if (!text) return [];
+  const stripped = startsWithAcknowledgement(text) ? stripLeadingAcknowledgement(text) : "";
+  return stripped && stripped !== text ? [text, stripped] : [text];
+}
+
 /**
  * Prepares the closing reaction from provisional snapshots of the last answer: at most `maxCalls` calls per answer (the first
  * from `minWords` words on, a second only when the snapshot has grown clearly), the older pending call aborted when a newer one

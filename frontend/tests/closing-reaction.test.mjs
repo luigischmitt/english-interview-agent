@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { composeClosingLead, createClosingReactionTracker, isLastAnswerExpected, isReactionCompatible, startsWithAcknowledgement } from "../src/lib/interview/closing-reaction.mjs";
+import { closingReactionVariants, composeClosingLead, createClosingReactionTracker, isLastAnswerExpected, isReactionCompatible, startsWithAcknowledgement } from "../src/lib/interview/closing-reaction.mjs";
 import { closingLinesFor, composeInterviewClosing, INTERVIEW_CLOSINGS, INTERVIEW_ENDED_CLOSINGS, pickInterviewClosing } from "../src/lib/interview/speech-playback.mjs";
 
 const snapshot = "We traced the slow responses to the cache TTL, so I shortened it and the latency dropped by half.";
@@ -203,4 +203,10 @@ test("closing reason picks its own set and rotates inside it", () => {
     assert.ok(INTERVIEW_ENDED_CLOSINGS.includes(pickInterviewClosing(INTERVIEW_CLOSINGS[0], () => random, "ended")));
   }
   assert.equal(new Set(INTERVIEW_ENDED_CLOSINGS.map((_l, i) => pickInterviewClosing(null, () => i / INTERVIEW_ENDED_CLOSINGS.length, "ended"))).size, INTERVIEW_ENDED_CLOSINGS.length);
+});
+
+test("a reaction opening with an acknowledgement is also prepared without it, as spoken after the instant Okay", () => {
+  assert.deepEqual(closingReactionVariants("Okay, so you fixed the race condition with a lock."), ["Okay, so you fixed the race condition with a lock.", "So you fixed the race condition with a lock."]);
+  assert.deepEqual(closingReactionVariants("So you cut the image size in half."), ["So you cut the image size in half."]);
+  assert.deepEqual(closingReactionVariants("  "), []);
 });

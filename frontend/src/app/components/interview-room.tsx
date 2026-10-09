@@ -31,7 +31,7 @@ import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, createOnceGate, fin
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { createInterviewerAcknowledgements, prewarmFixedInterviewerUtterance, prewarmInterviewerClosing, prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { isAcknowledgeableAnswer, pickAcknowledgement, stripLeadingAcknowledgement } from "@/lib/interview/acknowledgement.mjs";
-import { composeClosingLead, createClosingReactionTracker, isLastAnswerExpected } from "@/lib/interview/closing-reaction.mjs";
+import { closingReactionVariants, composeClosingLead, createClosingReactionTracker, isLastAnswerExpected } from "@/lib/interview/closing-reaction.mjs";
 import { requestClosingReaction } from "@/lib/interview/closing-reaction-request";
 import { useMicEngine } from "../hooks/use-mic-engine";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, pickInterviewClosing, type ClosingReason, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
@@ -529,7 +529,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       onReady: (reaction) => {
         if (!config.playInterviewerAudio || leftRef.current || !mountedRef.current || micTurnIdRef.current !== turn) return;
         closingPrewarmCancelRef.current?.();
-        const cancels = [closingLines.time_up, closingLines.ended].map((line) => prewarmInterviewerUtterance(composeInterviewClosing(reaction, line), config.voice).cancel);
+        const cancels = closingReactionVariants(reaction).flatMap((variant) => [closingLines.time_up, closingLines.ended].map((line) => prewarmInterviewerUtterance(composeInterviewClosing(variant, line), config.voice).cancel));
         closingPrewarmCancelRef.current = () => { for (const cancel of cancels) cancel(); };
       },
     });
@@ -554,6 +554,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   });
   /** Ends the interview after the final answer: reaction (if any), then the closing line. Returns false when the room was left meanwhile. */
   const closeAfterAnswer = async (answer: string | null, acknowledge: boolean, generation: number, reason: ClosingReason): Promise<boolean> => {
+    // Nothing prepared for a next turn will be used; stop analyses and synthesis still running in the background.
+    abortPreparation("closing");
     let lead: string | null = null;
     if (answer) {
       transitionPhase("advancing");
@@ -991,6 +993,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       return;
     }
     // Nothing to react to: only the "ended" closing line.
+    abortPreparation("closing");
     rememberClosingLine("ended", closingLines.ended);
     setClosingReason("ended");
     setClosingLead(null);

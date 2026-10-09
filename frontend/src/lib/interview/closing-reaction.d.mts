@@ -5,6 +5,7 @@ export const CLOSING_REACTION_MAX_WAIT_MS: number;
 export function isLastAnswerExpected(input: { elapsedSeconds: number; durationMinutes: number; finishAfter?: boolean; lookaheadSeconds?: number }): boolean;
 export function isReactionCompatible(reaction: string, snapshot: string, finalTranscript: string): boolean;
 export function startsWithAcknowledgement(text: string): boolean;
+export function closingReactionVariants(reaction: string): string[];
 export type ClosingReactionTracker<Context = unknown> = {
   update(key: string, snapshot: string, context?: Context): boolean;
   peek(key: string): { reaction: string; snapshot: string } | null;
