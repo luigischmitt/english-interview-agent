@@ -581,7 +581,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         else {
           speculativeCandidateRef.current = null;
           setFollowUpCandidateUpdate({ type: "follow-up-candidate-cleared", turnId: speculativeTurnIdRef.current, revision, speechEpoch });
-          applyFollowUpCandidateClear({ registry: nextTurnPreparation, statuses: candidateStatusesRef.current, latestByEpoch: latestCandidateStatusRevisionRef.current, speechEpoch, revision, currentSpeechEpoch: currentSpeechEpochRef.current });
+          applyFollowUpCandidateClear({ registry: nextTurnPreparation, statuses: candidateStatusesRef.current, latestByEpoch: latestCandidateStatusRevisionRef.current, revision, currentSpeechEpoch: currentSpeechEpochRef.current });
           const nextQuestion = fixedSelection.question ? fixedSelection.prompt ?? fixedSelection.question.prompt : null;
           decision = { decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: nextQuestion ? fixedHandoffPreparation.peek()?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) : null };
         }
