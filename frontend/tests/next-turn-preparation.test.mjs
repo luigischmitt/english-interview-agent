@@ -305,3 +305,68 @@ test("retained speech expires after the retention window", async () => {
   assert.equal(calls.length, 2);
   clearRetainedSpeechBlobs();
 });
+
+function deferredRun(log) {
+  return (name) => (signal) => new Promise((resolve) => {
+    const entry = { name, resolve, aborted: () => signal.aborted };
+    log.push(entry);
+  });
+}
+
+test("a pending analysis survives a newer revision and is usable once it lands", async () => {
+  const registry = createNextTurnPreparationRegistry();
+  const log = [];
+  const run = deferredRun(log);
+  const first = registry.prepare({ transcript: "one", preserveReady: true, preservePending: true, run: run("r1") });
+  registry.prepare({ transcript: "one two", preserveReady: true, preservePending: true, run: run("r2") });
+  assert.equal(log[0].aborted(), false);
+  log[0].resolve({ revision: 1, decision: { decision: "FOLLOW_UP" } });
+  await first.promise;
+  const taken = registry.takeAnyReady({ accept: (value) => value.revision === 1 });
+  assert.equal(taken.value.revision, 1);
+  assert.equal(log[1].aborted(), true, "the other pending one is discarded at finalization");
+});
+
+test("at most two analyses run at once: a third aborts the oldest pending", () => {
+  const registry = createNextTurnPreparationRegistry();
+  const log = [];
+  const run = deferredRun(log);
+  for (const [index, text] of ["a", "a b", "a b c", "a b c d"].entries()) registry.prepare({ transcript: text, preserveReady: true, preservePending: true, run: run(`r${index}`) });
+  assert.deepEqual(log.map((item) => item.aborted()), [true, true, false, false]);
+  assert.equal(registry.pendingCount(), 2);
+});
+
+test("without preservePending a new preparation still aborts the pending one", () => {
+  const registry = createNextTurnPreparationRegistry();
+  const log = [];
+  const run = deferredRun(log);
+  registry.prepare({ transcript: "a", run: run("r1") });
+  registry.prepare({ transcript: "a b", run: run("r2") });
+  assert.equal(log[0].aborted(), true);
+});
+
+test("follow-up audio is retained beyond 30 s and released when the preparation is cancelled", async () => {
+  clearRetainedSpeechBlobs();
+  const calls = [];
+  const fetcher = speechFetcher(calls);
+  const delays = [];
+  const real = globalThis.setTimeout;
+  const opts = { endpoint: "/c", fetcher, retainMs: 4 * 60_000 };
+  try {
+    globalThis.setTimeout = (callback, delay, ...rest) => { delays.push(delay); return real(callback, delay, ...rest); };
+    const prewarm = prewarmInterviewerSpeech(["Tell me more about Kafka."], { ...opts, setTimeout: real });
+    await prewarm.promise;
+    globalThis.setTimeout = real;
+    assert.ok(delays.includes(4 * 60_000), "the retention timer is 4 minutes, not 30 s");
+    const reuse = prewarmInterviewerSpeech(["Tell me more about Kafka."], opts);
+    await reuse.promise;
+    assert.equal(calls.length, 1, "served from the retained blob");
+    prewarm.cancel();
+    reuse.cancel();
+    await prewarmInterviewerSpeech(["Tell me more about Kafka."], opts).promise;
+    assert.equal(calls.length, 2, "cancelling the last holder released the retained audio");
+  } finally {
+    globalThis.setTimeout = real;
+    clearRetainedSpeechBlobs();
+  }
+});

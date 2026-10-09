@@ -478,6 +478,30 @@ describe("semantic end of answer", () => {
     expect(logs()).not.toContain("a lock");
   }, 12_000);
 
+  it("keeps the same candidate across pause/resume cycles and re-checks it at each pause start", async () => {
+    const checked: string[] = [];
+    const service: AnswerCompletionService = {
+      isComplete: async () => false,
+      assess: async ({ candidate }) => { checked.push(candidate.anchor); return { complete: false, candidateCompatibility: "OPEN" }; },
+    };
+    const { connect } = await startServer(createWhisper([answerText, "More detail.", "Even more.", "And more."]).service, options(service, {
+      answerGraceMs: 5_000, incompleteGraceMs: 5_000, semanticCheckAfterMs: 5_000,
+    }));
+    const { socket, messages } = await connect({ question });
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 1, question: "Why did the lock help?", anchor: "a lock" }));
+    const until = async (done: () => boolean) => { const deadline = Date.now() + 2_000; while (!done() && Date.now() < deadline) await delay(10); };
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await speak(socket, 600, 0.05);
+      await speak(socket, 700, 0.001);
+      await until(() => messages.filter((message) => message.type === "follow-up-candidate-status").length > cycle);
+    }
+    const statuses = messages.filter((message) => message.type === "follow-up-candidate-status");
+    // No follow-up-candidate message was resent: the candidate from revision 1 survived every resume and was judged in each epoch.
+    expect(statuses.map(({ revision, speechEpoch, status }) => [revision, speechEpoch, status])).toEqual([[1, 0, "OPEN"], [1, 1, "OPEN"], [1, 2, "OPEN"]]);
+    expect(checked).toHaveLength(3);
+    expect(messages.filter((message) => message.type === "speech-resumed")).toHaveLength(2);
+  }, 12_000);
+
   it("caps compatibility checks at two per epoch when a newer revision supersedes an unfinished check", async () => {
     const calls: number[] = [];
     const service: AnswerCompletionService = {

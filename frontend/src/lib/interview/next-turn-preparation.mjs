@@ -26,14 +26,26 @@ export function createNextTurnPreparationRegistry() {
      * Starts a preparation, aborting and discarding the previous one. `run(signal, onCleanup)` resolves with the prepared
      * value (or null/throws when unavailable); `onCleanup(fn)` registers work to undo if the entry is discarded unused.
      */
-    prepare({ transcript, inputKey, preserveReady = false, run }) {
+    prepare({ transcript, inputKey, preserveReady = false, preservePending = false, maxPending = 2, run }) {
       const text = normalize(transcript);
       if (current) {
         if (preserveReady && current.settled === "ready") retainedReady.push(current);
+        else if (preservePending && current.settled === "pending") retainedReady.push(current);
         else discard(current);
       }
       current = null;
+      // Failed entries hold nothing; pending ones keep running and become ready (usable) when they land.
+      retainedReady = retainedReady.filter((entry) => entry.settled === "ready" || entry.settled === "pending");
       if (!text) return null;
+      if (preservePending) {
+        // The new entry is itself pending: at most `maxPending` run at once, the oldest one gives way.
+        let pending = retainedReady.filter((entry) => entry.settled === "pending");
+        while (pending.length >= maxPending) {
+          const oldest = pending.shift();
+          discard(oldest);
+          retainedReady = retainedReady.filter((entry) => entry !== oldest);
+        }
+      }
       const controller = new AbortController();
       const entry = { transcript: text, inputKey: inputKey ?? "", controller, settled: "pending", used: false, value: null, cleanup: null };
       let started;
@@ -54,6 +66,11 @@ export function createNextTurnPreparationRegistry() {
         });
       current = entry;
       return entry;
+    },
+
+    /** Number of preparations still running (the current one and retained ones). */
+    pendingCount() {
+      return retainedReady.filter((entry) => entry.settled === "pending").length + (current?.settled === "pending" ? 1 : 0);
     },
 
     /** Aborts and discards the current preparation (speech resumed, new turn, leave, unmount). */
@@ -134,7 +151,7 @@ export function createNextTurnPreparationRegistry() {
     },
 
     hasPending() {
-      return current?.settled === "pending";
+      return current?.settled === "pending" || retainedReady.some((entry) => entry.settled === "pending");
     },
 
     stats() {
