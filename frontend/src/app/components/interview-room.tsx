@@ -408,6 +408,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       acknowledgements.cancel();
       closingReaction.cancel();
       closingPrewarmCancelRef.current?.();
+      closingFallbackPrewarmRef.current?.();
       abortTurnAnalyses();
       submitInFlightRef.current = false;
       if (advanceTimerRef.current !== null) window.clearTimeout(advanceTimerRef.current);
@@ -535,7 +536,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     const turn = micTurnIdRef.current;
     // The fallback reaction + each closing line, ready in case the model has no reaction (once per answer window).
     if (config.playInterviewerAudio && !closingFallbackPrewarmRef.current) {
-      const cancels = [closingLines.time_up, closingLines.ended].map((line) => prewarmInterviewerUtterance(composeInterviewClosing(closingFallback, line), config.voice).cancel);
+      // Retained like the closing lines: the last answer can run for minutes after its first provisional snapshot.
+      const cancels = [closingLines.time_up, closingLines.ended].map((line) => prewarmInterviewerClosing(composeInterviewClosing(closingFallback, line), config.voice).cancel);
       closingFallbackPrewarmRef.current = () => { for (const cancel of cancels) cancel(); };
     }
     closingReaction.update(turn, answer, {
@@ -545,7 +547,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       onReady: (reaction) => {
         if (!config.playInterviewerAudio || leftRef.current || !mountedRef.current || micTurnIdRef.current !== turn) return;
         closingPrewarmCancelRef.current?.();
-        const cancels = closingReactionVariants(reaction).flatMap((variant) => [closingLines.time_up, closingLines.ended].map((line) => prewarmInterviewerUtterance(composeInterviewClosing(variant, line), config.voice).cancel));
+        const cancels = closingReactionVariants(reaction).flatMap((variant) => [closingLines.time_up, closingLines.ended].map((line) => prewarmInterviewerClosing(composeInterviewClosing(variant, line), config.voice).cancel));
         closingPrewarmCancelRef.current = () => { for (const cancel of cancels) cancel(); };
       },
     });
