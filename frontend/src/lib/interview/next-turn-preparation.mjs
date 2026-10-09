@@ -110,18 +110,36 @@ export function createNextTurnPreparationRegistry() {
       return this.take({ transcript, inputKey });
     },
 
-    /** Claims a ready value after a caller-supplied semantic compatibility check (used only for revisioned candidates). */
-    takeAnyReady({ accept }) {
+    /**
+     * Claims a ready value after a caller-supplied semantic compatibility check (used only for revisioned candidates).
+     * When nothing is accepted, `fallbackAccept` may claim the newest ready value whose follow-up cannot be used but
+     * whose fixed-question decision can; the entry is then flagged `viaFallback`.
+     */
+    takeAnyReady({ accept, fallbackAccept }) {
       const entries = [...retainedReady, ...(current ? [current] : [])];
       retainedReady = [];
       current = null;
-      const entry = entries.filter((candidate) => candidate.settled === "ready" && accept(candidate.value))
+      const newest = (predicate) => entries.filter((candidate) => candidate.settled === "ready" && predicate(candidate.value))
         .sort((a, b) => (b.value?.revision ?? 0) - (a.value?.revision ?? 0))[0] ?? null;
+      let entry = newest(accept);
+      let viaFallback = false;
+      if (!entry && fallbackAccept) {
+        entry = newest(fallbackAccept);
+        viaFallback = entry !== null;
+      }
       for (const candidate of entries) if (candidate !== entry) discard(candidate);
       if (!entry) return null;
       entry.used = true;
+      entry.viaFallback = viaFallback;
       used += 1;
       return entry;
+    },
+
+    /** Snapshot of the unused ready values (retained and current). */
+    readyValues() {
+      return [...retainedReady, ...(current ? [current] : [])]
+        .filter((entry) => entry.settled === "ready" && !entry.used)
+        .map((entry) => entry.value);
     },
 
     /** Discards every retained or current ready entry whose value matches (cancelling its prewarmed audio). Returns the count. */

@@ -57,6 +57,8 @@ describe("sanitizeClientEvent", () => {
   it("keeps only allowlisted preparation, handoff and transcription failure metrics", () => {
     expect(sanitizeClientEvent({ kind: "turn_preparation", preparationType: "speculative", outcome: "prepared_used", preparationReason: "mismatch", usedCount: 1, discardedCount: 2, transcript: "secret" }))
       .toEqual({ kind: "turn_preparation", preparationType: "speculative", outcome: "prepared_used", preparationReason: "mismatch", usedCount: 1, discardedCount: 2 });
+    expect(sanitizeClientEvent({ kind: "turn_preparation", preparationType: "speculative", outcome: "prepared_used", preparationReason: "fixed_from_follow_up", transcript: "secret" }))
+      .toEqual({ kind: "turn_preparation", preparationType: "speculative", outcome: "prepared_used", preparationReason: "fixed_from_follow_up" });
     expect(sanitizeClientEvent({ kind: "turn_preparation", preparationType: "fixed", outcome: "used", plannedCount: 2, readyCount: 1, startedBeforeCompleteMs: 90000, readyBeforeCompleteMs: 3000, usedIndex: 0, question: "secret" }))
       .toEqual({ kind: "turn_preparation", preparationType: "fixed", outcome: "used", plannedCount: 2, readyCount: 1, startedBeforeCompleteMs: 90000, readyBeforeCompleteMs: 3000, usedIndex: 0 });
     expect(sanitizeClientEvent({ kind: "question_start_timing", confirmationToFirstAudioMs: 120, confirmationToQuestionAudioMs: 850, confirmationToFinalChunkStartMs: 1_100, firstAudioToFinalChunkStartMs: 980, maxInterChunkGapMs: 80, text: "secret" }))
