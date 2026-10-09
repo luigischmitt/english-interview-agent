@@ -37,7 +37,7 @@ import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTi
 import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/interview/opening-timing.mjs";
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
-import { applyFollowUpCandidateClear, canUseCurrentEpochCandidate, candidateStatusFor, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "@/lib/interview/speculative-epoch.mjs";
+import { adoptSpeechEpoch, applyFollowUpCandidateClear, canUseCurrentEpochCandidate, finalEpochCandidateStatus, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "@/lib/interview/speculative-epoch.mjs";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { useLocale, t } from "@/lib/locale";
 
@@ -514,13 +514,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (submitInFlightRef.current || leftRef.current || !mountedRef.current) return;
     if (phaseRef.current !== "answering" || currentQuestionIdRef.current !== question.id) return;
     if (!Number.isSafeInteger(speechEpoch) || speechEpoch < 0 || (currentSpeechEpochRef.current !== null && speechEpoch < currentSpeechEpochRef.current)) return;
-    const previousSpeechEpoch = currentSpeechEpochRef.current;
-    if (previousSpeechEpoch !== null && speechEpoch > previousSpeechEpoch) {
-      speculativeCandidateRef.current = null;
-      nextTurnPreparation.abort();
-      setFollowUpCandidateUpdate({ type: "follow-up-candidate-cleared", turnId: speculativeTurnIdRef.current, revision: speculativeCallsRef.current.revision, speechEpoch: previousSpeechEpoch });
-    }
-    currentSpeechEpochRef.current = speechEpoch;
+    // A later epoch only means the candidate paused and resumed: the candidate and its preparations stay (see onSpeechResumed).
+    currentSpeechEpochRef.current = adoptSpeechEpoch(currentSpeechEpochRef.current, speechEpoch);
     const answer = provisionalTranscript.trim();
     if (!answer || timeLimitReached || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) return;
     if (followUpUsed) return;
@@ -562,7 +557,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
         }, signal) : { enabled: true, analysis: null };
         if (speculative.enabled) speculativeEnabledRef.current = true;
-        if (signal.aborted || speculativeCallsRef.current.revision !== revision || currentSpeechEpochRef.current !== speechEpoch) return null;
+        // A pause/resume does not stale this analysis: its candidate can still be kept and validated in the final epoch.
+        if (signal.aborted || speculativeCallsRef.current.revision !== revision) return null;
         if (!speculative.enabled || speculative.analysis === null || speculative.analysis.revision !== revision) {
           // A failed or timed-out analysis says nothing about the previous candidate: keep it and its prepared audio
           // (the backend compatibility check still guards it). Only an explicit NONE/NEXT result clears it.
@@ -743,7 +739,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
               currentTurnId: speculativeTurnIdRef.current,
               currentSpeechEpoch: currentSpeechEpochRef.current,
               featureEnabled: speculativeEnabledRef.current,
-              compatibility: candidateStatusFor(candidateStatusesRef.current, latestCandidateStatusRevisionRef.current, value.speechEpoch, value.revision, currentSpeechEpochRef.current),
+              compatibility: finalEpochCandidateStatus(candidateStatusesRef.current, latestCandidateStatusRevisionRef.current, value.revision, currentSpeechEpochRef.current),
             });
         } })
         : nextTurnPreparation.take({ transcript: savedAnswer, inputKey: decisionInputKey(decisionInput) });
@@ -1242,15 +1238,16 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           followUpCandidate={followUpCandidateUpdate}
           onFollowUpCandidateStatus={(status) => {
             if (status.turnId !== speculativeTurnIdRef.current) return;
+            // The backend only reports the epoch it is in now; after a resume this is how the new final epoch is learned.
+            currentSpeechEpochRef.current = adoptSpeechEpoch(currentSpeechEpochRef.current, status.speechEpoch);
             if (!recordCandidateStatus(candidateStatusesRef.current, latestCandidateStatusRevisionRef.current, status, currentSpeechEpochRef.current)) return;
             console.info(JSON.stringify({ event: "interview_speculative_compatibility", revision: status.revision, status: status.status }));
           }}
           onSpeechResumed={() => {
-            const previousEpoch = currentSpeechEpochRef.current;
+            // The candidate resumed speaking after a short pause: keep the follow-up candidate and its ready preparations
+            // (prewarmed audio is only buffered, never played while answering). Statuses of the epoch that just ended stop
+            // counting, so the answer can only use a candidate re-validated in the epoch it finalizes in.
             currentSpeechEpochRef.current = null;
-            speculativeCandidateRef.current = null;
-            if (previousEpoch !== null) setFollowUpCandidateUpdate({ type: "follow-up-candidate-cleared", turnId: speculativeTurnIdRef.current, revision: speculativeCallsRef.current.revision, speechEpoch: previousEpoch });
-            abortPreparation("speech_resumed");
           }}
           onHandoffTimingEvent={onHandoffTimingEvent}
           autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === micTurnId ? micTurnId : null}
