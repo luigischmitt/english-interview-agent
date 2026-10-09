@@ -478,7 +478,7 @@ describe("semantic end of answer", () => {
     expect(logs()).not.toContain("a lock");
   }, 12_000);
 
-  it("does not spend compatibility budget on aborted checks and re-assesses the candidate afterwards", async () => {
+  it("caps compatibility checks at two per epoch when a newer revision supersedes an unfinished check", async () => {
     const calls: number[] = [];
     const service: AnswerCompletionService = {
       isComplete: async () => false,
@@ -499,10 +499,10 @@ describe("semantic end of answer", () => {
     await until(() => calls.length >= 1);
     candidate(2); // supersedes (aborts) revision 1
     await until(() => messages.some((message) => message.type === "follow-up-candidate-status" && message.revision === 2));
-    candidate(3); // would exceed the budget of 2 if the aborted check had been charged
-    await until(() => messages.some((message) => message.type === "follow-up-candidate-status" && message.revision === 3));
-    expect(calls).toHaveLength(3);
-    expect(messages.filter((message) => message.type === "follow-up-candidate-status").map((message) => message.revision)).toEqual([2, 3]);
+    candidate(3); // the superseded call was already made and keeps its unit: the budget of 2 is spent
+    await delay(300);
+    expect(calls).toHaveLength(2);
+    expect(messages.filter((message) => message.type === "follow-up-candidate-status").map((message) => message.revision)).toEqual([2]);
   }, 12_000);
 
   it("reports the last completed semantic verdict rather than a restart abort", async () => {

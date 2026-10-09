@@ -323,6 +323,8 @@ export function attachTranscriptionWebSocket(
     let semanticChecks = 0;
     let lastAssessedCandidate: { turnId: string; revision: number } | null = null;
     let candidateChecksInEpoch = 0;
+    // At most one aborted check per epoch is refunded, so the 2-check cap cannot grow without bound.
+    let candidateRefundsInEpoch = 0;
     let speechEpoch = 0;
     const candidateRevisionFloorByTurnId = new Map<string, number>();
     let semanticVerdict: SemanticVerdict = "none";
@@ -348,7 +350,10 @@ export function attachTranscriptionWebSocket(
         candidateAbort.abort();
         candidateAbort = null;
         lastAssessedCandidate = null;
-        candidateChecksInEpoch = Math.max(0, candidateChecksInEpoch - 1);
+        if (candidateRefundsInEpoch < 1) {
+          candidateRefundsInEpoch += 1;
+          candidateChecksInEpoch = Math.max(0, candidateChecksInEpoch - 1);
+        }
       }
       if (graceTimer !== null) clearTimeout(graceTimer);
       graceTimer = null;
@@ -454,11 +459,8 @@ export function attachTranscriptionWebSocket(
       const classifier = streaming?.answerCompletion;
       if (!classifier || candidateChecksInEpoch >= 2
         || (lastAssessedCandidate?.turnId === candidate.turnId && lastAssessedCandidate.revision === candidate.revision)) return;
-      // Superseding an unfinished check must not spend budget on a result that never arrives.
-      if (candidateAbort) {
-        candidateAbort.abort();
-        candidateChecksInEpoch = Math.max(0, candidateChecksInEpoch - 1);
-      }
+      // A newer revision supersedes an unfinished check; that call was already made, so it keeps its budget unit.
+      candidateAbort?.abort();
       const controller = new AbortController();
       candidateAbort = controller;
       candidateChecksInEpoch += 1;
@@ -469,8 +471,9 @@ export function attachTranscriptionWebSocket(
         : Promise.resolve({ complete: false, candidateCompatibility: "NONE" as CandidateCompatibility });
       assessment.then((result) => ({ status: result.candidateCompatibility, kind: null as "timeout" | "error" | null }), (error: unknown) => ({ status: "NONE" as CandidateCompatibility, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const }))
         .then(({ status, kind }) => {
-          if (controller.signal.aborted || speechEpoch !== epochAtStart || followUpCandidate?.turnId !== candidate.turnId || followUpCandidate.revision !== candidate.revision) return;
+          // Settled: a stale result must not leave its controller behind (it would be "aborted" and refunded later).
           if (candidateAbort === controller) candidateAbort = null;
+          if (controller.signal.aborted || speechEpoch !== epochAtStart || followUpCandidate?.turnId !== candidate.turnId || followUpCandidate.revision !== candidate.revision) return;
           const finalStatus = kind ? "NONE" : status;
           send(socket, { type: "follow-up-candidate-status", turnId: candidate.turnId, revision: candidate.revision, status: finalStatus, speechEpoch });
           logStreamDiagnostic({ status: "follow_up_candidate", compatibility: finalStatus, revision: candidate.revision, speechEpoch });
@@ -1070,6 +1073,7 @@ export function attachTranscriptionWebSocket(
         if (update.speechResumed) {
           speechEpoch += 1;
           candidateChecksInEpoch = 0;
+          candidateRefundsInEpoch = 0;
           lastAssessedCandidate = null;
           silenceDetected = false;
           candidateAbort?.abort();
