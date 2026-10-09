@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { closingReactionVariants, composeClosingLead, createClosingReactionTracker, isLastAnswerExpected, isReactionCompatible, startsWithAcknowledgement } from "../src/lib/interview/closing-reaction.mjs";
+import { CLOSING_FALLBACK_REACTIONS, pickClosingFallbackReaction, closingReactionVariants, composeClosingLead, createClosingReactionTracker, isLastAnswerExpected, isReactionCompatible, startsWithAcknowledgement } from "../src/lib/interview/closing-reaction.mjs";
 import { closingLinesFor, composeInterviewClosing, INTERVIEW_CLOSINGS, INTERVIEW_ENDED_CLOSINGS, pickInterviewClosing } from "../src/lib/interview/speech-playback.mjs";
 
 const snapshot = "We traced the slow responses to the cache TTL, so I shortened it and the latency dropped by half.";
@@ -209,4 +209,53 @@ test("a reaction opening with an acknowledgement is also prepared without it, as
   assert.deepEqual(closingReactionVariants("Okay, so you fixed the race condition with a lock."), ["Okay, so you fixed the race condition with a lock.", "So you fixed the race condition with a lock."]);
   assert.deepEqual(closingReactionVariants("So you cut the image size in half."), ["So you cut the image size in half."]);
   assert.deepEqual(closingReactionVariants("  "), []);
+});
+
+const fallback = CLOSING_FALLBACK_REACTIONS[0];
+const notReady = () => createClosingReactionTracker({ request: async () => null });
+
+test("fallback reactions never open with an acknowledgement word, so Okay is never doubled", () => {
+  for (const reaction of CLOSING_FALLBACK_REACTIONS) assert.equal(startsWithAcknowledgement(reaction), false, reaction);
+});
+
+test("fallback is used when the model has no reaction, after the acknowledgement, and reports its source", async () => {
+  const sources = [];
+  const lead = await composeClosingLead(leadDeps(notReady(), { fallbackReaction: fallback, onSource: (source) => sources.push(source) }));
+  assert.equal(lead, fallback);
+  assert.deepEqual(sources, ["fallback"]);
+  // Spoken together with "Okay." (played separately) there is no doubled acknowledgement.
+  assert.equal(startsWithAcknowledgement(lead), false);
+  assert.equal(await composeClosingLead(leadDeps(notReady(), { audio: false, fallbackReaction: fallback })), `Okay. ${fallback}`);
+});
+
+test("fallback is used when the model reaction is not ready in time or belongs to another turn", async () => {
+  const never = createClosingReactionTracker({ request: () => new Promise(() => {}) });
+  never.update("q1:0", snapshot);
+  assert.equal(await composeClosingLead(leadDeps(never, { fallbackReaction: fallback })), fallback);
+  const other = await readyTracker("q1:0");
+  assert.equal(await composeClosingLead(leadDeps(other, { key: "q2:0", fallbackReaction: fallback })), fallback);
+});
+
+test("model reaction is preferred over the fallback", async () => {
+  const sources = [];
+  const tracker = await readyTracker();
+  assert.equal(await composeClosingLead(leadDeps(tracker, { fallbackReaction: fallback, onSource: (source) => sources.push(source) })), reactionText);
+  assert.deepEqual(sources, ["model"]);
+});
+
+test("no fallback when the answer does not count (empty, clarification, short) and no source other than none", async () => {
+  const sources = [];
+  assert.equal(await composeClosingLead(leadDeps(notReady(), { canAcknowledge: false, fallbackReaction: fallback, onSource: (source) => sources.push(source) })), null);
+  assert.equal(await composeClosingLead(leadDeps(notReady(), { fallbackReaction: null, onSource: (source) => sources.push(source) })), null);
+  assert.deepEqual(sources, ["none", "none"]);
+});
+
+test("a fallback that opens with an acknowledgement is stripped when Okay already played", async () => {
+  assert.equal(await composeClosingLead(leadDeps(notReady(), { fallbackReaction: "Got it, I understand what you mean." })), "I understand what you mean.");
+});
+
+test("fallback rotation avoids the last used one and tolerates unknown values", () => {
+  for (const last of CLOSING_FALLBACK_REACTIONS) for (const random of [() => 0, () => 0.5, () => 0.999]) assert.notEqual(pickClosingFallbackReaction(last, random), last);
+  assert.ok(CLOSING_FALLBACK_REACTIONS.includes(pickClosingFallbackReaction("unknown", () => 0)));
+  assert.ok(CLOSING_FALLBACK_REACTIONS.includes(pickClosingFallbackReaction(null)));
 });

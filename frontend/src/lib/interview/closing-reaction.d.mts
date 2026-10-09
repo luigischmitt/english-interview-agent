@@ -30,4 +30,9 @@ export function composeClosingLead<Context = unknown>(input: {
   playAcknowledgement: () => boolean;
   audio: boolean;
   pickWord: () => string | null;
+  fallbackReaction?: string | null;
+  onSource?: (source: "model" | "fallback" | "none") => void;
 }): Promise<string | null>;
+
+export const CLOSING_FALLBACK_REACTIONS: readonly string[];
+export function pickClosingFallbackReaction(lastUsed?: string | null, random?: () => number): string;

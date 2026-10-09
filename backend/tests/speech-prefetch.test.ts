@@ -2,7 +2,7 @@ import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { loadSpeechConfig, type SpeechConfig } from "../src/speech/config.js";
-import { composeAcknowledgedQuestion, composeInterviewClosing, groupInterviewerSentences, INTERVIEW_CLOSINGS, INTERVIEW_ENDED_CLOSINGS, interviewerChunkTexts, isAcknowledgeableAnswer, splitInterviewerSpeech, stripLeadingAcknowledgement } from "../src/speech/interviewer-chunking.js";
+import { CLOSING_FALLBACK_REACTIONS, composeAcknowledgedQuestion, composeInterviewClosing, groupInterviewerSentences, INTERVIEW_CLOSINGS, INTERVIEW_ENDED_CLOSINGS, interviewerChunkTexts, isAcknowledgeableAnswer, splitInterviewerSpeech, stripLeadingAcknowledgement } from "../src/speech/interviewer-chunking.js";
 import { InterviewerSpeechPrefetcher, staticSpeechTexts } from "../src/speech/interviewer-prefetcher.js";
 import { SpeechCache, speechCacheKey } from "../src/speech/speech-cache.js";
 import { normalizeTextForSpeech } from "../src/speech/text-normalization.js";
@@ -10,6 +10,7 @@ import type { SpeechProvider, SpeechSynthesisRequest, SynthesizedSpeech } from "
 // The client module is the source of truth for chunking; the server port must produce the same texts.
 import * as client from "../../frontend/src/lib/interview/speech-playback.mjs";
 import * as clientVoices from "../../frontend/src/lib/interview/voices.mjs";
+import * as clientClosingReaction from "../../frontend/src/lib/interview/closing-reaction.mjs";
 import * as clientAck from "../../frontend/src/lib/interview/acknowledgement.mjs";
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -198,6 +199,7 @@ describe("server chunking is identical to the client's", () => {
     }
     expect([...INTERVIEW_CLOSINGS]).toEqual([...client.INTERVIEW_CLOSINGS]);
     expect([...INTERVIEW_ENDED_CLOSINGS]).toEqual([...client.INTERVIEW_ENDED_CLOSINGS]);
+    expect([...CLOSING_FALLBACK_REACTIONS]).toEqual([...clientClosingReaction.CLOSING_FALLBACK_REACTIONS]);
     expect(composeInterviewClosing("So you traced it to the cache TTL.", INTERVIEW_CLOSINGS[2])).toBe(client.composeInterviewClosing("So you traced it to the cache TTL.", INTERVIEW_CLOSINGS[2]));
     expect(composeInterviewClosing()).toBe(client.composeInterviewClosing());
     expect([...clientAck.ACKNOWLEDGEMENT_PHRASES]).toEqual(["Okay.", "Got it.", "Alright.", "Mm-hm, okay.", "Thanks."]);
@@ -241,6 +243,7 @@ describe("interviewer prefetcher", () => {
 
   it("lists the fixed phrases in their spoken form", () => {
     expect(staticSpeechTexts()).toContain("Okay.");
+    for (const reaction of CLOSING_FALLBACK_REACTIONS) expect(staticSpeechTexts()).toContain(reaction);
     for (const closing of [...INTERVIEW_CLOSINGS, ...INTERVIEW_ENDED_CLOSINGS]) {
       for (const text of interviewerChunkTexts(closing)) expect(staticSpeechTexts()).toContain(text);
     }

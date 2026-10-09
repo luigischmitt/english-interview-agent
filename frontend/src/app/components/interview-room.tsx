@@ -31,7 +31,7 @@ import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, createOnceGate, fin
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { createInterviewerAcknowledgements, prewarmFixedInterviewerUtterance, prewarmFollowUpUtterance, prewarmInterviewerClosing, prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
 import { isAcknowledgeableAnswer, pickAcknowledgement, stripLeadingAcknowledgement } from "@/lib/interview/acknowledgement.mjs";
-import { closingReactionVariants, composeClosingLead, createClosingReactionTracker, isLastAnswerExpected } from "@/lib/interview/closing-reaction.mjs";
+import { closingReactionVariants, composeClosingLead, createClosingReactionTracker, isLastAnswerExpected, pickClosingFallbackReaction } from "@/lib/interview/closing-reaction.mjs";
 import { requestClosingReaction } from "@/lib/interview/closing-reaction-request";
 import { useMicEngine } from "../hooks/use-mic-engine";
 import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, pickInterviewClosing, type ClosingReason, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
@@ -67,6 +67,12 @@ const lastClosingLineKeys: Record<ClosingReason, string> = { time_up: "tuc:last-
 /** The closing line of the previous interview (a per-device convenience, so two interviews in a row end differently). */
 function readLastClosingLine(reason: ClosingReason): string | null {
   try { return window.localStorage.getItem(lastClosingLineKeys[reason]); } catch { return null; }
+}
+function readLastClosingFallback(): string | null {
+  try { return window.localStorage.getItem("tuc:last-closing-fallback"); } catch { return null; }
+}
+function rememberClosingFallback(reaction: string) {
+  try { window.localStorage.setItem("tuc:last-closing-fallback", reaction); } catch { /* Preference only. */ }
 }
 function rememberClosingLine(reason: ClosingReason, line: string) {
   try { window.localStorage.setItem(lastClosingLineKeys[reason], line); } catch { /* Preference only. */ }
@@ -174,6 +180,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   // The closing line is rotated between interviews; the lead is the reaction to the last answer (decided when the answer is final).
   // Two sets: the time ran out ("time_up"), or the interview ends early / has no more questions ("ended"); each rotates on its own.
   const [closingLines] = useState<Record<ClosingReason, string>>(() => ({ time_up: pickInterviewClosing(readLastClosingLine("time_up"), Math.random, "time_up"), ended: pickInterviewClosing(readLastClosingLine("ended"), Math.random, "ended") }));
+  // Neutral reaction used when the model has none for the last answer; picked now so its audio can be prepared ahead.
+  const [closingFallback] = useState(() => pickClosingFallbackReaction(readLastClosingFallback()));
+  const closingFallbackPrewarmRef = useRef<(() => void) | null>(null);
   const [closingReason, setClosingReason] = useState<ClosingReason>("time_up");
   const closingLine = closingLines[closingReason];
   const [closingLead, setClosingLead] = useState<string | null>(null);
@@ -226,6 +235,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     closingReaction.cancel();
     closingPrewarmCancelRef.current?.();
     closingPrewarmCancelRef.current = null;
+    closingFallbackPrewarmRef.current?.();
+    closingFallbackPrewarmRef.current = null;
   }, [micTurnId, closingReaction]);
   useEffect(() => {
     const controller = new AbortController();
@@ -522,6 +533,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (!isLastAnswerExpected({ elapsedSeconds: elapsedSecondsRef.current, durationMinutes })) return;
     if (detectClarificationRequest(answer) !== null) return;
     const turn = micTurnIdRef.current;
+    // The fallback reaction + each closing line, ready in case the model has no reaction (once per answer window).
+    if (config.playInterviewerAudio && !closingFallbackPrewarmRef.current) {
+      const cancels = [closingLines.time_up, closingLines.ended].map((line) => prewarmInterviewerUtterance(composeInterviewClosing(closingFallback, line), config.voice).cancel);
+      closingFallbackPrewarmRef.current = () => { for (const cancel of cancels) cancel(); };
+    }
     closingReaction.update(turn, answer, {
       currentQuestion: question.prompt,
       recent: recentAcknowledgementsRef.current,
@@ -551,6 +567,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     },
     audio: config.playInterviewerAudio,
     pickWord: () => pickAcknowledgement({ recent: recentAcknowledgementsRef.current }),
+    fallbackReaction: detectClarificationRequest(answer) === null ? closingFallback : null,
+    onSource: (source) => {
+      if (source === "fallback") rememberClosingFallback(closingFallback);
+      reportAudioDiagnostic({ kind: "closing_reaction", reactionSource: source });
+    },
   });
   /** Ends the interview after the final answer: reaction (if any), then the closing line. Returns false when the room was left meanwhile. */
   const closeAfterAnswer = async (answer: string | null, acknowledge: boolean, generation: number, reason: ClosingReason): Promise<boolean> => {

@@ -164,6 +164,15 @@ export const INTERVIEW_ENDED_CLOSINGS: readonly string[] = [
   "That’s the end of the interview. Thanks for the conversation. I’ll prepare your feedback now.",
 ];
 
+/** Mirrors the client's neutral closing fallback reactions (frontend closing-reaction.mjs), cached ahead of the interview. */
+export const CLOSING_FALLBACK_REACTIONS: readonly string[] = [
+  "I understand, thank you for walking me through that.",
+  "That makes sense, thank you for explaining.",
+  "I follow what you mean, thank you for explaining that.",
+  "I understand what you mean, thank you.",
+  "That makes sense, thank you for sharing that.",
+];
+
 export function composeInterviewClosing(reaction: string | null = null, closing: string = INTERVIEW_CLOSINGS[0]): string {
   return [reaction?.trim(), closing.trim()].filter(Boolean).join(" ");
 }

@@ -5,9 +5,10 @@ export const maxClientEventsPerRequest = 20;
 /** Global safety valve against log flooding (events per minute, per process). */
 export const maxClientEventsPerMinute = 1_200;
 
-const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "playback_ended", "playback_error", "playback_timeout", "unlock", "mic_open", "mic_close", "mic_error", "mic_level_check", "audio_session", "ack_preloaded", "ack_play", "ack_play_resolved", "ack_play_failed", "ack_ended", "ack_skipped", "ack_overlap", "ack_question_gap", "turn_preparation", "handoff_timing", "question_start_timing", "transcription_failure", "resume_analysis"] as const;
+const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "playback_ended", "playback_error", "playback_timeout", "unlock", "mic_open", "mic_close", "mic_error", "mic_level_check", "audio_session", "ack_preloaded", "ack_play", "ack_play_resolved", "ack_play_failed", "ack_ended", "ack_skipped", "ack_overlap", "ack_question_gap", "turn_preparation", "handoff_timing", "question_start_timing", "transcription_failure", "resume_analysis", "closing_reaction"] as const;
 /** Why an instant acknowledgement was not spoken. */
 const ackSkipReasons = ["not_loaded", "not_applicable", "question_started"] as const;
+const reactionSources = ["model", "fallback", "none"] as const;
 const preparationTypes = ["fixed", "speculative"] as const;
 const preparationOutcomes = ["started", "ready", "decision_ready", "prepared_used", "prepared_discarded", "failed", "used", "discarded", "closing"] as const;
 const preparationReasons = ["capture_ended", "speech_resumed", "unavailable", "mismatch", "speculative_not_ready", "question_started", "leaving", "new_turn", "skip"] as const;
@@ -36,6 +37,7 @@ const enumFields: Record<string, readonly string[]> = {
   inAppBrowser: inAppBrowsers,
   inputDeviceKind: inputDeviceKinds,
   reason: ackSkipReasons,
+  reactionSource: reactionSources,
   preparationType: preparationTypes,
   outcome: preparationOutcomes,
   preparationReason: preparationReasons,

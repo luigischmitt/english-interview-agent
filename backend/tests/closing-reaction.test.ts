@@ -47,8 +47,10 @@ describe("closing reaction service", () => {
   });
 
   it("returns null for a null bridge, low information, provider errors, malformed output and timeouts", async () => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    expect((await service(async () => chat(null)).react(input)).reaction).toBeNull();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const empty = await service(async () => chat(null)).react(input);
+    expect(empty).toEqual({ reaction: null, outcome: "empty" });
+    expect(JSON.parse(String(info.mock.calls.at(-1)?.[0]))).toMatchObject({ outcome: "empty", reaction: false });
     expect((await service(async () => chat("anything")).react({ ...input, transcript: "Um, yes." })).outcome).toBe("skipped_low_info");
     expect((await service(async () => new Response("{}", { status: 500 })).react(input)).outcome).toBe("error");
     expect((await service(async () => new Response(JSON.stringify({ choices: [{ message: { content: "not json" } }] }))).react(input)).outcome).toBe("error");
