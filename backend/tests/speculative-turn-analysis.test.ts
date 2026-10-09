@@ -111,7 +111,7 @@ describe("speculative turn analysis", () => {
   it("allows a covered resume question to be skipped and forwards eight prior answer pairs", async () => {
     const previousAnswers = Array.from({ length: 8 }, (_, index) => ({ question: `Question ${index}?`, answer: `Answer ${index}.` }));
     const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "SKIP", adaptedFixedQuestion: null, fixedEvidenceAnchor: "Kafka pipeline" });
-    const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...input, firstFixedType: "resume", firstFixedQuestion: "Tell me about a project you worked on?", previousAnswers });
+    const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...input, firstFixedType: "bank", firstFixedQuestion: "Tell me about a project you worked on?", previousAnswers });
     expect(result).toMatchObject({ fixedAction: "SKIP", fixedEvidenceAnchor: "Kafka pipeline" });
     const body = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0]?.[1]?.body));
     expect(body.messages[1].content).toContain('"previousAnswers"');
@@ -125,7 +125,7 @@ describe("speculative turn analysis", () => {
     const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({
       ...input,
       snapshot,
-      firstFixedType: "resume",
+      firstFixedType: "bank",
       firstFixedQuestion: "What was one project you worked on?",
     });
     expect(result).toMatchObject({ fixedAction: "SKIP", fixedEvidenceAnchor: "built a Kafka pipeline for payment events with" });
@@ -412,5 +412,54 @@ describe("broad project coverage", () => {
     const analysis = { ...keep, fixedAction: "DEEPEN", adaptedFixedQuestion: "How did you decide which endpoints the payments dashboard needed?", fixedEvidenceAnchor: "payments dashboard" };
     const result = await run({ ...base, firstFixedQuestion: "What technical decision did you make in a recent project?", snapshot: described, askedQuestions: ["Tell me about the payments dashboard you built?"] }, analysis);
     expect(result).toMatchObject({ fixedAction: "DEEPEN" });
+  });
+});
+
+describe("broad project coverage false positives", () => {
+  const projectQuestion = "Can you walk me through a project you built and the part you were responsible for?";
+  const keep = { revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null };
+  const run = (extra: Record<string, unknown>, analysis: Record<string, unknown> = keep) => new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response(analysis)).analyze({ ...input, ...extra } as typeof input);
+  const base = { firstFixedQuestion: projectQuestion, firstFixedType: "bank" as const, firstFixedCoverage: "broad-project" as const, snapshot: "Thanks for asking.", secondFixedQuestion: "How do you test changes?", secondFixedType: "bank" as const };
+  const conflict = "We had a disagreement about the release date and this led to a long discussion with my manager. After that I improved how I communicate with the team, and I learned to ask for feedback earlier so that we avoid surprises in the future.";
+  const intro = "My name is Ana and I am a developer from Brazil. I worked on customer support for two years before moving to engineering, and I created a study plan to learn programming every day after my shift ended last year.";
+  const bugfix = "Last month we had a bug in the checkout flow. I created a test that reproduced it and then I improved the response time of the query, which made the page much faster for every user in the afternoon peak hours.";
+
+  it("does not skip after conflict, introduction or bug-fix answers that describe no project", async () => {
+    for (const answer of [conflict, intro, bugfix]) {
+      expect(await run({ ...base, snapshot: answer })).toMatchObject({ fixedAction: "KEEP" });
+      expect(await run({ ...base, previousAnswers: [{ question: "Tell me about yourself.", answer }] })).toMatchObject({ fixedAction: "KEEP" });
+    }
+  });
+
+  it("skips after a real project description in the introduction or the earlier answer", async () => {
+    const introProject = "I built a full stack app with Next.js and PostgreSQL for a small logistics company, and I also implemented the login and the reporting features, working with two other developers for about a year.";
+    const result = await run({ ...base, askedQuestions: ["Tell me about yourself."], previousAnswers: [{ question: "Tell me about yourself.", answer: introProject }, { question: "Q2", answer: "Short." }, { question: "Q3", answer: "Short again." }] });
+    expect(result).toMatchObject({ fixedAction: "SKIP" });
+    expect(introProject).toContain(result?.fixedEvidenceAnchor);
+    expect(await run({ ...base, previousAnswers: [{ question: "Q1", answer: introProject }] })).toMatchObject({ fixedAction: "SKIP" });
+    expect(await run({ ...base, previousAnswers: [{ question: "Q1", answer: "Short." }, { question: "Q2", answer: introProject }] })).toMatchObject({ fixedAction: "SKIP" });
+  });
+
+  it("looks only at the introduction answer and the immediately preceding answer", async () => {
+    const project = "I built a full stack app with Next.js and PostgreSQL for a small logistics company, and I also implemented the login and the reporting features, working with two other developers for about a year.";
+    const filler = (n: number) => ({ question: `Question ${n}`, answer: "I think it depends on the case." });
+    const middle = [filler(1), { question: "Middle", answer: project }, filler(3), filler(4)];
+    expect(await run({ ...base, askedQuestions: ["Tell me about yourself."], previousAnswers: [{ question: "Tell me about yourself.", answer: "Hello." }, ...middle] })).toMatchObject({ fixedAction: "KEEP" });
+  });
+
+  it("does not match specific resume questions by wording, even with a broad lead", async () => {
+    const project = "I built a full stack app with Next.js and PostgreSQL for a small logistics company, and I also implemented the login and the reporting features, working with two other developers for about a year.";
+    for (const question of [
+      "Can you walk me through the project and what you did to cut the AWS bill by 30 percent?",
+      "Can you describe your experience and the result of the migration from Oracle to Postgres?",
+    ]) {
+      expect(await run({ ...base, firstFixedCoverage: undefined, firstFixedType: "resume", firstFixedQuestion: question, snapshot: project })).toMatchObject({ fixedAction: "KEEP" });
+      expect(await run({ ...base, firstFixedCoverage: undefined, firstFixedType: "bank", firstFixedQuestion: question, snapshot: project })).toMatchObject({ fixedAction: "KEEP" });
+    }
+  });
+
+  it("never skips a job question on a real project description", async () => {
+    const project = "I built a full stack app with Next.js and PostgreSQL for a small logistics company, and I also implemented the login and the reporting features, working with two other developers for about a year.";
+    expect(await run({ ...base, firstFixedType: "job", snapshot: project })).toMatchObject({ fixedAction: "KEEP" });
   });
 });

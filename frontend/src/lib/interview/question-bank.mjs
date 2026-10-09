@@ -246,7 +246,7 @@ const juniorTechnicalByRole = {
     q("learning-framework", "Tell me about a time you had to learn a new library or framework quickly. How did you do it?", "Explain how you learned and how you applied it."),
   ],
   "Backend Engineer": [
-    q("api-built", "Can you describe an API you built and the endpoints you were responsible for?", "Describe the purpose, the endpoints, and the technologies you used.", "broad-project"),
+    q("api-built", "Can you describe an API you built and the endpoints you were responsible for?", "Describe the purpose, the endpoints, and the technologies you used."),
     q("sql-basics", "How would you explain what a database index is and why it helps?", "Use a simple example and mention one trade-off."),
     q("backend-bug", "Tell me about a bug you fixed in a backend service. How did you find the cause?", "Mention logs, tests, and the final fix."),
     q("http-basics", "What happens when a client sends a request to your API and gets a response?", "Walk through the request in simple, ordered steps."),
@@ -256,7 +256,7 @@ const juniorTechnicalByRole = {
     q("learning-backend", "Tell me about a time you had to learn something new for a backend task. How did you do it?", "Explain how you learned and how you applied it."),
   ],
   "Full-Stack Engineer": [
-    q("full-stack-project", "Can you describe a web application you built, from the screen to the database?", "Follow the flow in order and mention your part.", "broad-project"),
+    q("full-stack-project", "Can you describe a web application you built, from the screen to the database?", "Follow the flow in order and mention your part."),
     q("full-stack-bug", "Tell me about a bug you fixed that involved both the front end and the back end. How did you find it?", "Explain how you traced the problem step by step."),
     q("simple-api-use", "How does your front end talk to your back end in a project you built?", "Mention requests, responses, and handling errors."),
     q("database-basics", "How did you decide how to store the data in a project you built?", "Describe the tables or collections and why you chose them."),
@@ -276,7 +276,7 @@ const juniorTechnicalByRole = {
     q("learning-tool", "Tell me about a time you had to learn a new tool or platform feature for a task. How did you do it?", "Explain how you learned and how you applied it."),
   ],
   "DevOps Engineer": [
-    q("devops-project", "Can you describe a pipeline or automation you set up and what it did?", "Describe the goal, the steps, and the tools you used.", "broad-project"),
+    q("devops-project", "Can you describe a pipeline or automation you set up and what it did?", "Describe the goal, the steps, and the tools you used."),
     q("ci-basics", "What is a CI pipeline, and why is it useful for a team?", "Explain it in simple words with a short example."),
     q("docker-basics", "How would you explain what a container is to a developer who has never used one?", "Use a simple comparison and one practical benefit."),
     q("linux-troubleshooting", "A service is not responding on a server. What are the first things you check?", "Walk through simple checks like logs, status, and resources."),
@@ -326,7 +326,7 @@ const juniorTechnicalByRole = {
     q("learning-tool", "Tell me about a time you had to learn a new library or technique. How did you do it?", "Explain how you learned and how you applied it."),
   ],
   "Data Analyst": [
-    q("analysis-project", "Can you describe an analysis you did and the question you wanted to answer?", "Describe the question, the data, and the result.", "broad-project"),
+    q("analysis-project", "Can you describe an analysis you did and the question you wanted to answer?", "Describe the question, the data, and the result."),
     q("sql-explain", "Can you explain a simple SQL query you wrote, step by step?", "Describe the goal, the tables, and how you checked the result."),
     q("data-cleaning", "How do you clean a dataset that has missing values or duplicates?", "Give a simple approach and a short example."),
     q("spreadsheet-skills", "Which tools do you use for analysis, like Excel, SQL, or Python, and what do you use each for?", "Give a short example for each tool."),
