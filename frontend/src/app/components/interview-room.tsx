@@ -556,6 +556,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           secondFixedQuestion: planned[1]?.prompt ?? null,
           firstFixedType: plannedQuestionType(planned[0]),
           secondFixedType: planned[1] ? plannedQuestionType(planned[1]) : null,
+          hasThirdFixedQuestion: planned.length > 2,
           previousCandidate: speculativeCandidateRef.current,
           previousAnswers: input.previousAnswers,
           roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
