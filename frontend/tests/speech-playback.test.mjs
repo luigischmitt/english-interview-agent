@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, speechUnavailableMessage, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+import { clearRetainedSpeechBlobs, composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, composeOpeningUtterance, playInterviewerSegments, prewarmInterviewerSpeech, resolveInterviewerCaption, resolveSkippedQuestion, speechUnavailableMessage, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
 
 import { hasSeniorityWord, looksPortuguese, roleForSpeech } from "../src/lib/interview/opening-copy.mjs";
 import { createOpeningSpeechTiming, isOpeningTimingEnabled, openingTimingStorageKey } from "../src/lib/interview/opening-timing.mjs";
@@ -598,4 +598,23 @@ test("warming up posts to the speech warmup endpoint once and ignores failures",
   warmUpInterviewerSpeech("https://api.test/api/v1/speech", () => { throw new Error("sync failure"); });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(calls, [["https://api.test/api/v1/speech/warmup", "POST"]]);
+});
+
+test("cancelling one prewarm keeps the retained audio another prewarm of the same utterance still holds", async () => {
+  clearRetainedSpeechBlobs();
+  let calls = 0;
+  const fetcher = async () => { calls += 1; return new Response(new Blob(["x"]), { status: 200 }); };
+  const options = { endpoint: "/held", fetcher, retainMs: 240_000, timeoutMs: 20_000 };
+  const utterance = splitInterviewerSpeech("Could you walk me through how you measured that improvement?");
+  const older = prewarmInterviewerSpeech(utterance, options);
+  await older.promise;
+  const newer = prewarmInterviewerSpeech(utterance, options);
+  await newer.promise;
+  assert.equal(calls, 1);
+  older.cancel();
+  older.cancel();
+  await prewarmInterviewerSpeech(utterance, options).promise;
+  assert.equal(calls, 1, "the newer prewarm's audio survives the older one's cancel");
+  newer.cancel();
+  clearRetainedSpeechBlobs();
 });

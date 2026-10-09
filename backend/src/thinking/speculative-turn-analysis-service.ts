@@ -153,7 +153,7 @@ export class SpeculativeTurnAnalysisService {
       const response = await this.fetchImplementation("https://openrouter.ai/api/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${this.config.apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: this.config.model, messages: [{ role: "system", content: prompt(Boolean(input.previousCandidate)) }, { role: "user", content: JSON.stringify({ ...input, signal: undefined, askedQuestions: input.askedQuestions.slice(-8), previousAnswers: (input.previousAnswers ?? []).slice(-8).map((pair) => ({ question: pair.question.slice(0, 300), answer: pair.answer.slice(-500) })), snapshot: input.snapshot.slice(0, 10_000) }) }], temperature: 0, max_tokens: 320, usage: { include: true }, provider: { sort: "latency", require_parameters: true, data_collection: "deny" }, response_format: { type: "json_schema", json_schema: { name: "speculative_turn_analysis", strict: true, schema: makeSchema(Boolean(input.previousCandidate), hasSecondFixed) } } }), signal: controller.signal });
       if (!response.ok) { reason = "provider_status"; await response.body?.cancel().catch(() => undefined); return null; }
       let body: { choices?: Array<{ message?: { content?: unknown } }>; usage?: OpenRouterUsagePayload };
-      try { body = await response.json() as typeof body; } catch { reason = "invalid_json"; return null; }
+      try { body = await response.json() as typeof body; } catch { if (controller.signal.aborted) { outcome = input.signal?.aborted ? "cancelled" : "timeout"; reason = input.signal?.aborted ? null : "timeout"; } else reason = "invalid_json"; return null; }
       usage = parseOpenRouterUsage(body.usage);
       const content = body.choices?.[0]?.message?.content;
       let value: unknown;
@@ -230,7 +230,7 @@ export class SpeculativeTurnAnalysisService {
       actions = { followUpAction: normalized.followUpAction, fixedAction: normalized.fixedAction };
       outcome = repairs.length ? "repaired" : "success"; reason = repairs.length ? [...new Set(repairs)].join(",") : null;
       return normalized;
-    } catch { outcome = input.signal?.aborted ? "cancelled" : controller.signal.aborted ? "timeout" : "error"; reason ??= outcome === "error" ? "provider_error" : null; return null; }
+    } catch { outcome = input.signal?.aborted ? "cancelled" : controller.signal.aborted ? "timeout" : "error"; reason ??= outcome === "error" ? "provider_error" : outcome === "timeout" ? "timeout" : null; return null; }
     finally { clearTimeout(timeout); input.signal?.removeEventListener("abort", abort); console.info(JSON.stringify({ event: "interview_speculative_analysis", outcome, revision: input.revision, hadPreviousCandidate: Boolean(input.previousCandidate), followUpSelected: actions?.followUpAction !== undefined && actions.followUpAction !== "NONE", ...(reason ? { reason } : {}), latencyMs: Date.now() - startedAt, ...(actions ?? {}), ...usage })); }
   }
 }

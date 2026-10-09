@@ -45,6 +45,14 @@ export function prewarmInterviewerUtterance(utterance: string, voice?: string) {
   return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 30_000, voice });
 }
 
+/**
+ * Speculative follow-up audio: preparations now outlive many pauses of a long answer, so the audio is retained for as long
+ * as the preparation can be used. `cancel()` (discard, abort, turn change) releases it.
+ */
+export function prewarmFollowUpUtterance(utterance: string, voice?: string) {
+  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 4 * 60_000, voice });
+}
+
 /** Predictable transition/question chunks survive long answers and still share the normal voice/speed cache key. */
 export function prewarmFixedInterviewerUtterance(utterance: string, voice?: string) {
   return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 4 * 60_000, voice });
