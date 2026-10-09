@@ -2,7 +2,7 @@ import type { InterviewOrchestrationInput, InterviewOrchestrationResult } from "
 import {
   ACKNOWLEDGEMENT_PHRASES,
   composeAcknowledgedQuestion,
-  composeInterviewClosing,
+  INTERVIEW_CLOSINGS,
   interviewerChunkTexts,
   isAcknowledgeableAnswer,
   stripLeadingAcknowledgement,
@@ -14,7 +14,7 @@ import { resolveVoice } from "./voices.js";
 
 /** Texts that never change (acknowledgements, the closing line): cached longer and synthesized ahead of the interview. */
 export function staticSpeechTexts(): string[] {
-  return [...ACKNOWLEDGEMENT_PHRASES, ...interviewerChunkTexts(composeInterviewClosing())].map((text) => normalizeTextForSpeech(text.trim()));
+  return [...ACKNOWLEDGEMENT_PHRASES, ...INTERVIEW_CLOSINGS.flatMap((closing) => interviewerChunkTexts(closing))].map((text) => normalizeTextForSpeech(text.trim()));
 }
 
 export type InterviewerPrefetcherOptions = {

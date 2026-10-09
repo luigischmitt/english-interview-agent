@@ -30,9 +30,11 @@ import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { createInterviewerAcknowledgements, prewarmFixedInterviewerUtterance, prewarmInterviewerClosing, prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
-import { isAcknowledgeableAnswer, stripLeadingAcknowledgement } from "@/lib/interview/acknowledgement.mjs";
+import { isAcknowledgeableAnswer, pickAcknowledgement, stripLeadingAcknowledgement } from "@/lib/interview/acknowledgement.mjs";
+import { createClosingReactionTracker, isLastAnswerExpected, startsWithAcknowledgement } from "@/lib/interview/closing-reaction.mjs";
+import { requestClosingReaction } from "@/lib/interview/closing-reaction";
 import { useMicEngine } from "../hooks/use-mic-engine";
-import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
+import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, pickInterviewClosing, resolveInterviewerCaption, resolveSkippedQuestion, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTimingEnabled } from "@/lib/interview/handoff-timing.mjs";
 import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/interview/opening-timing.mjs";
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
@@ -59,6 +61,16 @@ type PreparedTurn = {
   fixedQuestionAudioReady: Promise<boolean> | null;
   cancelFixedQuestionAudio: (() => void) | null;
 };
+
+type ClosingReactionContext = { currentQuestion: string; recent: string[]; roleContext: { targetRole: string; seniority?: string; focus?: string }; onReady: (reaction: string) => void };
+const lastClosingLineKey = "tuc:last-closing-line";
+/** The closing line of the previous interview (a per-device convenience, so two interviews in a row end differently). */
+function readLastClosingLine(): string | null {
+  try { return window.localStorage.getItem(lastClosingLineKey); } catch { return null; }
+}
+function rememberClosingLine(line: string) {
+  try { window.localStorage.setItem(lastClosingLineKey, line); } catch { /* Preference only. */ }
+}
 
 function formatClock(seconds: number) {
   const safeSeconds = Math.max(0, seconds);
@@ -122,6 +134,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const acknowledgedTurnRef = useRef<string | null>(null);
   // What the final answer of a turn got: whether an acknowledgement is going to be spoken (decides if the bridge keeps its own "Okay.").
   const acknowledgementOutcomeRef = useRef<{ turn: string; willPlay: boolean } | null>(null);
+  // Prepared during the last answer: the short grounded reaction said before the closing line. The per-answer context travels with each update.
+  const closingPrewarmCancelRef = useRef<(() => void) | null>(null);
+  const [closingReaction] = useState(() => createClosingReactionTracker<ClosingReactionContext>({
+    request: (snapshot, signal, context) => requestClosingReaction({ currentQuestion: context.currentQuestion, transcript: snapshot, recentAcknowledgements: context.recent, roleContext: context.roleContext }, signal),
+    onReaction: (reaction, _snapshot, context) => context.onReady(reaction),
+  }));
   const waitForAcknowledgement = useCallback(() => acknowledgements.beforeQuestion(), [acknowledgements]);
   const advanceTimerRef = useRef<number | null>(null);
   const submitInFlightRef = useRef(false);
@@ -153,7 +171,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const openingTimingRef = useRef<{ mark: (stage: string) => void } | null>(null);
   const listeningTimingRef = useRef<ReturnType<typeof createListeningHandoffTiming> | null>(null);
   const openingUtterance = composeContextualOpening(config, question.prompt);
-  const closingUtterance = composeInterviewClosing();
+  // The closing line is rotated between interviews; the lead is the reaction to the last answer (decided when the answer is final).
+  const [closingLine] = useState(() => pickInterviewClosing(readLastClosingLine()));
+  const [closingLead, setClosingLead] = useState<string | null>(null);
+  const closingUtterance = composeInterviewClosing(closingLead, closingLine);
   const currentUtterance = phase === "introducing"
     ? openingUtterance
     : phase === "closing" ? closingUtterance
@@ -367,12 +388,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       postFollowUpFixedSelectionRef.current = null;
       fixedHandoffPreparation.cancel();
       acknowledgements.cancel();
+      closingReaction.cancel();
+      closingPrewarmCancelRef.current?.();
       abortTurnAnalyses();
       submitInFlightRef.current = false;
       if (advanceTimerRef.current !== null) window.clearTimeout(advanceTimerRef.current);
       assessmentSockets.closeAll();
     };
-  }, [abortTurnAnalyses, acknowledgements, assessmentSockets, fixedHandoffPreparation, nextTurnPreparation]);
+  }, [abortTurnAnalyses, acknowledgements, assessmentSockets, closingReaction, fixedHandoffPreparation, nextTurnPreparation]);
 
   // At the start of the first answer, synthesize the predictable closing line so it is ready whenever the interview ends
   // (once; the blob is retained and the backend keeps fixed phrases cached).
@@ -380,8 +403,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   useEffect(() => {
     if (phase !== "answering" || closingPrewarmedRef.current || !config.playInterviewerAudio) return;
     closingPrewarmedRef.current = true;
-    void prewarmInterviewerClosing(closingUtterance, config.voice);
-  }, [phase, config.playInterviewerAudio, config.voice, closingUtterance]);
+    void prewarmInterviewerClosing(composeInterviewClosing(null, closingLine), config.voice);
+  }, [phase, config.playInterviewerAudio, config.voice, closingLine]);
 
   const logFixedPreparation = useCallback((entry: FixedHandoffEntry, outcome: "used" | "discarded" | "failed" | "closing", usedIndex?: number) => {
     const metrics = fixedHandoffPreparation.metrics(entry);
@@ -450,19 +473,19 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const decisionInputKey = (input: ReturnType<typeof buildDecisionInput>) => JSON.stringify({ ...input, config: undefined, transcript: input.transcript.trim() });
 
   /** Whether the final answer deserves a spoken acknowledgement: voice on, not leaving, enough words, time for another question. */
-  const acknowledgementApplies = (answer: string) => config.playInterviewerAudio && !leftRef.current && mountedRef.current
-    && isAcknowledgeableAnswer(answer) && hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes);
+  const acknowledgementApplies = (answer: string, closing = false) => config.playInterviewerAudio && !leftRef.current && mountedRef.current
+    && isAcknowledgeableAnswer(answer) && (closing || hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes));
   /**
    * Schedules "Okay." for the answer that is now final (never earlier: the candidate may still resume), after a short
    * natural beat; once per answer window, never for clarifications, short answers or the closing.
    */
-  const playAcknowledgement = (answer: string) => {
+  const playAcknowledgement = (answer: string, closing = false) => {
     const turn = micTurnIdRef.current;
     acknowledgementOutcomeRef.current = { turn, willPlay: false };
-    if (!acknowledgementApplies(answer) || acknowledgedTurnRef.current === turn) return;
+    if (!acknowledgementApplies(answer, closing) || acknowledgedTurnRef.current === turn) return;
     const handle = acknowledgements.schedule({
       recent: recentAcknowledgementsRef.current,
-      shouldPlay: () => !leftRef.current && mountedRef.current && micTurnIdRef.current === turn && (phaseRef.current === "answering" || phaseRef.current === "advancing"),
+      shouldPlay: () => !leftRef.current && mountedRef.current && micTurnIdRef.current === turn && (phaseRef.current === "answering" || phaseRef.current === "advancing" || (closing && phaseRef.current === "closing")),
     });
     if (!handle) return;
     acknowledgementOutcomeRef.current = { turn, willPlay: true };
@@ -484,6 +507,54 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     return bridge && /^(?:let'?s|now i'?d like|let me|i'?d like|next,|thanks for that)/iu.test(bridge.trim())
       ? `I understand. ${bridge}`
       : bridge;
+  };
+
+  /** While the candidate answers: if this answer will be the last one, prepare the short reaction (and its audio) the interviewer says before closing. */
+  const maybePrepareClosingReaction = (answer: string) => {
+    if (!isLastAnswerExpected({ elapsedSeconds: elapsedSecondsRef.current, durationMinutes })) return;
+    if (detectClarificationRequest(answer) !== null) return;
+    closingReaction.update(micTurnIdRef.current, answer, {
+      currentQuestion: question.prompt,
+      recent: recentAcknowledgementsRef.current,
+      roleContext: { targetRole: config.role, seniority: config.seniority, focus: config.focus },
+      onReady: (reaction) => {
+        if (!config.playInterviewerAudio || leftRef.current || !mountedRef.current) return;
+        closingPrewarmCancelRef.current?.();
+        closingPrewarmCancelRef.current = prewarmInterviewerUtterance(composeInterviewClosing(reaction, closingLine), config.voice).cancel;
+      },
+    });
+  };
+  /**
+   * What the interviewer says before the closing line when the answer is final and the interview ends: the instant "Okay." (audio
+   * only; text-only shows the word), then the prepared reaction when it is ready and still matches the answer (waits 400 ms at most).
+   * Null when there is nothing to say. Nothing is spoken before the answer is final.
+   */
+  const composeClosingLead = async (answer: string, acknowledge: boolean): Promise<string | null> => {
+    const ready = closingReaction.peek();
+    const skipAcknowledgement = ready !== null && startsWithAcknowledgement(ready.reaction);
+    let spoken = false;
+    if (acknowledge && !skipAcknowledgement && isAcknowledgeableAnswer(answer)) {
+      playAcknowledgement(answer, true);
+      spoken = acknowledgementOutcomeRef.current?.willPlay === true;
+    }
+    let reaction = await closingReaction.resolve(answer);
+    if (reaction && spoken && startsWithAcknowledgement(reaction)) reaction = stripLeadingAcknowledgement(reaction) || null;
+    if (config.playInterviewerAudio) return reaction;
+    const word = acknowledge && isAcknowledgeableAnswer(answer) && !(reaction && startsWithAcknowledgement(reaction)) ? pickAcknowledgement({ recent: recentAcknowledgementsRef.current }) : null;
+    return [word, reaction].filter(Boolean).join(" ") || null;
+  };
+  /** Ends the interview after the final answer: reaction (if any), then the closing line. Returns false when the room was left meanwhile. */
+  const closeAfterAnswer = async (answer: string | null, acknowledge: boolean, generation: number): Promise<boolean> => {
+    let lead: string | null = null;
+    if (answer) {
+      transitionPhase("advancing");
+      lead = await composeClosingLead(answer, acknowledge);
+      if (leftRef.current || !mountedRef.current || generation !== generationRef.current) return false;
+    }
+    rememberClosingLine(closingLine);
+    setClosingLead(lead);
+    transitionPhase("closing");
+    return true;
   };
 
   const logPreparation = useCallback((outcome: "prepared_used" | "prepared_discarded", reason?: string) => {
@@ -522,6 +593,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     }
     currentSpeechEpochRef.current = speechEpoch;
     const answer = provisionalTranscript.trim();
+    if (answer) maybePrepareClosingReaction(answer);
     if (!answer || timeLimitReached || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) return;
     if (followUpUsed) return;
     // A request to repeat or explain is not an answer: nothing to prepare.
@@ -679,8 +751,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       finishFixedPreparation("closing");
       if (clarificationHint === null) commitAnswer();
       else excludeClarificationAssessment();
+      const closed = await closeAfterAnswer(clarificationHint === null ? savedAnswer : null, true, generation);
+      if (!closed) return;
       submitInFlightRef.current = false;
-      transitionPhase("closing");
       return;
     }
 
@@ -840,7 +913,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     else excludeClarificationAssessment();
 
     if (!hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) {
-      transitionPhase("closing");
+      // The instant acknowledgement already played for this answer: only the reaction and the closing line follow.
+      await closeAfterAnswer(plan.countsAsAnswer ? savedAnswer : null, false, generation);
+      return;
     } else if (isClarificationTurn(turn)) {
       clarificationCountsRef.current.set(question.id, plan.clarificationsAfter);
       // Content-free diagnostics only.

@@ -18,8 +18,25 @@ export function composeAcknowledgedQuestion(acknowledgement, question) {
   return [acknowledgement?.trim(), question.trim()].filter(Boolean).join(" ");
 }
 
-export function composeInterviewClosing() {
-  return "Thanks for your time today. That brings us to the end of the interview. I’ll prepare your feedback now.";
+/** Closing lines (the time is up, feedback is next), rotated so two interviews in a row do not end the same way. Mirrored in the backend. */
+export const INTERVIEW_CLOSINGS = [
+  "That’s all the time we have today. Thanks for your answers. I’ll prepare your feedback now.",
+  "We’re out of time, so let’s stop here. Thank you for talking with me. I’ll prepare your feedback now.",
+  "Our time is up for today. Thanks for your time and your answers. I’ll get your feedback ready now.",
+  "That’s the end of our time today. I appreciate your answers. Your feedback will be ready in a moment.",
+  "We’ve reached the end of our time. Thanks for the conversation. I’ll prepare your feedback now.",
+];
+
+/** A closing line other than `lastUsed` (the one the previous interview ended with). */
+export function pickInterviewClosing(lastUsed = null, random = Math.random) {
+  const options = INTERVIEW_CLOSINGS.filter((closing) => closing !== lastUsed);
+  const pool = options.length ? options : INTERVIEW_CLOSINGS;
+  return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
+}
+
+/** What the interviewer says to close: an optional reaction to the last answer, then the closing line. */
+export function composeInterviewClosing(reaction = null, closing = INTERVIEW_CLOSINGS[0]) {
+  return [reaction?.trim(), closing.trim()].filter(Boolean).join(" ");
 }
 
 export function resolveSkippedQuestion(question) {

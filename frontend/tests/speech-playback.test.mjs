@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, composeOpeningUtterance, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, speechUnavailableMessage, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
+import { composeAcknowledgedQuestion, composeContextualOpening, composeInterviewClosing, composeOpeningUtterance, INTERVIEW_CLOSINGS, pickInterviewClosing, playInterviewerSegments, resolveInterviewerCaption, resolveSkippedQuestion, speechUnavailableMessage, splitInterviewerSpeech, synthesizeInterviewerQuestion } from "../src/lib/interview/speech-playback.mjs";
 
 import { hasSeniorityWord, looksPortuguese, roleForSpeech } from "../src/lib/interview/opening-copy.mjs";
 import { createOpeningSpeechTiming, isOpeningTimingEnabled, openingTimingStorageKey } from "../src/lib/interview/opening-timing.mjs";
@@ -114,12 +114,40 @@ test("the next spoken and captioned utterance uses an optional natural transitio
 
 test("the interview closing is a short natural line that can be captioned by sentence", () => {
   const closing = composeInterviewClosing();
-  assert.equal(closing, "Thanks for your time today. That brings us to the end of the interview. I’ll prepare your feedback now.");
+  assert.equal(closing, INTERVIEW_CLOSINGS[0]);
   assert.deepEqual(splitInterviewerSpeech(closing), [
-    "Thanks for your time today.",
-    "That brings us to the end of the interview.",
+    "That’s all the time we have today.",
+    "Thanks for your answers.",
     "I’ll prepare your feedback now.",
   ]);
+});
+
+test("every closing variant says the time is up and that feedback is next", () => {
+  assert.ok(INTERVIEW_CLOSINGS.length >= 4 && INTERVIEW_CLOSINGS.length <= 6);
+  assert.equal(new Set(INTERVIEW_CLOSINGS).size, INTERVIEW_CLOSINGS.length);
+  for (const closing of INTERVIEW_CLOSINGS) {
+    assert.match(closing, /\b(?:time|out of time)\b/i);
+    assert.match(closing, /feedback/i);
+    assert.ok(closing.split(/\s+/).length <= 25, closing);
+  }
+});
+
+test("the closing rotation never repeats the last used line", () => {
+  for (const last of INTERVIEW_CLOSINGS) {
+    for (const random of [0, 0.25, 0.5, 0.75, 0.999]) assert.notEqual(pickInterviewClosing(last, () => random), last);
+  }
+  assert.ok(INTERVIEW_CLOSINGS.includes(pickInterviewClosing(null, () => 0.5)));
+  assert.ok(INTERVIEW_CLOSINGS.includes(pickInterviewClosing("unknown line", () => 0.999)));
+  const seen = new Set(INTERVIEW_CLOSINGS.map((_c, index) => pickInterviewClosing(null, () => index / INTERVIEW_CLOSINGS.length)));
+  assert.equal(seen.size, INTERVIEW_CLOSINGS.length);
+});
+
+test("the closing is spoken after the reaction to the last answer when there is one", () => {
+  const reaction = "So you traced it to the cache TTL.";
+  assert.equal(composeInterviewClosing(reaction, INTERVIEW_CLOSINGS[1]), `${reaction} ${INTERVIEW_CLOSINGS[1]}`);
+  assert.equal(composeInterviewClosing(null, INTERVIEW_CLOSINGS[1]), INTERVIEW_CLOSINGS[1]);
+  assert.equal(composeInterviewClosing("  ", INTERVIEW_CLOSINGS[1]), INTERVIEW_CLOSINGS[1]);
+  assert.deepEqual(splitInterviewerSpeech(composeInterviewClosing(reaction, INTERVIEW_CLOSINGS[0]))[0], reaction);
 });
 
 test("a skipped question's next fixed prompt does not carry the previous acknowledgment", () => {
