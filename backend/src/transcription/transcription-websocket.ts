@@ -326,6 +326,7 @@ export function attachTranscriptionWebSocket(
     let speechEpoch = 0;
     const candidateRevisionFloorByTurnId = new Map<string, number>();
     let semanticVerdict: SemanticVerdict = "none";
+    let semanticCheckAborted = false;
     let semanticLatencyMs = 0;
     let lastSemanticText = "";
     let semanticTimer: ReturnType<typeof setTimeout> | null = null;
@@ -338,11 +339,17 @@ export function attachTranscriptionWebSocket(
       semanticTimer = null;
       if (semanticHoldTimer !== null) clearTimeout(semanticHoldTimer);
       semanticHoldTimer = null;
-      if (semanticAbort) semanticVerdict = "aborted";
+      // Only remembered here: the logged verdict stays the last completed check unless the answer finalizes with no newer result.
+      if (semanticAbort) semanticCheckAborted = true;
       semanticAbort?.abort();
       semanticAbort = null;
-      candidateAbort?.abort();
-      candidateAbort = null;
+      // An in-flight compatibility check that never produced a result must be re-runnable at the next pause in the same epoch.
+      if (candidateAbort) {
+        candidateAbort.abort();
+        candidateAbort = null;
+        lastAssessedCandidate = null;
+        candidateChecksInEpoch = Math.max(0, candidateChecksInEpoch - 1);
+      }
       if (graceTimer !== null) clearTimeout(graceTimer);
       graceTimer = null;
       if (prepareTimer !== null) clearTimeout(prepareTimer);
@@ -423,6 +430,7 @@ export function attachTranscriptionWebSocket(
         if (semanticAbort === controller) semanticAbort = null;
         semanticLatencyMs = Date.now() - startedAt;
         semanticVerdict = outcome.kind ?? (outcome.complete ? "complete" : "incomplete");
+        semanticCheckAborted = false;
         if (!outcome.complete) return;
         // A transcript ending on a connector ("and", "because") is never trusted as finished, whatever the verdict.
         if (endsWithConnector(transcript)) return;
@@ -446,7 +454,11 @@ export function attachTranscriptionWebSocket(
       const classifier = streaming?.answerCompletion;
       if (!classifier || candidateChecksInEpoch >= 2
         || (lastAssessedCandidate?.turnId === candidate.turnId && lastAssessedCandidate.revision === candidate.revision)) return;
-      candidateAbort?.abort();
+      // Superseding an unfinished check must not spend budget on a result that never arrives.
+      if (candidateAbort) {
+        candidateAbort.abort();
+        candidateChecksInEpoch = Math.max(0, candidateChecksInEpoch - 1);
+      }
       const controller = new AbortController();
       candidateAbort = controller;
       candidateChecksInEpoch += 1;
@@ -699,7 +711,7 @@ export function attachTranscriptionWebSocket(
           }
           const transcriptionDurationMs = Date.now() - flushStartedAt;
           const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
-          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: "whisper-incremental", provider: "whisper-incremental", incrementalTurns: stream.turnCount, ...stream.diagnostics?.(), preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict, semanticLatencyMs, semanticCheckStartedAfterSilenceMs: Math.round(semanticStartedAfterSilenceMs), semanticCompleteHeldMs: semanticHeldMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
+          logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: "whisper-incremental", provider: "whisper-incremental", incrementalTurns: stream.turnCount, ...stream.diagnostics?.(), preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict: semanticCheckAborted ? "aborted" : semanticVerdict, semanticLatencyMs, semanticCheckStartedAfterSilenceMs: Math.round(semanticStartedAfterSilenceMs), semanticCompleteHeldMs: semanticHeldMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
           send(socket, { type: "complete", status: "complete", provider: "whisper-incremental", durationMs, transcript });
           clearTimeout(timer);
 

@@ -478,6 +478,47 @@ describe("semantic end of answer", () => {
     expect(logs()).not.toContain("a lock");
   }, 12_000);
 
+  it("does not spend compatibility budget on aborted checks and re-assesses the candidate afterwards", async () => {
+    const calls: number[] = [];
+    const service: AnswerCompletionService = {
+      isComplete: async () => false,
+      assess: ({ candidate, signal }) => {
+        calls.push(candidate.question.length);
+        // The first check never resolves on its own: it only ends when it is superseded (aborted).
+        if (calls.length === 1) return new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+        return Promise.resolve({ complete: false, candidateCompatibility: "OPEN" as const });
+      },
+    };
+    const { connect } = await startServer(createWhisper([answerText]).service, options(service, { answerGraceMs: 3_000, incompleteGraceMs: 3_000 }));
+    const { socket, messages } = await connect({ question });
+    const candidate = (revision: number) => socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision, question: "Why did the lock help?", anchor: "a lock" }));
+    candidate(1);
+    await speak(socket, 800, 0.05);
+    await speak(socket, 600, 0.001);
+    const until = async (done: () => boolean) => { const deadline = Date.now() + 1_000; while (!done() && Date.now() < deadline) await delay(10); };
+    await until(() => calls.length >= 1);
+    candidate(2); // supersedes (aborts) revision 1
+    await until(() => messages.some((message) => message.type === "follow-up-candidate-status" && message.revision === 2));
+    candidate(3); // would exceed the budget of 2 if the aborted check had been charged
+    await until(() => messages.some((message) => message.type === "follow-up-candidate-status" && message.revision === 3));
+    expect(calls).toHaveLength(3);
+    expect(messages.filter((message) => message.type === "follow-up-candidate-status").map((message) => message.revision)).toEqual([2, 3]);
+  }, 12_000);
+
+  it("reports the last completed semantic verdict rather than a restart abort", async () => {
+    let call = 0;
+    const fake = classifier(async () => { call += 1; return call > 1; });
+    const { connect } = await startServer(createWhisper([answerText, "More detail."]).service, options(fake.service));
+    const { socket, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    await speak(socket, 600, 0.001);
+    await speak(socket, 500, 0.05);
+    await speak(socket, 1_000, 0.001);
+    await waitFor("complete");
+    expect(logs()).not.toContain('"semanticVerdict":"aborted"');
+    expect(logs()).toMatch(/"semanticVerdict":"(complete|incomplete)"/);
+  }, 12_000);
+
   it("clears only a matching candidate at an equal or newer revision and ignores late assessment results", async () => {
     const assessmentResolvers: Array<(value: { complete: boolean; candidateCompatibility: "OPEN" }) => void> = [];
     const service: AnswerCompletionService = {
