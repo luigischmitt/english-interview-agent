@@ -17,7 +17,7 @@ export type ClosingReactionInput = {
   signal?: AbortSignal;
 };
 
-export type ClosingReactionOutcome = "generated" | "dropped" | "timeout" | "error" | "cancelled" | "skipped_low_info";
+export type ClosingReactionOutcome = "generated" | "dropped" | "timeout" | "error" | "cancelled" | "skipped_low_info" | "empty";
 
 export type ClosingReactionResult = { reaction: string | null; outcome: ClosingReactionOutcome; dropReason?: BridgeDropReason };
 
@@ -85,8 +85,8 @@ export class OpenRouterClosingReactionService implements ClosingReactionService 
       // answer to the question just asked is the point here, not a redundancy).
       const evaluation = evaluateBridge((value as { bridge: unknown }).bridge, { decision: "FOLLOW_UP", transcript: input.transcript, recentAcknowledgements: input.recentAcknowledgements, question: "That's all the time we have for today." });
       if ("dropReason" in evaluation) { outcome = "dropped"; dropReason = evaluation.dropReason; return { reaction: null, outcome, dropReason }; }
-      outcome = "generated";
       reaction = evaluation.bridge;
+      outcome = reaction === null ? "empty" : "generated";
       return { reaction, outcome };
     } catch {
       outcome = input.signal?.aborted ? "cancelled" : timedOut ? "timeout" : "error";

@@ -1,6 +1,7 @@
 import type { InterviewOrchestrationInput, InterviewOrchestrationResult } from "../thinking/types.js";
 import {
   ACKNOWLEDGEMENT_PHRASES,
+  CLOSING_FALLBACK_REACTIONS,
   composeAcknowledgedQuestion,
   INTERVIEW_CLOSINGS,
   INTERVIEW_ENDED_CLOSINGS,
@@ -13,9 +14,9 @@ import { normalizeTextForSpeech } from "./text-normalization.js";
 import type { AudioFormat } from "./types.js";
 import { resolveVoice } from "./voices.js";
 
-/** Texts that never change (acknowledgements, the closing line): cached longer and synthesized ahead of the interview. */
+/** Texts that never change (acknowledgements, the closing line, the closing fallback reactions): cached longer and synthesized ahead of the interview. */
 export function staticSpeechTexts(): string[] {
-  const texts = [...ACKNOWLEDGEMENT_PHRASES, ...[...INTERVIEW_CLOSINGS, ...INTERVIEW_ENDED_CLOSINGS].flatMap((closing) => interviewerChunkTexts(closing))].map((text) => normalizeTextForSpeech(text.trim()));
+  const texts = [...ACKNOWLEDGEMENT_PHRASES, ...CLOSING_FALLBACK_REACTIONS.flatMap((reaction) => interviewerChunkTexts(reaction)), ...[...INTERVIEW_CLOSINGS, ...INTERVIEW_ENDED_CLOSINGS].flatMap((closing) => interviewerChunkTexts(closing))].map((text) => normalizeTextForSpeech(text.trim()));
   return [...new Set(texts)];
 }
 

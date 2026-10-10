@@ -70,6 +70,8 @@ describe("sanitizeClientEvent", () => {
       .toEqual({ kind: "turn_preparation", preparationType: "speculative", outcome: "ready", plannedCount: 2, revision: 3, elapsedMs: 81, prepared: true });
     expect(sanitizeClientEvent({ kind: "turn_preparation", preparationType: "speculative", outcome: "decision_ready", revision: 3, elapsedMs: 81, prepared: false }))
       .toEqual({ kind: "turn_preparation", preparationType: "speculative", outcome: "decision_ready", revision: 3, elapsedMs: 81, prepared: false });
+    expect(sanitizeClientEvent({ kind: "closing_reaction", reactionSource: "fallback", reaction: "secret" })).toEqual({ kind: "closing_reaction", reactionSource: "fallback" });
+    expect(sanitizeClientEvent({ kind: "closing_reaction", reactionSource: "free text" })).toEqual({ kind: "closing_reaction" });
     expect(sanitizeClientEvent({ kind: "handoff_timing", totalMs: 1_200, whisperMs: 500, decisionMs: 200, prepared: true, transcript: "secret" }))
       .toEqual({ kind: "handoff_timing", totalMs: 1_200, whisperMs: 500, decisionMs: 200, prepared: true });
   });

@@ -33,6 +33,25 @@ export function isReactionCompatible(reaction, snapshot, finalTranscript) {
   return substantial.length > 0 && substantial.every((word) => stems.has(word.slice(0, 4)));
 }
 
+/**
+ * Neutral reactions said before the closing line when the model has none for the last answer. They claim nothing about the answer,
+ * never praise, and none opens with an acknowledgement word, so "Okay." + fallback never doubles. Mirrored in the backend.
+ */
+export const CLOSING_FALLBACK_REACTIONS = [
+  "I understand, thank you for walking me through that.",
+  "That makes sense, thank you for explaining.",
+  "I follow what you mean, thank you for explaining that.",
+  "I understand what you mean, thank you.",
+  "That makes sense, thank you for sharing that.",
+];
+
+/** A fallback reaction other than `lastUsed` (the one the previous interview used). */
+export function pickClosingFallbackReaction(lastUsed = null, random = Math.random) {
+  const options = CLOSING_FALLBACK_REACTIONS.filter((reaction) => reaction !== lastUsed);
+  const pool = options.length ? options : CLOSING_FALLBACK_REACTIONS;
+  return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
+}
+
 /** True when the text opens with an acknowledgement word, so a separate "Okay." before it would double up. */
 export function startsWithAcknowledgement(text) {
   return /^\s*(?:okay|ok|alright|all right|got it|gotcha|right|sure|understood|i see|mm-?hm+|thanks|thank you)\b/iu.test(String(text ?? ""));
@@ -118,14 +137,19 @@ export function createClosingReactionTracker({ request, onReaction, maxCalls = M
  * nothing to say. `acknowledge=false` means the acknowledgement already played, so a leading "Okay." of the reaction is dropped.
  * `deps`: `tracker`, `key` (the answer's mic turn), `answer`, `acknowledge`, `canAcknowledge` (the answer is long enough),
  * `playAcknowledgement()` (starts it; true when it will be heard), `audio` (the interviewer is spoken), `pickWord()` (text-only word).
+ * `fallbackReaction` (optional): the neutral reaction used when the answer counts (`canAcknowledge`) but no model reaction is usable;
+ * `onSource(source)` (optional) is told "model", "fallback" or "none" (content-free).
  */
-export async function composeClosingLead({ tracker, key, answer, acknowledge, canAcknowledge, playAcknowledgement, audio, pickWord }) {
+export async function composeClosingLead({ tracker, key, answer, acknowledge, canAcknowledge, playAcknowledgement, audio, pickWord, fallbackReaction = null, onSource }) {
   const ready = tracker.peek(key);
   const skipAcknowledgement = ready !== null && startsWithAcknowledgement(ready.reaction);
   let spoken = false;
   if (acknowledge && !skipAcknowledgement && canAcknowledge) spoken = playAcknowledgement() === true;
-  let reaction = await tracker.resolve(key, answer);
+  const modelReaction = await tracker.resolve(key, answer);
+  const useFallback = !modelReaction && canAcknowledge && typeof fallbackReaction === "string" && fallbackReaction.trim() !== "";
+  let reaction = modelReaction || (useFallback ? fallbackReaction.trim() : null);
   if (reaction && (spoken || !acknowledge) && startsWithAcknowledgement(reaction)) reaction = stripLeadingAcknowledgement(reaction) || null;
+  try { onSource?.(reaction ? (modelReaction ? "model" : "fallback") : "none"); } catch { /* Diagnostics only. */ }
   if (audio) return reaction;
   const word = acknowledge && canAcknowledge && !(reaction && startsWithAcknowledgement(reaction)) ? pickWord() : null;
   return [word, reaction].filter(Boolean).join(" ") || null;
