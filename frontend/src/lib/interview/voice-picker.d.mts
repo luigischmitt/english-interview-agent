@@ -11,3 +11,8 @@ export function groupVoicesByGender(options?: readonly InterviewerVoiceOption[])
 export function voiceSamplePath(id: string): string;
 export function readStoredInterviewerVoice(storage: Pick<Storage, "getItem">): string;
 export function storeInterviewerVoice(storage: Pick<Storage, "setItem" | "removeItem">, voice: unknown): boolean;
+export type VoiceSampleResult = { status: "completed" } | { status: "unavailable"; message: string } | { status: "cancelled" };
+export function playVoiceSample(
+  id: string,
+  createAudio?: (src: string) => Pick<HTMLAudioElement, "play" | "pause" | "onended" | "onerror">,
+): { promise: Promise<VoiceSampleResult>; cancel: () => void };

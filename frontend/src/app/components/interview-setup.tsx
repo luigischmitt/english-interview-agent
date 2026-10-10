@@ -11,7 +11,6 @@ import { applyJobAnalysis, isValidJobDirection, JobDirectionRequestError, jobDes
 import { requestResumeDirection, ResumeDirectionRequestError, validateResumeFile } from "@/lib/interview/resume-direction.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
-import { synthesizeInterviewerQuestion } from "@/lib/interview/speech-playback.mjs";
 import { voiceBlocksInterviewStart, type VoiceReadinessState } from "@/lib/interview/voice-readiness.mjs";
 import { getInterviewSetupSummary, getInterviewerAudioMode, withInterviewerAudioMode } from "@/lib/interview/setup-audio.mjs";
 import { PageIntro } from "./shared";
@@ -19,7 +18,7 @@ import { inAppMicBody, inAppMicTitle, useCopyPageLink, useInAppBrowser } from ".
 import { MicrophoneTest, type MicrophoneTestHandle } from "./microphone-test";
 import { readStoredMicrophoneDeviceId, storeMicrophoneDeviceId } from "@/lib/interview/mic-device.mjs";
 import { VoicePicker } from "./voice-picker";
-import { readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
+import { playVoiceSample, readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
 import { RoleCombobox } from "@/components/ui/role-combobox";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import "./interview-setup.css";
@@ -43,7 +42,6 @@ const focusLabels: Record<InterviewConfig["focus"], string> = {
 
 const subscribeNever = () => () => {};
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
-const audioTestPhrase = "Hello, thanks for joining me today. Could you tell me about a recent project?";
 
 type ParkedAutomaticSetup = {
   direction: JobDirection;
@@ -339,13 +337,9 @@ export function InterviewSetup({
       return;
     }
 
-    setAudioTestStatus({ kind: "loading", message: "Gerando e reproduzindo uma frase em inglês…" });
-    const playback = synthesizeInterviewerQuestion(audioTestPhrase, {
-      endpoint: `${backendBaseUrl}/api/v1/speech`,
-      fetcher: authorizedFetch,
-      voice,
-      onDiagnostic: reportAudioDiagnostic,
-    });
+    setAudioTestStatus({ kind: "loading", message: "Reproduzindo uma frase em inglês…" });
+    // The same static sample as the voice list: testing (and re-testing) a voice never calls the speech API.
+    const playback = playVoiceSample(voice);
     audioTestRef.current = playback;
     const result = await playback.promise;
     if (audioTestRef.current !== playback) return;
