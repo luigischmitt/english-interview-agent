@@ -41,11 +41,15 @@ import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/intervi
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
 import { canUseFixedDecisionFromFollowUp, resolveFixedFromFollowUp } from "@/lib/interview/fixed-from-follow-up.mjs";
+import { FINAL_ANALYSIS_WAIT_MS, FOLLOW_UP_TOTAL_WAIT_MS, finalAnalysisWaitPredicate, remainingBudgetMs } from "@/lib/interview/final-analysis-wait.mjs";
 import { adoptSpeechEpoch, applyFollowUpCandidateClear, canUseCurrentEpochCandidate, discardCoveredFollowUps, finalEpochCandidateStatus, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "@/lib/interview/speculative-epoch.mjs";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { useLocale, t } from "@/lib/locale";
 
 type AssessmentEntry = { questionLabel: string; sequenceNumber: number; round?: number; state: VoiceAssessmentState };
+/** Monotonic clock for latency budgets (kept outside the component so handlers may read it). */
+const monotonicNowMs = () => performance.now();
+
 type PreparedTurn = {
   decision: TurnDecision;
   turnId: string;
@@ -645,6 +649,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     nextTurnPreparation.prepare({
       transcript: answer,
       inputKey: decisionInputKey(input),
+      revision,
       preserveReady: true,
       // A newer revision never aborts an analysis still in flight; the registry keeps at most two running.
       preservePending: true,
@@ -761,6 +766,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (!savedAnswer) return;
 
     submitInFlightRef.current = true;
+    const submitStartedAt = monotonicNowMs();
     const generation = ++generationRef.current;
     const abortController = new AbortController();
     decisionAbortRef.current = abortController;
@@ -815,6 +821,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     let selectedPlannedQuestionId: string | null = null;
     let skippedPlannedQuestionIds: string[] = [];
     let fixedPreparationSettled = false;
+    // Set when submit waited for the pending analysis of the final transcript: the wait is reported once the turn is settled.
+    let finalAnalysisWait: { waitMs: number; arrived: boolean } | null = null;
     if (clarificationHint === "repeat") {
       // A pure repeat request needs no model call: replay the question locally.
       nextTurnPreparation.abort();
@@ -855,18 +863,33 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     } else if (clarificationHint === null) {
       // Use the decision prepared during the answer grace only for exactly this transcript and these inputs.
       const discardedBefore = nextTurnPreparation.stats().discarded;
+      const acceptCandidate = (value: NonNullable<PreparedTurn>) => canUseCurrentEpochCandidate({
+        value,
+        finalTranscript: savedAnswer,
+        currentTurnId: speculativeTurnIdRef.current,
+        currentSpeechEpoch: currentSpeechEpochRef.current,
+        featureEnabled: speculativeEnabledRef.current,
+        compatibility: finalEpochCandidateStatus(candidateStatusesRef.current, latestCandidateStatusRevisionRef.current, value.revision, currentSpeechEpochRef.current),
+      });
+      // The final pause's analysis usually lands after the answer is final: when no ready follow-up can play and it is still
+      // running, hold for it briefly. The instant acknowledgement scheduled above covers the pause. Nothing else is discarded.
+      const waitPredicate = speculativeAttemptedRef.current && true
+        ? finalAnalysisWaitPredicate({
+          eligible: true,
+          entries: nextTurnPreparation.entries(),
+          readyValues: nextTurnPreparation.readyValues(),
+          acceptFollowUp: acceptCandidate,
+          finalTranscript: savedAnswer,
+        })
+        : null;
+      if (waitPredicate) {
+        const arrived = await nextTurnPreparation.waitForPending(waitPredicate, remainingBudgetMs(FINAL_ANALYSIS_WAIT_MS, submitStartedAt, monotonicNowMs()), { signal: abortController.signal });
+        finalAnalysisWait = { waitMs: Math.max(0, Math.round(monotonicNowMs() - submitStartedAt)), arrived };
+        if (leftRef.current || !mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
+      }
       const newestReadyRevision = Math.max(0, ...nextTurnPreparation.readyValues().map((value) => value?.revision ?? 0));
       const prepared = speculativeAttemptedRef.current
-        ? nextTurnPreparation.takeAnyReady({ accept: (value) => {
-            return canUseCurrentEpochCandidate({
-              value,
-              finalTranscript: savedAnswer,
-              currentTurnId: speculativeTurnIdRef.current,
-              currentSpeechEpoch: currentSpeechEpochRef.current,
-              featureEnabled: speculativeEnabledRef.current,
-              compatibility: finalEpochCandidateStatus(candidateStatusesRef.current, latestCandidateStatusRevisionRef.current, value.revision, currentSpeechEpochRef.current),
-            });
-        }, fallbackAccept: (value) => canUseFixedDecisionFromFollowUp({
+        ? nextTurnPreparation.takeAnyReady({ accept: acceptCandidate, fallbackAccept: (value) => canUseFixedDecisionFromFollowUp({
             value,
             currentTurnId: speculativeTurnIdRef.current,
             currentSpeechEpoch: currentSpeechEpochRef.current,
@@ -933,7 +956,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     }
     decision ??= await decideNextTurn({ ...decisionInput, signal: abortController.signal });
     if (preparedTurn && config.playInterviewerAudio && preparedTurn.speechReady) {
-      const { firstChunkReady, adaptedQuestionReady } = await waitForPreparedTurnAudio({ decision, speechReady: preparedTurn.speechReady, adaptedFixedQuestion: preparedTurn.adaptedFixedQuestion, fixedQuestionAudioReady: preparedTurn.fixedQuestionAudioReady }, 400);
+      // After waiting for the final analysis the follow-up's first chunk shares one cap counted from submit.
+      const audioTimeoutMs = finalAnalysisWait?.arrived && decision?.decision === "FOLLOW_UP"
+        ? remainingBudgetMs(FOLLOW_UP_TOTAL_WAIT_MS, submitStartedAt, monotonicNowMs())
+        : 400;
+      const { firstChunkReady, adaptedQuestionReady } = await waitForPreparedTurnAudio({ decision, speechReady: preparedTurn.speechReady, adaptedFixedQuestion: preparedTurn.adaptedFixedQuestion, fixedQuestionAudioReady: preparedTurn.fixedQuestionAudioReady }, audioTimeoutMs);
       if (decision?.decision === "NEXT" && preparedTurn.adaptedFixedQuestion && !adaptedQuestionReady && preparedTurn.originalFixedPrompt) {
         decision = { ...decision, nextQuestion: resolveFixedPromptForAudio({ prompt: decision.nextQuestion ?? undefined, originalPrompt: preparedTurn.originalFixedPrompt, adapted: true }, adaptedQuestionReady) ?? preparedTurn.originalFixedPrompt };
         preparedTurn.cancelSpeech?.();
@@ -974,6 +1001,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       finishFixedPreparation(usesPreparedFixed ? "used" : "discarded", usesPreparedFixed ? usedIndex : undefined);
     }
     handoffTimingRef.current?.mark("decisionCompleted");
+    if (finalAnalysisWait) {
+      const yielded = !finalAnalysisWait.arrived ? "timeout" : decision.decision === "FOLLOW_UP" ? "follow_up" : "next";
+      reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: `wait_${yielded}`, preparationReason: "waited_final_analysis", waitMs: finalAnalysisWait.waitMs });
+    }
     if (!mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
     decisionAbortRef.current = null;
     submitInFlightRef.current = false;

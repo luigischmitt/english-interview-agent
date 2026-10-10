@@ -26,7 +26,7 @@ export function createNextTurnPreparationRegistry() {
      * Starts a preparation, aborting and discarding the previous one. `run(signal, onCleanup)` resolves with the prepared
      * value (or null/throws when unavailable); `onCleanup(fn)` registers work to undo if the entry is discarded unused.
      */
-    prepare({ transcript, inputKey, preserveReady = false, preservePending = false, maxPending = 2, run }) {
+    prepare({ transcript, inputKey, revision = 0, preserveReady = false, preservePending = false, maxPending = 2, run }) {
       const text = normalize(transcript);
       if (current) {
         if (preserveReady && current.settled === "ready") retainedReady.push(current);
@@ -47,7 +47,7 @@ export function createNextTurnPreparationRegistry() {
         }
       }
       const controller = new AbortController();
-      const entry = { transcript: text, inputKey: inputKey ?? "", controller, settled: "pending", used: false, value: null, cleanup: null };
+      const entry = { transcript: text, inputKey: inputKey ?? "", revision, controller, settled: "pending", used: false, value: null, cleanup: null };
       let started;
       try {
         started = Promise.resolve(run(controller.signal, (cleanup) => { entry.cleanup = cleanup; }));
@@ -133,6 +133,42 @@ export function createNextTurnPreparationRegistry() {
       entry.viaFallback = viaFallback;
       used += 1;
       return entry;
+    },
+
+    /** Content-free-safe view of every live entry (pending or ready, unused): transcript, revision and state. */
+    entries() {
+      return [...retainedReady, ...(current ? [current] : [])]
+        .filter((entry) => (entry.settled === "pending" || entry.settled === "ready") && !entry.used)
+        .map((entry) => ({ transcript: entry.transcript, revision: entry.revision, settled: entry.settled }));
+    },
+
+    /**
+     * Waits for a pending preparation matching `predicate({ transcript, revision })` to become ready, without discarding or
+     * claiming anything (the caller then claims through `takeAnyReady`). Resolves true when one is ready, false on timeout,
+     * abort, or when every matching entry failed/was discarded.
+     */
+    async waitForPending(predicate, timeoutMs, { signal, timers = globalThis } = {}) {
+      const matching = [...retainedReady, ...(current ? [current] : [])]
+        .filter((entry) => entry.settled === "pending" && predicate({ transcript: entry.transcript, revision: entry.revision }));
+      if (matching.length === 0 || signal?.aborted) return false;
+      let timeoutId;
+      let onAbort;
+      const outcome = new Promise((resolve) => {
+        timeoutId = timers.setTimeout(() => resolve(false), Math.max(0, timeoutMs));
+        onAbort = () => resolve(false);
+        signal?.addEventListener("abort", onAbort, { once: true });
+        let remaining = matching.length;
+        for (const entry of matching) {
+          entry.promise.then(() => {
+            if (entry.settled === "ready") resolve(true);
+            else if (--remaining === 0) resolve(false);
+          });
+        }
+      });
+      try { return await outcome; } finally {
+        timers.clearTimeout(timeoutId);
+        signal?.removeEventListener("abort", onAbort);
+      }
     },
 
     /** Snapshot of the unused ready values (retained and current). */

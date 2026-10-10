@@ -370,3 +370,41 @@ test("follow-up audio is retained beyond 30 s and released when the preparation 
     clearRetainedSpeechBlobs();
   }
 });
+
+test("waitForPending resolves true when a matching pending entry becomes ready, without discarding others", async () => {
+  const registry = createNextTurnPreparationRegistry();
+  const slow = deferred();
+  registry.prepare({ transcript: "A", revision: 1, preserveReady: true, preservePending: true, run: async () => ({ revision: 1 }) });
+  registry.prepare({ transcript: "A and B", revision: 2, preserveReady: true, preservePending: true, run: () => slow.promise });
+  const waiting = registry.waitForPending((entry) => entry.revision === 2, 1_000);
+  slow.resolve({ revision: 2 });
+  assert.equal(await waiting, true);
+  assert.deepEqual(registry.readyValues().map((value) => value.revision).sort(), [1, 2]);
+  assert.deepEqual(registry.stats(), { used: 0, discarded: 0 });
+  assert.equal(registry.takeAnyReady({ accept: () => true })?.value.revision, 2);
+});
+
+test("waitForPending times out with false and keeps the entry pending", async () => {
+  const registry = createNextTurnPreparationRegistry();
+  registry.prepare({ transcript: "A", revision: 1, run: () => new Promise(() => {}) });
+  const started = Date.now();
+  assert.equal(await registry.waitForPending(() => true, 30), false);
+  assert.ok(Date.now() - started >= 25);
+  assert.equal(registry.hasPending(), true);
+  assert.equal(await registry.waitForPending(() => false, 1_000), false);
+  registry.abort();
+});
+
+test("waitForPending stops on abort and when every match fails", async () => {
+  const registry = createNextTurnPreparationRegistry();
+  registry.prepare({ transcript: "A", revision: 1, run: () => new Promise(() => {}) });
+  const controller = new AbortController();
+  const waiting = registry.waitForPending(() => true, 5_000, { signal: controller.signal });
+  controller.abort();
+  assert.equal(await waiting, false);
+  registry.abort();
+  const failing = createNextTurnPreparationRegistry();
+  failing.prepare({ transcript: "A", revision: 1, run: async () => null });
+  assert.equal(await failing.waitForPending(() => true, 5_000), false);
+  assert.equal(await failing.waitForPending(() => true, 5_000, { signal: AbortSignal.abort() }), false);
+});

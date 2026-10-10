@@ -10,8 +10,8 @@ const kinds = ["playback_start", "playback_playing", "playback_play_resolved", "
 const ackSkipReasons = ["not_loaded", "not_applicable", "question_started"] as const;
 const reactionSources = ["model", "fallback", "none"] as const;
 const preparationTypes = ["fixed", "speculative"] as const;
-const preparationOutcomes = ["started", "ready", "decision_ready", "prepared_used", "prepared_discarded", "failed", "used", "discarded", "closing"] as const;
-const preparationReasons = ["capture_ended", "speech_resumed", "unavailable", "mismatch", "speculative_not_ready", "question_started", "leaving", "new_turn", "skip", "fixed_from_follow_up"] as const;
+const preparationOutcomes = ["started", "ready", "decision_ready", "prepared_used", "prepared_discarded", "failed", "used", "discarded", "closing", "wait_follow_up", "wait_next", "wait_timeout"] as const;
+const preparationReasons = ["capture_ended", "speech_resumed", "unavailable", "mismatch", "speculative_not_ready", "question_started", "leaving", "new_turn", "skip", "fixed_from_follow_up", "waited_final_analysis"] as const;
 /** Client-side resume analysis stage and the closed set of codes (backend error codes plus client-only ones). */
 const resumeStages = ["file", "request", "response", "validation", "success"] as const;
 const resumeCodes = ["INVALID_RESUME_REQUEST", "RESUME_FILE_TOO_LARGE", "RESUME_TOO_MANY_PAGES", "RESUME_CONTENT_TOO_LARGE", "RESUME_INVALID_PDF", "RESUME_INSUFFICIENT_CONTENT", "RESUME_DIRECTION_TIMEOUT", "RESUME_DIRECTION_RATE_LIMITED", "RESUME_DIRECTION_INVALID_PROVIDER_RESPONSE", "RESUME_DIRECTION_PROVIDER_UNAVAILABLE", "RESUME_DIRECTION_NOT_CONFIGURED", "UNAUTHENTICATED", "INVALID_RESPONSE", "REQUEST_FAILED", "other"] as const;
@@ -51,6 +51,7 @@ const numberFields: Record<string, readonly [number, number]> = {
   chunkIndex: [0, 1_000],
   chunkCount: [0, 1_000],
   elapsedMs: [0, 3_600_000],
+  waitMs: [0, 3_600_000],
   mediaVolume: [0, 1],
   mediaCurrentTimeMs: [0, 3_600_000],
   mediaDurationMs: [0, 3_600_000],
