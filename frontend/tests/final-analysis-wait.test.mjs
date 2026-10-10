@@ -10,6 +10,8 @@ const ready = (transcript, revision) => ({ transcript, revision, settled: "ready
 test("budgets are counted from submit and never negative", () => {
   assert.equal(remainingBudgetMs(FINAL_ANALYSIS_WAIT_MS, 1_000, 1_500), 1_300);
   assert.equal(remainingBudgetMs(FOLLOW_UP_TOTAL_WAIT_MS, 0, 5_000), 0);
+  assert.equal(FINAL_ANALYSIS_WAIT_MS, 1_800);
+  assert.equal(FOLLOW_UP_TOTAL_WAIT_MS, 4_500);
   assert.ok(FOLLOW_UP_TOTAL_WAIT_MS > FINAL_ANALYSIS_WAIT_MS);
 });
 

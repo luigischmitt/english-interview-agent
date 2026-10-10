@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import type { SpeculativeTurnAnalysisService, SpeculativeTurnInput } from "../thinking/speculative-turn-analysis-service.js";
-const maxSpeculativeRevisions = 8;
+// Mirrors the websocket and the browser: up to 12 revisions per answer.
+const maxSpeculativeRevisions = 12;
 const text = (value: unknown, max: number): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= max;
 const optionalText = (value: unknown, max: number): value is string | null | undefined => value == null || text(value, max);
 const validCoverage = (value: unknown): boolean => value == null || value === "broad-project";

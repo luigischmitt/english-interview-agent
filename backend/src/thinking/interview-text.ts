@@ -100,3 +100,25 @@ export function transcriptHasUsefulContent(transcript: string): boolean {
   const words = transcript.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
   return new Set(words.filter((word) => word.length > 1 && !lowInformationWords.has(word))).size >= 2;
 }
+
+/**
+ * Clips an over-long literal span to the contiguous window (at most `maxWords` whitespace words and `maxChars` characters) that shares
+ * the most content words with the question; ties go to the earliest window. The result is a character-exact slice of `span`.
+ * Returns null when the span already fits (nothing to clip).
+ */
+export function clipAnchorSpan(span: string, question: string, maxWords = 12, maxChars = 140): string | null {
+  const words = [...span.matchAll(/\S+/gu)].map((match) => ({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }));
+  if (words.length <= maxWords && span.length <= maxChars) return null;
+  const wanted = contentWords(question);
+  let best: { score: number; slice: string } | null = null;
+  for (let first = 0; first < words.length; first += 1) {
+    let last = Math.min(words.length, first + maxWords) - 1;
+    while (last > first && words[last].end - words[first].start > maxChars) last -= 1;
+    const slice = span.slice(words[first].start, words[last].end);
+    if (slice.length > maxChars) continue;
+    const found = contentWords(slice);
+    const score = [...wanted].filter((word) => found.has(word)).length;
+    if (best === null || score > best.score) best = { score, slice };
+  }
+  return best?.slice ?? null;
+}

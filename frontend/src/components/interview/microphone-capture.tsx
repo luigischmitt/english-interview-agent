@@ -12,6 +12,7 @@ import { createAnswerStream, StreamConnectionError, StreamSetupError, type Answe
 import { toStreamQuestion } from "@/lib/interview/stream-question.mjs";
 import { finalVoiceTranscription, transcriptionFailureMessage } from "@/lib/interview/transcription-state.mjs";
 import { nextAutoStartSignal } from "@/lib/interview/session-policy.mjs";
+import { MAX_SPECULATIVE_REVISIONS } from "@/lib/interview/speculative-epoch.mjs";
 import type { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 
 type RecorderStatus = "idle" | "requesting" | "recording" | "finalizing" | "error";
@@ -34,6 +35,7 @@ type StreamMessage = {
   revision?: number;
   speechEpoch?: number;
   turnId?: string;
+  pendingFollowUpCheck?: unknown;
   coverage?: string;
   blockCount?: number;
   assessedBlockCount?: number;
@@ -44,6 +46,11 @@ type StreamMessage = {
 
 export type FollowUpCandidateUpdate = { type: "follow-up-candidate"; turnId: string; revision: number; speechEpoch: number; question: string; anchor: string } | { type: "follow-up-candidate-cleared"; turnId: string; revision: number; speechEpoch: number };
 export type FollowUpCandidateStatus = { type: "follow-up-candidate-status"; turnId: string; revision: number; speechEpoch: number; status: "OPEN" | "COVERED" | "INVALID" | "NONE" };
+
+/** The answer's final speech epoch and the follow-up verdict the backend may still deliver (kept open briefly after `complete`). */
+export type AnswerCompleteInfo = { speechEpoch: number | null; pendingFollowUpCheck: { turnId: string; revision: number } | null };
+/** After `complete`, how long the socket stays open for a pending follow-up verdict (the backend keeps it up to 1.6 s). */
+const PENDING_STATUS_LINGER_MS = 1_800;
 
 export type PlannedQuestionStatus = { type: "planned-question-status"; speechEpoch: number; coverage: "COVERED" | "PARTIAL" | "OPEN" };
 /** Read when the stream `start` message is built: the next planned question and condensed earlier answers, if any. */
@@ -101,6 +108,10 @@ type MicrophoneCaptureProps = {
   onProvisionalAnswer?: (transcript: string, revision: number, speechEpoch: number) => void;
   /** The speaker resumed after a pause, so any provisional answer is stale. */
   onSpeechResumed?: () => void;
+  /** The committed text changed after a resume: the speech epoch advanced. */
+  onSpeechEpoch?: (speechEpoch: number) => void;
+  /** The answer completed; fires before `onTranscriptionChange` for that result. */
+  onAnswerComplete?: (info: AnswerCompleteInfo) => void;
   followUpCandidate?: FollowUpCandidateUpdate | null;
   onFollowUpCandidateStatus?: (status: FollowUpCandidateStatus) => void;
   onPlannedQuestionStatus?: (status: PlannedQuestionStatus) => void;
@@ -155,6 +166,8 @@ type Attempt = {
   stream: AnswerStream;
   assessmentEnabled: boolean;
   awaitingAssessment: boolean;
+  /** Socket kept open after `complete` only to deliver the verdict of this follow-up candidate revision. */
+  lingering?: { turnId: string; revision: number; timer: ReturnType<typeof setTimeout> };
 };
 
 /** The server reported (in `ready`) whether pronunciation assessment follows this answer. */
@@ -168,7 +181,7 @@ function streamFailureMessage(reason: AnswerStreamFailure): string {
   return "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.";
 }
 
-export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, followUpCandidate = null, onFollowUpCandidateStatus, onPlannedQuestionStatus, getPlannedStartContext, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, onDeviceFallback, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, onSpeechEpoch, onAnswerComplete, followUpCandidate = null, onFollowUpCandidateStatus, onPlannedQuestionStatus, getPlannedStartContext, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, onDeviceFallback, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -192,6 +205,8 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
   const onCaptureStateChangeRef = useRef(onCaptureStateChange);
   const onProvisionalAnswerRef = useRef(onProvisionalAnswer);
   const onSpeechResumedRef = useRef(onSpeechResumed);
+  const onSpeechEpochRef = useRef(onSpeechEpoch);
+  const onAnswerCompleteRef = useRef(onAnswerComplete);
   const onFollowUpCandidateStatusRef = useRef(onFollowUpCandidateStatus);
   const onPlannedQuestionStatusRef = useRef(onPlannedQuestionStatus);
   const getPlannedStartContextRef = useRef(getPlannedStartContext);
@@ -214,6 +229,8 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     onCaptureStateChangeRef.current = onCaptureStateChange;
     onProvisionalAnswerRef.current = onProvisionalAnswer;
     onSpeechResumedRef.current = onSpeechResumed;
+    onSpeechEpochRef.current = onSpeechEpoch;
+    onAnswerCompleteRef.current = onAnswerComplete;
     onFollowUpCandidateStatusRef.current = onFollowUpCandidateStatus;
     onPlannedQuestionStatusRef.current = onPlannedQuestionStatus;
     getPlannedStartContextRef.current = getPlannedStartContext;
@@ -221,7 +238,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     assessmentContextRef.current = assessmentContext;
     micEngineRef.current = micEngine;
     onDeviceFallbackRef.current = onDeviceFallback;
-  }, [onDeviceFallback, assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onFollowUpCandidateStatus, onPlannedQuestionStatus, getPlannedStartContext, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+  }, [onDeviceFallback, assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onSpeechEpoch, onAnswerComplete, onFollowUpCandidateStatus, onPlannedQuestionStatus, getPlannedStartContext, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
 
   useEffect(() => {
     if (followUpCandidate) attemptRef.current?.stream.sendControl(followUpCandidate);
@@ -299,6 +316,17 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     onTranscriptionChangeRef.current(idle);
   }, [releaseCapture]);
 
+  /** Ends a socket kept open after `complete` for a follow-up verdict (arrived, timed out or closed by the server). */
+  const closeLingering = (attempt: Attempt, socket: AnswerStreamSocket) => {
+    if (!attempt.lingering) return;
+    clearTimeout(attempt.lingering.timer);
+    attempt.lingering = undefined;
+    attempt.stream.release();
+    socket.onclose = null;
+    socket.onerror = null;
+    socket.close();
+  };
+
   /** Every server message after `ready` (the stream consumes `ready` and setup errors itself). */
   const handleStreamMessage = (attempt: Attempt, message: StreamMessage, socket: AnswerStreamSocket) => {
     const { generation, attemptId, context: attemptAssessmentContext } = attempt;
@@ -315,7 +343,9 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
       socket.close();
       return;
     }
-    if (generationRef.current !== generation) return;
+    // After `complete` only the awaited verdict matters, and it must reach the room even if a newer answer already began.
+    if (attempt.lingering && message.type !== "follow-up-candidate-status") return;
+    if (generationRef.current !== generation && !attempt.lingering) return;
     if (message.type === "error" && message.code === "UNAUTHENTICATED") notifySessionExpired();
     if (message.type === "speech-started") {
       micDetectorRef.current?.markSpeechStarted();
@@ -326,17 +356,18 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     if (message.type === "answer-provisional") {
       const { transcript, revision } = message;
       const speechEpoch = message.speechEpoch;
-      if (typeof transcript === "string" && typeof revision === "number" && Number.isInteger(revision) && revision >= 1 && revision <= 8 && typeof speechEpoch === "number" && Number.isSafeInteger(speechEpoch) && speechEpoch >= 0 && !finalizationRequestedRef.current) {
+      if (typeof transcript === "string" && typeof revision === "number" && Number.isInteger(revision) && revision >= 1 && revision <= MAX_SPECULATIVE_REVISIONS && typeof speechEpoch === "number" && Number.isSafeInteger(speechEpoch) && speechEpoch >= 0 && !finalizationRequestedRef.current) {
         onProvisionalAnswerRef.current?.(transcript, revision, speechEpoch);
       }
       return;
     }
     if (message.type === "follow-up-candidate-status") {
       const status = message.status;
-      if (typeof message.turnId === "string" && typeof message.revision === "number" && Number.isInteger(message.revision) && message.revision >= 1 && message.revision <= 8
+      if (typeof message.turnId === "string" && typeof message.revision === "number" && Number.isInteger(message.revision) && message.revision >= 1 && message.revision <= MAX_SPECULATIVE_REVISIONS
         && Number.isSafeInteger(message.speechEpoch) && message.speechEpoch! >= 0
         && (status === "OPEN" || status === "COVERED" || status === "INVALID" || status === "NONE")) {
         onFollowUpCandidateStatusRef.current?.({ type: "follow-up-candidate-status", turnId: message.turnId, revision: message.revision, speechEpoch: message.speechEpoch!, status });
+        if (attempt.lingering?.turnId === message.turnId && attempt.lingering.revision === message.revision) closeLingering(attempt, socket);
       }
       return;
     }
@@ -345,6 +376,10 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
       if (Number.isSafeInteger(message.speechEpoch) && message.speechEpoch! >= 0 && (coverage === "COVERED" || coverage === "PARTIAL" || coverage === "OPEN")) {
         onPlannedQuestionStatusRef.current?.({ type: "planned-question-status", speechEpoch: message.speechEpoch!, coverage });
       }
+      return;
+    }
+    if (message.type === "speech-epoch") {
+      if (typeof message.speechEpoch === "number" && Number.isSafeInteger(message.speechEpoch) && message.speechEpoch >= 0) onSpeechEpochRef.current?.(message.speechEpoch);
       return;
     }
     if (message.type === "speech-resumed") {
@@ -371,6 +406,10 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
       onHandoffTimingEventRef.current?.("transcription-completed");
       releaseCapture();
       const result = finalVoiceTranscription(message);
+      const pendingCheck = message.pendingFollowUpCheck as { turnId?: unknown; revision?: unknown } | null | undefined;
+      const pendingFollowUpCheck = pendingCheck && typeof pendingCheck.turnId === "string" && typeof pendingCheck.revision === "number" && Number.isInteger(pendingCheck.revision) && pendingCheck.revision >= 1 && pendingCheck.revision <= MAX_SPECULATIVE_REVISIONS
+        ? { turnId: pendingCheck.turnId, revision: pendingCheck.revision } : null;
+      onAnswerCompleteRef.current?.({ speechEpoch: typeof message.speechEpoch === "number" && Number.isSafeInteger(message.speechEpoch) && message.speechEpoch >= 0 ? message.speechEpoch : null, pendingFollowUpCheck });
       if (result.status === "available") {
         setTranscription(result);
         onTranscriptionChangeRef.current(result);
@@ -389,6 +428,11 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
         assessmentSockets.register(attemptId, socket as unknown as WebSocket);
         attemptRef.current = null;
         onAssessmentChangeRef.current?.(attemptId, { status: "pending" }, attemptAssessmentContext);
+      } else if (pendingFollowUpCheck) {
+        onAssessmentChangeRef.current?.(attemptId, { status: "unavailable", reason: "not_enabled" }, attemptAssessmentContext);
+        // The backend delivers the in-flight verdict on this socket; keep it open for it (bounded), then close.
+        if (attemptRef.current === attempt) attemptRef.current = null;
+        attempt.lingering = { ...pendingFollowUpCheck, timer: setTimeout(() => closeLingering(attempt, socket), PENDING_STATUS_LINGER_MS) };
       } else {
         onAssessmentChangeRef.current?.(attemptId, { status: "unavailable", reason: "not_enabled" }, attemptAssessmentContext);
         attempt.stream.release();
@@ -405,6 +449,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
   };
 
   const handleStreamClose = (attempt: Attempt, event: { code?: number }, socket: AnswerStreamSocket) => {
+    if (attempt.lingering) { closeLingering(attempt, socket); return; }
     if (attempt.awaitingAssessment) {
       attempt.awaitingAssessment = false;
       assessmentSockets.finish(attempt.attemptId, socket as unknown as WebSocket);

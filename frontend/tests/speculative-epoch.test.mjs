@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createNextTurnPreparationRegistry } from "../src/lib/interview/next-turn-preparation.mjs";
 import { shouldUseMonotonicFixedFallback } from "../src/lib/interview/question-scheduling.mjs";
-import { adoptSpeechEpoch, applyFollowUpCandidateClear, canUseCurrentEpochCandidate, candidateStatusFor, discardCoveredFollowUps, finalEpochCandidateStatus, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "../src/lib/interview/speculative-epoch.mjs";
+import { MAX_SPECULATIVE_REVISIONS, adoptSpeechEpoch, canUseCurrentEpochCandidate, candidateStatusFor, discardCoveredFollowUps, finalEpochCandidateStatus, mayReplaceActiveCandidate, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "../src/lib/interview/speculative-epoch.mjs";
 
 const candidate = { turnId: "turn-a", revision: 1, speechEpoch: 4, transcript: "I used Kafka.", decision: { decision: "FOLLOW_UP" }, anchor: "Kafka" };
 
@@ -14,14 +14,22 @@ test("candidate status and answer must belong to the current speech epoch", () =
   assert.equal(canUseCurrentEpochCandidate({ value: candidate, finalTranscript: "I used Kafka at scale.", currentTurnId: "turn-a", currentSpeechEpoch: 4, featureEnabled: true, compatibility: undefined }), false);
 });
 
-test("a newer NONE invalidates an older OPEN status in the same epoch", () => {
+test("a NONE for one revision never vetoes another revision's status", () => {
   const statuses = new Map();
   const latest = new Map();
   assert.equal(recordCandidateStatus(statuses, latest, { speechEpoch: 4, revision: 1, status: "OPEN" }, 4), true);
   assert.equal(recordCandidateStatus(statuses, latest, { speechEpoch: 4, revision: 2, status: "NONE" }, 4), true);
-  assert.equal(candidateStatusFor(statuses, latest, 4, 1, 4), "NONE");
-  assert.equal(canUseCurrentEpochCandidate({ value: candidate, finalTranscript: "I used Kafka at scale.", currentTurnId: "turn-a", currentSpeechEpoch: 4, featureEnabled: true, compatibility: candidateStatusFor(statuses, latest, 4, 1, 4) }), false);
+  assert.equal(candidateStatusFor(statuses, latest, 4, 1, 4), "OPEN");
+  assert.equal(candidateStatusFor(statuses, latest, 4, 2, 4), "NONE");
+  assert.equal(candidateStatusFor(statuses, latest, 4, 3, 4), undefined);
+  assert.equal(canUseCurrentEpochCandidate({ value: candidate, finalTranscript: "I used Kafka at scale.", currentTurnId: "turn-a", currentSpeechEpoch: 4, featureEnabled: true, compatibility: candidateStatusFor(statuses, latest, 4, 1, 4) }), true);
   assert.equal(recordCandidateStatus(statuses, latest, { speechEpoch: 4, revision: 1, status: "OPEN" }, 4), false, "late older statuses are ignored");
+});
+
+test("a judge NONE (no opinion) accepts an identical transcript but still rejects an extended one", () => {
+  const input = { value: candidate, currentTurnId: "turn-a", currentSpeechEpoch: 4, featureEnabled: true, compatibility: "NONE" };
+  assert.equal(canUseCurrentEpochCandidate({ ...input, finalTranscript: " I used Kafka. " }), true);
+  assert.equal(canUseCurrentEpochCandidate({ ...input, finalTranscript: "I used Kafka at scale." }), false);
 });
 
 test("a duplicate or late OPEN cannot overwrite a terminal status for the same revision", () => {
@@ -102,39 +110,53 @@ test("S3: a NEXT still waits (capped) for the adapted fixed audio", async () => 
   assert.ok(Date.now() - started < 300);
 });
 
-test("S4: a newer NONE discards an older OPEN FOLLOW_UP even with a differing transcript, cancelling its audio", async () => {
+test("S4: a COVERED verdict discards older FOLLOW_UP preparations, cancelling their audio; a NONE analysis retires nothing", async () => {
   const registry = createNextTurnPreparationRegistry();
   const statuses = new Map();
   const latest = new Map();
   let audioCancelled = false;
   const followUp = { turnId: "t", revision: 1, speechEpoch: 4, transcript: "I used Kafka.", decision: { decision: "FOLLOW_UP" }, anchor: "Kafka" };
-  const entry = registry.prepare({ transcript: "I used Kafka.", preserveReady: true, run: async (_signal, onCleanup) => { onCleanup(() => { audioCancelled = true; }); return followUp; } });
-  await entry.promise;
+  await registry.prepare({ transcript: "I used Kafka.", preserveReady: true, run: async (_signal, onCleanup) => { onCleanup(() => { audioCancelled = true; }); return followUp; } }).promise;
   assert.equal(recordCandidateStatus(statuses, latest, { speechEpoch: 4, revision: 1, status: "OPEN" }, 4), true);
-  registry.prepare({ transcript: "I used Kafka and Redis.", preserveReady: true, run: never });
+  // An analysis without a follow-up only adds its NEXT preparation.
+  await registry.prepare({ transcript: "I used Kafka and Redis.", preserveReady: true, run: async () => ({ turnId: "t", revision: 2, speechEpoch: 4, transcript: "I used Kafka and Redis.", decision: { decision: "NEXT" }, anchor: null }) }).promise;
+  assert.equal(audioCancelled, false);
+  assert.equal(registry.readyValues().filter((value) => value.decision.decision === "FOLLOW_UP" && value.followUpReleased !== true).length, 1);
 
-  assert.equal(applyFollowUpCandidateClear({ registry, statuses, latestByEpoch: latest, speechEpoch: 4, revision: 2, currentSpeechEpoch: 4 }), 1);
+  assert.equal(discardCoveredFollowUps(registry, { revision: 1, status: "COVERED" }), 1);
   assert.equal(audioCancelled, true);
-  assert.equal(candidateStatusFor(statuses, latest, 4, 2, 4), "NONE");
-  assert.equal(candidateStatusFor(statuses, latest, 4, 1, 4), "NONE");
-
-  const finalTranscript = "I used Kafka at scale.";
-  const taken = registry.takeAnyReady({ accept: (value) => canUseCurrentEpochCandidate({ value, finalTranscript, currentTurnId: "t", currentSpeechEpoch: 4, featureEnabled: true, compatibility: candidateStatusFor(statuses, latest, value.speechEpoch, value.revision, 4) }) });
-  assert.equal(taken, null);
 });
 
-test("S4: a newer NONE retires older FOLLOW_UP preparations of any epoch, and an exact NEXT preparation survives its own NONE", async () => {
+test("S4: an exact NEXT preparation survives a retired follow-up; a FOLLOW_UP is preferred over a newer NEXT", async () => {
   const registry = createNextTurnPreparationRegistry();
-  const statuses = new Map();
-  const latest = new Map();
-  const otherEpoch = { turnId: "t", revision: 1, speechEpoch: 3, transcript: "x", decision: { decision: "FOLLOW_UP" }, anchor: "x" };
-  await registry.prepare({ transcript: "x", preserveReady: true, run: async () => otherEpoch }).promise;
-  assert.equal(applyFollowUpCandidateClear({ registry, statuses, latestByEpoch: latest, speechEpoch: 4, revision: 2, currentSpeechEpoch: 4 }), 1);
-
+  const accept = (value) => canUseCurrentEpochCandidate({ value, finalTranscript: "I led it.", currentTurnId: "t", currentSpeechEpoch: 4, featureEnabled: true, compatibility: "OPEN" });
+  const followUpExact = { turnId: "t", revision: 1, speechEpoch: 4, transcript: "I led it.", decision: { decision: "FOLLOW_UP" }, anchor: "led" };
   const next = { turnId: "t", revision: 2, speechEpoch: 4, transcript: "I led it.", decision: { decision: "NEXT" }, anchor: null };
-  assert.equal(canUseCurrentEpochCandidate({ value: next, finalTranscript: "I led it.", currentTurnId: "t", currentSpeechEpoch: 4, featureEnabled: true, compatibility: candidateStatusFor(statuses, latest, 4, 2, 4) }), true);
-  const followUpSameTranscript = { ...next, decision: { decision: "FOLLOW_UP" }, anchor: "led" };
-  assert.equal(canUseCurrentEpochCandidate({ value: followUpSameTranscript, finalTranscript: "I led it.", currentTurnId: "t", currentSpeechEpoch: 4, featureEnabled: true, compatibility: "NONE" }), false);
+  await registry.prepare({ transcript: "I led it.", preserveReady: true, revision: 1, run: async () => followUpExact }).promise;
+  await registry.prepare({ transcript: "I led it.", preserveReady: true, revision: 2, run: async () => next }).promise;
+  const taken = registry.takeAnyReady({ accept });
+  assert.equal(taken.value.decision.decision, "FOLLOW_UP");
+
+  const registry2 = createNextTurnPreparationRegistry();
+  await registry2.prepare({ transcript: "I led it.", preserveReady: true, revision: 1, run: async () => followUpExact }).promise;
+  await registry2.prepare({ transcript: "I led it.", preserveReady: true, revision: 2, run: async () => next }).promise;
+  discardCoveredFollowUps(registry2, { revision: 1, status: "COVERED" });
+  assert.equal(registry2.takeAnyReady({ accept: (value) => canUseCurrentEpochCandidate({ value, finalTranscript: "I led it.", currentTurnId: "t", currentSpeechEpoch: 4, featureEnabled: true, compatibility: undefined }) }).value.decision.decision, "NEXT");
+});
+
+test("E: a landed result may not replace a different active candidate it was not sent with", () => {
+  const p1 = { question: "Q1", anchor: "a" };
+  const p2 = { question: "Q2", anchor: "b" };
+  assert.equal(mayReplaceActiveCandidate({ sentWith: null, active: p1, action: "REPLACE", question: "Q2" }), false);
+  assert.equal(mayReplaceActiveCandidate({ sentWith: p1, active: p2, action: "REPLACE", question: "Q3" }), false);
+  assert.equal(mayReplaceActiveCandidate({ sentWith: p2, active: p2, action: "REPLACE", question: "Q3" }), true);
+  assert.equal(mayReplaceActiveCandidate({ sentWith: null, active: p1, action: "KEEP", question: "Q1" }), true);
+  assert.equal(mayReplaceActiveCandidate({ sentWith: null, active: null, action: "REPLACE", question: "Q9" }), true);
+  assert.equal(mayReplaceActiveCandidate({ sentWith: null, active: p1, action: "REPLACE", question: "Q1" }), true);
+});
+
+test("F: the revision budget is 12", () => {
+  assert.equal(MAX_SPECULATIVE_REVISIONS, 12);
 });
 
 const followUp = (revision, speechEpoch, transcript = "I used Kafka.") => ({ turnId: "t", revision, speechEpoch, transcript, decision: { decision: "FOLLOW_UP" }, anchor: "Kafka" });
@@ -192,7 +214,7 @@ test("A: the older-epoch preparation is discarded rather than leaked when unusab
   assert.equal(cancelled, true);
 });
 
-test("A: COVERED in the final epoch and an explicit newer NONE both fall back to the fixed question", async () => {
+test("A: COVERED in the final epoch falls back to the fixed question; a newer NONE does not veto an OPEN candidate", async () => {
   for (const scenario of ["covered", "none"]) {
     const registry = createNextTurnPreparationRegistry();
     const statuses = new Map();
@@ -203,7 +225,8 @@ test("A: COVERED in the final epoch and an explicit newer NONE both fall back to
       recordCandidateStatus(statuses, latest, { speechEpoch: 3, revision: 1, status: "OPEN" }, 3);
       recordCandidateStatus(statuses, latest, { speechEpoch: 3, revision: 2, status: "NONE" }, 3);
     }
-    assert.equal(usable(registry, statuses, latest, 3, "I used Kafka. And more."), null, scenario);
+    if (scenario === "covered") assert.equal(usable(registry, statuses, latest, 3, "I used Kafka. And more."), null, scenario);
+    else assert.ok(usable(registry, statuses, latest, 3, "I used Kafka. And more."), scenario);
   }
 });
 
@@ -214,16 +237,17 @@ test("A: an exact analyzed transcript is usable from an earlier epoch without a 
   assert.equal(canUseCurrentEpochCandidate({ value: followUp(1, 5), finalTranscript: "I used Kafka.", currentTurnId: "t", currentSpeechEpoch: 3, featureEnabled: true, compatibility: "OPEN" }), false);
 });
 
-test("A: a newer NONE resolution cancels retained older-epoch audio; resume must not play audio (nothing plays before submit)", async () => {
+test("A: a COVERED verdict cancels retained older-epoch audio; resume must not play audio (nothing plays before submit)", async () => {
   const registry = createNextTurnPreparationRegistry();
   let cancelled = 0;
   let played = 0;
   await registry.prepare({ transcript: "I used Kafka.", preserveReady: true, run: async (_s, onCleanup) => { onCleanup(() => { cancelled += 1; }); return { ...followUp(1, 0), speechReady: Promise.resolve(true), play: () => { played += 1; } }; } }).promise;
-  // speech resumed: the frontend handler only nulls the epoch, so no entry is discarded and none is played
-  assert.equal(adoptSpeechEpoch(0, null), 0);
+  // speech resumed: the epoch only changes with new text (speech-epoch), so no entry is discarded and none is played
+  assert.equal(adoptSpeechEpoch(0, 0), 0);
+  assert.equal(adoptSpeechEpoch(0, 1), 1);
   assert.equal(cancelled, 0);
   assert.equal(played, 0);
-  assert.equal(applyFollowUpCandidateClear({ registry, statuses: new Map(), latestByEpoch: new Map(), speechEpoch: 2, revision: 2, currentSpeechEpoch: 2 }), 1);
+  assert.equal(discardCoveredFollowUps(registry, { revision: 1, status: "COVERED" }), 1);
   assert.equal(cancelled, 1);
   assert.equal(played, 0);
 });

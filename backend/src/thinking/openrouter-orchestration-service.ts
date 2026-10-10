@@ -1,6 +1,6 @@
 import { defaultOrchestrationHedgeAfterMs, defaultOrchestrationTimeoutMs, type ThinkingConfig } from "./config.js";
-import { containsNoiseToken, contentWords, followUpStopWords, hasExactAnchorMention, lowInformationWords, normalizedWords, questionStopWords, sequenceIndices, tokenPattern, tolerantSequenceRanges, transcriptHasUsefulContent } from "./interview-text.js";
-import { questionStems, repeatsRecentQuestion } from "./question-repetition.js";
+import { clipAnchorSpan, containsNoiseToken, contentWords, followUpStopWords, hasExactAnchorMention, lowInformationWords, normalizedWords, questionStopWords, sequenceIndices, tokenPattern, tolerantAnchorSpan, tolerantSequenceRanges, transcriptHasUsefulContent } from "./interview-text.js";
+import { followUpRepetition, questionStems, repeatsRecentQuestion } from "./question-repetition.js";
 import { assignBridgeLeadIn, createBridgeService, evaluateBridge, pickFallbackTransition, type BridgeDropReason, type BridgeCallOutcome, type InterviewBridgeService } from "./interview-bridge-service.js";
 import { addOpenRouterUsage, emptyOpenRouterUsage, parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
 import type { ClarificationDecision, InterviewOrchestrationInput, InterviewOrchestrationResult, InterviewOrchestrationService } from "./types.js";
@@ -357,9 +357,16 @@ function parseDecision(content: unknown, input: InterviewOrchestrationInput, onI
   if (input.followUpUsed) return reject("follow_up_not_allowed");
   if (value.nextQuestion !== null) return reject("invalid_decision_shape");
   if (typeof value.followUpQuestion !== "string" || typeof value.anchor !== "string") return reject("invalid_follow_up_shape");
-  const anchor = value.anchor.trim();
+  let anchor = value.anchor.trim();
   const question = value.followUpQuestion.trim();
-  if (anchor.length > maxAnchorLength || containsNoiseToken(anchor) || containsNoiseToken(question) || !hasValidAnchorWordCount(anchor, 1, maxAnchorWords)) return reject("invalid_anchor");
+  if (containsNoiseToken(anchor) || containsNoiseToken(question)) return reject("invalid_anchor");
+  if (anchor.length > maxAnchorLength || anchor.split(/\s+/u).filter(Boolean).length > maxAnchorWords) {
+    // An over-long quote keeps the follow-up: clip its literal transcript span to the part the question is about.
+    const span = tolerantAnchorSpan(input.transcript, anchor);
+    if (span === null) return reject("anchor_not_in_transcript");
+    anchor = clipAnchorSpan(span, question, maxAnchorWords, maxAnchorLength) ?? span;
+  }
+  if (anchor.length > maxAnchorLength || !hasValidAnchorWordCount(anchor, 1, maxAnchorWords)) return reject("invalid_anchor");
   if (!hasExactAnchorMention(input.transcript, anchor)) return reject("anchor_not_in_transcript");
   const anchorCheck = anchorGrounding(question, anchor, input.transcript);
   if (!anchorCheck) return reject("anchor_not_referenced");
@@ -589,7 +596,8 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
     const { anchorCheck, ...modelDecision } = parsed as typeof parsed & { decision: StandardDecision };
     // Deterministic guard: a question that repeats the theme/verb pattern of the last two asked questions is replaced by the planned fixed question.
     const proposed = modelDecision.decision === "FOLLOW_UP" ? modelDecision.followUpQuestion : modelDecision.nextQuestion;
-    const repetition = proposed ? repeatsRecentQuestion(proposed, input.askedQuestions, modelDecision.decision === "NEXT") : null;
+    // A follow-up digs into the current question, so only the previous questions (and a restated lead) count as repetition.
+    const repetition = !proposed ? null : modelDecision.decision === "FOLLOW_UP" ? followUpRepetition(proposed, input.currentQuestion, input.askedQuestions) : repeatsRecentQuestion(proposed, input.askedQuestions, true);
     const drifted = modelDecision.decision === "NEXT" && proposed !== null && !preservesPlannedCompetency(proposed, input.nextFixedQuestion);
     const replacement = drifted || repetition ? fallbackQuestion(input) : null;
     const guardOutcome: QuestionGuardOutcome | null = replacement

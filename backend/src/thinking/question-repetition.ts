@@ -95,3 +95,24 @@ export function repeatsRecentQuestion(candidate: string, askedQuestions: readonl
   }
   return null;
 }
+
+export const sameQuestion = (left: string, right: string): boolean => {
+  const normalize = (value: string) => value.toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return normalize(left) === normalize(right);
+};
+
+// questionRepetition reports shared_verb before shared_lead, so the lead is checked on its own here.
+const sharesLead = (candidate: string, earlier: string): boolean => {
+  const a = questionStems(candidate); const b = questionStems(earlier);
+  return a.length >= leadWords && b.length >= leadWords && a.slice(0, leadWords).every((word, index) => word === b[index]);
+};
+
+/**
+ * Repetition rule for a follow-up: it digs into the CURRENT question, so sharing its main verb is natural. It may not
+ * restate the current question (same question or same leading stems) nor repeat the pattern of the previous questions.
+ */
+export function followUpRepetition(candidate: string, currentQuestion: string, askedQuestions: readonly string[] = []): RepetitionReason | "same_question" | null {
+  if (sameQuestion(candidate, currentQuestion)) return "same_question";
+  const previous = askedQuestions.filter((asked) => !sameQuestion(asked, currentQuestion));
+  return repeatsRecentQuestion(candidate, previous, false) ?? (sharesLead(candidate, currentQuestion) ? "shared_lead" : null);
+}

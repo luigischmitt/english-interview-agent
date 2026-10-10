@@ -119,8 +119,10 @@ export function createNextTurnPreparationRegistry() {
       const entries = [...retainedReady, ...(current ? [current] : [])];
       retainedReady = [];
       current = null;
+      // An accepted FOLLOW_UP beats a newer NEXT (whose fixed decision is then ignored); otherwise the newest revision wins.
+      const followUpRank = (candidate) => (candidate.value?.decision?.decision === "FOLLOW_UP" ? 1 : 0);
       const newest = (predicate) => entries.filter((candidate) => candidate.settled === "ready" && predicate(candidate.value))
-        .sort((a, b) => (b.value?.revision ?? 0) - (a.value?.revision ?? 0))[0] ?? null;
+        .sort((a, b) => followUpRank(b) - followUpRank(a) || (b.value?.revision ?? 0) - (a.value?.revision ?? 0))[0] ?? null;
       let entry = newest(accept);
       let viaFallback = false;
       if (!entry && fallbackAccept) {

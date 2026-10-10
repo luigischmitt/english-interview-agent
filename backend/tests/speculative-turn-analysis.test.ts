@@ -60,7 +60,7 @@ describe("speculative turn analysis", () => {
   it("drops only a follow-up whose anchor is absent from the snapshot", async () => {
     const fetcher = response({ revision: 2, followUpAction: "REPLACE", followUpQuestion: "Why did Redis help?", followUpAnchor: "Redis", fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null });
     await expect(new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze(input)).resolves.toEqual({
-      revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, secondFixedAction: "KEEP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: null,
+      revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, secondFixedAction: "KEEP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: null, followUpRejected: true,
     });
   });
 
@@ -310,6 +310,7 @@ describe("speculative turn analysis", () => {
       secondFixedAction: "KEEP",
       adaptedSecondFixedQuestion: null,
       secondFixedEvidenceAnchor: null,
+      followUpRejected: false,
     });
   });
 
@@ -523,3 +524,61 @@ describe("speculative analysis on disfluent speech and covered resume questions"
     expect(await run(second, { ...overrides, secondFixedType: "job" })).toMatchObject({ secondFixedAction: "KEEP" });
   });
 });
+
+describe("speculative follow-up validation", () => {
+  const longSnapshot = "I built it with Node and Kafka, so the order service publishes an event and the billing service consumes it later.";
+  const base = { ...input, currentQuestion: "Tell me about a project where you built something you are proud of.", snapshot: longSnapshot, askedQuestions: ["Tell me about yourself.", "Tell me about a project where you built something you are proud of."] };
+  const fixedKeep = { fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null };
+  const run = async (overrides: Record<string, unknown>, inputOverrides: Record<string, unknown> = {}) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const fetcher = response({ revision: 2, followUpAction: "REPLACE", followUpQuestion: "Why did you choose Kafka for this project?", followUpAnchor: "I built it with Node and Kafka, so the order service publishes an event and", ...fixedKeep, ...overrides });
+      const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...base, ...inputOverrides });
+      return { result, reason: JSON.parse(String(info.mock.calls[0]?.[0])).reason as string | undefined, log: String(info.mock.calls[0]?.[0]) };
+    } finally { info.mockRestore(); }
+  };
+
+  it("clips a 15-word anchor to a literal 12-word window and accepts the follow-up", async () => {
+    const { result, reason, log } = await run({});
+    expect(result).toMatchObject({ followUpAction: "REPLACE", followUpRejected: false });
+    const clipped = result?.followUpAnchor ?? "";
+    expect(clipped.split(/\s+/u).length).toBeLessThanOrEqual(12);
+    expect(clipped).toContain("Kafka");
+    expect(longSnapshot).toContain(clipped);
+    expect(reason).toContain("follow_up_anchor_clipped");
+    expect(log).not.toContain("Kafka");
+  });
+
+  it("accepts a follow-up that shares the main verb with the current question", async () => {
+    const { result } = await run({ followUpQuestion: "How did you implement the idempotency with Kafka?", followUpAnchor: "Node and Kafka" });
+    expect(result).toMatchObject({ followUpAction: "REPLACE", followUpRejected: false });
+  });
+
+  it("still rejects a shared verb with a previous question", async () => {
+    const { result, reason } = await run({ followUpQuestion: "How did you implement the idempotency with Kafka?", followUpAnchor: "Node and Kafka" }, { askedQuestions: ["How did you implement the retry policy?", base.currentQuestion] });
+    expect(result).toMatchObject({ followUpAction: "NONE", followUpRejected: true });
+    expect(reason).toContain("follow_up_repeats_question");
+  });
+
+  it("rejects a follow-up restating the current question lead", async () => {
+    const { result, reason } = await run({ followUpQuestion: "How did you design the event schema for orders in Kafka?", followUpAnchor: "Node and Kafka" }, { currentQuestion: "How did you design the event schema for orders and billing?", askedQuestions: ["Tell me about yourself.", "How did you design the event schema for orders and billing?"] });
+    expect(result).toMatchObject({ followUpAction: "NONE", followUpRejected: true });
+    expect(reason).toContain("follow_up_repeats_question");
+  });
+
+  it("reports distinct content-free sub-reasons", async () => {
+    expect((await run({ followUpQuestion: "Why Kafka" })).reason).toContain("follow_up_invalid_shape");
+    expect((await run({ followUpAnchor: "Python and RabbitMQ" })).reason).toContain("follow_up_anchor_not_literal");
+    expect((await run({ followUpQuestion: "How did you test the mobile checkout flow?", followUpAnchor: "Node and Kafka" })).reason).toContain("follow_up_not_grounded");
+    expect((await run({ followUpAction: "REPLACE", followUpQuestion: "Why did you choose Kafka for this project?" }, {})).reason).not.toContain("invalid_follow_up");
+  });
+
+  it("sets followUpRejected only when a proposed follow-up is refused", async () => {
+    expect((await run({ followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null })).result).toMatchObject({ followUpAction: "NONE", followUpRejected: false });
+    expect((await run({ followUpAnchor: "Python and RabbitMQ" })).result).toMatchObject({ followUpAction: "NONE", followUpRejected: true });
+    const previousCandidate = { question: "Why did you choose Kafka for this project?", anchor: "Node and Kafka" };
+    const kept = await run({ followUpAction: "KEEP", followUpQuestion: previousCandidate.question, followUpAnchor: previousCandidate.anchor }, { previousCandidate });
+    expect(kept.result).toMatchObject({ followUpAction: "KEEP", followUpRejected: false });
+  });
+});
+

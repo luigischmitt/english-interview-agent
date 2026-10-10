@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasExactAnchorMention, tolerantAnchorSpan } from "../src/thinking/interview-text.js";
+import { clipAnchorSpan, hasExactAnchorMention, tolerantAnchorSpan } from "../src/thinking/interview-text.js";
 import { isGroundedFollowUp } from "../src/thinking/openrouter-orchestration-service.js";
 
 const speech = "So, uh, we we used um Redis, you know, for the the session cache and I mean it was fast.";
@@ -34,3 +34,24 @@ describe("tolerant anchor matching", () => {
     expect(isGroundedFollowUp("Why did you choose Memcached for the session cache?", "used Memcached for the session cache", speech)).toBe(false);
   });
 });
+
+describe("anchor clipping", () => {
+  const span = "I built it with Node and Kafka, so the order service publishes an event and the billing service consumes it";
+  it("returns null when the span already fits", () => {
+    expect(clipAnchorSpan("Node and Kafka", "Why Kafka?")).toBeNull();
+  });
+  it("picks the window sharing the most content words with the question as a character-exact slice", () => {
+    const clipped = clipAnchorSpan(span, "How does the billing service consume the event?") ?? "";
+    expect(clipped.split(/\s+/u).length).toBeLessThanOrEqual(12);
+    expect(span).toContain(clipped);
+    expect(clipped).toContain("billing");
+  });
+  it("breaks ties with the earliest window and honours the character limit", () => {
+    expect(clipAnchorSpan(span, "Why?")).toBe("I built it with Node and Kafka, so the order service publishes");
+    const long = Array.from({ length: 14 }, () => "extraordinarily").join(" ");
+    const clipped = clipAnchorSpan(long, "Why?") ?? "";
+    expect(clipped.length).toBeLessThanOrEqual(140);
+    expect(long).toContain(clipped);
+  });
+});
+
