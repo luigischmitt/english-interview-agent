@@ -62,3 +62,35 @@ export function storeInterviewerVoice(storage, voice) {
     return true;
   } catch { return false; }
 }
+
+/**
+ * Plays the static sample of a voice (no speech API call, so testing voices costs nothing). `createAudio` is injectable
+ * for tests. Resolves { status: "completed" } when it ends, { status: "unavailable", message } on a playback error and
+ * { status: "cancelled" } after `cancel()`.
+ */
+export function playVoiceSample(id, createAudio = (src) => new Audio(src)) {
+  const audio = createAudio(voiceSamplePath(id));
+  let settle = () => {};
+  let settled = false;
+  const promise = new Promise((resolve) => {
+    settle = (result) => {
+      if (settled) return;
+      settled = true;
+      audio.onended = null;
+      audio.onerror = null;
+      resolve(result);
+    };
+  });
+  const unavailable = () => settle({ status: "unavailable", message: "Não foi possível reproduzir o áudio neste dispositivo." });
+  audio.onended = () => settle({ status: "completed" });
+  audio.onerror = unavailable;
+  Promise.resolve().then(() => audio.play()).catch(() => { if (!settled) unavailable(); });
+  return {
+    promise,
+    cancel() {
+      if (settled) return;
+      audio.pause();
+      settle({ status: "cancelled" });
+    },
+  };
+}
