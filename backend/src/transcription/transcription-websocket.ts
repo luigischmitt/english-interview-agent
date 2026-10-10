@@ -10,11 +10,12 @@ import { defaultStreamingLimits, pcmSampleRate, FinalTranscriptionQueue, Streami
 import { categorizeAzureAssessmentFailure, type AzureAssessmentFailureCategory, type PronunciationAssessment, type PronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
 import type { StreamFailureReason, StreamingTurnSession, TurnEndInfo } from "./streaming-turn-session.js";
 import { IncrementalWhisperSession, type SessionFailureDetail } from "./incremental-whisper-session.js";
+import { PlannedCoverageError, type PlannedCoverage, type PlannedCoverageService } from "../thinking/planned-coverage-service.js";
 import { AnswerCompletionError, type AnswerCompletionService, type CandidateCompatibility, type FollowUpCandidate } from "../thinking/answer-completion-service.js";
 import { aggregateAzureBlockScores, alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 
 type ClientMessage =
-  | { type: "start"; accessToken?: unknown; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; captions?: unknown; question?: unknown; transcriptionEngine?: unknown }
+  | { type: "start"; accessToken?: unknown; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; captions?: unknown; question?: unknown; plannedQuestion?: unknown; contextAnswers?: unknown; transcriptionEngine?: unknown }
   | { type: "level"; value: number }
   | { type: "finalize"; reason: "manual" | "silence" }
   | { type: "follow-up-candidate"; turnId: unknown; revision: unknown; question: unknown; anchor: unknown }
@@ -30,6 +31,29 @@ export function sanitizeQuestion(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const text = value.replace(/[\u0000-\u001f\u007f-\u009f]+/gu, " ").replace(/\s+/gu, " ").trim();
   return text.length > 0 && text.length <= maxQuestionLength ? text : null;
+}
+
+const maxPlannedQuestionLength = 300;
+const maxContextAnswers = 3;
+const maxContextAnswerLength = 500;
+const maxPlannedChecksPerAnswer = 6;
+
+/** Next planned interviewer question from `start`, sanitized like `question` but capped at 300 characters. Never logged. */
+export function sanitizePlannedQuestion(value: unknown): string | null {
+  const text = sanitizeQuestion(value);
+  return text !== null && text.length <= maxPlannedQuestionLength ? text : null;
+}
+
+/** Up to three condensed earlier answers (oldest first, the most recent kept); control characters become spaces, long ones are cut. Never logged. */
+export function sanitizeContextAnswers(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const answers: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const text = item.replace(/[\u0000-\u001f\u007f-\u009f]+/gu, " ").replace(/\s+/gu, " ").trim().slice(0, maxContextAnswerLength);
+    if (text) answers.push(text);
+  }
+  return answers.slice(-maxContextAnswers);
 }
 
 export type FollowUpCandidateUpdate = FollowUpCandidate & { type: "follow-up-candidate"; turnId: string; revision: number };
@@ -232,6 +256,11 @@ export type StreamingOptions = {
    * question. Absent or null disables it. A "complete" verdict ends the answer immediately; anything else keeps the grace.
    */
   answerCompletion?: AnswerCompletionService | null;
+  /**
+   * Independent parallel check (own request, own timeout) of whether the answers already cover the browser's next planned
+   * question; its verdict is sent as `planned-question-status`. It never influences the completion verdict. Absent or null disables it.
+   */
+  plannedCoverage?: PlannedCoverageService | null;
   /** Upper bound for ending a turn at a pause (`endTurn`). */
   flushTimeoutMs?: number;
 };
@@ -339,6 +368,12 @@ export function attachTranscriptionWebSocket(
     let semanticStartedAfterSilenceMs = 0;
     let semanticHeldMs = 0;
     let followUpCandidate: FollowUpCandidateUpdate | null = null;
+    // Planned-question coverage: next planned question and earlier answers from `start` (never logged).
+    let plannedQuestion: string | null = null;
+    let contextAnswers: string[] = [];
+    let plannedAbort: AbortController | null = null;
+    let plannedCheckedInEpoch = false;
+    let plannedChecksInAnswer = 0;
     let closeAfterCandidate: (() => void) | null = null;
     // The in-flight assess() call that also decides completion: a newer candidate must not abort it (it would lose the verdict).
     let mergedCandidateAbort: AbortController | null = null;
@@ -353,6 +388,13 @@ export function attachTranscriptionWebSocket(
         candidateRefundsInEpoch += 1;
         candidateChecksInEpoch = Math.max(0, candidateChecksInEpoch - 1);
       }
+    };
+    // An unfinished coverage check can run again at the next pause of the same epoch.
+    const abortPlannedCheck = () => {
+      if (!plannedAbort) return;
+      plannedAbort.abort();
+      plannedAbort = null;
+      plannedCheckedInEpoch = false;
     };
     const clearGrace = () => {
       if (semanticTimer !== null) clearTimeout(semanticTimer);
@@ -428,6 +470,7 @@ export function attachTranscriptionWebSocket(
       clearCaptionTimer();
       clearGrace();
       abortCandidateCheck();
+      abortPlannedCheck();
       streamSession?.close();
       streamSession = null;
     };
@@ -448,8 +491,34 @@ export function attachTranscriptionWebSocket(
         logStreamDiagnostic({ status: "follow_up_candidate", compatibility: finalStatus, revision: candidate.revision, speechEpoch });
         if (finalStatus === "COVERED" || finalStatus === "INVALID" || finalStatus === "NONE") sendReplacementProvisional();
       } finally {
-        if (!candidateAbort) closeAfterCandidate?.();
+        if (!candidateAbort && !plannedAbort) closeAfterCandidate?.();
       }
+    };
+    // Starts the independent coverage request at a pause, once per speech epoch. Same delivery rules as the candidate status:
+    // an older epoch is dropped, nothing is sent on error, and a transcript with a gap only vouches for COVERED.
+    const runPlannedCoverageCheck = (transcript: string) => {
+      const service = streaming?.plannedCoverage;
+      if (!service || !plannedQuestion || !transcript || plannedCheckedInEpoch || plannedChecksInAnswer >= maxPlannedChecksPerAnswer) return;
+      plannedCheckedInEpoch = true;
+      plannedChecksInAnswer += 1;
+      plannedAbort?.abort();
+      const controller = new AbortController();
+      plannedAbort = controller;
+      const epochAtStart = speechEpoch;
+      service.classify({ plannedQuestion, candidateAnswers: [...contextAnswers, transcript], signal: controller.signal }).then(
+        (coverage): PlannedCoverage | null => coverage,
+        (error: unknown) => { if (!(error instanceof PlannedCoverageError)) logStreamDiagnostic({ status: "planned_question_failed" }); return null; },
+      ).then((coverage) => {
+        if (plannedAbort === controller) plannedAbort = null;
+        try {
+          if (!coverage || controller.signal.aborted || speechEpoch !== epochAtStart) return;
+          if (streamSession?.hasGap && coverage !== "COVERED") return;
+          send(socket, { type: "planned-question-status", coverage, speechEpoch });
+          logStreamDiagnostic({ status: "planned_question", coverage, speechEpoch });
+        } finally {
+          if (!candidateAbort && !plannedAbort) closeAfterCandidate?.();
+        }
+      });
     };
     // Ends the answer early when the classifier says it is finished; every other outcome leaves the running grace untouched.
     // With a follow-up candidate, the same single assess() call also yields its compatibility, delivered before the completion logic.
@@ -722,7 +791,7 @@ export function attachTranscriptionWebSocket(
         if (socket.readyState === WebSocket.OPEN) socket.close(1000, "Transcription complete");
       };
       // A compatibility check still in flight keeps the socket open (bounded) so its status can still reach the browser.
-      if (candidateAbort && socket.readyState === WebSocket.OPEN) {
+      if ((candidateAbort || plannedAbort) && socket.readyState === WebSocket.OPEN) {
         const bound = setTimeout(closeNow, candidateStatusGraceMs);
         closeAfterCandidate = () => { clearTimeout(bound); closeNow(); };
       } else closeNow();
@@ -1018,9 +1087,11 @@ export function attachTranscriptionWebSocket(
           captionsEnabled = streaming !== null && message.captions === true;
           whisperQuestion = sanitizeQuestion(message.question);
           interviewerQuestion = streaming?.answerCompletion ? sanitizeQuestion(message.question) : null;
+          plannedQuestion = streaming?.plannedCoverage && sanitizeQuestion(message.question) ? sanitizePlannedQuestion(message.plannedQuestion) : null;
+          contextAnswers = plannedQuestion ? sanitizeContextAnswers(message.contextAnswers) : [];
           if (streaming) {
             const sessionCallbacks = {
-              onTurnStart: () => { clearGrace(); abortCandidateCheck(); },
+              onTurnStart: () => { clearGrace(); abortCandidateCheck(); abortPlannedCheck(); },
               onCaptionChange: scheduleCaption,
               onTurnEnd: (segmentTranscript: string, info?: TurnEndInfo) => {
                 // The tail segment can be empty (a soft cut already took all the speech, or the tail was only silence/noise):
@@ -1031,6 +1102,8 @@ export function attachTranscriptionWebSocket(
                 // The tail is now committed. Send its changed snapshot at pause start, independent of the optional
                 // delayed prepare and semantic timers; identical text is still suppressed.
                 sendPauseProvisionalSnapshot();
+                // Runs in parallel with the pause's completion check; the two never share a request.
+                runPlannedCoverageCheck(streamSession?.committedText() || turnTranscript);
                 const graceMs = looksUnfinished(turnTranscript) ? (streaming.incompleteGraceMs ?? streaming.answerGraceMs) : streaming.answerGraceMs;
                 // Local-VAD turns arrive after their segment was transcribed: time grace and prepare from the pause, not from now.
                 const elapsedMs = info?.silenceStartedAt !== undefined ? Math.max(0, Date.now() - info.silenceStartedAt) : 0;
@@ -1152,6 +1225,8 @@ export function attachTranscriptionWebSocket(
           silenceDetected = false;
           candidateAbort?.abort();
           candidateAbort = null;
+          abortPlannedCheck();
+          plannedCheckedInEpoch = false;
           clearGrace();
           discardSpeculation();
           if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);

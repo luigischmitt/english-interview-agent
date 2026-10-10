@@ -3,7 +3,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocket } from "ws";
 
-import { attachTranscriptionWebSocket, looksUnfinished, sanitizeQuestion, type StreamingOptions } from "../src/transcription/transcription-websocket.js";
+import { attachTranscriptionWebSocket, looksUnfinished, sanitizeContextAnswers, sanitizePlannedQuestion, sanitizeQuestion, type StreamingOptions } from "../src/transcription/transcription-websocket.js";
+import { PlannedCoverageError, type PlannedCoverageInput, type PlannedCoverageService } from "../src/thinking/planned-coverage-service.js";
 import { AnswerCompletionError, type AnswerCompletionInput, type AnswerCompletionService } from "../src/thinking/answer-completion-service.js";
 import type { TranscriptionResult, TranscriptionService } from "../src/transcription/types.js";
 import type { PronunciationAssessmentService } from "../src/transcription/azure-pronunciation-assessment.js";
@@ -440,6 +441,95 @@ describe("semantic end of answer", () => {
     expect(messages.find((message) => message.type === "follow-up-candidate-status")).toMatchObject({ revision: 1, speechEpoch: 0, status: "OPEN" });
     expect(logs()).toContain('"answerEndReason":"semantic_complete"');
   }, 12_000);
+
+  it("sanitizes the planned question and the context answers", () => {
+    expect(sanitizePlannedQuestion(" Which\nmetrics do you use? ")).toBe("Which metrics do you use?");
+    expect(sanitizePlannedQuestion("a".repeat(301))).toBeNull();
+    expect(sanitizePlannedQuestion("a".repeat(300))).toHaveLength(300);
+    expect(sanitizePlannedQuestion(7)).toBeNull();
+    expect(sanitizeContextAnswers("nope")).toEqual([]);
+    expect(sanitizeContextAnswers(["one\u0000 two", 3, "", "b".repeat(700), "c", "d"])).toEqual(["b".repeat(500), "c", "d"]);
+  });
+
+  describe("planned-question coverage (independent parallel request)", () => {
+    const plannedService = (behavior: (input: PlannedCoverageInput, index: number) => Promise<"COVERED" | "PARTIAL" | "OPEN">) => {
+      const calls: PlannedCoverageInput[] = [];
+      const service: PlannedCoverageService = { classify: (input) => { calls.push(input); return behavior(input, calls.length - 1); } };
+      return { service, calls };
+    };
+
+    it("runs next to the completion call, sends the status before complete and leaves the completion request untouched", async () => {
+      const planned = plannedService(async () => "COVERED");
+      const isComplete = vi.fn(async (_input: AnswerCompletionInput) => true);
+      const { connect } = await startServer(createWhisper([answerText]).service, options({ isComplete }, { plannedCoverage: planned.service }));
+      const { socket, messages, waitFor } = await connect({ question, plannedQuestion: "Which metrics\ndo you use?", contextAnswers: ["Earlier answer."] });
+      await speak(socket, 800, 0.05);
+      await speak(socket, 800, 0.001);
+      await waitFor("complete");
+      expect(isComplete).toHaveBeenCalledTimes(1);
+      expect(Object.keys(isComplete.mock.calls[0]![0]).sort()).toEqual(["answer", "question", "signal"]);
+      expect(planned.calls).toHaveLength(1);
+      expect(planned.calls[0]).toMatchObject({ plannedQuestion: "Which metrics do you use?", candidateAnswers: ["Earlier answer.", answerText] });
+      const types = messages.map((message) => message.type);
+      expect(types.indexOf("planned-question-status")).toBeGreaterThanOrEqual(0);
+      expect(types.indexOf("planned-question-status")).toBeLessThan(types.indexOf("complete"));
+      expect(messages.find((message) => message.type === "planned-question-status")).toMatchObject({ coverage: "COVERED", speechEpoch: 0 });
+      expect(logs()).toContain('"status":"planned_question","coverage":"COVERED"');
+      expect(logs()).not.toContain("Which metrics");
+      expect(logs()).not.toContain("Earlier answer");
+    }, 12_000);
+
+    it("does not add a provider request to assess() and does not call without a planned question", async () => {
+      const planned = plannedService(async () => "OPEN");
+      const assess = vi.fn(async (_input: AnswerCompletionInput) => ({ complete: false, candidateCompatibility: "OPEN" as const }));
+      const { connect } = await startServer(createWhisper([answerText]).service, options({ isComplete: async () => false, assess }, { plannedCoverage: planned.service, answerGraceMs: 1_200, incompleteGraceMs: 1_200 }));
+      const { socket, messages, waitFor } = await connect({ question });
+      socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 1, question: "Why did the lock help?", anchor: "a lock" }));
+      await speak(socket, 800, 0.05);
+      await speak(socket, 1_400, 0.001);
+      await waitFor("complete");
+      expect(planned.calls).toHaveLength(0);
+      expect(assess).toHaveBeenCalledTimes(1);
+      expect(assess.mock.calls[0]![0]).not.toHaveProperty("plannedQuestion");
+      expect(messages.some((message) => message.type === "planned-question-status")).toBe(false);
+    }, 12_000);
+
+    it("sends nothing on a provider error", async () => {
+      const planned = plannedService(async () => { throw new PlannedCoverageError("timeout", "slow"); });
+      const { connect } = await startServer(createWhisper([answerText]).service, options({ isComplete: async () => true }, { plannedCoverage: planned.service }));
+      const { socket, messages, waitFor } = await connect({ question, plannedQuestion: "Which metrics do you use?" });
+      await speak(socket, 800, 0.05);
+      await speak(socket, 800, 0.001);
+      await waitFor("complete");
+      await delay(200);
+      expect(planned.calls).toHaveLength(1);
+      expect(messages.some((message) => message.type === "planned-question-status")).toBe(false);
+    }, 12_000);
+
+    it("delivers a late status after complete through the deferred close", async () => {
+      const planned = plannedService(() => delay(300).then(() => "COVERED" as const));
+      const { connect } = await startServer(createWhisper([answerText]).service, options({ isComplete: async () => true }, { plannedCoverage: planned.service }));
+      const { socket, messages, waitFor } = await connect({ question, plannedQuestion: "Which metrics do you use?" });
+      await speak(socket, 800, 0.05);
+      await speak(socket, 800, 0.001);
+      await waitFor("complete");
+      await expect(waitFor("planned-question-status")).resolves.toMatchObject({ coverage: "COVERED", speechEpoch: 0 });
+      expect(messages.filter((message) => message.type === "planned-question-status")).toHaveLength(1);
+    }, 12_000);
+
+    it("drops a result from an older speech epoch and checks again in the new one", async () => {
+      const planned = plannedService((_input, index) => index === 0 ? delay(900).then(() => "COVERED" as const) : Promise.resolve("OPEN" as const));
+      const { connect } = await startServer(createWhisper([answerText, "More."]).service, options({ isComplete: async () => false }, { plannedCoverage: planned.service, answerGraceMs: 4_000, incompleteGraceMs: 4_000, prepareAfterMs: 0 }));
+      const { socket, messages } = await connect({ question, plannedQuestion: "Which metrics do you use?" });
+      await speak(socket, 800, 0.05);
+      await speak(socket, 600, 0.001);
+      await speak(socket, 500, 0.05);
+      await speak(socket, 800, 0.001);
+      await delay(1_200);
+      const statuses = messages.filter((message) => message.type === "planned-question-status");
+      expect(statuses.map(({ speechEpoch, coverage }) => [speechEpoch, coverage])).toEqual([[1, "OPEN"]]);
+    }, 12_000);
+  });
 
   it("a newer candidate during the merged call neither aborts it nor loses the semantic complete, and is checked after it", async () => {
     const signals: AbortSignal[] = [];

@@ -15,17 +15,13 @@ export function remainingBudgetMs(totalMs, startedAt, now) {
 const same = (a, b) => String(a ?? "").trim() === String(b ?? "").trim();
 
 /**
- * Pending entries worth waiting for: the one whose transcript equals the final one, or the newest revision overall
+ * The pending entry worth waiting for: only the one whose transcript equals the final one. An older revision's follow-up
+ * would need an OPEN verdict that can no longer arrive once the answer is final, so waiting for it only adds silence.
  * (`entries` are { transcript, revision, settled }). Returns a predicate for `registry.waitForPending`, or null.
  */
 export function pendingFinalAnalysisPredicate(entries, finalTranscript) {
-  const pending = entries.filter((entry) => entry.settled === "pending");
-  if (pending.length === 0) return null;
-  const newestRevision = Math.max(...entries.map((entry) => entry.revision ?? 0));
-  const exact = pending.some((entry) => same(entry.transcript, finalTranscript));
-  if (exact) return (entry) => same(entry.transcript, finalTranscript);
-  const newestPending = pending.some((entry) => (entry.revision ?? 0) === newestRevision && newestRevision > 0);
-  return newestPending ? (entry) => (entry.revision ?? 0) === newestRevision : null;
+  const exact = entries.some((entry) => entry.settled === "pending" && same(entry.transcript, finalTranscript));
+  return exact ? (entry) => same(entry.transcript, finalTranscript) : null;
 }
 
 /**

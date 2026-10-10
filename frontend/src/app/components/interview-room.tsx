@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, CloudOff, LoaderCircle, Mic } from "lucide-react";
 import { inAppMicBody, inAppMicTitle, useInAppBrowser } from "../hooks/use-in-app-browser";
-import { MicrophoneCapture, micDeniedMessage, type FollowUpCandidateStatus, type FollowUpCandidateUpdate, type MicControls, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
+import { MicrophoneCapture, micDeniedMessage, type FollowUpCandidateStatus, type FollowUpCandidateUpdate, type MicControls, type PlannedQuestionStatus, type PlannedStartContext, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { buildPreviousAnswers, decideNextTurn, isClarificationTurn, type TurnDecision } from "@/lib/interview/orchestration";
 import { pickFixedHandoffTransition, repeatTurnDecision } from "@/lib/interview/orchestration-policy.mjs";
@@ -41,6 +41,7 @@ import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/intervi
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
 import { canUseFixedDecisionFromFollowUp, resolveFixedFromFollowUp } from "@/lib/interview/fixed-from-follow-up.mjs";
+import { buildPlannedCoverageStartFields, finalPlannedCoverage, recordPlannedCoverage, resolvePlannedCoveredSkip, type PlannedCoverage } from "@/lib/interview/planned-coverage.mjs";
 import { FINAL_ANALYSIS_WAIT_MS, FOLLOW_UP_TOTAL_WAIT_MS, finalAnalysisWaitPredicate, remainingBudgetMs } from "@/lib/interview/final-analysis-wait.mjs";
 import { adoptSpeechEpoch, applyFollowUpCandidateClear, canUseCurrentEpochCandidate, discardCoveredFollowUps, finalEpochCandidateStatus, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "@/lib/interview/speculative-epoch.mjs";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
@@ -134,6 +135,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const currentSpeechEpochRef = useRef<number | null>(null);
   const candidateStatusesRef = useRef(new Map<string, FollowUpCandidateStatus["status"]>());
   const latestCandidateStatusRevisionRef = useRef(new Map<number, number>());
+  // Backend verdict per speech epoch on whether the answers already cover the next planned question, and which question
+  // (and answer window) it was asked about: the question sent in this answer window's `start` message.
+  const plannedCoverageRef = useRef(new Map<number, PlannedCoverage>());
+  const plannedStartRef = useRef<{ turn: string; questionId: string } | null>(null);
   const postFollowUpFixedSelectionRef = useRef<{ questionId: string; prompt: string | null; originalPrompt: string | null; adapted: boolean; audioReady: Promise<boolean> | null; cancelAudio: (() => void) | null; skippedQuestionIds: string[] } | null>(null);
   const speculativeTurnIdRef = useRef("");
   const speculativeEnabledRef = useRef(false);
@@ -237,6 +242,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     speculativeTurnIdRef.current = globalThis.crypto?.randomUUID?.() ?? `turn_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
     candidateStatusesRef.current.clear();
     latestCandidateStatusRevisionRef.current.clear();
+    plannedCoverageRef.current.clear();
     // A reaction prepared for another answer window must never reach this one.
     closingReaction.cancel();
     closingPrewarmCancelRef.current?.();
@@ -475,6 +481,20 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     logFixedPreparation(entry, claimed ? "used" : outcome === "used" ? "discarded" : outcome, claimed ? usedIndex : undefined);
     fixedHandoffTurnIdRef.current = null;
     return claimed;
+  };
+
+  /** Stream `start` fields: the next planned question this room would ask and up to three earlier answers (read when the socket opens). */
+  const getPlannedStartContext = (): PlannedStartContext | null => {
+    // While answering a follow-up, the fixed question that comes next was already chosen (its skips included): judge that one.
+    const pendingSelection = postFollowUpFixedSelectionRef.current;
+    const nextQuestion = pendingSelection
+      ? questions.find((candidate) => candidate.id === pendingSelection.questionId) ?? null
+      : selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes }).question;
+    if (!nextQuestion) return null;
+    const fields = buildPlannedCoverageStartFields({ plannedQuestion: nextQuestion.prompt, previousAnswers: pairInterviewTurns(reportTurnsRef.current).map((pair) => pair.answer) });
+    if (!fields.plannedQuestion) return null;
+    plannedStartRef.current = { turn: micTurnIdRef.current, questionId: nextQuestion.id };
+    return fields;
   };
 
   /** Inputs of the next-turn decision for an answer, given the report turns that already include that answer's pair. */
@@ -821,6 +841,32 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     let selectedPlannedQuestionId: string | null = null;
     let skippedPlannedQuestionIds: string[] = [];
     let fixedPreparationSettled = false;
+    // The backend judged the planned question this decision is about to ask as already answered: ask the next one instead.
+    // Only a COVERED verdict for that very question, never a job question, and only when another planned question remains.
+    const applyPlannedCoveredSkip = () => {
+      const current = decision;
+      if (clarificationHint !== null || current?.decision !== "NEXT" || !current.nextQuestion) return;
+      const start = plannedStartRef.current;
+      if (!start || start.turn !== micTurnIdRef.current) return;
+      const coverage = finalPlannedCoverage(plannedCoverageRef.current, currentSpeechEpochRef.current);
+      if (coverage !== "COVERED") return;
+      const candidates = selectNextPlannedQuestions({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes }, 4);
+      const selectedId = selectedPlannedQuestionId ?? candidates.find((candidate) => candidate.prompt === current.nextQuestion)?.id ?? candidates[0]?.id ?? null;
+      const skip = resolvePlannedCoveredSkip({ coverage, judgedQuestionId: start.questionId, selectedQuestionId: selectedId, candidates, excludedIds: [...skippedPlannedQuestionIds, ...speculativeFixedSkippedIdsRef.current] });
+      if (!skip) return;
+      decision = { ...current, nextQuestion: skip.replacement.prompt };
+      selectedPlannedQuestionId = skip.replacement.id;
+      skippedPlannedQuestionIds = [...skippedPlannedQuestionIds, skip.skippedQuestionId];
+      // Monotonic: a committed skip is never asked later, also by the fixed fallback.
+      speculativeFixedSkippedIdsRef.current.add(skip.skippedQuestionId);
+      speculativeFixedSkipRef.current = true;
+      // The prepared audio belongs to the question that is no longer asked.
+      preparedTurn?.cancelSpeech?.();
+      preparedTurn?.cancelFixedQuestionAudio?.();
+      preparedTurn = null;
+      console.info(JSON.stringify({ event: "interview_planned_covered_skip", plannedType: plannedQuestionType(skip.replacement) }));
+      reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "discarded", preparationReason: "planned_covered_skip" });
+    };
     // Set when submit waited for the pending analysis of the final transcript: the wait is reported once the turn is settled.
     let finalAnalysisWait: { waitMs: number; arrived: boolean } | null = null;
     if (clarificationHint === "repeat") {
@@ -856,6 +902,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       };
       selectedPlannedQuestionId = pendingQuestion?.id ?? nextPlan.question?.id ?? null;
       skippedPlannedQuestionIds = pendingQuestion ? pendingSelection?.skippedQuestionIds ?? [] : [];
+      applyPlannedCoveredSkip();
       const usedIndex = prepared?.questions.findIndex((candidate) => candidate.id === selectedPlannedQuestionId) ?? -1;
       const usesPreparedFixed = usedIndex >= 0 && decision.nextQuestion === prepared?.questions[usedIndex]?.prompt;
       finishFixedPreparation(usesPreparedFixed ? "used" : "discarded", usesPreparedFixed ? usedIndex : undefined);
@@ -903,7 +950,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         const lent = prepared.value as NonNullable<typeof prepared.value>;
         lent.cancelSpeech?.();
         const remaining = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes }).remaining;
-        const adaptedAudioReady = lent.adaptedFixedQuestion && config.playInterviewerAudio ? await waitForFirstChunk(lent.fixedQuestionAudioReady, 400) : true;
+        const adaptedAudioReady = lent.adaptedFixedQuestion && config.playInterviewerAudio ? await waitForFirstChunk(lent.fixedQuestionAudioReady, finalAnalysisWait ? Math.min(400, remainingBudgetMs(FINAL_ANALYSIS_WAIT_MS, submitStartedAt, monotonicNowMs())) : 400) : true;
         lent.cancelFixedQuestionAudio?.();
         const fixed = resolveFixedFromFollowUp({ value: lent, remaining, adaptedAudioReady });
         if (fixed) {
@@ -955,11 +1002,13 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "discarded", preparationReason: "speculative_not_ready" });
     }
     decision ??= await decideNextTurn({ ...decisionInput, signal: abortController.signal });
+    applyPlannedCoveredSkip();
     if (preparedTurn && config.playInterviewerAudio && preparedTurn.speechReady) {
       // After waiting for the final analysis the follow-up's first chunk shares one cap counted from submit.
+      // Any other audio wait stays within the final-analysis budget once that wait happened.
       const audioTimeoutMs = finalAnalysisWait?.arrived && decision?.decision === "FOLLOW_UP"
         ? remainingBudgetMs(FOLLOW_UP_TOTAL_WAIT_MS, submitStartedAt, monotonicNowMs())
-        : 400;
+        : finalAnalysisWait ? Math.min(400, remainingBudgetMs(FINAL_ANALYSIS_WAIT_MS, submitStartedAt, monotonicNowMs())) : 400;
       const { firstChunkReady, adaptedQuestionReady } = await waitForPreparedTurnAudio({ decision, speechReady: preparedTurn.speechReady, adaptedFixedQuestion: preparedTurn.adaptedFixedQuestion, fixedQuestionAudioReady: preparedTurn.fixedQuestionAudioReady }, audioTimeoutMs);
       if (decision?.decision === "NEXT" && preparedTurn.adaptedFixedQuestion && !adaptedQuestionReady && preparedTurn.originalFixedPrompt) {
         decision = { ...decision, nextQuestion: resolveFixedPromptForAudio({ prompt: decision.nextQuestion ?? undefined, originalPrompt: preparedTurn.originalFixedPrompt, adapted: true }, adaptedQuestionReady) ?? preparedTurn.originalFixedPrompt };
@@ -987,6 +1036,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "discarded", preparationReason: "follow_up_speech_not_ready", revision: preparedTurn.revision });
       }
     }
+    // A follow-up that fell back to its fixed question above is a NEXT turn now; the same check applies.
+    applyPlannedCoveredSkip();
     if (preparedTurn?.cancelFixedQuestionAudio && decision?.decision !== "FOLLOW_UP") preparedTurn.cancelFixedQuestionAudio();
     if (!fixedPreparationSettled) {
       const prepared = fixedHandoffPreparation.peek();
@@ -1428,6 +1479,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           }}
           onProvisionalAnswer={prepareFromProvisionalAnswer}
           followUpCandidate={followUpCandidateUpdate}
+          getPlannedStartContext={getPlannedStartContext}
+          onPlannedQuestionStatus={(status: PlannedQuestionStatus) => {
+            currentSpeechEpochRef.current = adoptSpeechEpoch(currentSpeechEpochRef.current, status.speechEpoch);
+            if (recordPlannedCoverage(plannedCoverageRef.current, status, currentSpeechEpochRef.current)) console.info(JSON.stringify({ event: "interview_planned_coverage", coverage: status.coverage }));
+          }}
           onFollowUpCandidateStatus={(status) => {
             if (status.turnId !== speculativeTurnIdRef.current) return;
             // The backend only reports the epoch it is in now; after a resume this is how the new final epoch is learned.

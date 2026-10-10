@@ -7,4 +7,4 @@ export function notifySessionExpired(target?: EventTarget): void;
 export function onSessionExpired(callback: () => void, target?: EventTarget): () => void;
 export function createAccessTokenReader(getSession: () => Promise<{ access_token?: string } | null | undefined>, target?: EventTarget): () => Promise<string>;
 export function createAuthorizedFetch(getAccessToken: () => Promise<string>, fetcher?: typeof fetch, target?: EventTarget): typeof fetch;
-export function buildStreamStartMessage(input: { accessToken: string; speechThreshold: number; sampleRate: number; question?: string | null }): Record<string, unknown>;
+export function buildStreamStartMessage(input: { accessToken: string; speechThreshold: number; sampleRate: number; question?: string | null; plannedQuestion?: string | null; contextAnswers?: string[] }): Record<string, unknown>;

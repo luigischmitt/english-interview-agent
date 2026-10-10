@@ -13,7 +13,10 @@
  *   --backend-url URL        use an already running backend (default http://localhost:3201; if it answers /health it is used
  *                            as is, otherwise the harness spawns `src/server.ts` itself on that port and kills it at the end;
  *                            backend repair reasons and cost are only available for the spawned one)
- *   --waits 0,400,1500,2500  extra "wait after complete" values to report (ms). SIM_SUBMIT_WAIT_MS (default 400) is the headline one.
+ *   --waits 0,400,1800       final-analysis wait caps to report (ms, counted from complete; 0 = no wait, like before the wait existed).
+ *                            SIM_SUBMIT_WAIT_MS (default 1800 = FINAL_ANALYSIS_WAIT_MS of the room) is the headline one. The room waits only when
+ *                            the analysis of the final transcript is still pending and no ready follow-up can play; the 3000 ms total
+ *                            follow-up cap concerns follow-up TTS, which is not simulated.
  *   --turns 2                number of answers to run (1 = intro only, 2 = intro + project)
  *   SIM_CACHE_DIR            audio cache dir (default: session scratchpad sim-audio/), SIM_OUT_DIR for the JSON result
  * Exit code is always 0; the summary table and KEY METRICS go to stdout, the full result to <SIM_OUT_DIR>/resume-sim-<ts>.json.
@@ -37,6 +40,10 @@ import { condensePreviousAnswer } from "../../frontend/src/lib/interview/previou
 import { createNextTurnPreparationRegistry } from "../../frontend/src/lib/interview/next-turn-preparation.mjs";
 // @ts-ignore
 import { plannedQuestionType, remainingPlannedQuestions, resolveMonotonicFixedAction, resolveSpeculativeFixedSelection } from "../../frontend/src/lib/interview/question-scheduling.mjs";
+// @ts-ignore
+import { buildPlannedCoverageStartFields, finalPlannedCoverage, recordPlannedCoverage, resolvePlannedCoveredSkip } from "../../frontend/src/lib/interview/planned-coverage.mjs";
+// @ts-ignore
+import { FINAL_ANALYSIS_WAIT_MS, finalAnalysisWaitPredicate } from "../../frontend/src/lib/interview/final-analysis-wait.mjs";
 // @ts-ignore
 import { toStreamQuestion } from "../../frontend/src/lib/interview/stream-question.mjs";
 // @ts-ignore
@@ -155,6 +162,8 @@ type RoomInput = {
   askedQuestions: string[];
   askedPlannedIds: string[];
   previousAnswers: Array<{ question: string; answer: string }>;
+  /** The next planned question sent in `start` (what the room's getPlannedStartContext reads); null when none remains. */
+  plannedStart: { id: string; type: string } | null;
   analyze: AnalyzeFn;
   send: (message: Outbound) => void;
 };
@@ -172,6 +181,7 @@ class RoomEmulator {
   skippedIds = new Set<string>();
   enabled = true;
   complete = false;
+  readonly plannedCoverage = new Map<number, any>();
   constructor(private readonly input: RoomInput) {}
 
   private remaining() { return remainingPlannedQuestions(planned, this.input.askedPlannedIds) as Planned[]; }
@@ -271,10 +281,43 @@ class RoomEmulator {
     discardCoveredFollowUps(this.registry, status);
   }
 
+  onPlannedStatus(status: { speechEpoch: number; coverage: string }) {
+    if (this.complete) return;
+    this.currentSpeechEpoch = adoptSpeechEpoch(this.currentSpeechEpoch, status.speechEpoch);
+    recordPlannedCoverage(this.plannedCoverage, status, this.currentSpeechEpoch);
+  }
+
   onSpeechResumed() { if (!this.complete) this.currentSpeechEpoch = null; }
+
+  /** The room's applyPlannedCoveredSkip: a NEXT/fixed outcome whose planned question was judged COVERED asks the next one instead. */
+  private applyPlannedSkip(outcome: Outcome): Outcome {
+    if (outcome.kind === "FOLLOW_UP") return outcome;
+    const start = this.input.plannedStart;
+    const coverage = finalPlannedCoverage(this.plannedCoverage, this.currentSpeechEpoch);
+    if (!start || coverage !== "COVERED") return outcome;
+    const candidates = this.remaining().slice(0, 4);
+    const selectedId = outcome.plannedId ?? candidates.find((candidate) => candidate.prompt === outcome.question)?.id ?? candidates[0]?.id ?? null;
+    const skip = resolvePlannedCoveredSkip({ coverage, judgedQuestionId: start.id, selectedQuestionId: selectedId, candidates, excludedIds: [...outcome.skippedIds, ...this.skippedIds] });
+    if (!skip) return outcome;
+    return { ...outcome, question: skip.replacement.prompt, plannedId: skip.replacement.id, adapted: false, skippedIds: [...outcome.skippedIds, skip.skippedQuestionId], plannedSkip: true, note: `${outcome.note}${outcome.note ? "; " : ""}planned question already COVERED -> skipped` };
+  }
 
   /** The room's decision at submit, assuming prewarmed audio is ready (TTS is not simulated). */
   async decide(finalTranscript: string): Promise<Outcome> {
+    return this.applyPlannedSkip(await this.decideBase(finalTranscript));
+  }
+
+  /** Whether the room would hold submit for the pending analysis of the final transcript (null: no wait). */
+  waitPredicate(finalTranscript: string) {
+    if (!this.attempted) return null;
+    const acceptFollowUp = (value: any) => canUseCurrentEpochCandidate({
+      value, finalTranscript, currentTurnId: this.input.turnId, currentSpeechEpoch: this.currentSpeechEpoch, featureEnabled: this.enabled,
+      compatibility: finalEpochCandidateStatus(this.statuses, this.latestByEpoch, value.revision, this.currentSpeechEpoch),
+    });
+    return finalAnalysisWaitPredicate({ eligible: true, entries: this.registry.entries(), readyValues: this.registry.readyValues(), acceptFollowUp, finalTranscript });
+  }
+
+  private async decideBase(finalTranscript: string): Promise<Outcome> {
     this.complete = true;
     const reg = this.registry;
     const newestReadyRevision = Math.max(0, ...reg.readyValues().map((value: any) => value?.revision ?? 0));
@@ -305,13 +348,14 @@ class RoomEmulator {
   }
 }
 
-type Outcome = { kind: "FOLLOW_UP" | "FIXED_FROM_ANALYSIS" | "FIXED_FALLBACK"; question: string | null; plannedId: string | null; adapted: boolean; skippedIds: string[]; revision: number | null; note: string };
+type Outcome = { kind: "FOLLOW_UP" | "FIXED_FROM_ANALYSIS" | "FIXED_FALLBACK"; question: string | null; plannedId: string | null; adapted: boolean; skippedIds: string[]; revision: number | null; note: string; plannedSkip?: boolean };
 
 // ---------------------------------------------------------------------------------------------------------------- log of one answer
 type LogEvent =
   | { t: number; kind: "provisional"; transcript: string; revision: number; speechEpoch: number }
   | { t: number; kind: "status"; turnId: string; revision: number; speechEpoch: number; status: string }
   | { t: number; kind: "resumed" }
+  | { t: number; kind: "planned"; speechEpoch: number; coverage: string }
   | { t: number; kind: "landed"; revision: number; result: AnalyzeResult; requestedAt: number }
   | { t: number; kind: "sent"; message: Outbound }
   | { t: number; kind: "mark"; name: string }
@@ -332,15 +376,28 @@ async function replayDecision(events: LogEvent[], input: Omit<RoomInput, "analyz
       signal.addEventListener("abort", () => resolveResult({ enabled: false, analysis: null }), { once: true });
     }),
   });
+  // Everything that happened up to complete (including analyses that had landed by then).
   for (const event of events) {
-    if (event.kind === "landed") {
-      if (event.t > completeT + waitMs) continue;
-      deferred.get(event.revision)?.(event.result);
-    } else if (event.t > completeT) continue;
+    if (event.t > completeT) continue;
+    if (event.kind === "landed") deferred.get(event.revision)?.(event.result);
     else if (event.kind === "provisional") room.onProvisional(event.transcript, event.revision, event.speechEpoch);
     else if (event.kind === "status") room.onStatus(event);
+    else if (event.kind === "planned") room.onPlannedStatus(event);
     else if (event.kind === "resumed") room.onSpeechResumed();
     await flush();
+  }
+  // Like the room: hold for the pending analysis of the final transcript (at most waitMs) unless a ready follow-up can play.
+  const predicate = waitMs > 0 ? room.waitPredicate(finalTranscript) : null;
+  if (predicate) {
+    const waiting = room.registry.waitForPending(predicate, waitMs);
+    for (const event of events) {
+      if (event.t <= completeT || event.t > completeT + waitMs) continue;
+      if (event.kind === "landed") deferred.get(event.revision)?.(event.result);
+      else if (event.kind === "planned") room.onPlannedStatus(event);
+      else if (event.kind === "status") room.onStatus(event);
+      await flush();
+    }
+    await waiting;
   }
   return room.decide(finalTranscript);
 }
@@ -358,6 +415,7 @@ type AnswerResult = {
   revisions: Array<{ revision: number; speechEpoch: number; sentAtMs: number; relSpeechEndMs: number; transcriptWords: number; landedAtRelCompleteMs: number | null; landedAfterComplete: boolean | null; latencyMs: number | null; enabled: boolean | null; followUpAction: string | null; fixedAction: string | null; backendOutcome: string | null; repairReason: string | null; costUsd: number | null }>;
   candidateSends: Array<{ type: string; revision: number; relCompleteMs: number }>;
   statuses: Array<{ revision: number; speechEpoch: number; status: string; relCompleteMs: number }>;
+  plannedStatuses: Array<{ speechEpoch: number; coverage: string; relCompleteMs: number }>;
   marks: Record<string, number>;
   resumedAtRelCompleteMs: number[];
   decisions: Record<string, Outcome>;
@@ -370,7 +428,7 @@ async function post(baseUrl: string, path: string, body: unknown, signal: AbortS
 }
 
 async function runAnswer(opts: {
-  baseUrl: string; turn: number; question: string; clauses: Clause[]; askedQuestions: string[]; askedPlannedIds: string[]; previousAnswers: Array<{ question: string; answer: string }>; waits: number[]; backendLogs: BackendLog[]; logSink: { turn: number };
+  baseUrl: string; turn: number; question: string; clauses: Clause[]; askedQuestions: string[]; askedPlannedIds: string[]; previousAnswers: Array<{ question: string; answer: string }>; plannedStart: { id: string; type: string; prompt: string } | null; waits: number[]; backendLogs: BackendLog[]; logSink: { turn: number };
 }): Promise<AnswerResult> {
   const audio = await buildAnswerAudio(opts.clauses);
   const turnId = `sim${randomBytes(9).toString("hex")}`;
@@ -380,7 +438,7 @@ async function runAnswer(opts: {
   const events: LogEvent[] = [];
   let t0 = 0;
   const now = () => Math.round(performance.now() - t0);
-  const roomInput = { turnId, currentQuestion: opts.question, askedQuestions: opts.askedQuestions, askedPlannedIds: opts.askedPlannedIds, previousAnswers: opts.previousAnswers };
+  const roomInput = { turnId, currentQuestion: opts.question, askedQuestions: opts.askedQuestions, askedPlannedIds: opts.askedPlannedIds, previousAnswers: opts.previousAnswers, plannedStart: opts.plannedStart ? { id: opts.plannedStart.id, type: opts.plannedStart.type } : null };
   const room = new RoomEmulator({
     ...roomInput,
     send: (message) => { events.push({ t: now(), kind: "sent", message }); if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); },
@@ -423,6 +481,12 @@ async function runAnswer(opts: {
           room.onStatus(m);
         }
         break;
+      case "planned-question-status":
+        if (Number.isSafeInteger(m.speechEpoch) && ["COVERED", "PARTIAL", "OPEN"].includes(m.coverage)) {
+          events.push({ t, kind: "planned", speechEpoch: m.speechEpoch, coverage: m.coverage });
+          if (completeT === null) room.onPlannedStatus(m);
+        }
+        break;
       case "speech-resumed": events.push({ t, kind: "resumed" }); room.onSpeechResumed(); break;
       case "silence-detected": case "finalizing": case "transcription-queued": case "transcription-started":
         events.push({ t, kind: "mark", name: m.type });
@@ -441,7 +505,8 @@ async function runAnswer(opts: {
   socket.on("close", () => done());
   socket.on("error", () => done());
   await new Promise<void>((resolveOpen, reject) => { socket.once("open", () => resolveOpen()); socket.once("error", () => reject(new Error("WebSocket connection failed."))); });
-  socket.send(JSON.stringify({ type: "start", version: 2, sampleRate, channels: 1, encoding: "s16le", speechThreshold: 0.025, ...(toStreamQuestion(opts.question) ? { question: toStreamQuestion(opts.question) } : {}) }));
+  const plannedFields = buildPlannedCoverageStartFields({ plannedQuestion: opts.plannedStart?.prompt, previousAnswers: opts.previousAnswers.map((p) => p.answer) });
+  socket.send(JSON.stringify({ type: "start", version: 2, sampleRate, channels: 1, encoding: "s16le", speechThreshold: 0.025, ...(toStreamQuestion(opts.question) ? { question: toStreamQuestion(opts.question), ...plannedFields } : {}) }));
   while (!ready) await new Promise((r) => setTimeout(r, 10));
 
   // Real-time streaming: 100 ms frames + level, then silence until the server finalizes (serverFinalize like the browser).
@@ -492,6 +557,7 @@ async function runAnswer(opts: {
     revisions,
     candidateSends: events.filter((e): e is Extract<LogEvent, { kind: "sent" }> => e.kind === "sent").map((e) => ({ type: String(e.message.type), revision: Number(e.message.revision), relCompleteMs: rel(e.t) })),
     statuses: events.filter((e): e is Extract<LogEvent, { kind: "status" }> => e.kind === "status").map((e) => ({ revision: e.revision, speechEpoch: e.speechEpoch, status: e.status, relCompleteMs: rel(e.t) })),
+    plannedStatuses: events.filter((e): e is Extract<LogEvent, { kind: "planned" }> => e.kind === "planned").map((e) => ({ speechEpoch: e.speechEpoch, coverage: e.coverage, relCompleteMs: rel(e.t) })),
     marks: Object.fromEntries(events.filter((e): e is Extract<LogEvent, { kind: "mark" }> => e.kind === "mark").map((e) => [e.name, rel(e.t)])),
     resumedAtRelCompleteMs: events.filter((e) => e.kind === "resumed").map((e) => rel(e.t)),
     decisions, followUpWouldPlay: Object.fromEntries(Object.entries(decisions).map(([wait, outcome]) => [wait, outcome.kind === "FOLLOW_UP"])),
@@ -552,8 +618,8 @@ const short = (text: string | null, max = 60) => text === null ? "-" : text.leng
 
 async function main() {
   const baseUrl = (argValue("backend-url") ?? process.env.SIM_BACKEND_URL ?? "http://localhost:3201").replace(/\/$/u, "");
-  const headlineWait = Number(process.env.SIM_SUBMIT_WAIT_MS ?? "400");
-  const waits = [...new Set([headlineWait, ...(argValue("waits") ?? "0,400,1500,2500").split(",").map(Number)].filter((n) => Number.isFinite(n) && n >= 0))].sort((a, b) => a - b);
+  const headlineWait = Number(process.env.SIM_SUBMIT_WAIT_MS ?? String(FINAL_ANALYSIS_WAIT_MS));
+  const waits = [...new Set([headlineWait, ...(argValue("waits") ?? "0,400,1800").split(",").map(Number)].filter((n) => Number.isFinite(n) && n >= 0))].sort((a, b) => a - b);
   const turns = Math.max(1, Math.min(2, Number(argValue("turns") ?? 2)));
   const backendLogs: BackendLog[] = [];
   const backend = await startBackend(baseUrl, backendLogs);
@@ -569,7 +635,7 @@ async function main() {
     for (let turn = 0; turn < turns; turn += 1) {
       sink.turn = turn;
       console.log(`\n=== Answer ${turn} (streaming in real time) — Q: ${short(questions[turn], 90)}`);
-      const result = await runAnswer({ baseUrl, turn, question: questions[turn], clauses: answers[turn], askedQuestions: [...asked], askedPlannedIds: [...askedPlannedIds], previousAnswers: previous.slice(-8).map((p) => ({ question: p.question.slice(0, 500), answer: condensePreviousAnswer(p.answer) })), waits, backendLogs, logSink: sink });
+      const result = await runAnswer({ baseUrl, turn, question: questions[turn], clauses: answers[turn], askedQuestions: [...asked], askedPlannedIds: [...askedPlannedIds], previousAnswers: previous.slice(-8).map((p) => ({ question: p.question.slice(0, 500), answer: condensePreviousAnswer(p.answer) })), plannedStart: (() => { const next = remainingPlannedQuestions(planned, askedPlannedIds)[0] as Planned | undefined; return next ? { id: next.id, type: plannedQuestionType(next), prompt: next.prompt } : null; })(), waits, backendLogs, logSink: sink });
       results.push(result);
       console.log(`    speech ${(result.speechMs / 1000).toFixed(1)}s${result.cutOffEarlyMs ? ` (SERVER CUT THE ANSWER ${result.cutOffEarlyMs} ms EARLY)` : ""}, speechEnd->complete ${fmt(result.speechEndToCompleteMs)} ms, ${result.revisions.length} revision(s), transcript ${result.transcriptWords} words`);
       // The next turn asks the scripted next planned question (Q1 after the intro), so the two answers stay comparable.
@@ -592,9 +658,10 @@ async function main() {
     console.log("rev epoch sentAt(ms) rel.speechEnd words | landed rel.complete (afterComplete) latency | followUp / fixed | backend outcome / repair | cost");
     for (const v of r.revisions) console.log(`${String(v.revision).padStart(3)} ${String(v.speechEpoch).padStart(5)} ${String(v.sentAtMs).padStart(10)} ${String(v.relSpeechEndMs).padStart(11)} ${String(v.transcriptWords).padStart(5)} | ${String(fmt(v.landedAtRelCompleteMs)).padStart(8)} (${v.landedAfterComplete === null ? "never" : v.landedAfterComplete ? "AFTER" : "before"}) ${String(fmt(v.latencyMs)).padStart(6)} | ${v.followUpAction ?? "-"} / ${v.fixedAction ?? "-"} | ${v.backendOutcome ?? "-"} ${v.repairReason ? `[${v.repairReason}]` : ""} | ${v.costUsd ?? "-"}`);
     console.log(`candidate sends: ${r.candidateSends.map((s) => `${s.type}#${s.revision}@${s.relCompleteMs}`).join(", ") || "none"}`);
+    console.log(`planned coverage: ${r.plannedStatuses.map((s) => `e${s.speechEpoch}=${s.coverage}@${s.relCompleteMs}`).join(", ") || "none"}`);
     console.log(`compat statuses: ${r.statuses.map((s) => `r${s.revision}/e${s.speechEpoch}=${s.status}@${s.relCompleteMs}`).join(", ") || "none"}`);
     for (const [wait, outcome] of Object.entries(r.decisions)) {
-      console.log(`  wait ${String(wait).padStart(4)} ms -> ${outcome.kind}${outcome.adapted ? "(DEEPEN)" : ""}${outcome.skippedIds.length ? ` skip=${outcome.skippedIds.join("+")}` : ""} rev=${fmt(outcome.revision)} next="${short(outcome.question, 70)}" ${outcome.note ? `(${outcome.note})` : ""}`);
+      console.log(`  wait ${String(wait).padStart(4)} ms -> ${outcome.kind}${outcome.adapted ? "(DEEPEN)" : ""}${outcome.skippedIds.length ? ` skip=${outcome.skippedIds.join("+")}` : ""}${outcome.plannedSkip ? " [PLANNED-COVERED SKIP]" : ""} rev=${fmt(outcome.revision)} next="${short(outcome.question, 70)}" ${outcome.note ? `(${outcome.note})` : ""}`);
     }
   }
 
@@ -615,11 +682,11 @@ async function main() {
 
   console.log("\n================ KEY METRICS ================");
   console.log("answer | speechEnd->complete | waitMs: followUpWouldPlay / outcome");
-  for (const r of results) console.log(`  A${r.turn} | ${fmt(r.speechEndToCompleteMs)} ms | ${Object.entries(r.decisions).map(([w, o]) => `${w}: ${o.kind === "FOLLOW_UP" ? "FOLLOW_UP=true" : `false/${o.kind}${o.adapted ? "+DEEPEN" : ""}${o.skippedIds.length ? "+SKIP" : ""}`}`).join(" ; ")}`);
+  for (const r of results) console.log(`  A${r.turn} | ${fmt(r.speechEndToCompleteMs)} ms | ${Object.entries(r.decisions).map(([w, o]) => `${w}: ${o.kind === "FOLLOW_UP" ? "FOLLOW_UP=true" : `false/${o.kind}${o.adapted ? "+DEEPEN" : ""}${o.skippedIds.length ? "+SKIP" : ""}${o.plannedSkip ? "(planned-covered)" : ""}`}`).join(" ; ")}`);
   console.log(`repeatedQuestionAsked (after A1, next = Q2 unchanged): ${repeatedQuestionAsked ? Object.entries(repeatedQuestionAsked).map(([w, v]) => `wait${w}=${v}`).join(" ") : "n/a (needs 2 turns)"}`);
   console.log(`headline (SIM_SUBMIT_WAIT_MS=${headlineWait}): ${results.map((r) => `A${r.turn} followUpWouldPlay=${r.followUpWouldPlay[String(headlineWait)]}`).join(" ")}`);
   console.log(`backend cost (analysis/compat logs only; STT not logged): ${summary.costUsd ? JSON.stringify(summary.costUsd) : "n/a (external backend or no cost in logs)"}`);
-  console.log("Note: follow-up TTS is not simulated (assumed ready); only decision timing. Current main takes only analyses already READY at complete (wait 0).");
+  console.log("Note: follow-up TTS is not simulated (assumed ready); only decision timing. The room holds up to the headline wait only for a still-pending analysis of the final transcript (wait 0 = main before that wait).");
 
   await mkdir(outDir, { recursive: true });
   const outPath = join(outDir, `resume-sim-${new Date().toISOString().replace(/[:.]/gu, "-")}.json`);

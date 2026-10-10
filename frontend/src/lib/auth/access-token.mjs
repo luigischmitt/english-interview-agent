@@ -51,7 +51,7 @@ export function createAuthorizedFetch(getAccessToken, fetcher = (...args) => fet
 }
 
 /** First message of the transcription socket; browsers cannot set headers, so the token travels in the message. */
-export function buildStreamStartMessage({ accessToken, speechThreshold, sampleRate, question }) {
+export function buildStreamStartMessage({ accessToken, speechThreshold, sampleRate, question, plannedQuestion, contextAnswers }) {
   return {
     type: "start",
     version: 2,
@@ -61,5 +61,7 @@ export function buildStreamStartMessage({ accessToken, speechThreshold, sampleRa
     speechThreshold,
     accessToken,
     ...(question ? { question } : {}),
+    // Next planned question and earlier answers: the backend judges at each pause whether the answers already cover it.
+    ...(question && plannedQuestion ? { plannedQuestion, ...(contextAnswers?.length ? { contextAnswers } : {}) } : {}),
   };
 }

@@ -20,8 +20,8 @@ test("waits for the pending entry whose transcript equals the final one (trimmed
   assert.equal(predicate({ transcript: "old", revision: 1 }), false);
 });
 
-test("waits for the newest pending revision, but not for an older pending one", () => {
-  assert.ok(pendingFinalAnalysisPredicate([ready("a", 1), pending("a b", 2)], "a b c"));
+test("never waits for a pending revision whose transcript differs from the final one", () => {
+  assert.equal(pendingFinalAnalysisPredicate([ready("a", 1), pending("a b", 2)], "a b c"), null);
   assert.equal(pendingFinalAnalysisPredicate([pending("a", 1), ready("a b", 2)], "a b c"), null);
 });
 
