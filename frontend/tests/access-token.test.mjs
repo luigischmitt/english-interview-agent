@@ -67,6 +67,15 @@ test("the transcription start message carries the access token", () => {
   assert.deepEqual(message, { type: "start", version: 2, sampleRate: 16_000, channels: 1, encoding: "s16le", speechThreshold: 0.025, accessToken: "ws-token", question: "Why?" });
 });
 
+test("the start message carries the planned question and context answers only with a question", () => {
+  const base = { accessToken: "ws-token", speechThreshold: 0.025, sampleRate: 16_000 };
+  const message = buildStreamStartMessage({ ...base, question: "Why?", plannedQuestion: "Which metrics?", contextAnswers: ["Earlier."] });
+  assert.equal(message.plannedQuestion, "Which metrics?");
+  assert.deepEqual(message.contextAnswers, ["Earlier."]);
+  assert.equal("contextAnswers" in buildStreamStartMessage({ ...base, question: "Why?", plannedQuestion: "Which metrics?", contextAnswers: [] }), false);
+  assert.equal("plannedQuestion" in buildStreamStartMessage({ ...base, plannedQuestion: "Which metrics?" }), false);
+});
+
 test("an UNAUTHENTICATED stream error maps to the session-expired message", () => {
   assert.match(transcriptionFailureMessage("UNAUTHENTICATED"), /sessão expirou/u);
 });

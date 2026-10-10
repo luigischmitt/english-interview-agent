@@ -34,6 +34,7 @@ type StreamMessage = {
   revision?: number;
   speechEpoch?: number;
   turnId?: string;
+  coverage?: string;
   blockCount?: number;
   assessedBlockCount?: number;
   failedBlockCount?: number;
@@ -43,6 +44,10 @@ type StreamMessage = {
 
 export type FollowUpCandidateUpdate = { type: "follow-up-candidate"; turnId: string; revision: number; speechEpoch: number; question: string; anchor: string } | { type: "follow-up-candidate-cleared"; turnId: string; revision: number; speechEpoch: number };
 export type FollowUpCandidateStatus = { type: "follow-up-candidate-status"; turnId: string; revision: number; speechEpoch: number; status: "OPEN" | "COVERED" | "INVALID" | "NONE" };
+
+export type PlannedQuestionStatus = { type: "planned-question-status"; speechEpoch: number; coverage: "COVERED" | "PARTIAL" | "OPEN" };
+/** Read when the stream `start` message is built: the next planned question and condensed earlier answers, if any. */
+export type PlannedStartContext = { plannedQuestion?: string; contextAnswers?: string[] };
 
 type HandoffTimingEvent = "finalizing" | "transcription-queued" | "transcription-started" | "transcription-completed" | "listening";
 
@@ -98,6 +103,8 @@ type MicrophoneCaptureProps = {
   onSpeechResumed?: () => void;
   followUpCandidate?: FollowUpCandidateUpdate | null;
   onFollowUpCandidateStatus?: (status: FollowUpCandidateStatus) => void;
+  onPlannedQuestionStatus?: (status: PlannedQuestionStatus) => void;
+  getPlannedStartContext?: () => PlannedStartContext | null;
   onHandoffTimingEvent?: (event: HandoffTimingEvent, details?: { speechEndToFinalizationMs?: number; preconnected?: boolean }) => void;
   autoStartSignal?: string | null;
   /** Interview-long microphone owned by the room. Without it (or if it fails) each answer opens its own microphone. */
@@ -161,7 +168,7 @@ function streamFailureMessage(reason: AnswerStreamFailure): string {
   return "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.";
 }
 
-export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, followUpCandidate = null, onFollowUpCandidateStatus, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, onDeviceFallback, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, followUpCandidate = null, onFollowUpCandidateStatus, onPlannedQuestionStatus, getPlannedStartContext, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, onDeviceFallback, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +193,8 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
   const onProvisionalAnswerRef = useRef(onProvisionalAnswer);
   const onSpeechResumedRef = useRef(onSpeechResumed);
   const onFollowUpCandidateStatusRef = useRef(onFollowUpCandidateStatus);
+  const onPlannedQuestionStatusRef = useRef(onPlannedQuestionStatus);
+  const getPlannedStartContextRef = useRef(getPlannedStartContext);
   const onHandoffTimingEventRef = useRef(onHandoffTimingEvent);
   const assessmentContextRef = useRef(assessmentContext);
   const micEngineRef = useRef(micEngine);
@@ -206,11 +215,13 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     onProvisionalAnswerRef.current = onProvisionalAnswer;
     onSpeechResumedRef.current = onSpeechResumed;
     onFollowUpCandidateStatusRef.current = onFollowUpCandidateStatus;
+    onPlannedQuestionStatusRef.current = onPlannedQuestionStatus;
+    getPlannedStartContextRef.current = getPlannedStartContext;
     onHandoffTimingEventRef.current = onHandoffTimingEvent;
     assessmentContextRef.current = assessmentContext;
     micEngineRef.current = micEngine;
     onDeviceFallbackRef.current = onDeviceFallback;
-  }, [onDeviceFallback, assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onFollowUpCandidateStatus, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+  }, [onDeviceFallback, assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onFollowUpCandidateStatus, onPlannedQuestionStatus, getPlannedStartContext, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
 
   useEffect(() => {
     if (followUpCandidate) attemptRef.current?.stream.sendControl(followUpCandidate);
@@ -329,6 +340,13 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
       }
       return;
     }
+    if (message.type === "planned-question-status") {
+      const coverage = message.coverage;
+      if (Number.isSafeInteger(message.speechEpoch) && message.speechEpoch! >= 0 && (coverage === "COVERED" || coverage === "PARTIAL" || coverage === "OPEN")) {
+        onPlannedQuestionStatusRef.current?.({ type: "planned-question-status", speechEpoch: message.speechEpoch!, coverage });
+      }
+      return;
+    }
     if (message.type === "speech-resumed") {
       onSpeechResumedRef.current?.();
       return;
@@ -420,7 +438,8 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
         } catch {
           throw new StreamSetupError("UNAUTHENTICATED");
         }
-        return buildStreamStartMessage({ accessToken, speechThreshold, sampleRate: pcmSampleRate, question: toStreamQuestion(attempt.context.questionLabel) });
+        const planned = getPlannedStartContextRef.current?.() ?? null;
+        return buildStreamStartMessage({ accessToken, speechThreshold, sampleRate: pcmSampleRate, question: toStreamQuestion(attempt.context.questionLabel), plannedQuestion: planned?.plannedQuestion ?? null, contextAnswers: planned?.contextAnswers });
       },
       encodeFrame: (samples) => toPcm16(samples).buffer as ArrayBuffer,
       onMessage: (message, socket) => handlersRef.current?.message(attempt, message as StreamMessage, socket),

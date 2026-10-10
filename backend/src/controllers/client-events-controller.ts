@@ -11,7 +11,7 @@ const ackSkipReasons = ["not_loaded", "not_applicable", "question_started"] as c
 const reactionSources = ["model", "fallback", "none"] as const;
 const preparationTypes = ["fixed", "speculative"] as const;
 const preparationOutcomes = ["started", "ready", "decision_ready", "prepared_used", "prepared_discarded", "failed", "used", "discarded", "closing", "wait_follow_up", "wait_next", "wait_timeout"] as const;
-const preparationReasons = ["capture_ended", "speech_resumed", "unavailable", "mismatch", "speculative_not_ready", "question_started", "leaving", "new_turn", "skip", "fixed_from_follow_up", "waited_final_analysis"] as const;
+const preparationReasons = ["capture_ended", "speech_resumed", "unavailable", "mismatch", "speculative_not_ready", "question_started", "leaving", "new_turn", "skip", "fixed_from_follow_up", "waited_final_analysis", "planned_covered_skip"] as const;
 /** Client-side resume analysis stage and the closed set of codes (backend error codes plus client-only ones). */
 const resumeStages = ["file", "request", "response", "validation", "success"] as const;
 const resumeCodes = ["INVALID_RESUME_REQUEST", "RESUME_FILE_TOO_LARGE", "RESUME_TOO_MANY_PAGES", "RESUME_CONTENT_TOO_LARGE", "RESUME_INVALID_PDF", "RESUME_INSUFFICIENT_CONTENT", "RESUME_DIRECTION_TIMEOUT", "RESUME_DIRECTION_RATE_LIMITED", "RESUME_DIRECTION_INVALID_PROVIDER_RESPONSE", "RESUME_DIRECTION_PROVIDER_UNAVAILABLE", "RESUME_DIRECTION_NOT_CONFIGURED", "UNAUTHENTICATED", "INVALID_RESPONSE", "REQUEST_FAILED", "other"] as const;
