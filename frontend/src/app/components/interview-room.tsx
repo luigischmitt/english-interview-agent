@@ -130,6 +130,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const speculativeCallsRef = useRef({ turn: "", count: 0, revision: 0, applied: 0 });
   const speculativeAttemptedRef = useRef(false);
   const speculativeCandidateRef = useRef<{ question: string; anchor: string } | null>(null);
+  // Set when the candidate ends the interview mid-recording: remounting the capture discards the unfinished answer.
+  const [captureStopped, setCaptureStopped] = useState(false);
+  // Follow-up questions of this answer window the backend judged answered (COVERED) or invalid, and the question each
+  // candidate revision carried: a judged candidate is never handed back to the analysis to KEEP, nor accepted again.
+  const retiredCandidateQuestionsRef = useRef(new Set<string>());
+  const candidateQuestionByRevisionRef = useRef(new Map<number, string>());
   const speculativeFixedSkipRef = useRef(false);
   const speculativeFixedSkippedIdsRef = useRef(new Set<string>());
   const currentSpeechEpochRef = useRef<number | null>(null);
@@ -236,6 +242,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   useEffect(() => {
     speculativeAttemptedRef.current = false;
     speculativeCandidateRef.current = null;
+    retiredCandidateQuestionsRef.current.clear();
+    candidateQuestionByRevisionRef.current.clear();
     speculativeFixedSkipRef.current = false;
     speculativeFixedSkippedIdsRef.current.clear();
     currentSpeechEpochRef.current = null;
@@ -690,7 +698,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           firstFixedCoverage: planned[0].coverage ?? null,
           secondFixedCoverage: planned[1]?.coverage ?? null,
           hasThirdFixedQuestion: planned.length > 2,
-          previousCandidate: speculativeCandidateRef.current,
+          previousCandidate: speculativeCandidateRef.current && !retiredCandidateQuestionsRef.current.has(speculativeCandidateRef.current.question) ? speculativeCandidateRef.current : null,
           previousAnswers: input.previousAnswers,
           roleContext: buildRoleContext(config),
         }, signal) : { enabled: true, analysis: null };
@@ -716,11 +724,13 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         }
         const acceptedCandidate = (speculative.analysis.followUpAction === "REPLACE" || speculative.analysis.followUpAction === "KEEP")
           && typeof speculative.analysis.followUpQuestion === "string" && Boolean(speculative.analysis.followUpQuestion.trim())
-          && typeof speculative.analysis.followUpAnchor === "string" && Boolean(speculative.analysis.followUpAnchor.trim());
+          && typeof speculative.analysis.followUpAnchor === "string" && Boolean(speculative.analysis.followUpAnchor.trim())
+          && !retiredCandidateQuestionsRef.current.has(speculative.analysis.followUpQuestion.trim());
         if (stale && !acceptedCandidate) return null;
         if (acceptedCandidate) {
           if (!stale) {
             speculativeCandidateRef.current = { question: speculative.analysis.followUpQuestion!.trim(), anchor: speculative.analysis.followUpAnchor!.trim() };
+            candidateQuestionByRevisionRef.current.set(revision, speculative.analysis.followUpQuestion!.trim());
             setFollowUpCandidateUpdate({ type: "follow-up-candidate", turnId: speculativeTurnIdRef.current, revision, speechEpoch, question: speculative.analysis.followUpQuestion!.trim(), anchor: speculative.analysis.followUpAnchor!.trim() });
           }
           decision = { decision: "FOLLOW_UP", followUpQuestion: speculative.analysis.followUpQuestion!.trim(), nextQuestion: null, acknowledgement: null };
@@ -1006,7 +1016,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     if (preparedTurn && config.playInterviewerAudio && preparedTurn.speechReady) {
       // After waiting for the final analysis the follow-up's first chunk shares one cap counted from submit.
       // Any other audio wait stays within the final-analysis budget once that wait happened.
-      const audioTimeoutMs = finalAnalysisWait?.arrived && decision?.decision === "FOLLOW_UP"
+      // A follow-up decided just before (or while) the answer closed is often still being synthesized: its first chunk gets
+      // the follow-up cap counted from submit (the instant "Okay." covers it) instead of being dropped after 400 ms.
+      const audioTimeoutMs = decision?.decision === "FOLLOW_UP"
         ? remainingBudgetMs(FOLLOW_UP_TOTAL_WAIT_MS, submitStartedAt, monotonicNowMs())
         : finalAnalysisWait ? Math.min(400, remainingBudgetMs(FINAL_ANALYSIS_WAIT_MS, submitStartedAt, monotonicNowMs())) : 400;
       const { firstChunkReady, adaptedQuestionReady } = await waitForPreparedTurnAudio({ decision, speechReady: preparedTurn.speechReady, adaptedFixedQuestion: preparedTurn.adaptedFixedQuestion, fixedQuestionAudioReady: preparedTurn.fixedQuestionAudioReady }, audioTimeoutMs);
@@ -1123,21 +1135,32 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   };
 
   const finishNow = () => {
-    if (phase !== "answering") return;
-    if (voiceCaptureState === "requesting" || voiceCaptureState === "listening" || voiceCaptureState === "detected" || voiceCaptureState === "finalizing") {
-      setAnswerError("Aguarde a conclusão automática ou descarte a gravação antes de encerrar a prática.");
-      return;
-    }
-    if (voiceTranscription.status === "pending") {
-      setAnswerError("A transcrição ainda está sendo concluída. Aguarde, tente gravar novamente ou encerre depois.");
-      return;
-    }
-    if (finalTranscriptForSubmission(voiceTranscription)) {
+    if (phase === "closing" || phase === "ending" || leftRef.current) return;
+    // A finished answer is still worth closing on (with the reaction to it), as before.
+    const capturing = voiceCaptureState === "requesting" || voiceCaptureState === "listening" || voiceCaptureState === "detected" || voiceCaptureState === "finalizing";
+    if (phase === "answering" && !isAdvancing && !submitInFlightRef.current && !capturing && voiceTranscription.status !== "pending" && finalTranscriptForSubmission(voiceTranscription)) {
       void submitAnswer(voiceTranscription, true);
       return;
     }
-    // Nothing to react to: only the "ended" closing line.
+    // Any other moment (the interviewer speaking, a recording or transcription in progress, the next turn being prepared):
+    // end now. An unfinished recording is discarded (the capture restarts disabled), pending decisions and preparations stop,
+    // and the "ended" closing line replaces whatever the interviewer was saying. The report uses the answers given so far.
+    setCaptureStopped(true);
+    postFollowUpFixedSelectionRef.current?.cancelAudio?.();
+    postFollowUpFixedSelectionRef.current = null;
+    const fixed = fixedHandoffPreparation.cancel();
+    if (fixed) logFixedPreparation(fixed, "discarded");
+    acknowledgements.cancel();
+    closingReaction.cancel();
+    generationRef.current += 1;
+    decisionAbortRef.current?.abort();
+    decisionAbortRef.current = null;
+    abortTurnAnalyses();
     abortPreparation("closing");
+    submitInFlightRef.current = false;
+    if (advanceTimerRef.current !== null) window.clearTimeout(advanceTimerRef.current);
+    advanceTimerRef.current = null;
+    setAnswerError(null);
     rememberClosingLine("ended", closingLines.ended);
     setClosingReason("ended");
     setClosingLead(null);
@@ -1453,7 +1476,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         </section>
 
         <MicrophoneCapture
-          key={micTurnId}
+          key={captureStopped ? `${micTurnId}:ended` : micTurnId}
           disabled={isInterviewerSpeaking || isAdvancing || phase === "ending"}
           assessmentSockets={assessmentSockets}
           assessmentContext={{ questionLabel: question.prompt, sequenceNumber: questionSequenceNumber, round: clarifyRound }}
@@ -1489,6 +1512,12 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             // The backend only reports the epoch it is in now; after a resume this is how the new final epoch is learned.
             currentSpeechEpochRef.current = adoptSpeechEpoch(currentSpeechEpochRef.current, status.speechEpoch);
             if (!recordCandidateStatus(candidateStatusesRef.current, latestCandidateStatusRevisionRef.current, status, currentSpeechEpochRef.current)) return;
+            const judgedQuestion = candidateQuestionByRevisionRef.current.get(status.revision);
+            if (judgedQuestion && (status.status === "COVERED" || status.status === "INVALID")) {
+              // The next analysis must look for another detail instead of keeping this one.
+              retiredCandidateQuestionsRef.current.add(judgedQuestion);
+              if (speculativeCandidateRef.current?.question === judgedQuestion) speculativeCandidateRef.current = null;
+            }
             discardCoveredFollowUps(nextTurnPreparation, status);
             console.info(JSON.stringify({ event: "interview_speculative_compatibility", revision: status.revision, status: status.status }));
           }}
@@ -1507,7 +1536,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
         <EndCallDialog
           open={endOpen}
-          canFinish={phase === "answering" && !isAdvancing}
+          canFinish={phase !== "closing" && phase !== "ending"}
           onClose={() => setEndOpen(false)}
           onFinish={() => { setEndOpen(false); finishNow(); }}
           onLeave={() => { setEndOpen(false); leaveInterview(); }}
@@ -1531,7 +1560,7 @@ function EndCallDialog({ open, canFinish, onClose, onFinish, onLeave }: { open: 
       <div className="mt-dialog-body">
         <h2 id="end-call-title" className="mt-dialog-title">{t("Encerrar a entrevista?")}</h2>
         <button type="button" className="mt-dialog-btn mt-dialog-primary" onClick={onFinish} disabled={!canFinish} autoFocus={canFinish}>
-          {t("Encerrar e ver relatório ")}{!canFinish && <small>{t("Disponível na sua vez de responder.")}</small>}
+          {t("Encerrar e ver relatório ")}{!canFinish && <small>{t("A entrevista já está sendo encerrada.")}</small>}
         </button>
         <button type="button" className="mt-dialog-btn mt-dialog-danger" onClick={onLeave}>{t("Sair sem concluir")}</button>
         <button type="button" className="mt-dialog-btn" onClick={onClose} autoFocus={!canFinish}>{t("Continuar na entrevista")}</button>

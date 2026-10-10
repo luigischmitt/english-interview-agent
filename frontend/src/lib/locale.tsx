@@ -193,7 +193,7 @@ const englishCopy: Record<string, string> = {
   "Descartar gravação": "Discard recording",
   "Detalhes da entrevista": "Interview details",
   "Direcionamento da entrevista": "Interview focus",
-  "Disponível na sua vez de responder.": "Available when it is your turn to answer.",
+  "A entrevista já está sendo encerrada.": "The interview is already ending.",
   "Duração da sessão": "Session duration",
   "Encerrar": "End",
   "Encerrar a entrevista?": "End the interview?",
