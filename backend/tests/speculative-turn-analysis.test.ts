@@ -463,3 +463,63 @@ describe("broad project coverage false positives", () => {
     expect(await run({ ...base, firstFixedType: "job", snapshot: project })).toMatchObject({ fixedAction: "KEEP" });
   });
 });
+
+describe("speculative analysis on disfluent speech and covered resume questions", () => {
+  const metricsQuestion = "Which metrics do you use to evaluate the fraud model you built at Acme?";
+  const nextQuestion = "How did you deploy the fraud model to production?";
+  const snapshot = "So uh for the fraud model we we used precision and, um, recall, you know, to evaluate it. And I I looked at the false positive rate.";
+  const keep = { revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null };
+  const resume = { ...input, snapshot, firstFixedQuestion: metricsQuestion, firstFixedType: "resume" as const, secondFixedQuestion: nextQuestion, secondFixedType: "resume" as const, hasThirdFixedQuestion: true };
+  const run = (analysis: Record<string, unknown>, overrides: Record<string, unknown> = {}) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    return new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response({ ...keep, ...analysis })).analyze({ ...resume, ...overrides } as unknown as typeof input).finally(() => info.mockRestore());
+  };
+
+  it("accepts a follow-up whose cleaned-up anchor spans fillers and repeats, with the canonical snapshot span", async () => {
+    const result = await run({ followUpAction: "REPLACE", followUpQuestion: "Why did you look at the false positive rate?", followUpAnchor: "we used precision and recall to evaluate it" });
+    expect(result).toMatchObject({ followUpAction: "REPLACE", followUpAnchor: "we we used precision and, um, recall, you know, to evaluate it" });
+  });
+  it("accepts SKIP of a resume question already answered, with a tolerant anchor and the new metrics lexicon", async () => {
+    const result = await run({ fixedAction: "SKIP", fixedEvidenceAnchor: "used precision and recall to evaluate it" });
+    expect(result).toMatchObject({ fixedAction: "SKIP", fixedEvidenceAnchor: "used precision and, um, recall, you know, to evaluate it" });
+  });
+  it("accepts SKIP from a previous answer, and by content overlap when the question has no lexicon group", async () => {
+    const previousAnswers = [{ question: "Earlier question?", answer: "We handled the database migrations with Alembic and, uh, a staging copy." }];
+    const result = await run({ fixedAction: "SKIP", fixedEvidenceAnchor: "handled the database migrations with Alembic" }, { snapshot: "Thanks for asking.", firstFixedQuestion: "How did you handle database migrations at Acme?", previousAnswers });
+    expect(result).toMatchObject({ fixedAction: "SKIP" });
+  });
+  it("rejects SKIP when the sentence shares fewer than two content words, is hedged, or the question is a job question", async () => {
+    expect(await run({ fixedAction: "SKIP", fixedEvidenceAnchor: "Alembic" }, { snapshot: "We used Alembic for the schema.", firstFixedQuestion: "How did you handle database migrations at Acme?" })).toMatchObject({ fixedAction: "KEEP" });
+    expect(await run({ fixedAction: "SKIP", fixedEvidenceAnchor: "handled the database migrations" }, { snapshot: "I did not handle the database migrations.", firstFixedQuestion: "How did you handle database migrations at Acme?" })).toMatchObject({ fixedAction: "KEEP" });
+    expect(await run({ fixedAction: "SKIP", fixedEvidenceAnchor: "used precision and recall to evaluate it" }, { firstFixedType: "job" })).toMatchObject({ fixedAction: "KEEP" });
+  });
+  it("turns a rejected DEEPEN of a covered resume question into SKIP, and logs the repair", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response({ ...keep, fixedAction: "DEEPEN", adaptedFixedQuestion: metricsQuestion, fixedEvidenceAnchor: "used precision and recall to evaluate it" })).analyze(resume as unknown as typeof input);
+      expect(result).toMatchObject({ fixedAction: "SKIP", adaptedFixedQuestion: null });
+      expect(JSON.parse(String(info.mock.calls[0]?.[0])).reason).toContain("deepen_rejected_skip");
+    } finally { info.mockRestore(); }
+    const changed = await run({ fixedAction: "DEEPEN", adaptedFixedQuestion: "How did the team celebrate the launch of the model?", fixedEvidenceAnchor: "used precision and recall to evaluate it" });
+    expect(changed).toMatchObject({ fixedAction: "SKIP" });
+  });
+  it("accepts a competency term elsewhere in the anchor sentence for a rejected DEEPEN, but not for an explicit SKIP", async () => {
+    const deepen = { fixedAction: "DEEPEN", adaptedFixedQuestion: metricsQuestion, fixedEvidenceAnchor: "precision and recall" };
+    expect(await run(deepen)).toMatchObject({ fixedAction: "SKIP", fixedEvidenceAnchor: "precision and, um, recall" });
+    expect(await run({ fixedAction: "SKIP", fixedEvidenceAnchor: "precision and recall" })).toMatchObject({ fixedAction: "KEEP" });
+    expect(await run(deepen, { snapshot: "We are not sure how to evaluate it, but we saw precision and recall in a blog." })).toMatchObject({ fixedAction: "KEEP" });
+  });
+  it("keeps the question when the DEEPEN anchor is missing, there is no following question, or it is a job question", async () => {
+    const deepen = { fixedAction: "DEEPEN", adaptedFixedQuestion: metricsQuestion };
+    expect(await run({ ...deepen, fixedEvidenceAnchor: "we measured conversion" })).toMatchObject({ fixedAction: "KEEP" });
+    expect(await run({ ...deepen, secondFixedAction: "NONE", fixedEvidenceAnchor: "used precision and recall to evaluate it" }, { secondFixedQuestion: null, secondFixedType: null, hasThirdFixedQuestion: false })).toMatchObject({ fixedAction: "KEEP" });
+    expect(await run({ ...deepen, fixedEvidenceAnchor: "used precision and recall to evaluate it" }, { firstFixedType: "job" })).toMatchObject({ fixedAction: "KEEP" });
+  });
+  it("applies the same DEEPEN-to-SKIP rule to the second planned question only when a third exists", async () => {
+    const second = { secondFixedAction: "DEEPEN", adaptedSecondFixedQuestion: metricsQuestion, secondFixedEvidenceAnchor: "used precision and recall to evaluate it" };
+    const overrides = { firstFixedQuestion: "How did you test the fraud model?", secondFixedQuestion: metricsQuestion };
+    expect(await run(second, overrides)).toMatchObject({ secondFixedAction: "SKIP", secondFixedEvidenceAnchor: "used precision and, um, recall, you know, to evaluate it" });
+    expect(await run(second, { ...overrides, hasThirdFixedQuestion: false })).toMatchObject({ secondFixedAction: "KEEP" });
+    expect(await run(second, { ...overrides, secondFixedType: "job" })).toMatchObject({ secondFixedAction: "KEEP" });
+  });
+});

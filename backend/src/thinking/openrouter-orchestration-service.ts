@@ -1,5 +1,5 @@
 import { defaultOrchestrationHedgeAfterMs, defaultOrchestrationTimeoutMs, type ThinkingConfig } from "./config.js";
-import { containsNoiseToken, contentWords, followUpStopWords, hasExactAnchorMention, lowInformationWords, normalizedWords, questionStopWords, sequenceIndices, tokenPattern, transcriptHasUsefulContent } from "./interview-text.js";
+import { containsNoiseToken, contentWords, followUpStopWords, hasExactAnchorMention, lowInformationWords, normalizedWords, questionStopWords, sequenceIndices, tokenPattern, tolerantSequenceRanges, transcriptHasUsefulContent } from "./interview-text.js";
 import { questionStems, repeatsRecentQuestion } from "./question-repetition.js";
 import { assignBridgeLeadIn, createBridgeService, evaluateBridge, pickFallbackTransition, type BridgeDropReason, type BridgeCallOutcome, type InterviewBridgeService } from "./interview-bridge-service.js";
 import { addOpenRouterUsage, emptyOpenRouterUsage, parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
@@ -172,8 +172,7 @@ function anchorGrounding(question: string, anchor: string, transcript: string): 
     previousEnd = match.index + match[0].length;
   }
   const windows: string[] = [];
-  for (const start of sequenceIndices(tokens.map((token) => token.word), needle)) {
-    const end = start + needle.length;
+  for (const [start, end] of tolerantSequenceRanges(tokens.map((token) => token.word), needle)) {
     const before = tokens.slice(0, start).filter((token) => token.sentence === tokens[start].sentence).slice(-anchorWindowWords);
     const after = tokens.slice(end).filter((token) => token.sentence === tokens[end - 1].sentence).slice(0, anchorWindowWords);
     windows.push(before.map((token) => token.word).join(" "), after.map((token) => token.word).join(" "));
