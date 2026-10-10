@@ -51,3 +51,9 @@ test("the voice row is left out in text-only mode", () => {
   const summary = getInterviewSetupSummary({ ...baseConfig, voice: "bf_emma", playInterviewerAudio: false }, {}, {});
   assert.equal(summary.some((row) => row.label === "Voz"), false);
 });
+
+test("the resume setup summary hides the inferred role, seniority and focus", () => {
+  const summary = getInterviewSetupSummary({ ...baseConfig, interviewSource: "resume" }, { senior: "Sênior" }, { communication: "Comunicação e clareza" });
+  assert.equal(summary[0].value, "Prática pelo currículo");
+  assert.deepEqual(summary.map((row) => row.label).filter((label) => ["Senioridade", "Foco"].includes(label)), []);
+});

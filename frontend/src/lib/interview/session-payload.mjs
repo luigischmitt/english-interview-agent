@@ -1,5 +1,6 @@
 import { isValidJobDirection } from "./job-direction.mjs";
 import { nullableQuestionCount } from "./session-policy.mjs";
+import { isResumePractice, RESUME_PRACTICE_LABEL } from "./resume-neutral.mjs";
 
 /** Whitelist the values saved for a session; source job descriptions are never copied into persistence. */
 export function buildInterviewSessionPayload(config, userId, startedAt = new Date().toISOString()) {
@@ -16,9 +17,10 @@ export function buildInterviewSessionPayload(config, userId, startedAt = new Dat
     : null;
   return {
     user_id: userId,
-    target_role: config.role.trim(),
-    seniority: config.seniority,
-    focus: config.focus,
+    // Resume practice has no target job: the inferred profile is not saved (target_role is required, so it gets the neutral label).
+    target_role: isResumePractice(config) ? RESUME_PRACTICE_LABEL : config.role.trim(),
+    seniority: isResumePractice(config) ? null : config.seniority,
+    focus: isResumePractice(config) ? null : config.focus,
     ...(jobDirection ? { job_direction: jobDirection } : {}),
     duration_minutes: Number(config.duration),
     question_count: nullableQuestionCount(config.questionCount),

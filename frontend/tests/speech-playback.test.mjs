@@ -646,3 +646,11 @@ test("cancelling one prewarm keeps the retained audio another prewarm of the sam
   newer.cancel();
   clearRetainedSpeechBlobs();
 });
+
+test("the resume opening never names a role, seniority or focus", () => {
+  const question = "Could you introduce yourself?";
+  const opening = composeContextualOpening({ role: "AI Researcher", seniority: "senior", focus: "technical-depth", duration: "5", interviewSource: "resume" }, question);
+  assert.equal(opening, `Hi, I'm Tuk, and I'll be your interviewer today. We have about 5 minutes for a practice interview based on your resume. ${question}`);
+  assert.ok(!/researcher|senior|technical depth/iu.test(opening));
+  assert.match(composeContextualOpening({ role: "AI Researcher", seniority: "senior", focus: "mixed", duration: "5", interviewSource: "job" }, question), /AI Researcher role/u);
+});

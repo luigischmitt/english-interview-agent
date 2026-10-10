@@ -41,6 +41,11 @@ test("resume reports use the asked questions and answers without vacancy framing
   const data = { turns: [{ sequenceNumber: 1, question: "What did you build?", answer: "I built an API." }] };
   const result = buildInterviewReportRequest({ ...config, interviewSource: "resume", jobDirection: direction }, data);
   assert.equal("jobDirection" in result, false);
+  assert.deepEqual(result.roleContext, { targetRole: "the candidate's resume background" });
+});
+
+test("job and manual reports keep the role context", () => {
+  const result = buildInterviewReportRequest(config, { turns: [] });
   assert.deepEqual(result.roleContext, { targetRole: config.role, seniority: config.seniority, focus: config.focus });
 });
 

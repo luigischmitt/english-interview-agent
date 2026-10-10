@@ -67,7 +67,7 @@ export type SpeechPlaybackOptions = {
 };
 
 export function composeOpeningUtterance(introduction: string, firstQuestion: string): string;
-export function composeContextualOpening(config: { role?: string; seniority?: string; focus?: string; duration: string }, firstQuestion: string): string;
+export function composeContextualOpening(config: { interviewSource?: string; role?: string; seniority?: string; focus?: string; duration: string }, firstQuestion: string): string;
 export function composeAcknowledgedQuestion(acknowledgement: string | null, question: string): string;
 export const INTERVIEW_CLOSINGS: readonly string[];
 export const INTERVIEW_ENDED_CLOSINGS: readonly string[];
