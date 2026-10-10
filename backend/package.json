@@ -12,6 +12,7 @@
     "test": "vitest run",
     "benchmark:report-models": "tsx src/thinking/report-model-benchmark.ts",
     "eval:followup": "tsx evals/followup-eval.ts",
+    "eval:resume-fixed": "tsx evals/resume-fixed-eval.ts",
     "test:audio-e2e": "tsx src/transcription/audio-stream-e2e.ts"
   },
   "dependencies": {
