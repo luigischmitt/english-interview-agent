@@ -115,6 +115,25 @@ describe("OpenRouter next-turn orchestration", () => {
     await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(contextualInput)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: contextualQuestion });
   });
 
+  it("clips an over-long literal follow-up anchor instead of falling back", async () => {
+    const answer = { ...input, currentQuestion: "Tell me about a project.", transcript: "I built it with Node and Kafka, so the order service publishes an event and the billing service consumes it later.", askedQuestions: ["Tell me about a project."] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "Why did you choose Kafka for this project?", nextQuestion: null, anchor: "I built it with Node and Kafka, so the order service publishes an event and the billing", acknowledgement: null };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
+  });
+
+  it("rejects an over-long anchor that is not in the transcript", async () => {
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "Why did you choose Kafka for this project?", nextQuestion: null, anchor: "one two three four five six seven eight nine ten eleven twelve thirteen", acknowledgement: null };
+    const result = await service(async () => providerResponse(JSON.stringify(raw))).decide(input);
+    expect(result.decision).toBe("NEXT");
+  });
+
+  it("does not reject a follow-up for sharing the main verb with the current question", async () => {
+    const answer = { ...input, currentQuestion: "Tell me about a project where you built something you are proud of.", transcript: "We used Redis for the idempotency keys in the payment service.", askedQuestions: ["Tell me about yourself.", "Tell me about a project where you built something you are proud of."] };
+    const raw = { decision: "FOLLOW_UP", followUpQuestion: "How did you implement the idempotency with Redis?", nextQuestion: null, anchor: "Redis for the idempotency keys", acknowledgement: null };
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(answer)).resolves.toMatchObject({ decision: "FOLLOW_UP", followUpQuestion: raw.followUpQuestion });
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide({ ...answer, askedQuestions: ["How did you implement the retry policy?", answer.currentQuestion] })).resolves.toMatchObject({ decision: "NEXT" });
+  });
+
   it("accepts a meaningful inflectional reference instead of requiring the full anchor verbatim", async () => {
     const answer = {
       ...input,
@@ -734,9 +753,9 @@ describe("OpenRouter next-turn anchor tolerance (ENG-104)", () => {
     await expect(result).resolves.toMatchObject({ decision: "FOLLOW_UP" });
   });
 
-  it("still rejects an anchor of 13 words, even though a 12-word part of it matches the transcript", async () => {
+  it("clips an anchor of 13 words to a literal 12-word part instead of falling back", async () => {
     const { result } = ask(migration, "migrated the billing service from a monolith to event driven microservices last year", "Why did you migrate billing to event driven microservices?");
-    await expect(result).resolves.toEqual(fallback);
+    await expect(result).resolves.toMatchObject({ decision: "FOLLOW_UP" });
   });
 
   it.each(["kafka", "postgres", "kubernetes", "caching"])("accepts the lowercase technical single-word anchor %s", async (term) => {
@@ -873,6 +892,8 @@ describe("OpenRouter next-turn repetition guard", () => {
     remainingFixedQuestions: ["How do you test your code before releasing it?", "Tell me about a time you disagreed with a teammate."],
     askedQuestions: ["Tell me about a recent project.", frontBack],
   };
+  // The shared "integrate" verb must come from a PREVIOUS question: a follow-up may share the current question's main verb.
+  const previousIntegrate = { ...repetitiveInput, askedQuestions: ["Tell me about a recent project.", "How did you integrate the payments module?", frontBack] };
   const nextDecision = (nextQuestion: string) => ({ decision: "NEXT", followUpQuestion: null, nextQuestion, anchor: null, acknowledgement: null });
 
   it("replaces a NEXT that repeats the previous verb pattern with the planned fixed question", async () => {
@@ -894,8 +915,9 @@ describe("OpenRouter next-turn repetition guard", () => {
 
   it("treats a repetitive FOLLOW_UP as NEXT with the fixed question", async () => {
     const raw = decision({ followUpQuestion: "How did you integrate Supabase with the React app?", anchor: "Supabase for the database" });
-    const result = await service(async () => providerResponse(JSON.stringify(raw))).decide(repetitiveInput);
+    const result = await service(async () => providerResponse(JSON.stringify(raw))).decide(previousIntegrate);
     expect(result).toMatchObject({ decision: "NEXT", nextQuestion: "How do you test your code before releasing it?", followUpQuestion: null });
+    await expect(service(async () => providerResponse(JSON.stringify(raw))).decide(repetitiveInput)).resolves.toMatchObject({ decision: "FOLLOW_UP" });
   });
 
   it("keeps a FOLLOW_UP that digs into a different aspect of the same topic", async () => {
@@ -910,7 +932,7 @@ describe("OpenRouter next-turn repetition guard", () => {
     const spy = vi.spyOn(console, "info").mockImplementation((line: string) => { logs.push(line); });
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await service(async () => providerResponse(JSON.stringify(nextDecision("How did you integrate Supabase into your application?")))).decide({ ...repetitiveInput, followUpUsed: true });
-    await service(async () => providerResponse(JSON.stringify(decision({ followUpQuestion: "How did you integrate Supabase with the React app?", anchor: "Supabase for the database" })))).decide(repetitiveInput);
+    await service(async () => providerResponse(JSON.stringify(decision({ followUpQuestion: "How did you integrate Supabase with the React app?", anchor: "Supabase for the database" })))).decide(previousIntegrate);
     const entries = logs.map((line) => JSON.parse(line)).filter((entry) => entry.event === "interview_orchestration_decision");
     expect(entries.map((entry) => entry.reason)).toEqual(["planned_question_drift", "repetitive_follow_up"]);
     expect(entries[1]).toMatchObject({ decision: "NEXT", requestedDecision: "FOLLOW_UP", outcome: "fallback" });

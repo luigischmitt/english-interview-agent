@@ -43,7 +43,8 @@ import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/i
 import { canUseFixedDecisionFromFollowUp, resolveFixedFromFollowUp } from "@/lib/interview/fixed-from-follow-up.mjs";
 import { buildPlannedCoverageStartFields, finalPlannedCoverage, recordPlannedCoverage, resolvePlannedCoveredSkip, type PlannedCoverage } from "@/lib/interview/planned-coverage.mjs";
 import { FINAL_ANALYSIS_WAIT_MS, FOLLOW_UP_TOTAL_WAIT_MS, finalAnalysisWaitPredicate, remainingBudgetMs } from "@/lib/interview/final-analysis-wait.mjs";
-import { adoptSpeechEpoch, applyFollowUpCandidateClear, canUseCurrentEpochCandidate, discardCoveredFollowUps, finalEpochCandidateStatus, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "@/lib/interview/speculative-epoch.mjs";
+import { createCandidateStatusWait, shouldWaitForCandidateStatus } from "@/lib/interview/candidate-status-wait.mjs";
+import { MAX_SPECULATIVE_REVISIONS, adoptSpeechEpoch, canUseCurrentEpochCandidate, discardCoveredFollowUps, finalEpochCandidateStatus, mayReplaceActiveCandidate, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "@/lib/interview/speculative-epoch.mjs";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { useLocale, t } from "@/lib/locale";
 
@@ -139,6 +140,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const speculativeFixedSkipRef = useRef(false);
   const speculativeFixedSkippedIdsRef = useRef(new Set<string>());
   const currentSpeechEpochRef = useRef<number | null>(null);
+  // The follow-up verdict the backend was still computing when the answer completed, and the waiters for it at submit.
+  const pendingFollowUpCheckRef = useRef<{ turnId: string; revision: number } | null>(null);
+  const candidateStatusWaitRef = useRef(createCandidateStatusWait());
   const candidateStatusesRef = useRef(new Map<string, FollowUpCandidateStatus["status"]>());
   const latestCandidateStatusRevisionRef = useRef(new Map<number, number>());
   // Backend verdict per speech epoch on whether the answers already cover the next planned question, and which question
@@ -247,6 +251,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     speculativeFixedSkipRef.current = false;
     speculativeFixedSkippedIdsRef.current.clear();
     currentSpeechEpochRef.current = null;
+    pendingFollowUpCheckRef.current = null;
     speculativeTurnIdRef.current = globalThis.crypto?.randomUUID?.() ?? `turn_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
     candidateStatusesRef.current.clear();
     latestCandidateStatusRevisionRef.current.clear();
@@ -670,7 +675,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     });
     const input = buildDecisionInput(turns, answer);
     if (speculativeCallsRef.current.turn !== micTurnIdRef.current) speculativeCallsRef.current = { turn: micTurnIdRef.current, count: 0, revision: 0, applied: 0 };
-    if (speculativeCallsRef.current.count >= 8 || revision < 1 || revision > 8 || revision <= speculativeCallsRef.current.revision) return;
+    if (speculativeCallsRef.current.count >= MAX_SPECULATIVE_REVISIONS || revision < 1 || revision > MAX_SPECULATIVE_REVISIONS || revision <= speculativeCallsRef.current.revision) return;
     speculativeCallsRef.current.count += 1;
     speculativeCallsRef.current.revision = revision;
     speculativeAttemptedRef.current = true;
@@ -684,6 +689,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       run: async (signal, onCleanup) => {
         const planned = selectNextPlannedQuestions({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes }, 3);
         const preparationStartedAt = performance.now();
+        // What this request is told about the active candidate; a concurrent analysis may change it before the result lands.
+        const sentPreviousCandidate = speculativeCandidateRef.current && !retiredCandidateQuestionsRef.current.has(speculativeCandidateRef.current.question) ? speculativeCandidateRef.current : null;
         reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "started", plannedCount: planned.length, revision });
         const speculative = planned[0] ? await requestSpeculativeTurn({
           revision,
@@ -698,7 +705,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           firstFixedCoverage: planned[0].coverage ?? null,
           secondFixedCoverage: planned[1]?.coverage ?? null,
           hasThirdFixedQuestion: planned.length > 2,
-          previousCandidate: speculativeCandidateRef.current && !retiredCandidateQuestionsRef.current.has(speculativeCandidateRef.current.question) ? speculativeCandidateRef.current : null,
+          previousCandidate: sentPreviousCandidate,
           previousAnswers: input.previousAnswers,
           roleContext: buildRoleContext(config),
         }, signal) : { enabled: true, analysis: null };
@@ -727,8 +734,13 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           && typeof speculative.analysis.followUpAnchor === "string" && Boolean(speculative.analysis.followUpAnchor.trim())
           && !retiredCandidateQuestionsRef.current.has(speculative.analysis.followUpQuestion.trim());
         if (stale && !acceptedCandidate) return null;
+        // A concurrent analysis (sent with another previousCandidate) already set a different active candidate: this result stays
+        // a retained preparation and never overwrites the active candidate nor reaches the backend.
+        const activeCandidate = speculativeCandidateRef.current && !retiredCandidateQuestionsRef.current.has(speculativeCandidateRef.current.question) ? speculativeCandidateRef.current : null;
+        const supersededCandidate = acceptedCandidate && !mayReplaceActiveCandidate({ sentWith: sentPreviousCandidate, active: activeCandidate, action: speculative.analysis.followUpAction, question: speculative.analysis.followUpQuestion });
+        const retainedOnly = stale || supersededCandidate;
         if (acceptedCandidate) {
-          if (!stale) {
+          if (!retainedOnly) {
             speculativeCandidateRef.current = { question: speculative.analysis.followUpQuestion!.trim(), anchor: speculative.analysis.followUpAnchor!.trim() };
             candidateQuestionByRevisionRef.current.set(revision, speculative.analysis.followUpQuestion!.trim());
             setFollowUpCandidateUpdate({ type: "follow-up-candidate", turnId: speculativeTurnIdRef.current, revision, speechEpoch, question: speculative.analysis.followUpQuestion!.trim(), anchor: speculative.analysis.followUpAnchor!.trim() });
@@ -736,9 +748,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           decision = { decision: "FOLLOW_UP", followUpQuestion: speculative.analysis.followUpQuestion!.trim(), nextQuestion: null, acknowledgement: null };
         }
         else {
-          speculativeCandidateRef.current = null;
-          setFollowUpCandidateUpdate({ type: "follow-up-candidate-cleared", turnId: speculativeTurnIdRef.current, revision, speechEpoch });
-          applyFollowUpCandidateClear({ registry: nextTurnPreparation, statuses: candidateStatusesRef.current, latestByEpoch: latestCandidateStatusRevisionRef.current, revision, currentSpeechEpoch: currentSpeechEpochRef.current });
+          // No follow-up (model NONE or backend-rejected): the active candidate and its retained preparations stay; only a
+          // COVERED/INVALID verdict retires them. This analysis still yields its NEXT preparation.
           const nextQuestion = fixedSelection.question ? fixedSelection.prompt ?? fixedSelection.question.prompt : null;
           decision = { decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: nextQuestion ? fixedHandoffPreparation.peek()?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) : null };
         }
@@ -774,7 +785,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           revision,
           transcript: answer,
           speechEpoch,
-          anchor: decision.decision === "FOLLOW_UP" ? (stale ? speculative.analysis.followUpAnchor?.trim() : speculativeCandidateRef.current?.anchor) ?? null : null,
+          anchor: decision.decision === "FOLLOW_UP" ? (retainedOnly ? speculative.analysis.followUpAnchor?.trim() : speculativeCandidateRef.current?.anchor) ?? null : null,
           speechReady,
           cancelSpeech,
           nextPlannedQuestionId: selectedQuestion?.id ?? null,
@@ -879,6 +890,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     };
     // Set when submit waited for the pending analysis of the final transcript: the wait is reported once the turn is settled.
     let finalAnalysisWait: { waitMs: number; arrived: boolean } | null = null;
+    // Set when submit waited for the verdict the backend was still computing when the answer completed.
+    let candidateStatusWait: { waitMs: number; arrived: boolean } | null = null;
     if (clarificationHint === "repeat") {
       // A pure repeat request needs no model call: replay the question locally.
       nextTurnPreparation.abort();
@@ -942,6 +955,21 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       if (waitPredicate) {
         const arrived = await nextTurnPreparation.waitForPending(waitPredicate, remainingBudgetMs(FINAL_ANALYSIS_WAIT_MS, submitStartedAt, monotonicNowMs()), { signal: abortController.signal });
         finalAnalysisWait = { waitMs: Math.max(0, Math.round(monotonicNowMs() - submitStartedAt)), arrived };
+        if (leftRef.current || !mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
+      }
+      // The backend verdict of a ready follow-up candidate may still be in flight (it keeps the socket open for it): wait for it
+      // inside the same budget (what the pending-analysis wait above left).
+      const pendingCheck = pendingFollowUpCheckRef.current;
+      if (pendingCheck && shouldWaitForCandidateStatus({
+        pendingFollowUpCheck: pendingCheck,
+        currentTurnId: speculativeTurnIdRef.current,
+        readyValues: nextTurnPreparation.readyValues(),
+        hasStatus: finalEpochCandidateStatus(candidateStatusesRef.current, latestCandidateStatusRevisionRef.current, pendingCheck.revision, currentSpeechEpochRef.current) !== undefined,
+        accepted: acceptCandidate,
+      })) {
+        const statusWaitStartedAt = monotonicNowMs();
+        const arrived = await candidateStatusWaitRef.current.wait(pendingCheck.revision, remainingBudgetMs(FINAL_ANALYSIS_WAIT_MS, submitStartedAt, statusWaitStartedAt), { signal: abortController.signal });
+        candidateStatusWait = { waitMs: Math.max(0, Math.round(monotonicNowMs() - statusWaitStartedAt)), arrived };
         if (leftRef.current || !mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
       }
       const newestReadyRevision = Math.max(0, ...nextTurnPreparation.readyValues().map((value) => value?.revision ?? 0));
@@ -1068,6 +1096,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       const yielded = !finalAnalysisWait.arrived ? "timeout" : decision.decision === "FOLLOW_UP" ? "follow_up" : "next";
       reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: `wait_${yielded}`, preparationReason: "waited_final_analysis", waitMs: finalAnalysisWait.waitMs });
     }
+    if (candidateStatusWait) reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: candidateStatusWait.arrived ? "wait_status" : "wait_timeout", preparationReason: "waited_candidate_status", waitMs: candidateStatusWait.waitMs });
     if (!mountedRef.current || generation !== generationRef.current || abortController.signal.aborted) return;
     decisionAbortRef.current = null;
     submitInFlightRef.current = false;
@@ -1511,6 +1540,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             if (status.turnId !== speculativeTurnIdRef.current) return;
             // The backend only reports the epoch it is in now; after a resume this is how the new final epoch is learned.
             currentSpeechEpochRef.current = adoptSpeechEpoch(currentSpeechEpochRef.current, status.speechEpoch);
+            candidateStatusWaitRef.current.notify(status.revision);
             if (!recordCandidateStatus(candidateStatusesRef.current, latestCandidateStatusRevisionRef.current, status, currentSpeechEpochRef.current)) return;
             const judgedQuestion = candidateQuestionByRevisionRef.current.get(status.revision);
             if (judgedQuestion && (status.status === "COVERED" || status.status === "INVALID")) {
@@ -1523,9 +1553,13 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           }}
           onSpeechResumed={() => {
             // The candidate resumed speaking after a short pause: keep the follow-up candidate and its ready preparations
-            // (prewarmed audio is only buffered, never played while answering). Statuses of the epoch that just ended stop
-            // counting, so the answer can only use a candidate re-validated in the epoch it finalizes in.
-            currentSpeechEpochRef.current = null;
+            // (prewarmed audio is only buffered, never played while answering). The epoch changes only with new text
+            // (`speech-epoch`), so nothing is reset here.
+          }}
+          onSpeechEpoch={(speechEpoch) => { currentSpeechEpochRef.current = adoptSpeechEpoch(currentSpeechEpochRef.current, speechEpoch); }}
+          onAnswerComplete={({ speechEpoch, pendingFollowUpCheck }) => {
+            if (speechEpoch !== null) currentSpeechEpochRef.current = adoptSpeechEpoch(currentSpeechEpochRef.current, speechEpoch);
+            pendingFollowUpCheckRef.current = pendingFollowUpCheck;
           }}
           onHandoffTimingEvent={onHandoffTimingEvent}
           autoStartSignal={autoCaptureVoice && autoCaptureQuestionId === micTurnId ? micTurnId : null}

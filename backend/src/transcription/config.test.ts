@@ -68,13 +68,13 @@ describe("incremental Whisper configuration", () => {
     const config = loadTranscriptionConfig({});
     expect(config).toMatchObject({
       transcriptionProvider: "whisper-incremental", legacyTranscriptionProvider: null,
-      answerGraceMs: 3_500, incompleteGraceMs: 6_000, prepareAfterMs: 1_200, maxPrepares: 8, pauseMs: 800,
+      answerGraceMs: 3_500, incompleteGraceMs: 6_000, prepareAfterMs: 1_200, maxPrepares: 12, pauseMs: 800,
     });
     expect(config).toMatchObject({ semanticCheckAfterMs: 0, semanticCompleteMinSilenceMs: 900, maxSemanticChecks: 2, tailHedgeAfterMs: 1_500 });
     expect(loadTranscriptionConfig({ TRANSCRIPTION_SEMANTIC_COMPLETE_MIN_SILENCE_MS: "1200", TRANSCRIPTION_TAIL_HEDGE_AFTER_MS: "0" })).toMatchObject({ semanticCompleteMinSilenceMs: 1_200, tailHedgeAfterMs: 0 });
     expect(loadTranscriptionConfig({ TRANSCRIPTION_PREPARE_AFTER_MS: "0" }).prepareAfterMs).toBe(0);
     expect(loadTranscriptionConfig({ TRANSCRIPTION_MAX_PREPARES: "4" }).maxPrepares).toBe(4);
-    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_MAX_PREPARES: "9" })).toThrow("0 to 8");
+    expect(() => loadTranscriptionConfig({ TRANSCRIPTION_MAX_PREPARES: "13" })).toThrow("0 to 12");
   });
 
   it("parses bounded timings", () => {

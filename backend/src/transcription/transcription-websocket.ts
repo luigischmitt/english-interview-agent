@@ -23,7 +23,7 @@ type ClientMessage =
   | { type: "cancel" };
 
 const maxQuestionLength = 400;
-const maxSpeculativeRevisions = 8;
+const maxSpeculativeRevisions = 12;
 const maxCandidateTurnIdsPerAnswer = 16;
 
 /** Interviewer question from `start`: control characters become spaces; empty or over-long values are ignored. Never logged. */
@@ -206,7 +206,7 @@ function logStreamDiagnostic(details: Record<string, string | number | boolean>)
 const trailingConnectors = new Set(["a", "about", "also", "an", "and", "as", "because", "but", "for", "from", "hmm", "i", "if", "in", "into", "is", "like", "my", "of", "on", "or", "our", "so", "that", "the", "then", "this", "to", "uh", "um", "was", "we", "when", "which", "while", "with"]);
 
 /** Upper bound for keeping the socket open after `complete` so an in-flight compatibility status can still be delivered. */
-const candidateStatusGraceMs = 600;
+const candidateStatusGraceMs = 1600;
 
 /** A transcribed segment that looks unfinished gets a longer answer grace so a thinking pause is not cut. */
 export function endsWithConnector(transcript: string): boolean {
@@ -236,7 +236,7 @@ export type StreamingOptions = {
    * question during the grace. 0 or undefined disables; it only applies when shorter than the grace that is running.
    */
   prepareAfterMs?: number;
-  /** Maximum provisional messages per answer. Defaults to 8. */
+  /** Maximum provisional messages per answer. Defaults to 12. */
   maxPrepares?: number;
   /** Minimum finalized incremental audio before a long continuous answer can trigger a provisional snapshot. Defaults to 6000; 0 disables. */
   prepareAfterSpeechMs?: number;
@@ -358,6 +358,11 @@ export function attachTranscriptionWebSocket(
     // At most one aborted check per epoch is refunded, so the 2-check cap cannot grow without bound.
     let candidateRefundsInEpoch = 0;
     let speechEpoch = 0;
+    // A speech epoch is a stretch of committed text: breaths and noise (speechResumed) alone never start a new one. A verdict
+    // delivered with epoch E was computed on exactly `epochText`; epochUsed marks that a provisional or check already relied on it.
+    let epochText = "";
+    let resumedSinceEpoch = false;
+    let epochUsed = false;
     const candidateRevisionFloorByTurnId = new Map<string, number>();
     let semanticVerdict: SemanticVerdict = "none";
     let semanticCheckAborted = false;
@@ -396,6 +401,27 @@ export function attachTranscriptionWebSocket(
       plannedAbort = null;
       plannedCheckedInEpoch = false;
     };
+    // Advances the epoch only when new text was committed after something observed the old one (a resume, a provisional or a check).
+    const syncSpeechEpoch = () => {
+      if (!streamSession) return;
+      const text = streamSession.committedText();
+      if (text === epochText) return;
+      epochText = text;
+      if (!resumedSinceEpoch && !epochUsed) return;
+      speechEpoch += 1;
+      resumedSinceEpoch = false;
+      epochUsed = false;
+      candidateChecksInEpoch = 0;
+      candidateRefundsInEpoch = 0;
+      lastAssessedCandidate = null;
+      candidateAbort?.abort();
+      candidateAbort = null;
+      abortPlannedCheck();
+      plannedCheckedInEpoch = false;
+      send(socket, { type: "speech-epoch", speechEpoch });
+    };
+    const pendingFollowUpCheck = () => candidateAbort && followUpCandidate && lastAssessedCandidate?.turnId === followUpCandidate.turnId && lastAssessedCandidate.revision === followUpCandidate.revision
+      ? { turnId: followUpCandidate.turnId, revision: followUpCandidate.revision } : null;
     const clearGrace = () => {
       if (semanticTimer !== null) clearTimeout(semanticTimer);
       semanticTimer = null;
@@ -410,21 +436,26 @@ export function attachTranscriptionWebSocket(
       if (prepareTimer !== null) clearTimeout(prepareTimer);
       prepareTimer = null;
     };
+    // The last revisions are reserved: mid-speech snapshots stop 2 short of the maximum, replacements 1 short, so the final pause can always send.
     const sendProvisionalSnapshot = () => {
       const current = sessionId ? sessions.get(sessionId) : undefined;
       if (finalRequested || finishing || !streamSession || streamSession.failed || !streamSession.turnActive || !current?.vad.hasSpeech) return;
+      syncSpeechEpoch();
       const transcript = streamSession.committedText();
-      const maxPrepares = streaming?.maxPrepares ?? maxSpeculativeRevisions;
+      const maxPrepares = (streaming?.maxPrepares ?? maxSpeculativeRevisions) - 2;
       if (!transcript || transcript === lastProvisional || preparesSent >= maxPrepares) return;
+      epochUsed = true;
       lastProvisional = transcript;
       preparesSent += 1;
       send(socket, { type: "answer-provisional", transcript, revision: preparesSent, speechEpoch });
     };
     const sendPauseProvisionalSnapshot = () => {
       if (finalRequested || finishing || !streamSession || streamSession.failed) return;
+      syncSpeechEpoch();
       const transcript = streamSession.committedText();
       const maxPrepares = streaming?.maxPrepares ?? maxSpeculativeRevisions;
       if (!transcript || transcript === lastProvisional || preparesSent >= maxPrepares) return;
+      epochUsed = true;
       lastProvisional = transcript;
       preparesSent += 1;
       send(socket, { type: "answer-provisional", transcript, revision: preparesSent, speechEpoch });
@@ -434,9 +465,11 @@ export function attachTranscriptionWebSocket(
     const sendReplacementProvisional = () => {
       const current = sessionId ? sessions.get(sessionId) : undefined;
       if (graceTimer === null || finalRequested || finishing || !streamSession || streamSession.failed || streamSession.turnActive || !current?.vad.hasSpeech) return;
+      syncSpeechEpoch();
       const transcript = streamSession.committedText();
-      const maxPrepares = streaming?.maxPrepares ?? maxSpeculativeRevisions;
+      const maxPrepares = (streaming?.maxPrepares ?? maxSpeculativeRevisions) - 1;
       if (!transcript || preparesSent >= maxPrepares) return;
+      epochUsed = true;
       lastProvisional = transcript;
       preparesSent += 1;
       send(socket, { type: "answer-provisional", transcript, revision: preparesSent, speechEpoch });
@@ -484,12 +517,14 @@ export function attachTranscriptionWebSocket(
       // Settled: a stale result must not leave its controller behind (it would be "aborted" and refunded later).
       if (candidateAbort === controller) candidateAbort = null;
       try {
+        syncSpeechEpoch();
         if (controller.signal.aborted || speechEpoch !== epochAtStart || followUpCandidate?.turnId !== candidate.turnId || followUpCandidate.revision !== candidate.revision) return;
         // Text with a gap may miss the very part that answered the candidate: never vouch for it as OPEN (or COVERED).
         const finalStatus = kind || streamSession?.hasGap ? "NONE" : status;
         send(socket, { type: "follow-up-candidate-status", turnId: candidate.turnId, revision: candidate.revision, status: finalStatus, speechEpoch });
         logStreamDiagnostic({ status: "follow_up_candidate", compatibility: finalStatus, revision: candidate.revision, speechEpoch });
-        if (finalStatus === "COVERED" || finalStatus === "INVALID" || finalStatus === "NONE") sendReplacementProvisional();
+        // NONE means "no opinion": it must not force a new revision.
+        if (finalStatus === "COVERED" || finalStatus === "INVALID") sendReplacementProvisional();
       } finally {
         if (!candidateAbort && !plannedAbort) closeAfterCandidate?.();
       }
@@ -498,8 +533,10 @@ export function attachTranscriptionWebSocket(
     // an older epoch is dropped, nothing is sent on error, and a transcript with a gap only vouches for COVERED.
     const runPlannedCoverageCheck = (transcript: string) => {
       const service = streaming?.plannedCoverage;
+      syncSpeechEpoch();
       if (!service || !plannedQuestion || !transcript || plannedCheckedInEpoch || plannedChecksInAnswer >= maxPlannedChecksPerAnswer) return;
       plannedCheckedInEpoch = true;
+      epochUsed = true;
       plannedChecksInAnswer += 1;
       plannedAbort?.abort();
       const controller = new AbortController();
@@ -511,6 +548,7 @@ export function attachTranscriptionWebSocket(
       ).then((coverage) => {
         if (plannedAbort === controller) plannedAbort = null;
         try {
+          syncSpeechEpoch();
           if (!coverage || controller.signal.aborted || speechEpoch !== epochAtStart) return;
           if (streamSession?.hasGap && coverage !== "COVERED") return;
           send(socket, { type: "planned-question-status", coverage, speechEpoch });
@@ -523,6 +561,7 @@ export function attachTranscriptionWebSocket(
     // Ends the answer early when the classifier says it is finished; every other outcome leaves the running grace untouched.
     // With a follow-up candidate, the same single assess() call also yields its compatibility, delivered before the completion logic.
     const runSemanticCheck = (classifier: AnswerCompletionService, question: string, transcript: string, silenceStartedAt: number, minSilenceMs: number) => {
+      syncSpeechEpoch();
       semanticAbort?.abort();
       const controller = new AbortController();
       semanticAbort = controller;
@@ -541,6 +580,7 @@ export function attachTranscriptionWebSocket(
         candidateAbort = candidateController;
         mergedCandidateAbort = candidateController;
         candidateChecksInEpoch += 1;
+        epochUsed = true;
         lastAssessedCandidate = { turnId: candidate.turnId, revision: candidate.revision };
         providerSignal = candidateController.signal;
         epochAtStart = speechEpoch;
@@ -590,6 +630,7 @@ export function attachTranscriptionWebSocket(
     };
     const runCandidateCompatibilityCheck = (candidate: FollowUpCandidateUpdate, transcript: string) => {
       const classifier = streaming?.answerCompletion;
+      syncSpeechEpoch();
       if (!classifier || candidateChecksInEpoch >= 2
         || (lastAssessedCandidate?.turnId === candidate.turnId && lastAssessedCandidate.revision === candidate.revision)) return;
       // A newer revision supersedes an unfinished check; that call was already made, so it keeps its budget unit.
@@ -597,6 +638,7 @@ export function attachTranscriptionWebSocket(
       const controller = new AbortController();
       candidateAbort = controller;
       candidateChecksInEpoch += 1;
+      epochUsed = true;
       lastAssessedCandidate = { turnId: candidate.turnId, revision: candidate.revision };
       const epochAtStart = speechEpoch;
       const assessment = classifier.assess
@@ -848,7 +890,8 @@ export function attachTranscriptionWebSocket(
           const transcriptionDurationMs = Date.now() - flushStartedAt;
           const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
           logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: "whisper-incremental", provider: "whisper-incremental", incrementalTurns: stream.turnCount, ...stream.diagnostics?.(), preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict: semanticCheckAborted ? "aborted" : semanticVerdict, semanticLatencyMs, semanticCheckStartedAfterSilenceMs: Math.round(semanticStartedAfterSilenceMs), semanticCompleteHeldMs: semanticHeldMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
-          send(socket, { type: "complete", status: "complete", provider: "whisper-incremental", durationMs, transcript });
+          syncSpeechEpoch();
+          send(socket, { type: "complete", status: "complete", provider: "whisper-incremental", durationMs, transcript, speechEpoch, pendingFollowUpCheck: pendingFollowUpCheck() });
           clearTimeout(timer);
 
           if (!assessmentService) return;
@@ -946,12 +989,15 @@ export function attachTranscriptionWebSocket(
                 return;
               }
               logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: streaming ? "whisper-incremental" : "whisper", provider: "whisper", answerEndReason, ...(streamSession ? { incrementalTurns: streamSession.turnCount, ...streamSession.diagnostics?.() } : {}), ...(fallbackReason ? { fallbackReason } : {}), preparesSent, speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
+              syncSpeechEpoch();
               send(socket, {
                 type: "complete",
                 status: "complete",
                 provider: result.provider,
                 durationMs,
                 transcript: result.transcript,
+                speechEpoch,
+                pendingFollowUpCheck: pendingFollowUpCheck(),
               });
               clearTimeout(timer);
 
@@ -1091,7 +1137,8 @@ export function attachTranscriptionWebSocket(
           contextAnswers = plannedQuestion ? sanitizeContextAnswers(message.contextAnswers) : [];
           if (streaming) {
             const sessionCallbacks = {
-              onTurnStart: () => { clearGrace(); abortCandidateCheck(); abortPlannedCheck(); },
+              // Resuming never aborts an in-flight check: it stays valid until new text is committed (syncSpeechEpoch aborts it then).
+              onTurnStart: () => { clearGrace(); },
               onCaptionChange: scheduleCaption,
               onTurnEnd: (segmentTranscript: string, info?: TurnEndInfo) => {
                 // The tail segment can be empty (a soft cut already took all the speech, or the tail was only silence/noise):
@@ -1099,6 +1146,7 @@ export function attachTranscriptionWebSocket(
                 const turnTranscript = segmentTranscript || streamSession?.committedText() || "";
                 if (finalRequested || finishing || !turnTranscript) return;
                 clearGrace();
+                syncSpeechEpoch();
                 // The tail is now committed. Send its changed snapshot at pause start, independent of the optional
                 // delayed prepare and semantic timers; identical text is still suppressed.
                 sendPauseProvisionalSnapshot();
@@ -1138,8 +1186,10 @@ export function attachTranscriptionWebSocket(
                     prepareTimer = null;
                     const current = sessionId ? sessions.get(sessionId) : undefined;
                     if (finalRequested || finishing || !streamSession || streamSession.failed || streamSession.turnActive || !current?.vad.hasSpeech) return;
+                    syncSpeechEpoch();
                     const transcript = streamSession.committedText();
                     if (!transcript || transcript === lastProvisional || preparesSent >= maxPrepares) return;
+                    epochUsed = true;
                     lastProvisional = transcript;
                     preparesSent += 1;
                     send(socket, { type: "answer-provisional", transcript, revision: preparesSent, speechEpoch });
@@ -1177,9 +1227,10 @@ export function attachTranscriptionWebSocket(
               ...streaming.incrementalWhisper,
               ...sessionCallbacks,
               onSegmentCommitted: (_transcript, info) => {
-                // Start early, then refresh every twelve seconds during long answers. Seven live snapshots cover
-                // roughly 78 seconds while keeping the eighth revision for the pause that may end the answer.
-                const speechRevisionLimit = Math.max(0, (streaming.maxPrepares ?? maxSpeculativeRevisions) - 1);
+                syncSpeechEpoch();
+                // Start early, then refresh every twelve seconds during long answers; the last two revisions stay reserved
+                // for a replacement and for the pause that may end the answer.
+                const speechRevisionLimit = Math.max(0, (streaming.maxPrepares ?? maxSpeculativeRevisions) - 2);
                 if (prepareAfterSpeechMs > 0 && !info.turnEnded && preparesSent < speechRevisionLimit && info.audioDurationMs >= prepareAfterSpeechMs && (preparesSent === 0 || info.audioDurationMs - lastProvisionalAudioDurationMs >= 12_000)) {
                   const previousRevision = preparesSent;
                   sendProvisionalSnapshot();
@@ -1218,15 +1269,9 @@ export function attachTranscriptionWebSocket(
           else if (update.pauseStarted && !finalRequested && !finishing) void streamSession.endTurn(streaming?.flushTimeoutMs ?? 1_500);
         }
         if (update.speechResumed) {
-          speechEpoch += 1;
-          candidateChecksInEpoch = 0;
-          candidateRefundsInEpoch = 0;
-          lastAssessedCandidate = null;
+          // Breaths and noise resume too: the epoch only advances once new text is committed (syncSpeechEpoch).
+          resumedSinceEpoch = true;
           silenceDetected = false;
-          candidateAbort?.abort();
-          candidateAbort = null;
-          abortPlannedCheck();
-          plannedCheckedInEpoch = false;
           clearGrace();
           discardSpeculation();
           if (silenceGraceTimer !== null) clearTimeout(silenceGraceTimer);

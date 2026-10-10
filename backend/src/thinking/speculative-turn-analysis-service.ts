@@ -1,12 +1,12 @@
 import { pinnedOpenRouterFetch } from "./openrouter-routing.js";
 import { parseOpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
 import { isGroundedFollowUp } from "./openrouter-orchestration-service.js";
-import { contentWords as sharedContentWords, tolerantAnchorSpan } from "./interview-text.js";
-import { questionRepetition, repeatsRecentQuestion } from "./question-repetition.js";
+import { clipAnchorSpan, contentWords as sharedContentWords, tolerantAnchorSpan } from "./interview-text.js";
+import { followUpRepetition, questionRepetition, sameQuestion } from "./question-repetition.js";
 
 export type CandidateCompatibility = "OPEN" | "COVERED" | "INVALID" | "NONE";
 export type FixedAction = "KEEP" | "SKIP" | "DEEPEN";
-export type SpeculativeTurnAnalysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; fixedAction: FixedAction; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction: FixedAction | null; adaptedSecondFixedQuestion: string | null; secondFixedEvidenceAnchor: string | null };
+export type SpeculativeTurnAnalysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; fixedAction: FixedAction; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction: FixedAction | null; adaptedSecondFixedQuestion: string | null; secondFixedEvidenceAnchor: string | null; followUpRejected: boolean };
 export type SpeculativeTurnInput = { revision: number; currentQuestion: string; snapshot: string; followUpUsed: boolean; askedQuestions: string[]; firstFixedQuestion: string; secondFixedQuestion: string | null; firstFixedType: "job" | "bank" | "resume"; secondFixedType: "job" | "bank" | "resume" | null; firstFixedCoverage?: "broad-project" | null; secondFixedCoverage?: "broad-project" | null; hasThirdFixedQuestion?: boolean; previousCandidate?: { question: string; anchor: string } | null; previousAnswers?: Array<{ question: string; answer: string }>; roleContext: { targetRole: string; seniority?: string; focus?: string }; signal?: AbortSignal };
 
 const makeSchema = (hasPreviousCandidate: boolean, hasSecondFixed: boolean) => ({ type: "object", additionalProperties: false, properties: { revision: { type: "integer" }, followUpAction: { type: "string", enum: hasPreviousCandidate ? ["KEEP", "REPLACE", "NONE"] : ["REPLACE", "NONE"] }, followUpQuestion: { type: ["string", "null"], maxLength: 180 }, followUpAnchor: { type: ["string", "null"], maxLength: 140 }, fixedAction: { type: "string", enum: ["FIXED_KEEP", "FIXED_SKIP", "FIXED_DEEPEN"] }, adaptedFixedQuestion: { type: ["string", "null"], maxLength: 220 }, fixedEvidenceAnchor: { type: ["string", "null"], maxLength: 140 }, secondFixedAction: { type: "string", enum: hasSecondFixed ? ["FIXED_KEEP", "FIXED_SKIP", "FIXED_DEEPEN"] : ["FIXED_NONE"] }, adaptedSecondFixedQuestion: { type: ["string", "null"], maxLength: 220 }, secondFixedEvidenceAnchor: { type: ["string", "null"], maxLength: 140 } }, required: ["revision", "followUpAction", "followUpQuestion", "followUpAnchor", "fixedAction", "adaptedFixedQuestion", "fixedEvidenceAnchor", "secondFixedAction", "adaptedSecondFixedQuestion", "secondFixedEvidenceAnchor"] });
@@ -119,19 +119,18 @@ function validProviderShape(value: unknown, hasPreviousCandidate: boolean, hasSe
 }
 
 const hasQuestionShape = (value: unknown, max: number) => typeof value === "string" && value.trim().length > 0 && value.trim().length <= max && (value.match(/\?/gu) ?? []).length === 1 && value.trim().endsWith("?");
-const sameQuestion = (left: string, right: string) => left.toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]+/gu, " ").trim() === right.toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 /**
  * Resolve a provider quote back to the exact snapshot span. Besides case and punctuation, the match ignores speech
  * disfluency in the transcript (fillers, "you know", "I mean", stutter repeats), so a cleaned-up quote still resolves.
  * The returned span comes from the original snapshot and still has to fit the anchor length limit.
  */
-const canonicalLiteral = (snapshot: string, anchor: unknown): string | null => {
+const canonicalLiteral = (snapshot: string, anchor: unknown, allowLongSpan = false): string | null => {
   if (typeof anchor !== "string" || anchor.trim().length === 0 || anchor.length > 140) return null;
   const candidate = anchor.trim();
   const exactIndex = snapshot.indexOf(candidate);
   if (exactIndex >= 0) return snapshot.slice(exactIndex, exactIndex + candidate.length);
   const span = tolerantAnchorSpan(snapshot, candidate);
-  return span !== null && span.length <= 140 ? span : null;
+  return span !== null && (allowLongSpan || span.length <= 140) ? span : null;
 };
 
 const buildVerbs = /\b(?:architected|built|created|delivered|designed|developed|implemented|launched|worked on)\b/giu;
@@ -239,7 +238,7 @@ export class SpeculativeTurnAnalysisService {
       try { value = typeof content === "string" ? JSON.parse(content) : null; } catch { reason = "invalid_json"; return null; }
       if (!validProviderShape(value, Boolean(input.previousCandidate), hasSecondFixed)) { reason = "invalid_shape"; return null; }
 
-      const repairs: string[] = [];
+      const repairs: string[] = []; let followUpRejected = false;
       let followUp: Pick<SpeculativeTurnAnalysis, "followUpAction" | "followUpQuestion" | "followUpAnchor"> = { followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null };
       if (value.followUpAction === "KEEP" && input.previousCandidate) {
         // Trust the model: a candidate is grounded on the snapshot by construction, so lexical overlap proves nothing.
@@ -247,12 +246,21 @@ export class SpeculativeTurnAnalysisService {
         followUp = { followUpAction: "KEEP", followUpQuestion: input.previousCandidate.question, followUpAnchor: input.previousCandidate.anchor };
         if (value.followUpQuestion !== input.previousCandidate.question || value.followUpAnchor !== input.previousCandidate.anchor) repairs.push("keep_fields");
       } else if (value.followUpAction === "REPLACE") {
-        const anchor = canonicalLiteral(input.snapshot, value.followUpAnchor);
-        if (hasQuestionShape(value.followUpQuestion, 180) && anchor && isGroundedFollowUp(value.followUpQuestion as string, anchor, input.snapshot) && !repeatsRecentQuestion(value.followUpQuestion as string, input.askedQuestions, false)) {
-          followUp = { followUpAction: "REPLACE", followUpQuestion: (value.followUpQuestion as string).trim(), followUpAnchor: anchor };
-          if (anchor !== value.followUpAnchor) repairs.push("canonical_anchor");
-        } else repairs.push("invalid_follow_up");
-      } else if (value.followUpAction !== "NONE") repairs.push("invalid_follow_up_action");
+        // A long provider quote is clipped to the part that carries the question's detail instead of losing the whole follow-up.
+        const resolved = canonicalLiteral(input.snapshot, value.followUpAnchor, true);
+        const question = typeof value.followUpQuestion === "string" ? value.followUpQuestion.trim() : "";
+        const clipped = resolved && hasQuestionShape(value.followUpQuestion, 180) ? clipAnchorSpan(resolved, question) : null;
+        const anchor = clipped ?? resolved;
+        if (!hasQuestionShape(value.followUpQuestion, 180)) { repairs.push("follow_up_invalid_shape"); followUpRejected = true; }
+        else if (!anchor) { repairs.push("follow_up_anchor_not_literal"); followUpRejected = true; }
+        else if (!isGroundedFollowUp(question, anchor, input.snapshot)) { repairs.push("follow_up_not_grounded"); followUpRejected = true; }
+        else if (followUpRepetition(question, input.currentQuestion, input.askedQuestions)) { repairs.push("follow_up_repeats_question"); followUpRejected = true; }
+        else {
+          followUp = { followUpAction: "REPLACE", followUpQuestion: question, followUpAnchor: anchor };
+          if (clipped) repairs.push("follow_up_anchor_clipped");
+          else if (anchor !== value.followUpAnchor) repairs.push("canonical_anchor");
+        }
+      } else if (value.followUpAction !== "NONE") { repairs.push("invalid_follow_up_action"); followUpRejected = true; }
 
       let fixed: Pick<SpeculativeTurnAnalysis, "fixedAction" | "adaptedFixedQuestion" | "fixedEvidenceAnchor"> = { fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null };
       const coveredBroadAnchor = input.secondFixedQuestion
@@ -321,7 +329,7 @@ export class SpeculativeTurnAnalysisService {
       } else if (value.secondFixedAction !== "FIXED_NONE") repairs.push("unexpected_second_fixed_action");
       if (value.revision !== input.revision) repairs.push("revision");
 
-      const normalized: SpeculativeTurnAnalysis = { revision: input.revision, ...followUp, ...fixed, ...second };
+      const normalized: SpeculativeTurnAnalysis = { revision: input.revision, ...followUp, ...fixed, ...second, followUpRejected };
       actions = { followUpAction: normalized.followUpAction, fixedAction: normalized.fixedAction };
       outcome = repairs.length ? "repaired" : "success"; reason = repairs.length ? [...new Set(repairs)].join(",") : null;
       return normalized;

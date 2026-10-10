@@ -13,7 +13,8 @@
  *   --backend-url URL        use an already running backend (default http://localhost:3201; if it answers /health it is used
  *                            as is, otherwise the harness spawns `src/server.ts` itself on that port and kills it at the end;
  *                            backend repair reasons and cost are only available for the spawned one)
- *   --waits 0,400,1800       final-analysis wait caps to report (ms, counted from complete; 0 = no wait, like before the wait existed).
+ *   --waits 0,400,1800       final-analysis wait caps to report (ms, counted from complete; 0 = no wait, like before the wait existed). The same budget also covers
+ *                            the room's candidate-status wait (verdict still in flight at complete, `pendingFollowUpCheck`).
  *                            SIM_SUBMIT_WAIT_MS (default 1800 = FINAL_ANALYSIS_WAIT_MS of the room) is the headline one. The room waits only when
  *                            the analysis of the final transcript is still pending and no ready follow-up can play; the 3000 ms total
  *                            follow-up cap concerns follow-up TTS, which is not simulated.
@@ -31,7 +32,7 @@ import { promisify } from "node:util";
 import WebSocket from "ws";
 // The frontend helpers are plain .mjs without type declarations: import the real code, untyped.
 // @ts-ignore
-import { adoptSpeechEpoch, applyFollowUpCandidateClear, canUseCurrentEpochCandidate, discardCoveredFollowUps, finalEpochCandidateStatus, recordCandidateStatus } from "../../frontend/src/lib/interview/speculative-epoch.mjs";
+import { MAX_SPECULATIVE_REVISIONS, adoptSpeechEpoch, canUseCurrentEpochCandidate, discardCoveredFollowUps, finalEpochCandidateStatus, mayReplaceActiveCandidate, recordCandidateStatus } from "../../frontend/src/lib/interview/speculative-epoch.mjs";
 // @ts-ignore
 import { canUseFixedDecisionFromFollowUp, resolveFixedFromFollowUp } from "../../frontend/src/lib/interview/fixed-from-follow-up.mjs";
 // @ts-ignore
@@ -44,6 +45,8 @@ import { plannedQuestionType, remainingPlannedQuestions, resolveMonotonicFixedAc
 import { buildPlannedCoverageStartFields, finalPlannedCoverage, recordPlannedCoverage, resolvePlannedCoveredSkip } from "../../frontend/src/lib/interview/planned-coverage.mjs";
 // @ts-ignore
 import { FINAL_ANALYSIS_WAIT_MS, finalAnalysisWaitPredicate } from "../../frontend/src/lib/interview/final-analysis-wait.mjs";
+// @ts-ignore
+import { createCandidateStatusWait, shouldWaitForCandidateStatus } from "../../frontend/src/lib/interview/candidate-status-wait.mjs";
 // @ts-ignore
 import { toStreamQuestion } from "../../frontend/src/lib/interview/stream-question.mjs";
 // @ts-ignore
@@ -151,7 +154,7 @@ function rms(frame: Buffer) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------- room emulation
-type Analysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction?: "KEEP" | "SKIP" | "DEEPEN"; adaptedSecondFixedQuestion?: string | null };
+type Analysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; followUpRejected?: boolean; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction?: "KEEP" | "SKIP" | "DEEPEN"; adaptedSecondFixedQuestion?: string | null };
 type AnalyzeResult = { enabled: boolean; analysis: Analysis | null };
 type AnalyzeFn = (payload: Record<string, unknown>, signal: AbortSignal) => Promise<AnalyzeResult>;
 type Outbound = Record<string, unknown>;
@@ -175,12 +178,18 @@ class RoomEmulator {
   readonly latestByEpoch = new Map<number, number>();
   currentSpeechEpoch: number | null = null;
   calls = { count: 0, revision: 0, applied: 0 };
+  /** The verdict the backend was still computing at `complete` (null: none), and the submit-time waiters for it. */
+  pendingFollowUpCheck: { turnId: string; revision: number } | null = null;
+  readonly candidateStatusWait = createCandidateStatusWait();
   attempted = false;
   candidate: { question: string; anchor: string } | null = null;
   fixedSkip = false;
   skippedIds = new Set<string>();
   enabled = true;
   complete = false;
+  /** Counters for the report: analyses the backend validator rejected, and analyses that proposed a follow-up. */
+  rejected = 0;
+  proposed = 0;
   readonly plannedCoverage = new Map<number, any>();
   constructor(private readonly input: RoomInput) {}
 
@@ -192,7 +201,7 @@ class RoomEmulator {
     this.currentSpeechEpoch = adoptSpeechEpoch(this.currentSpeechEpoch, speechEpoch);
     const answer = transcript.trim();
     if (!answer) return;
-    if (this.calls.count >= 8 || revision < 1 || revision > 8 || revision <= this.calls.revision) return;
+    if (this.calls.count >= MAX_SPECULATIVE_REVISIONS || revision < 1 || revision > MAX_SPECULATIVE_REVISIONS || revision <= this.calls.revision) return;
     this.calls.count += 1;
     this.calls.revision = revision;
     this.attempted = true;
@@ -204,6 +213,8 @@ class RoomEmulator {
       preservePending: true,
       run: async (signal: AbortSignal) => {
         const plannedNow = this.remaining().slice(0, 3);
+        // What this request is told about the active candidate; a concurrent analysis may change it before the result lands.
+        const sentPreviousCandidate = this.candidate;
         const speculative = plannedNow[0] ? await input.analyze({
           revision,
           currentQuestion: input.currentQuestion,
@@ -217,7 +228,7 @@ class RoomEmulator {
           firstFixedCoverage: plannedNow[0].coverage ?? null,
           secondFixedCoverage: plannedNow[1]?.coverage ?? null,
           hasThirdFixedQuestion: plannedNow.length > 2,
-          previousCandidate: this.candidate,
+          previousCandidate: sentPreviousCandidate,
           previousAnswers: input.previousAnswers,
           roleContext: { targetRole: RESUME_NEUTRAL_ROLE },
         }, signal) : { enabled: true, analysis: null };
@@ -238,17 +249,22 @@ class RoomEmulator {
           && typeof analysis.followUpQuestion === "string" && Boolean(analysis.followUpQuestion.trim())
           && typeof analysis.followUpAnchor === "string" && Boolean(analysis.followUpAnchor.trim());
         if (stale && !accepted) return null;
+        // A concurrent analysis (sent with another previousCandidate) already set a different active candidate: this result stays
+        // a retained preparation and never overwrites the active candidate nor reaches the backend.
+        const supersededCandidate = accepted && !mayReplaceActiveCandidate({ sentWith: sentPreviousCandidate, active: this.candidate, action: analysis.followUpAction, question: analysis.followUpQuestion });
+        const retainedOnly = stale || supersededCandidate;
+        if (analysis.followUpRejected === true) this.rejected += 1;
+        if (accepted) this.proposed += 1;
         let decision: { decision: "FOLLOW_UP" | "NEXT"; followUpQuestion: string | null; nextQuestion: string | null };
         if (accepted) {
-          if (!stale) {
+          if (!retainedOnly) {
             this.candidate = { question: analysis.followUpQuestion!.trim(), anchor: analysis.followUpAnchor!.trim() };
             input.send({ type: "follow-up-candidate", turnId: input.turnId, revision, speechEpoch, question: this.candidate.question, anchor: this.candidate.anchor });
           }
           decision = { decision: "FOLLOW_UP", followUpQuestion: analysis.followUpQuestion!.trim(), nextQuestion: null };
         } else {
-          this.candidate = null;
-          input.send({ type: "follow-up-candidate-cleared", turnId: input.turnId, revision, speechEpoch });
-          applyFollowUpCandidateClear({ registry: this.registry, statuses: this.statuses, latestByEpoch: this.latestByEpoch, revision, currentSpeechEpoch: this.currentSpeechEpoch });
+          // No follow-up (model NONE or backend-rejected): the active candidate and its retained preparations stay; only a
+          // COVERED/INVALID verdict retires them. This analysis still yields its NEXT preparation.
           decision = { decision: "NEXT", followUpQuestion: null, nextQuestion: fixedSelection.question ? fixedSelection.prompt ?? fixedSelection.question.prompt : null };
         }
         const selected = fixedSelection?.question ?? plannedNow.find((candidate) => candidate.prompt === decision.nextQuestion) ?? null;
@@ -258,7 +274,7 @@ class RoomEmulator {
           revision,
           transcript: answer,
           speechEpoch,
-          anchor: decision.decision === "FOLLOW_UP" ? (stale ? analysis.followUpAnchor?.trim() : this.candidate?.anchor) ?? null : null,
+          anchor: decision.decision === "FOLLOW_UP" ? (retainedOnly ? analysis.followUpAnchor?.trim() : this.candidate?.anchor) ?? null : null,
           speechReady: null,
           cancelSpeech: null,
           nextPlannedQuestionId: selected?.id ?? null,
@@ -277,6 +293,7 @@ class RoomEmulator {
   onStatus(status: { turnId: string; revision: number; speechEpoch: number; status: string }) {
     if (this.complete || status.turnId !== this.input.turnId) return;
     this.currentSpeechEpoch = adoptSpeechEpoch(this.currentSpeechEpoch, status.speechEpoch);
+    this.candidateStatusWait.notify(status.revision);
     if (!recordCandidateStatus(this.statuses, this.latestByEpoch, status, this.currentSpeechEpoch)) return;
     discardCoveredFollowUps(this.registry, status);
   }
@@ -287,7 +304,32 @@ class RoomEmulator {
     recordPlannedCoverage(this.plannedCoverage, status, this.currentSpeechEpoch);
   }
 
-  onSpeechResumed() { if (!this.complete) this.currentSpeechEpoch = null; }
+  /** A resume keeps the epoch and everything else: the epoch changes only with new text (`speech-epoch`). */
+  onSpeechResumed() { /* nothing to reset */ }
+
+  onSpeechEpoch(speechEpoch: number) { this.currentSpeechEpoch = adoptSpeechEpoch(this.currentSpeechEpoch, speechEpoch); }
+
+  onComplete(speechEpoch: number | null, pendingFollowUpCheck: { turnId: string; revision: number } | null) {
+    if (speechEpoch !== null) this.currentSpeechEpoch = adoptSpeechEpoch(this.currentSpeechEpoch, speechEpoch);
+    this.pendingFollowUpCheck = pendingFollowUpCheck;
+  }
+
+  /** Whether submit would also hold for the backend verdict still in flight at `complete` (the room's candidate-status wait). */
+  statusWaitRevision(finalTranscript: string): number | null {
+    const pending = this.pendingFollowUpCheck;
+    if (!pending) return null;
+    const accepted = (value: any) => canUseCurrentEpochCandidate({
+      value, finalTranscript, currentTurnId: this.input.turnId, currentSpeechEpoch: this.currentSpeechEpoch, featureEnabled: this.enabled,
+      compatibility: finalEpochCandidateStatus(this.statuses, this.latestByEpoch, value.revision, this.currentSpeechEpoch),
+    });
+    return shouldWaitForCandidateStatus({
+      pendingFollowUpCheck: pending,
+      currentTurnId: this.input.turnId,
+      readyValues: this.registry.readyValues(),
+      hasStatus: finalEpochCandidateStatus(this.statuses, this.latestByEpoch, pending.revision, this.currentSpeechEpoch) !== undefined,
+      accepted,
+    }) ? pending.revision : null;
+  }
 
   /** The room's applyPlannedCoveredSkip: a NEXT/fixed outcome whose planned question was judged COVERED asks the next one instead. */
   private applyPlannedSkip(outcome: Outcome): Outcome {
@@ -348,18 +390,20 @@ class RoomEmulator {
   }
 }
 
-type Outcome = { kind: "FOLLOW_UP" | "FIXED_FROM_ANALYSIS" | "FIXED_FALLBACK"; question: string | null; plannedId: string | null; adapted: boolean; skippedIds: string[]; revision: number | null; note: string; plannedSkip?: boolean };
+type Outcome = { kind: "FOLLOW_UP" | "FIXED_FROM_ANALYSIS" | "FIXED_FALLBACK"; question: string | null; plannedId: string | null; adapted: boolean; skippedIds: string[]; revision: number | null; note: string; plannedSkip?: boolean; analysisWait?: SubmitWait | null; statusWait?: SubmitWait | null };
+type SubmitWait = { waitMs: number; arrived: boolean };
 
 // ---------------------------------------------------------------------------------------------------------------- log of one answer
 type LogEvent =
   | { t: number; kind: "provisional"; transcript: string; revision: number; speechEpoch: number }
   | { t: number; kind: "status"; turnId: string; revision: number; speechEpoch: number; status: string }
   | { t: number; kind: "resumed" }
+  | { t: number; kind: "epoch"; speechEpoch: number }
   | { t: number; kind: "planned"; speechEpoch: number; coverage: string }
   | { t: number; kind: "landed"; revision: number; result: AnalyzeResult; requestedAt: number }
   | { t: number; kind: "sent"; message: Outbound }
   | { t: number; kind: "mark"; name: string }
-  | { t: number; kind: "complete"; transcript: string; status: string };
+  | { t: number; kind: "complete"; transcript: string; status: string; speechEpoch: number | null; pendingFollowUpCheck: { turnId: string; revision: number } | null };
 
 type BackendLog = { event: string; outcome?: string; revision?: number; reason?: string; latencyMs?: number; costUsd?: number | null; followUpAction?: string; fixedAction?: string; at: number };
 
@@ -376,30 +420,67 @@ async function replayDecision(events: LogEvent[], input: Omit<RoomInput, "analyz
       signal.addEventListener("abort", () => resolveResult({ enabled: false, analysis: null }), { once: true });
     }),
   });
-  // Everything that happened up to complete (including analyses that had landed by then).
-  for (const event of events) {
-    if (event.t > completeT) continue;
+  const deliver = (event: LogEvent) => {
     if (event.kind === "landed") deferred.get(event.revision)?.(event.result);
     else if (event.kind === "provisional") room.onProvisional(event.transcript, event.revision, event.speechEpoch);
     else if (event.kind === "status") room.onStatus(event);
     else if (event.kind === "planned") room.onPlannedStatus(event);
     else if (event.kind === "resumed") room.onSpeechResumed();
+    else if (event.kind === "epoch") room.onSpeechEpoch(event.speechEpoch);
+    else if (event.kind === "complete") room.onComplete(event.speechEpoch, event.pendingFollowUpCheck);
+  };
+  // Everything that happened up to complete (including analyses that had landed by then).
+  for (const event of events) {
+    if (event.t > completeT) continue;
+    deliver(event);
     await flush();
   }
+  // After complete only what the room still hears while it waits: landings, statuses and planned coverage (virtual time, from submit = complete).
+  const windowEvents = events.filter((event) => event.t > completeT && event.t <= completeT + waitMs && (event.kind === "landed" || event.kind === "status" || event.kind === "planned" || event.kind === "epoch"));
+  let cursor = 0;
+  let elapsed = 0;
+  let analysisWait: SubmitWait | null = null;
+  let statusWait: SubmitWait | null = null;
   // Like the room: hold for the pending analysis of the final transcript (at most waitMs) unless a ready follow-up can play.
   const predicate = waitMs > 0 ? room.waitPredicate(finalTranscript) : null;
   if (predicate) {
-    const waiting = room.registry.waitForPending(predicate, waitMs);
-    for (const event of events) {
-      if (event.t <= completeT || event.t > completeT + waitMs) continue;
-      if (event.kind === "landed") deferred.get(event.revision)?.(event.result);
-      else if (event.kind === "planned") room.onPlannedStatus(event);
-      else if (event.kind === "status") room.onStatus(event);
+    const abort = new AbortController();
+    let settled = false;
+    let arrived = false;
+    const waiting = room.registry.waitForPending(predicate, waitMs, { signal: abort.signal }).then((value: boolean) => { settled = true; arrived = value; });
+    await flush();
+    while (!settled && cursor < windowEvents.length) {
+      const event = windowEvents[cursor++];
+      deliver(event);
       await flush();
+      if (settled) elapsed = event.t - completeT;
     }
+    if (!settled) { elapsed = waitMs; abort.abort(); }
     await waiting;
+    analysisWait = { waitMs: elapsed, arrived };
   }
-  return room.decide(finalTranscript);
+  // Then, inside the same budget, for the backend verdict that was still in flight at complete.
+  const statusRevision = waitMs > 0 ? room.statusWaitRevision(finalTranscript) : null;
+  if (statusRevision !== null) {
+    const abort = new AbortController();
+    const startedAt = elapsed;
+    let settled = false;
+    let arrived = false;
+    const waiting = room.candidateStatusWait.wait(statusRevision, Math.max(0, waitMs - startedAt), { signal: abort.signal }).then((value: boolean) => { settled = true; arrived = value; });
+    await flush();
+    let end = waitMs;
+    while (!settled && cursor < windowEvents.length) {
+      const event = windowEvents[cursor++];
+      deliver(event);
+      await flush();
+      if (settled) end = event.t - completeT;
+    }
+    if (!settled) abort.abort();
+    await waiting;
+    statusWait = { waitMs: Math.max(0, Math.round(end - startedAt)), arrived };
+  }
+  const outcome = await room.decide(finalTranscript);
+  return { ...outcome, analysisWait, statusWait };
 }
 
 // ---------------------------------------------------------------------------------------------------------------- one answer
@@ -412,13 +493,16 @@ type AnswerResult = {
   speechEndToCompleteMs: number | null;
   transcript: string;
   transcriptWords: number;
-  revisions: Array<{ revision: number; speechEpoch: number; sentAtMs: number; relSpeechEndMs: number; transcriptWords: number; landedAtRelCompleteMs: number | null; landedAfterComplete: boolean | null; latencyMs: number | null; enabled: boolean | null; followUpAction: string | null; fixedAction: string | null; backendOutcome: string | null; repairReason: string | null; costUsd: number | null }>;
+  revisions: Array<{ revision: number; speechEpoch: number; sentAtMs: number; relSpeechEndMs: number; transcriptWords: number; landedAtRelCompleteMs: number | null; landedAfterComplete: boolean | null; latencyMs: number | null; enabled: boolean | null; followUpAction: string | null; followUpRejected: boolean | null; fixedAction: string | null; backendOutcome: string | null; repairReason: string | null; costUsd: number | null }>;
   candidateSends: Array<{ type: string; revision: number; relCompleteMs: number }>;
   statuses: Array<{ revision: number; speechEpoch: number; status: string; relCompleteMs: number }>;
   plannedStatuses: Array<{ speechEpoch: number; coverage: string; relCompleteMs: number }>;
   marks: Record<string, number>;
   resumedAtRelCompleteMs: number[];
   decisions: Record<string, Outcome>;
+  /** Analyses the backend validator rejected (followUpRejected) and analyses that proposed a follow-up (before the epoch/status checks at submit). */
+  rejectedAnalyses: number;
+  proposedFollowUps: number;
   followUpWouldPlay: Record<string, boolean>;
   backendLogs: BackendLog[];
 };
@@ -460,6 +544,8 @@ async function runAnswer(opts: {
   let ready = false;
   let completeT: number | null = null;
   let finalTranscript = "";
+  let pendingCheck: { turnId: string; revision: number } | null = null;
+  let completeEpoch: number | null = null;
   let stop = false;
   let done: () => void = () => undefined;
   const completed = new Promise<void>((r) => { done = r; });
@@ -470,13 +556,14 @@ async function runAnswer(opts: {
     switch (m.type) {
       case "ready": ready = true; break;
       case "answer-provisional":
-        if (typeof m.transcript === "string" && Number.isInteger(m.revision) && m.revision >= 1 && m.revision <= 8 && Number.isSafeInteger(m.speechEpoch) && m.speechEpoch >= 0 && completeT === null) {
+        if (typeof m.transcript === "string" && Number.isInteger(m.revision) && m.revision >= 1 && m.revision <= MAX_SPECULATIVE_REVISIONS && Number.isSafeInteger(m.speechEpoch) && m.speechEpoch >= 0 && completeT === null) {
           events.push({ t, kind: "provisional", transcript: m.transcript, revision: m.revision, speechEpoch: m.speechEpoch });
           room.onProvisional(m.transcript, m.revision, m.speechEpoch);
         }
         break;
       case "follow-up-candidate-status":
-        if (completeT === null && typeof m.turnId === "string" && Number.isInteger(m.revision) && ["OPEN", "COVERED", "INVALID", "NONE"].includes(m.status)) {
+        // Statuses keep arriving after `complete` (the backend holds the socket up to 1.6 s): the room still records them and wakes its status wait.
+        if (typeof m.turnId === "string" && Number.isInteger(m.revision) && ["OPEN", "COVERED", "INVALID", "NONE"].includes(m.status)) {
           events.push({ t, kind: "status", turnId: m.turnId, revision: m.revision, speechEpoch: m.speechEpoch, status: m.status });
           room.onStatus(m);
         }
@@ -487,6 +574,9 @@ async function runAnswer(opts: {
           if (completeT === null) room.onPlannedStatus(m);
         }
         break;
+      case "speech-epoch":
+        if (Number.isSafeInteger(m.speechEpoch) && m.speechEpoch >= 0) { events.push({ t, kind: "epoch", speechEpoch: m.speechEpoch }); room.onSpeechEpoch(m.speechEpoch); }
+        break;
       case "speech-resumed": events.push({ t, kind: "resumed" }); room.onSpeechResumed(); break;
       case "silence-detected": case "finalizing": case "transcription-queued": case "transcription-started":
         events.push({ t, kind: "mark", name: m.type });
@@ -495,7 +585,10 @@ async function runAnswer(opts: {
       case "complete":
         if (completeT !== null) break;
         completeT = t; finalTranscript = typeof m.transcript === "string" ? m.transcript.trim() : "";
-        events.push({ t, kind: "complete", transcript: finalTranscript, status: String(m.status) });
+        pendingCheck = m.pendingFollowUpCheck && typeof m.pendingFollowUpCheck.turnId === "string" && Number.isInteger(m.pendingFollowUpCheck.revision) ? { turnId: m.pendingFollowUpCheck.turnId, revision: m.pendingFollowUpCheck.revision } : null;
+        completeEpoch = Number.isSafeInteger(m.speechEpoch) && m.speechEpoch >= 0 ? m.speechEpoch : null;
+        events.push({ t, kind: "complete", transcript: finalTranscript, status: String(m.status), speechEpoch: completeEpoch, pendingFollowUpCheck: pendingCheck });
+        room.onComplete(completeEpoch, pendingCheck);
         stop = true; done();
         break;
       case "error": events.push({ t, kind: "mark", name: `error:${m.code ?? "?"}` }); stop = true; done(); break;
@@ -525,13 +618,15 @@ async function runAnswer(opts: {
   const cutEarlyMs = stop ? Math.max(0, audio.speechMs - now()) : 0;
   if (cutEarlyMs > 500) { speechEndT = now(); events.push({ t: speechEndT, kind: "mark", name: "streamStopped" }); }
   await Promise.race([completed, new Promise((r) => setTimeout(r, 15_000))]);
-  if (completeT === null) { completeT = now(); events.push({ t: completeT, kind: "complete", transcript: "", status: "missing" }); }
+  if (completeT === null) { completeT = now(); events.push({ t: completeT, kind: "complete", transcript: "", status: "missing", speechEpoch: null, pendingFollowUpCheck: null }); }
   // Keep observing until the in-flight analyses settle (the room would have given up on them) or the largest wait passed.
-  const observeUntil = completeT + Math.max(...opts.waits, 0) + 500;
+  const observeUntil = completeT + Math.max(...opts.waits, 0, 1_700) + 500;
   while (now() < observeUntil || (room.registry.hasPending() && now() < completeT + clientTimeoutMs + 500)) await new Promise((r) => setTimeout(r, 50));
   const completeWallT = completeT;
   room.complete = true;
   if (socket.readyState === WebSocket.OPEN) socket.close();
+  const rejectedAnalyses = room.rejected;
+  const proposedFollowUps = room.proposed;
 
   const decisions: Record<string, Outcome> = {};
   for (const wait of opts.waits) decisions[String(wait)] = await replayDecision(events, roomInput, completeWallT, wait, finalTranscript);
@@ -547,7 +642,7 @@ async function runAnswer(opts: {
       transcriptWords: p.transcript.trim().split(/\s+/u).length,
       landedAtRelCompleteMs: landed ? rel(landed.t) : null, landedAfterComplete: landed ? landed.t > completeWallT : null,
       latencyMs: landed ? landed.t - landed.requestedAt : null, enabled: landed ? landed.result.enabled : null,
-      followUpAction: a?.followUpAction ?? null, fixedAction: a?.fixedAction ?? null,
+      followUpAction: a?.followUpAction ?? null, followUpRejected: a ? a.followUpRejected === true : null, fixedAction: a?.fixedAction ?? null,
       backendOutcome: log?.outcome ?? null, repairReason: log?.reason ?? null, costUsd: log?.costUsd ?? null,
     };
   });
@@ -560,7 +655,7 @@ async function runAnswer(opts: {
     plannedStatuses: events.filter((e): e is Extract<LogEvent, { kind: "planned" }> => e.kind === "planned").map((e) => ({ speechEpoch: e.speechEpoch, coverage: e.coverage, relCompleteMs: rel(e.t) })),
     marks: Object.fromEntries(events.filter((e): e is Extract<LogEvent, { kind: "mark" }> => e.kind === "mark").map((e) => [e.name, rel(e.t)])),
     resumedAtRelCompleteMs: events.filter((e) => e.kind === "resumed").map((e) => rel(e.t)),
-    decisions, followUpWouldPlay: Object.fromEntries(Object.entries(decisions).map(([wait, outcome]) => [wait, outcome.kind === "FOLLOW_UP"])),
+    decisions, rejectedAnalyses, proposedFollowUps, followUpWouldPlay: Object.fromEntries(Object.entries(decisions).map(([wait, outcome]) => [wait, outcome.kind === "FOLLOW_UP"])),
     backendLogs: logs,
   };
   void opts.logSink;
@@ -614,6 +709,7 @@ function argValue(name: string) {
 }
 
 const fmt = (value: number | null | undefined) => value === null || value === undefined ? "-" : String(value);
+const waitText = (o: Outcome) => `${o.analysisWait ? ` [analysis wait ${o.analysisWait.waitMs} ms, ${o.analysisWait.arrived ? "arrived" : "timeout"}]` : ""}${o.statusWait ? ` [status wait ${o.statusWait.waitMs} ms, ${o.statusWait.arrived ? "arrived" : "timeout"}]` : ""}`;
 const short = (text: string | null, max = 60) => text === null ? "-" : text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
 async function main() {
@@ -656,12 +752,13 @@ async function main() {
   for (const r of results) {
     console.log(`\nAnswer ${r.turn}: speechEnd->complete ${fmt(r.speechEndToCompleteMs)} ms | marks rel complete: ${Object.entries(r.marks).map(([k, v]) => `${k}=${v}`).join(" ")} | resumed: [${r.resumedAtRelCompleteMs.join(",")}]`);
     console.log("rev epoch sentAt(ms) rel.speechEnd words | landed rel.complete (afterComplete) latency | followUp / fixed | backend outcome / repair | cost");
-    for (const v of r.revisions) console.log(`${String(v.revision).padStart(3)} ${String(v.speechEpoch).padStart(5)} ${String(v.sentAtMs).padStart(10)} ${String(v.relSpeechEndMs).padStart(11)} ${String(v.transcriptWords).padStart(5)} | ${String(fmt(v.landedAtRelCompleteMs)).padStart(8)} (${v.landedAfterComplete === null ? "never" : v.landedAfterComplete ? "AFTER" : "before"}) ${String(fmt(v.latencyMs)).padStart(6)} | ${v.followUpAction ?? "-"} / ${v.fixedAction ?? "-"} | ${v.backendOutcome ?? "-"} ${v.repairReason ? `[${v.repairReason}]` : ""} | ${v.costUsd ?? "-"}`);
+    for (const v of r.revisions) console.log(`${String(v.revision).padStart(3)} ${String(v.speechEpoch).padStart(5)} ${String(v.sentAtMs).padStart(10)} ${String(v.relSpeechEndMs).padStart(11)} ${String(v.transcriptWords).padStart(5)} | ${String(fmt(v.landedAtRelCompleteMs)).padStart(8)} (${v.landedAfterComplete === null ? "never" : v.landedAfterComplete ? "AFTER" : "before"}) ${String(fmt(v.latencyMs)).padStart(6)} | ${v.followUpAction ?? "-"}${v.followUpRejected ? "(REJECTED)" : ""} / ${v.fixedAction ?? "-"} | ${v.backendOutcome ?? "-"} ${v.repairReason ? `[${v.repairReason}]` : ""} | ${v.costUsd ?? "-"}`);
+    console.log(`analyses: followUp proposed=${r.proposedFollowUps} rejected(followUpRejected)=${r.rejectedAnalyses}`);
     console.log(`candidate sends: ${r.candidateSends.map((s) => `${s.type}#${s.revision}@${s.relCompleteMs}`).join(", ") || "none"}`);
     console.log(`planned coverage: ${r.plannedStatuses.map((s) => `e${s.speechEpoch}=${s.coverage}@${s.relCompleteMs}`).join(", ") || "none"}`);
     console.log(`compat statuses: ${r.statuses.map((s) => `r${s.revision}/e${s.speechEpoch}=${s.status}@${s.relCompleteMs}`).join(", ") || "none"}`);
     for (const [wait, outcome] of Object.entries(r.decisions)) {
-      console.log(`  wait ${String(wait).padStart(4)} ms -> ${outcome.kind}${outcome.adapted ? "(DEEPEN)" : ""}${outcome.skippedIds.length ? ` skip=${outcome.skippedIds.join("+")}` : ""}${outcome.plannedSkip ? " [PLANNED-COVERED SKIP]" : ""} rev=${fmt(outcome.revision)} next="${short(outcome.question, 70)}" ${outcome.note ? `(${outcome.note})` : ""}`);
+      console.log(`  wait ${String(wait).padStart(4)} ms -> ${outcome.kind}${outcome.adapted ? "(DEEPEN)" : ""}${outcome.skippedIds.length ? ` skip=${outcome.skippedIds.join("+")}` : ""}${outcome.plannedSkip ? " [PLANNED-COVERED SKIP]" : ""} rev=${fmt(outcome.revision)} next="${short(outcome.question, 70)}" ${outcome.note ? `(${outcome.note})` : ""}${waitText(outcome)}`);
     }
   }
 
@@ -682,7 +779,8 @@ async function main() {
 
   console.log("\n================ KEY METRICS ================");
   console.log("answer | speechEnd->complete | waitMs: followUpWouldPlay / outcome");
-  for (const r of results) console.log(`  A${r.turn} | ${fmt(r.speechEndToCompleteMs)} ms | ${Object.entries(r.decisions).map(([w, o]) => `${w}: ${o.kind === "FOLLOW_UP" ? "FOLLOW_UP=true" : `false/${o.kind}${o.adapted ? "+DEEPEN" : ""}${o.skippedIds.length ? "+SKIP" : ""}${o.plannedSkip ? "(planned-covered)" : ""}`}`).join(" ; ")}`);
+  for (const r of results) console.log(`  A${r.turn} | ${fmt(r.speechEndToCompleteMs)} ms | ${Object.entries(r.decisions).map(([w, o]) => `${w}: ${o.kind === "FOLLOW_UP" ? "FOLLOW_UP=true" : `false/${o.kind}${o.adapted ? "+DEEPEN" : ""}${o.skippedIds.length ? "+SKIP" : ""}${o.plannedSkip ? "(planned-covered)" : ""}`}${waitText(o)}`).join(" ; ")}`);
+  for (const r of results) console.log(`  A${r.turn} follow-ups proposed=${r.proposedFollowUps} rejected analyses=${r.rejectedAnalyses} | follow-up accepted at submit by wait: ${Object.entries(r.decisions).map(([w, o]) => `${w}=${o.kind === "FOLLOW_UP"}`).join(" ")}`);
   console.log(`repeatedQuestionAsked (after A1, next = Q2 unchanged): ${repeatedQuestionAsked ? Object.entries(repeatedQuestionAsked).map(([w, v]) => `wait${w}=${v}`).join(" ") : "n/a (needs 2 turns)"}`);
   console.log(`headline (SIM_SUBMIT_WAIT_MS=${headlineWait}): ${results.map((r) => `A${r.turn} followUpWouldPlay=${r.followUpWouldPlay[String(headlineWait)]}`).join(" ")}`);
   console.log(`backend cost (analysis/compat logs only; STT not logged): ${summary.costUsd ? JSON.stringify(summary.costUsd) : "n/a (external backend or no cost in logs)"}`);

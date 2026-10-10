@@ -48,4 +48,20 @@ describe("speculative turn controller cancellation", () => {
     expect(received?.aborted).toBe(false);
     expect(response.sent).toEqual({ enabled: true, analysis: null });
   });
+
+  it("accepts revisions up to 12 (the websocket and browser budget) and rejects 13", async () => {
+    const run = async (revision: number) => {
+      let called = false;
+      const service = { analyze: async () => { called = true; return null; } };
+      const request = new EventEmitter() as EventEmitter & { body: unknown };
+      request.body = { ...body, revision };
+      let status = 200;
+      const response = fakeResponse();
+      response.status = (code: number) => { status = code; return response; };
+      await createSpeculativeTurnController(service as never, true)(request as never, response as never, () => {});
+      return { called, status };
+    };
+    expect(await run(12)).toEqual({ called: true, status: 200 });
+    expect(await run(13)).toEqual({ called: false, status: 400 });
+  });
 });

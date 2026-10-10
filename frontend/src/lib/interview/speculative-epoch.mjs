@@ -1,3 +1,6 @@
+/** Highest revision the backend sends per answer (1..N); also the cap of speculative analyses per answer. */
+export const MAX_SPECULATIVE_REVISIONS = 12;
+
 export function recordCandidateStatus(statuses, latestByEpoch, { speechEpoch, revision, status }, currentSpeechEpoch) {
   if (!Number.isSafeInteger(speechEpoch) || speechEpoch < 0 || speechEpoch !== currentSpeechEpoch) return false;
   const latest = latestByEpoch.get(speechEpoch) ?? 0;
@@ -15,9 +18,7 @@ export function recordCandidateStatus(statuses, latestByEpoch, { speechEpoch, re
 
 export function candidateStatusFor(statuses, latestByEpoch, speechEpoch, revision, currentSpeechEpoch) {
   if (speechEpoch !== currentSpeechEpoch) return undefined;
-  const latestRevision = latestByEpoch.get(speechEpoch) ?? 0;
-  const latestStatus = statuses.get(`${speechEpoch}:${latestRevision}`);
-  if (latestStatus === "NONE" && latestRevision >= revision) return "NONE";
+  // Per revision: a NONE ("no opinion") of one revision says nothing about another revision's candidate.
   return statuses.get(`${speechEpoch}:${revision}`);
 }
 
@@ -29,8 +30,7 @@ export function canUseCurrentEpochCandidate({ value, finalTranscript, currentTur
   if (Number.isSafeInteger(currentSpeechEpoch) && value.speechEpoch > currentSpeechEpoch) return false;
   if (!Number.isSafeInteger(currentSpeechEpoch) && value.decision?.decision === "FOLLOW_UP" && String(value.transcript ?? "").trim() !== String(finalTranscript ?? "").trim()) return false;
   if (compatibility === "COVERED" || compatibility === "INVALID") return false;
-  // NONE speaks only about follow-up candidates; an exact-transcript NEXT preparation stays usable.
-  if (compatibility === "NONE" && value.decision?.decision === "FOLLOW_UP") return false;
+  // A judge NONE (timeout, error, gap) is "no opinion": it never vetoes a follow-up built from exactly the final transcript.
   if (String(value.transcript ?? "").trim() === String(finalTranscript ?? "").trim()) return true;
   return featureEnabled === true
     && value.decision?.decision === "FOLLOW_UP"
@@ -118,13 +118,14 @@ export async function waitForFirstChunks(speechReadiness, timeoutMs = 400, timer
 }
 
 /**
- * The frontend resolved a revision to "no follow-up candidate" (analysis said NONE, failed, or yielded a fixed question):
- * record a local terminal NONE for it and discard retained FOLLOW_UP preparations of older revisions.
+ * Whether a landed analysis may replace the active follow-up candidate. An analysis sent before another one landed carries
+ * that older `previousCandidate`; if it now REPLACEs with a different question than the active one, it only stays a retained
+ * preparation. A KEEP, or any result while no candidate is active, behaves as usual.
  */
-export function applyFollowUpCandidateClear({ registry, statuses, latestByEpoch, revision, currentSpeechEpoch }) {
-  recordCandidateStatus(statuses, latestByEpoch, { speechEpoch: currentSpeechEpoch, revision, status: "NONE" }, currentSpeechEpoch);
-  // Candidates now outlive pauses, so a newer "no candidate" resolution retires older FOLLOW_UP preparations of any epoch.
-  return retireFollowUps(registry, (value) => value.revision < revision);
+export function mayReplaceActiveCandidate({ sentWith, active, action, question }) {
+  if (!active || action !== "REPLACE") return true;
+  if ((sentWith?.question ?? null) === active.question) return true;
+  return String(question ?? "").trim() === active.question;
 }
 
 /**
