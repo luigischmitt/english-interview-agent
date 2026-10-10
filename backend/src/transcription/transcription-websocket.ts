@@ -181,6 +181,9 @@ function logStreamDiagnostic(details: Record<string, string | number | boolean>)
 
 const trailingConnectors = new Set(["a", "about", "also", "an", "and", "as", "because", "but", "for", "from", "hmm", "i", "if", "in", "into", "is", "like", "my", "of", "on", "or", "our", "so", "that", "the", "then", "this", "to", "uh", "um", "was", "we", "when", "which", "while", "with"]);
 
+/** Upper bound for keeping the socket open after `complete` so an in-flight compatibility status can still be delivered. */
+const candidateStatusGraceMs = 600;
+
 /** A transcribed segment that looks unfinished gets a longer answer grace so a thinking pause is not cut. */
 export function endsWithConnector(transcript: string): boolean {
   const lastWord = transcript.trim().toLocaleLowerCase().match(/[\p{L}']+(?=[^\p{L}']*$)/u)?.[0] ?? "";
@@ -336,6 +339,21 @@ export function attachTranscriptionWebSocket(
     let semanticStartedAfterSilenceMs = 0;
     let semanticHeldMs = 0;
     let followUpCandidate: FollowUpCandidateUpdate | null = null;
+    let closeAfterCandidate: (() => void) | null = null;
+    // The in-flight assess() call that also decides completion: a newer candidate must not abort it (it would lose the verdict).
+    let mergedCandidateAbort: AbortController | null = null;
+    // An in-flight compatibility check that never produced a result must be re-runnable at the next pause in the same epoch.
+    // Deliberately not part of clearGrace: finalizing must let the final epoch's check finish and report its status.
+    const abortCandidateCheck = () => {
+      if (!candidateAbort) return;
+      candidateAbort.abort();
+      candidateAbort = null;
+      lastAssessedCandidate = null;
+      if (candidateRefundsInEpoch < 1) {
+        candidateRefundsInEpoch += 1;
+        candidateChecksInEpoch = Math.max(0, candidateChecksInEpoch - 1);
+      }
+    };
     const clearGrace = () => {
       if (semanticTimer !== null) clearTimeout(semanticTimer);
       semanticTimer = null;
@@ -345,16 +363,6 @@ export function attachTranscriptionWebSocket(
       if (semanticAbort) semanticCheckAborted = true;
       semanticAbort?.abort();
       semanticAbort = null;
-      // An in-flight compatibility check that never produced a result must be re-runnable at the next pause in the same epoch.
-      if (candidateAbort) {
-        candidateAbort.abort();
-        candidateAbort = null;
-        lastAssessedCandidate = null;
-        if (candidateRefundsInEpoch < 1) {
-          candidateRefundsInEpoch += 1;
-          candidateChecksInEpoch = Math.max(0, candidateChecksInEpoch - 1);
-        }
-      }
       if (graceTimer !== null) clearTimeout(graceTimer);
       graceTimer = null;
       if (prepareTimer !== null) clearTimeout(prepareTimer);
@@ -419,10 +427,32 @@ export function attachTranscriptionWebSocket(
     const closeStream = () => {
       clearCaptionTimer();
       clearGrace();
+      abortCandidateCheck();
       streamSession?.close();
       streamSession = null;
     };
+    const settleAssessment = (assessment: Promise<{ complete: boolean; candidateCompatibility: CandidateCompatibility }>) => assessment.then(
+      (result) => ({ complete: result.complete, status: result.candidateCompatibility, kind: null as "timeout" | "error" | null }),
+      (error: unknown) => ({ complete: false, status: "NONE" as CandidateCompatibility, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const }),
+    );
+    // Sends the verdict for the epoch it was requested in, unless it was superseded. It also runs after the answer was finalized
+    // (the browser waits briefly at submit); the socket-open guard in send() and the turnId/revision match keep that harmless.
+    const deliverCandidateStatus = (candidate: FollowUpCandidateUpdate, epochAtStart: number, controller: AbortController, status: CandidateCompatibility, kind: "timeout" | "error" | null) => {
+      // Settled: a stale result must not leave its controller behind (it would be "aborted" and refunded later).
+      if (candidateAbort === controller) candidateAbort = null;
+      try {
+        if (controller.signal.aborted || speechEpoch !== epochAtStart || followUpCandidate?.turnId !== candidate.turnId || followUpCandidate.revision !== candidate.revision) return;
+        // Text with a gap may miss the very part that answered the candidate: never vouch for it as OPEN (or COVERED).
+        const finalStatus = kind || streamSession?.hasGap ? "NONE" : status;
+        send(socket, { type: "follow-up-candidate-status", turnId: candidate.turnId, revision: candidate.revision, status: finalStatus, speechEpoch });
+        logStreamDiagnostic({ status: "follow_up_candidate", compatibility: finalStatus, revision: candidate.revision, speechEpoch });
+        if (finalStatus === "COVERED" || finalStatus === "INVALID" || finalStatus === "NONE") sendReplacementProvisional();
+      } finally {
+        if (!candidateAbort) closeAfterCandidate?.();
+      }
+    };
     // Ends the answer early when the classifier says it is finished; every other outcome leaves the running grace untouched.
+    // With a follow-up candidate, the same single assess() call also yields its compatibility, delivered before the completion logic.
     const runSemanticCheck = (classifier: AnswerCompletionService, question: string, transcript: string, silenceStartedAt: number, minSilenceMs: number) => {
       semanticAbort?.abort();
       const controller = new AbortController();
@@ -430,7 +460,34 @@ export function attachTranscriptionWebSocket(
       semanticChecks += 1;
       const startedAt = Date.now();
       semanticStartedAfterSilenceMs = Math.max(0, startedAt - silenceStartedAt);
-      classifier.isComplete({ question, answer: transcript, signal: controller.signal }).then((complete) => ({ complete, kind: null }), (error: unknown) => ({ complete: false, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const })).then((outcome) => {
+      const candidate = followUpCandidate;
+      const merged = Boolean(candidate && classifier.assess && candidateChecksInEpoch < 2
+        && !(lastAssessedCandidate?.turnId === candidate.turnId && lastAssessedCandidate.revision === candidate.revision));
+      let providerSignal = controller.signal;
+      let epochAtStart = speechEpoch;
+      if (merged && candidate) {
+        // The provider call is owned by candidateAbort so that finalizing (which aborts the semantic controller) cannot kill the final epoch's status.
+        candidateAbort?.abort();
+        const candidateController = new AbortController();
+        candidateAbort = candidateController;
+        mergedCandidateAbort = candidateController;
+        candidateChecksInEpoch += 1;
+        lastAssessedCandidate = { turnId: candidate.turnId, revision: candidate.revision };
+        providerSignal = candidateController.signal;
+        epochAtStart = speechEpoch;
+      }
+      const call = merged && candidate && classifier.assess
+        ? classifier.assess({ question, answer: transcript, candidate: { question: candidate.question, anchor: candidate.anchor }, signal: providerSignal })
+        : classifier.isComplete({ question, answer: transcript, signal: providerSignal }).then((complete) => ({ complete, candidateCompatibility: "NONE" as CandidateCompatibility }));
+      const candidateController = merged ? candidateAbort : null;
+      settleAssessment(call).then((outcome) => {
+        if (merged && candidate && candidateController) {
+          if (mergedCandidateAbort === candidateController) mergedCandidateAbort = null;
+          deliverCandidateStatus(candidate, epochAtStart, candidateController, outcome.status, outcome.kind);
+          // A newer candidate that arrived meanwhile still gets its own check while the pause lasts.
+          const latest = followUpCandidate;
+          if (!candidateController.signal.aborted && latest && latest.revision !== candidate.revision) recheckCandidateInGrace(latest);
+        }
         if (controller.signal.aborted) return;
         if (semanticAbort === controller) semanticAbort = null;
         semanticLatencyMs = Date.now() - startedAt;
@@ -455,6 +512,13 @@ export function attachTranscriptionWebSocket(
         }
       });
     };
+    const recheckCandidateInGrace = (candidate: FollowUpCandidateUpdate) => {
+      const current = sessionId ? sessions.get(sessionId) : undefined;
+      if (graceTimer === null || finalRequested || finishing || !streamSession || streamSession.failed
+        || streamSession.turnActive || !current?.vad.hasSpeech || !interviewerQuestion || !streaming?.answerCompletion) return;
+      const transcript = streamSession.committedText();
+      if (transcript) runCandidateCompatibilityCheck(candidate, transcript);
+    };
     const runCandidateCompatibilityCheck = (candidate: FollowUpCandidateUpdate, transcript: string) => {
       const classifier = streaming?.answerCompletion;
       if (!classifier || candidateChecksInEpoch >= 2
@@ -469,16 +533,7 @@ export function attachTranscriptionWebSocket(
       const assessment = classifier.assess
         ? classifier.assess({ question: interviewerQuestion!, answer: transcript, candidate: { question: candidate.question, anchor: candidate.anchor }, signal: controller.signal })
         : Promise.resolve({ complete: false, candidateCompatibility: "NONE" as CandidateCompatibility });
-      assessment.then((result) => ({ status: result.candidateCompatibility, kind: null as "timeout" | "error" | null }), (error: unknown) => ({ status: "NONE" as CandidateCompatibility, kind: error instanceof AnswerCompletionError && error.kind === "timeout" ? "timeout" as const : "error" as const }))
-        .then(({ status, kind }) => {
-          // Settled: a stale result must not leave its controller behind (it would be "aborted" and refunded later).
-          if (candidateAbort === controller) candidateAbort = null;
-          if (controller.signal.aborted || speechEpoch !== epochAtStart || followUpCandidate?.turnId !== candidate.turnId || followUpCandidate.revision !== candidate.revision) return;
-          const finalStatus = kind ? "NONE" : status;
-          send(socket, { type: "follow-up-candidate-status", turnId: candidate.turnId, revision: candidate.revision, status: finalStatus, speechEpoch });
-          logStreamDiagnostic({ status: "follow_up_candidate", compatibility: finalStatus, revision: candidate.revision, speechEpoch });
-          if (finalStatus === "COVERED" || finalStatus === "INVALID" || finalStatus === "NONE") sendReplacementProvisional();
-        });
+      settleAssessment(assessment).then(({ status, kind }) => deliverCandidateStatus(candidate, epochAtStart, controller, status, kind));
     };
     let speculation: Speculation | null = null;
     let speculationOutcome: SpeculationOutcome = "none";
@@ -662,7 +717,15 @@ export function attachTranscriptionWebSocket(
       requestAbortController = null;
       finishing = true;
       clearTimeout(timer);
-      if (socket.readyState === WebSocket.OPEN) socket.close(1000, "Transcription complete");
+      const closeNow = () => {
+        closeAfterCandidate = null;
+        if (socket.readyState === WebSocket.OPEN) socket.close(1000, "Transcription complete");
+      };
+      // A compatibility check still in flight keeps the socket open (bounded) so its status can still reach the browser.
+      if (candidateAbort && socket.readyState === WebSocket.OPEN) {
+        const bound = setTimeout(closeNow, candidateStatusGraceMs);
+        closeAfterCandidate = () => { clearTimeout(bound); closeNow(); };
+      } else closeNow();
     };
 
     const fail = (code: string, message: string, closeCode = 1011, failureDetails: Record<string, string | number> = {}) => {
@@ -957,7 +1020,7 @@ export function attachTranscriptionWebSocket(
           interviewerQuestion = streaming?.answerCompletion ? sanitizeQuestion(message.question) : null;
           if (streaming) {
             const sessionCallbacks = {
-              onTurnStart: () => clearGrace(),
+              onTurnStart: () => { clearGrace(); abortCandidateCheck(); },
               onCaptionChange: scheduleCaption,
               onTurnEnd: (segmentTranscript: string, info?: TurnEndInfo) => {
                 // The tail segment can be empty (a soft cut already took all the speech, or the tail was only silence/noise):
@@ -968,9 +1031,6 @@ export function attachTranscriptionWebSocket(
                 // The tail is now committed. Send its changed snapshot at pause start, independent of the optional
                 // delayed prepare and semantic timers; identical text is still suppressed.
                 sendPauseProvisionalSnapshot();
-                if (followUpCandidate && interviewerQuestion && streaming.answerCompletion) {
-                  runCandidateCompatibilityCheck(followUpCandidate, streamSession?.committedText() || turnTranscript);
-                }
                 const graceMs = looksUnfinished(turnTranscript) ? (streaming.incompleteGraceMs ?? streaming.answerGraceMs) : streaming.answerGraceMs;
                 // Local-VAD turns arrive after their segment was transcribed: time grace and prepare from the pause, not from now.
                 const elapsedMs = info?.silenceStartedAt !== undefined ? Math.max(0, Date.now() - info.silenceStartedAt) : 0;
@@ -982,11 +1042,21 @@ export function attachTranscriptionWebSocket(
                 const semanticAfterMs = streaming.semanticCheckAfterMs ?? prepareAfterMs;
                 const silenceStartedAt = info?.silenceStartedAt ?? Date.now();
                 const minSilenceMs = streaming.semanticCompleteMinSilenceMs ?? 0;
+                // When the semantic timer will run, it carries the candidate in the same assess() call; otherwise (or if that
+                // call is skipped) the standalone compatibility check runs at the pause so the final epoch still gets a status.
+                const semanticScheduled = canCheckSemantically && (streaming.semanticCheckAfterMs !== undefined || prepareAfterMs > 0) && semanticAfterMs < graceMs;
+                const standaloneCompatibility = () => {
+                  if (followUpCandidate && interviewerQuestion && streaming.answerCompletion) runCandidateCompatibilityCheck(followUpCandidate, streamSession?.committedText() || turnTranscript);
+                };
+                if (!semanticScheduled) standaloneCompatibility();
                 const startSemanticCheck = () => {
                   const current = sessionId ? sessions.get(sessionId) : undefined;
                   if (finalRequested || finishing || !streamSession || streamSession.failed || streamSession.turnActive || !current?.vad.hasSpeech) return;
                   const transcript = streamSession.committedText();
-                  if (!transcript || transcript === lastSemanticText || interviewerQuestion === null || !streaming.answerCompletion || semanticChecks >= maxSemanticChecks) return;
+                  if (!transcript || transcript === lastSemanticText || interviewerQuestion === null || !streaming.answerCompletion || semanticChecks >= maxSemanticChecks) {
+                    if (transcript) standaloneCompatibility();
+                    return;
+                  }
                   lastSemanticText = transcript;
                   runSemanticCheck(streaming.answerCompletion, interviewerQuestion, transcript, silenceStartedAt, minSilenceMs);
                 };
@@ -1009,7 +1079,7 @@ export function attachTranscriptionWebSocket(
                 }
                 // The check judges the committed transcript, which already includes the tail (the turn end fires after it is transcribed).
                 // It runs on its own timer so it can start earlier than the provisional answer and the long grace.
-                if (canCheckSemantically && (streaming.semanticCheckAfterMs !== undefined || prepareAfterMs > 0) && semanticAfterMs < graceMs) {
+                if (semanticScheduled) {
                   semanticTimer = setTimeout(() => { semanticTimer = null; startSemanticCheck(); }, Math.max(0, semanticAfterMs - elapsedMs));
                 }
                 graceTimer = setTimeout(() => {
@@ -1020,6 +1090,7 @@ export function attachTranscriptionWebSocket(
                 }, Math.max(0, graceMs - elapsedMs));
               },
               onFailure: (failure: StreamFailureReason, detail: SessionFailureDetail) => {
+                // The compatibility check judges the committed text, not the incremental session: a final-transcript fallback keeps it.
                 clearGrace();
                 fallbackReason = detail;
                 logStreamDiagnostic({ status: "incremental_whisper_unavailable", reason: failure, detail });
@@ -1117,12 +1188,9 @@ export function attachTranscriptionWebSocket(
         candidateRevisionFloorByTurnId.set(candidate.turnId, candidate.revision);
         logStreamDiagnostic({ status: "follow_up_candidate_updated", revision: candidate.revision });
         // Compatibility has its own per-speech-epoch budget and does not consume semantic completion checks.
-        const current = sessionId ? sessions.get(sessionId) : undefined;
-        if (graceTimer !== null && !finalRequested && !finishing && streamSession && !streamSession.failed
-          && !streamSession.turnActive && current?.vad.hasSpeech && interviewerQuestion && streaming?.answerCompletion) {
-          const transcript = streamSession.committedText();
-          if (transcript) runCandidateCompatibilityCheck(candidate, transcript);
-        }
+        // A running merged call is left alone (it also decides completion); it re-checks the newest candidate when it settles.
+        if (mergedCandidateAbort && candidateAbort === mergedCandidateAbort) return;
+        recheckCandidateInGrace(candidate);
         return;
       }
 
