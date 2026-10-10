@@ -24,6 +24,8 @@ export function candidateStatusFor(statuses, latestByEpoch, speechEpoch, revisio
 export function canUseCurrentEpochCandidate({ value, finalTranscript, currentTurnId, currentSpeechEpoch, featureEnabled, compatibility }) {
   // A preparation from an earlier speech epoch survives pauses, but a preparation from a later epoch than the final one cannot exist.
   if (!value || value.turnId !== currentTurnId) return false;
+  // A retired follow-up (covered, invalid or cleared) never plays, even on an identical transcript.
+  if (value.followUpReleased === true) return false;
   if (Number.isSafeInteger(currentSpeechEpoch) && value.speechEpoch > currentSpeechEpoch) return false;
   if (!Number.isSafeInteger(currentSpeechEpoch) && value.decision?.decision === "FOLLOW_UP" && String(value.transcript ?? "").trim() !== String(finalTranscript ?? "").trim()) return false;
   if (compatibility === "COVERED" || compatibility === "INVALID") return false;
@@ -67,10 +69,30 @@ export function finalEpochCandidateStatus(statuses, latestByEpoch, revision, fin
   return candidateStatusFor(statuses, latestByEpoch, finalSpeechEpoch, revision, finalSpeechEpoch);
 }
 
-/** A COVERED/INVALID status retires every retained FOLLOW_UP preparation up to its revision, releasing its prewarmed audio. */
+/**
+ * Retires FOLLOW_UP preparations matching `predicate`: their follow-up can no longer play, so its prewarmed audio is released.
+ * One that carries a fixed-question decision stays retrievable (only the newest such one) so the submit can still use it;
+ * the others are discarded. Returns how many were retired.
+ */
+export function retireFollowUps(registry, predicate) {
+  const isTarget = (value) => value?.decision?.decision === "FOLLOW_UP" && value.followUpReleased !== true && predicate(value);
+  let count = registry.discardWhere((value) => isTarget(value) && !value.nextPlannedQuestionId);
+  for (const value of registry.readyValues()) {
+    if (!isTarget(value)) continue;
+    value.followUpReleased = true;
+    value.cancelSpeech?.();
+    count += 1;
+  }
+  const released = registry.readyValues().filter((value) => value?.followUpReleased === true);
+  const newestRevision = Math.max(...released.map((value) => value.revision ?? 0));
+  if (released.length > 1) registry.discardWhere((value) => value?.followUpReleased === true && (value.revision ?? 0) < newestRevision);
+  return count;
+}
+
+/** A COVERED/INVALID status retires every retained FOLLOW_UP preparation up to its revision. */
 export function discardCoveredFollowUps(registry, { revision, status }) {
   if (status !== "COVERED" && status !== "INVALID") return 0;
-  return registry.discardWhere((value) => value?.decision?.decision === "FOLLOW_UP" && value.revision <= revision);
+  return retireFollowUps(registry, (value) => value.revision <= revision);
 }
 
 /** The final speech epoch advances monotonically from provisional snapshots and statuses; null (after a resume) adopts any epoch. */
@@ -102,7 +124,7 @@ export async function waitForFirstChunks(speechReadiness, timeoutMs = 400, timer
 export function applyFollowUpCandidateClear({ registry, statuses, latestByEpoch, revision, currentSpeechEpoch }) {
   recordCandidateStatus(statuses, latestByEpoch, { speechEpoch: currentSpeechEpoch, revision, status: "NONE" }, currentSpeechEpoch);
   // Candidates now outlive pauses, so a newer "no candidate" resolution retires older FOLLOW_UP preparations of any epoch.
-  return registry.discardWhere((value) => value?.decision?.decision === "FOLLOW_UP" && value.revision < revision);
+  return retireFollowUps(registry, (value) => value.revision < revision);
 }
 
 /**

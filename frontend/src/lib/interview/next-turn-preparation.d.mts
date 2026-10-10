@@ -4,6 +4,7 @@ export type NextTurnPreparationEntry<T> = {
   controller: AbortController;
   settled: "pending" | "ready" | "failed" | "discarded";
   used: boolean;
+  viaFallback?: boolean;
   value: T | null;
   promise: Promise<T | null>;
 };
@@ -21,7 +22,8 @@ export type NextTurnPreparationRegistry<T> = {
   abort(): void;
   take(input: { transcript: string; inputKey?: string }): NextTurnPreparationEntry<T> | null;
   takeReady(input: { transcript: string; inputKey?: string }): NextTurnPreparationEntry<T> | null;
-  takeAnyReady(input: { accept: (value: T) => boolean }): NextTurnPreparationEntry<T> | null;
+  takeAnyReady(input: { accept: (value: T) => boolean; fallbackAccept?: (value: T) => boolean }): NextTurnPreparationEntry<T> | null;
+  readyValues(): T[];
   discardWhere(predicate: (value: T) => boolean): number;
   release(entry: NextTurnPreparationEntry<T> | null): void;
   hasPending(): boolean;

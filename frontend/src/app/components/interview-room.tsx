@@ -39,6 +39,7 @@ import { createInterviewHandoffTiming, createListeningHandoffTiming, isHandoffTi
 import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/interview/opening-timing.mjs";
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
+import { canUseFixedDecisionFromFollowUp, resolveFixedFromFollowUp } from "@/lib/interview/fixed-from-follow-up.mjs";
 import { adoptSpeechEpoch, applyFollowUpCandidateClear, canUseCurrentEpochCandidate, discardCoveredFollowUps, finalEpochCandidateStatus, recordCandidateStatus, waitForFirstChunk, waitForPreparedTurnAudio } from "@/lib/interview/speculative-epoch.mjs";
 import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { useLocale, t } from "@/lib/locale";
@@ -830,6 +831,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     } else if (clarificationHint === null) {
       // Use the decision prepared during the answer grace only for exactly this transcript and these inputs.
       const discardedBefore = nextTurnPreparation.stats().discarded;
+      const newestReadyRevision = Math.max(0, ...nextTurnPreparation.readyValues().map((value) => value?.revision ?? 0));
       const prepared = speculativeAttemptedRef.current
         ? nextTurnPreparation.takeAnyReady({ accept: (value) => {
             return canUseCurrentEpochCandidate({
@@ -840,9 +842,36 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
               featureEnabled: speculativeEnabledRef.current,
               compatibility: finalEpochCandidateStatus(candidateStatusesRef.current, latestCandidateStatusRevisionRef.current, value.revision, currentSpeechEpochRef.current),
             });
-        } })
+        }, fallbackAccept: (value) => canUseFixedDecisionFromFollowUp({
+            value,
+            currentTurnId: speculativeTurnIdRef.current,
+            currentSpeechEpoch: currentSpeechEpochRef.current,
+            featureEnabled: speculativeEnabledRef.current,
+            newestReadyRevision,
+            committedSkippedIds: speculativeFixedSkippedIdsRef.current,
+        }) })
         : nextTurnPreparation.take({ transcript: savedAnswer, inputKey: decisionInputKey(decisionInput) });
-      if (prepared) {
+      if (prepared?.viaFallback) {
+        // The follow-up cannot play, but the model's fixed-question decision (e.g. DEEPEN) still holds: use it as a NEXT turn.
+        const lent = prepared.value as NonNullable<typeof prepared.value>;
+        lent.cancelSpeech?.();
+        const remaining = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes }).remaining;
+        const adaptedAudioReady = lent.adaptedFixedQuestion && config.playInterviewerAudio ? await waitForFirstChunk(lent.fixedQuestionAudioReady, 400) : true;
+        lent.cancelFixedQuestionAudio?.();
+        const fixed = resolveFixedFromFollowUp({ value: lent, remaining, adaptedAudioReady });
+        if (fixed) {
+          const handoff = fixedHandoffPreparation.peek();
+          decision = { decision: "NEXT", followUpQuestion: null, nextQuestion: fixed.prompt, acknowledgement: handoff?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) };
+          selectedPlannedQuestionId = fixed.question.id;
+          skippedPlannedQuestionIds = fixed.skippedQuestionIds;
+          handoffTimingRef.current?.markPrepared();
+          logPreparation("prepared_used", "fixed_from_follow_up");
+          console.info(JSON.stringify({ event: "interview_speculative_handoff", outcome: "fixed_from_follow_up", adapted: fixed.usedAdaptedPrompt }));
+        } else {
+          nextTurnPreparation.release(prepared);
+          logPreparation("prepared_discarded", "unavailable");
+        }
+      } else if (prepared) {
         const abortPrepared = () => prepared.controller.abort();
         abortController.signal.addEventListener("abort", abortPrepared, { once: true });
         preparedTurn = await prepared.promise;
