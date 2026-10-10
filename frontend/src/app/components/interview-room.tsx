@@ -485,11 +485,15 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
 
   /** Stream `start` fields: the next planned question this room would ask and up to three earlier answers (read when the socket opens). */
   const getPlannedStartContext = (): PlannedStartContext | null => {
-    const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
-    if (!nextPlan.question) return null;
-    const fields = buildPlannedCoverageStartFields({ plannedQuestion: nextPlan.question.prompt, previousAnswers: pairInterviewTurns(reportTurnsRef.current).map((pair) => pair.answer) });
+    // While answering a follow-up, the fixed question that comes next was already chosen (its skips included): judge that one.
+    const pendingSelection = postFollowUpFixedSelectionRef.current;
+    const nextQuestion = pendingSelection
+      ? questions.find((candidate) => candidate.id === pendingSelection.questionId) ?? null
+      : selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes }).question;
+    if (!nextQuestion) return null;
+    const fields = buildPlannedCoverageStartFields({ plannedQuestion: nextQuestion.prompt, previousAnswers: pairInterviewTurns(reportTurnsRef.current).map((pair) => pair.answer) });
     if (!fields.plannedQuestion) return null;
-    plannedStartRef.current = { turn: micTurnIdRef.current, questionId: nextPlan.question.id };
+    plannedStartRef.current = { turn: micTurnIdRef.current, questionId: nextQuestion.id };
     return fields;
   };
 
@@ -946,7 +950,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         const lent = prepared.value as NonNullable<typeof prepared.value>;
         lent.cancelSpeech?.();
         const remaining = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes }).remaining;
-        const adaptedAudioReady = lent.adaptedFixedQuestion && config.playInterviewerAudio ? await waitForFirstChunk(lent.fixedQuestionAudioReady, 400) : true;
+        const adaptedAudioReady = lent.adaptedFixedQuestion && config.playInterviewerAudio ? await waitForFirstChunk(lent.fixedQuestionAudioReady, finalAnalysisWait ? Math.min(400, remainingBudgetMs(FINAL_ANALYSIS_WAIT_MS, submitStartedAt, monotonicNowMs())) : 400) : true;
         lent.cancelFixedQuestionAudio?.();
         const fixed = resolveFixedFromFollowUp({ value: lent, remaining, adaptedAudioReady });
         if (fixed) {
@@ -1001,9 +1005,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     applyPlannedCoveredSkip();
     if (preparedTurn && config.playInterviewerAudio && preparedTurn.speechReady) {
       // After waiting for the final analysis the follow-up's first chunk shares one cap counted from submit.
+      // Any other audio wait stays within the final-analysis budget once that wait happened.
       const audioTimeoutMs = finalAnalysisWait?.arrived && decision?.decision === "FOLLOW_UP"
         ? remainingBudgetMs(FOLLOW_UP_TOTAL_WAIT_MS, submitStartedAt, monotonicNowMs())
-        : 400;
+        : finalAnalysisWait ? Math.min(400, remainingBudgetMs(FINAL_ANALYSIS_WAIT_MS, submitStartedAt, monotonicNowMs())) : 400;
       const { firstChunkReady, adaptedQuestionReady } = await waitForPreparedTurnAudio({ decision, speechReady: preparedTurn.speechReady, adaptedFixedQuestion: preparedTurn.adaptedFixedQuestion, fixedQuestionAudioReady: preparedTurn.fixedQuestionAudioReady }, audioTimeoutMs);
       if (decision?.decision === "NEXT" && preparedTurn.adaptedFixedQuestion && !adaptedQuestionReady && preparedTurn.originalFixedPrompt) {
         decision = { ...decision, nextQuestion: resolveFixedPromptForAudio({ prompt: decision.nextQuestion ?? undefined, originalPrompt: preparedTurn.originalFixedPrompt, adapted: true }, adaptedQuestionReady) ?? preparedTurn.originalFixedPrompt };
