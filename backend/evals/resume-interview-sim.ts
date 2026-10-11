@@ -42,6 +42,8 @@ import { createNextTurnPreparationRegistry } from "../../frontend/src/lib/interv
 // @ts-ignore
 import { plannedQuestionType, remainingPlannedQuestions, resolveMonotonicFixedAction, resolveSpeculativeFixedSelection } from "../../frontend/src/lib/interview/question-scheduling.mjs";
 // @ts-ignore
+import { bridgeForSelection } from "../../frontend/src/lib/interview/prepared-bridge.mjs";
+// @ts-ignore
 import { buildPlannedCoverageStartFields, finalPlannedCoverage, recordPlannedCoverage, resolvePlannedCoveredSkip } from "../../frontend/src/lib/interview/planned-coverage.mjs";
 // @ts-ignore
 import { FINAL_ANALYSIS_WAIT_MS, finalAnalysisWaitPredicate } from "../../frontend/src/lib/interview/final-analysis-wait.mjs";
@@ -154,7 +156,7 @@ function rms(frame: Buffer) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------- room emulation
-type Analysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; followUpRejected?: boolean; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction?: "KEEP" | "SKIP" | "DEEPEN"; adaptedSecondFixedQuestion?: string | null };
+type Analysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; followUpRejected?: boolean; bridge?: string | null; bridgeFor?: string | null; followUpBridge?: string | null; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction?: "KEEP" | "SKIP" | "DEEPEN"; adaptedSecondFixedQuestion?: string | null };
 type AnalyzeResult = { enabled: boolean; analysis: Analysis | null };
 type AnalyzeFn = (payload: Record<string, unknown>, signal: AbortSignal) => Promise<AnalyzeResult>;
 type Outbound = Record<string, unknown>;
@@ -190,6 +192,9 @@ class RoomEmulator {
   /** Counters for the report: analyses the backend validator rejected, and analyses that proposed a follow-up. */
   rejected = 0;
   proposed = 0;
+  /** Applied analyses whose grounded bridge was valid for the planned question the room selected (content-free count). */
+  bridged = 0;
+  applied = 0;
   readonly plannedCoverage = new Map<number, any>();
   constructor(private readonly input: RoomInput) {}
 
@@ -230,6 +235,7 @@ class RoomEmulator {
           hasThirdFixedQuestion: plannedNow.length > 2,
           previousCandidate: sentPreviousCandidate,
           previousAnswers: input.previousAnswers,
+          recentAcknowledgements: [],
           roleContext: { targetRole: RESUME_NEUTRAL_ROLE },
         }, signal) : { enabled: true, analysis: null };
         if (speculative.enabled) this.enabled = true;
@@ -255,6 +261,10 @@ class RoomEmulator {
         const retainedOnly = stale || supersededCandidate;
         if (analysis.followUpRejected === true) this.rejected += 1;
         if (accepted) this.proposed += 1;
+        if (!stale) {
+          this.applied += 1;
+          if (fixedSelection.question && bridgeForSelection({ bridge: analysis.bridge, bridgeFor: analysis.bridgeFor, originalPrompt: fixedSelection.originalPrompt })) this.bridged += 1;
+        }
         let decision: { decision: "FOLLOW_UP" | "NEXT"; followUpQuestion: string | null; nextQuestion: string | null };
         if (accepted) {
           if (!retainedOnly) {
@@ -503,6 +513,9 @@ type AnswerResult = {
   /** Analyses the backend validator rejected (followUpRejected) and analyses that proposed a follow-up (before the epoch/status checks at submit). */
   rejectedAnalyses: number;
   proposedFollowUps: number;
+  /** Applied analyses and how many carried a bridge valid for the selected planned question. */
+  appliedAnalyses: number;
+  bridgedAnalyses: number;
   followUpWouldPlay: Record<string, boolean>;
   backendLogs: BackendLog[];
 };
@@ -627,6 +640,8 @@ async function runAnswer(opts: {
   if (socket.readyState === WebSocket.OPEN) socket.close();
   const rejectedAnalyses = room.rejected;
   const proposedFollowUps = room.proposed;
+  const appliedAnalyses = room.applied;
+  const bridgedAnalyses = room.bridged;
 
   const decisions: Record<string, Outcome> = {};
   for (const wait of opts.waits) decisions[String(wait)] = await replayDecision(events, roomInput, completeWallT, wait, finalTranscript);
@@ -655,7 +670,7 @@ async function runAnswer(opts: {
     plannedStatuses: events.filter((e): e is Extract<LogEvent, { kind: "planned" }> => e.kind === "planned").map((e) => ({ speechEpoch: e.speechEpoch, coverage: e.coverage, relCompleteMs: rel(e.t) })),
     marks: Object.fromEntries(events.filter((e): e is Extract<LogEvent, { kind: "mark" }> => e.kind === "mark").map((e) => [e.name, rel(e.t)])),
     resumedAtRelCompleteMs: events.filter((e) => e.kind === "resumed").map((e) => rel(e.t)),
-    decisions, rejectedAnalyses, proposedFollowUps, followUpWouldPlay: Object.fromEntries(Object.entries(decisions).map(([wait, outcome]) => [wait, outcome.kind === "FOLLOW_UP"])),
+    decisions, rejectedAnalyses, proposedFollowUps, appliedAnalyses, bridgedAnalyses, followUpWouldPlay: Object.fromEntries(Object.entries(decisions).map(([wait, outcome]) => [wait, outcome.kind === "FOLLOW_UP"])),
     backendLogs: logs,
   };
   void opts.logSink;
@@ -753,7 +768,7 @@ async function main() {
     console.log(`\nAnswer ${r.turn}: speechEnd->complete ${fmt(r.speechEndToCompleteMs)} ms | marks rel complete: ${Object.entries(r.marks).map(([k, v]) => `${k}=${v}`).join(" ")} | resumed: [${r.resumedAtRelCompleteMs.join(",")}]`);
     console.log("rev epoch sentAt(ms) rel.speechEnd words | landed rel.complete (afterComplete) latency | followUp / fixed | backend outcome / repair | cost");
     for (const v of r.revisions) console.log(`${String(v.revision).padStart(3)} ${String(v.speechEpoch).padStart(5)} ${String(v.sentAtMs).padStart(10)} ${String(v.relSpeechEndMs).padStart(11)} ${String(v.transcriptWords).padStart(5)} | ${String(fmt(v.landedAtRelCompleteMs)).padStart(8)} (${v.landedAfterComplete === null ? "never" : v.landedAfterComplete ? "AFTER" : "before"}) ${String(fmt(v.latencyMs)).padStart(6)} | ${v.followUpAction ?? "-"}${v.followUpRejected ? "(REJECTED)" : ""} / ${v.fixedAction ?? "-"} | ${v.backendOutcome ?? "-"} ${v.repairReason ? `[${v.repairReason}]` : ""} | ${v.costUsd ?? "-"}`);
-    console.log(`analyses: followUp proposed=${r.proposedFollowUps} rejected(followUpRejected)=${r.rejectedAnalyses}`);
+    console.log(`analyses: followUp proposed=${r.proposedFollowUps} rejected(followUpRejected)=${r.rejectedAnalyses} bridged=${r.bridgedAnalyses}/${r.appliedAnalyses}`);
     console.log(`candidate sends: ${r.candidateSends.map((s) => `${s.type}#${s.revision}@${s.relCompleteMs}`).join(", ") || "none"}`);
     console.log(`planned coverage: ${r.plannedStatuses.map((s) => `e${s.speechEpoch}=${s.coverage}@${s.relCompleteMs}`).join(", ") || "none"}`);
     console.log(`compat statuses: ${r.statuses.map((s) => `r${s.revision}/e${s.speechEpoch}=${s.status}@${s.relCompleteMs}`).join(", ") || "none"}`);

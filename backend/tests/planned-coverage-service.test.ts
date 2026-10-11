@@ -18,6 +18,7 @@ describe("OpenRouterPlannedCoverageService", () => {
     expect(body.provider).toEqual({ sort: "latency", require_parameters: true, data_collection: "deny" });
     expect(body.response_format.json_schema.schema).toMatchObject({ required: ["coverage"], additionalProperties: false });
     expect(body.messages[0]).toEqual({ role: "system", content: plannedCoverageSystemPrompt });
+    expect(plannedCoverageSystemPrompt).toContain("desktop/mobile layout changes");
     expect(JSON.parse(body.messages[1].content)).toEqual(input);
     const logged = String(info.mock.calls[0]?.[0]);
     expect(JSON.parse(logged)).toMatchObject({ event: "interview_planned_coverage", outcome: "success", coverage: "COVERED", promptTokens: 80, costUsd: 0.00001 });

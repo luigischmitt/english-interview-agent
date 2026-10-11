@@ -64,4 +64,37 @@ describe("speculative turn controller cancellation", () => {
     expect(await run(12)).toEqual({ called: true, status: 200 });
     expect(await run(13)).toEqual({ called: false, status: 400 });
   });
+
+  it("accepts bridge preparation after a follow-up and bounds recent acknowledgements", async () => {
+    const run = async (recentAcknowledgements: string[]) => {
+      let called = false;
+      const service = { analyze: async () => { called = true; return null; } };
+      const request = new EventEmitter() as EventEmitter & { body: unknown };
+      request.body = { ...body, followUpUsed: true, recentAcknowledgements };
+      let status = 200;
+      const response = fakeResponse();
+      response.status = (code: number) => { status = code; return response; };
+      await createSpeculativeTurnController(service as never, true)(request as never, response as never, () => {});
+      return { called, status };
+    };
+    expect(await run(["Thanks for that."])).toEqual({ called: true, status: 200 });
+    expect(await run(Array.from({ length: 6 }, () => "Thanks for that."))).toEqual({ called: false, status: 400 });
+  });
+
+  it("treats a missing followUpUsed (older clients) as false and rejects a non-boolean one", async () => {
+    const run = async (followUpUsed: unknown) => {
+      let received: { followUpUsed?: unknown } | null = null;
+      const service = { analyze: async (value: { followUpUsed?: unknown }) => { received = value; return null; } };
+      const request = new EventEmitter() as EventEmitter & { body: unknown };
+      const { followUpUsed: _omitted, ...rest } = body;
+      request.body = followUpUsed === undefined ? rest : { ...rest, followUpUsed };
+      let status = 200;
+      const response = fakeResponse();
+      response.status = (code: number) => { status = code; return response; };
+      await createSpeculativeTurnController(service as never, true)(request as never, response as never, () => {});
+      return { followUpUsed: (received as { followUpUsed?: unknown } | null)?.followUpUsed, status };
+    };
+    expect(await run(undefined)).toEqual({ followUpUsed: false, status: 200 });
+    expect(await run("yes")).toEqual({ followUpUsed: undefined, status: 400 });
+  });
 });

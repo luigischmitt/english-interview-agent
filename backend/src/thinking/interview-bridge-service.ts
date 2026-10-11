@@ -155,6 +155,8 @@ export function evaluateBridge(raw: unknown, input: Pick<BridgeInput, "decision"
   const text = raw.trim().replace(/\s+/gu, " ");
   if (!text) return { bridge: null };
   if (/[\r\n“”"]/u.test(raw) || containsNoiseToken(text)) return { dropReason: "invalid_text" };
+  // A model that echoes a prompt field name ("BridgeLeadIn You used…") must never be spoken.
+  if (/\b(?:bridge\s*lead\s*-?\s*in|follow\s*-?\s*up\s*bridge|bridgeFor)\b/iu.test(text)) return { dropReason: "invalid_text" };
   if (text.includes("?")) return { dropReason: "not_one_sentence" };
   const { decision } = input;
   const limitLength = decision === "NEXT" ? maxBridgeLength : followUpBridgeLength;
@@ -174,6 +176,8 @@ export function evaluateBridge(raw: unknown, input: Pick<BridgeInput, "decision"
   // a transition that names any other topic ("…your approach to testing" before a migration question) is invalid.
   const validTransition = (sentence: string): boolean => {
     if (sentence.split(/\s+/u).length > maxTransitionWords) return false;
+    // "Let's switch to that." points back at the restated detail, not at the upcoming question's topic.
+    if (/\b(?:that|this|it|those|these|them)[.!]?$/iu.test(sentence.trim())) return false;
     if (!transitionStartPattern.test(sentence) && !transitionPattern.test(sentence)) return false;
     const topical = [...contentWords(sentence)].filter((word) => !genericTransitionStems.has(word));
     return topical.length === 0 || topical.some((word) => questionWordSet.has(word));
@@ -200,9 +204,16 @@ export function evaluateBridge(raw: unknown, input: Pick<BridgeInput, "decision"
   const inventedName = sentences.some((sentence, index) => sentence.split(/\s+/u).slice(1).some((token) => /^[\p{Lu}\p{N}]/u.test(token) && token !== "I" && !/^I['’]/u.test(token) && [...contentWords(token)].some((word) => !transcriptWords.has(word) && !bridgeGlueStems.has(word) && !(index === 1 && questionWordSet.has(word)))));
   if (inventedName) return { dropReason: "invented_detail" };
   if (longestTranscriptRun(text, input.transcript) > minCopyAllowance) return { dropReason: "copies_transcript" };
-  if (normalizedWords(input.question).length >= 4 && sequenceIndices(normalizedWords(text), normalizedWords(input.question)).length > 0) return { dropReason: "redundant_with_question" };
+  const withoutRedundantTransition = (): Evaluation => {
+    if (decision === "NEXT" && sentences.length === 2) {
+      const restating = evaluateBridge(sentences[0], input);
+      if ("bridge" in restating && restating.bridge) return { ...restating, transitionDropped: true };
+    }
+    return { dropReason: "redundant_with_question" };
+  };
+  if (normalizedWords(input.question).length >= 4 && sequenceIndices(normalizedWords(text), normalizedWords(input.question)).length > 0) return withoutRedundantTransition();
   // Redundant only when the question adds zero new content words beyond the bridge.
-  if (![...contentWords(input.question)].some((word) => !bridgeWords.has(word))) return { dropReason: "redundant_with_question" };
+  if (![...contentWords(input.question)].some((word) => !bridgeWords.has(word))) return withoutRedundantTransition();
   const leadInFollowed = followsLeadIn(text, assignBridgeLeadIn(input.recentAcknowledgements));
   // A "new topic" transition contradicts a question that stays on the restated detail: keep only the restating sentence.
   if (decision === "NEXT" && sentences.length === 2) {

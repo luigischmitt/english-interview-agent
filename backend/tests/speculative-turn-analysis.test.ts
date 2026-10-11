@@ -4,7 +4,7 @@ import { SpeculativeTurnAnalysisService } from "../src/thinking/speculative-turn
 const input = { revision: 2, currentQuestion: "What did you build?", snapshot: "I built a Kafka pipeline and reduced latency.", followUpUsed: false, askedQuestions: [], firstFixedQuestion: "How do you monitor services in production?", secondFixedQuestion: "How do you test changes?", firstFixedType: "bank" as const, secondFixedType: "job" as const, previousCandidate: null, roleContext: { targetRole: "Backend Engineer", seniority: "senior" } };
 const response = (analysis: Record<string, unknown>) => {
   const providerAction = (value: unknown) => typeof value === "string" ? `FIXED_${value}` : value;
-  const providerAnalysis = { ...analysis, fixedAction: providerAction(analysis.fixedAction), secondFixedAction: providerAction(analysis.secondFixedAction ?? "KEEP"), adaptedSecondFixedQuestion: analysis.adaptedSecondFixedQuestion ?? null, secondFixedEvidenceAnchor: analysis.secondFixedEvidenceAnchor ?? null };
+  const providerAnalysis = { ...analysis, fixedAction: providerAction(analysis.fixedAction), secondFixedAction: providerAction(analysis.secondFixedAction ?? "KEEP"), adaptedSecondFixedQuestion: analysis.adaptedSecondFixedQuestion ?? null, secondFixedEvidenceAnchor: analysis.secondFixedEvidenceAnchor ?? null, bridge: analysis.bridge ?? null, followUpBridge: analysis.followUpBridge ?? null };
   return vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(providerAnalysis) } }], usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.0001 } }), { status: 200 }));
 };
 const rawResponse = (content: unknown, status = 200) => vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status }));
@@ -20,6 +20,50 @@ describe("speculative turn analysis", () => {
     expect(body.response_format.json_schema.schema.properties.followUpAction.enum).toEqual(["REPLACE", "NONE"]);
     expect(body.response_format.json_schema.schema.properties.fixedAction.enum).toEqual(["FIXED_KEEP", "FIXED_SKIP", "FIXED_DEEPEN"]);
     expect(body.messages[0].content).toContain("KEEP is forbidden");
+  });
+
+  it("returns a validated grounded bridge from the same speculative call", async () => {
+    const fetcher = response({
+      revision: 2,
+      followUpAction: "REPLACE",
+      followUpQuestion: "How did Kafka reduce the latency?",
+      followUpAnchor: "Kafka pipeline",
+      fixedAction: "KEEP",
+      adaptedFixedQuestion: null,
+      fixedEvidenceAnchor: null,
+      bridge: "You mentioned building a Kafka pipeline.",
+    });
+    const recentAcknowledgements = ["Thanks for that. Let's move on.", "Let's switch gears for a moment."];
+    const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...input, recentAcknowledgements });
+    // The bridge always introduces the planned question (never the follow-up), so the frontend can check it is the one asked.
+    expect(result).toMatchObject({ followUpAction: "REPLACE", bridge: "You mentioned building a Kafka pipeline.", bridgeFor: input.firstFixedQuestion });
+    const body = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0]?.[1]?.body));
+    expect(body.response_format.json_schema.schema.required).toContain("bridge");
+    expect(JSON.parse(body.messages[1].content)).toMatchObject({ recentAcknowledgements, bridgeLeadIn: "You mentioned" });
+  });
+
+  it("returns a one-sentence follow-up bridge validated against the follow-up, and drops an invented one", async () => {
+    const analysis = { revision: 2, followUpAction: "REPLACE", followUpQuestion: "Why did you choose Kafka for the pipeline?", followUpAnchor: "Kafka pipeline", fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null };
+    const grounded = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response({ ...analysis, followUpBridge: "You mentioned that it reduced latency." })).analyze(input);
+    expect(grounded).toMatchObject({ followUpAction: "REPLACE", followUpBridge: "You mentioned that it reduced latency." });
+    const invented = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response({ ...analysis, followUpBridge: "You mentioned deploying it on Azure." })).analyze(input);
+    expect(invented).toMatchObject({ followUpAction: "REPLACE", followUpQuestion: analysis.followUpQuestion, followUpBridge: null });
+    const none = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response({ ...analysis, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, followUpBridge: "You mentioned that it reduced latency." })).analyze(input);
+    expect(none).toMatchObject({ followUpBridge: null });
+  });
+
+  it("drops an invented bridge without losing the selected question", async () => {
+    const fetcher = response({ revision: 2, followUpAction: "REPLACE", followUpQuestion: "How did Kafka reduce the latency?", followUpAnchor: "Kafka pipeline", fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, bridge: "You mentioned deploying Kafka on Azure." });
+    await expect(new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze(input)).resolves.toMatchObject({ followUpAction: "REPLACE", bridge: null, bridgeFor: null });
+  });
+
+  it("validates the bridge for the second planned question when the first is skipped, and drops it when none is asked", async () => {
+    const snapshot = "I built a Kafka pipeline and I monitored it with Grafana dashboards and alerts.";
+    const base = { revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "SKIP", adaptedFixedQuestion: null, fixedEvidenceAnchor: "monitored it with Grafana dashboards and alerts", bridge: "You mentioned building a Kafka pipeline. Let's talk about testing." };
+    const second = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response(base)).analyze({ ...input, snapshot, secondFixedType: "bank" });
+    expect(second).toMatchObject({ fixedAction: "SKIP", bridge: "You mentioned building a Kafka pipeline. Let's talk about testing.", bridgeFor: input.secondFixedQuestion });
+    const none = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response({ ...base, secondFixedAction: "SKIP", secondFixedEvidenceAnchor: "Kafka pipeline" })).analyze({ ...input, snapshot, secondFixedType: "bank", secondFixedQuestion: "What did you build with Kafka?", hasThirdFixedQuestion: true });
+    expect(none).toMatchObject({ bridge: null, bridgeFor: null });
   });
 
   it("allows KEEP only when a prior candidate exists and logs only content-free diagnostics", async () => {
@@ -60,7 +104,7 @@ describe("speculative turn analysis", () => {
   it("drops only a follow-up whose anchor is absent from the snapshot", async () => {
     const fetcher = response({ revision: 2, followUpAction: "REPLACE", followUpQuestion: "Why did Redis help?", followUpAnchor: "Redis", fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null });
     await expect(new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze(input)).resolves.toEqual({
-      revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, secondFixedAction: "KEEP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: null, followUpRejected: true,
+      revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, secondFixedAction: "KEEP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: null, bridge: null, bridgeFor: null, followUpBridge: null, followUpRejected: true,
     });
   });
 
@@ -69,12 +113,15 @@ describe("speculative turn analysis", () => {
     await expect(new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze(input)).resolves.toMatchObject({ followUpAction: "NONE", fixedAction: "KEEP" });
   });
 
-  it("never allows SKIP for a job question and never calls after follow-up use", async () => {
+  it("never allows SKIP for a job question and analyzes only the fixed handoff after follow-up use", async () => {
     const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "SKIP", adaptedFixedQuestion: null, fixedEvidenceAnchor: "Kafka pipeline" });
     const service = new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher);
     await expect(service.analyze({ ...input, firstFixedType: "job" })).resolves.toMatchObject({ fixedAction: "KEEP" });
-    await expect(service.analyze({ ...input, followUpUsed: true })).resolves.toBeNull();
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    await expect(service.analyze({ ...input, followUpUsed: true })).resolves.toMatchObject({ followUpAction: "NONE", fixedAction: "KEEP" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const secondBody = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[1]?.[1]?.body));
+    expect(secondBody.response_format.json_schema.schema.properties.followUpAction.enum).toEqual(["NONE"]);
+    expect(secondBody.messages[0].content).toContain("Do not create another follow-up");
   });
 
   it("never allows SKIP for a second planned job question", async () => {
@@ -144,6 +191,19 @@ describe("speculative turn analysis", () => {
     const service = new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher);
     await expect(service.analyze({ ...input, snapshot, firstFixedQuestion: "How did you mentor engineers and help them grow?" })).resolves.toMatchObject({ fixedAction: "SKIP" });
     await expect(service.analyze({ ...input, snapshot: "I built the payments service with Kafka and PostgreSQL and led its rollout.", firstFixedQuestion: "How did you resolve duplicate messages during the payments migration?" })).resolves.toMatchObject({ fixedAction: "KEEP" });
+  });
+
+  it("recognizes desktop and mobile as evidence for a responsive-layout question", async () => {
+    const snapshot = "I changed the layout width and navigation for desktop and mobile, using separate breakpoints for each screen.";
+    const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "SKIP", adaptedFixedQuestion: null, fixedEvidenceAnchor: "desktop and mobile", bridge: null });
+    const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...input, snapshot, firstFixedType: "resume", firstFixedQuestion: "How did you adapt the interface for different screen sizes?" });
+    expect(result).toMatchObject({ fixedAction: "SKIP", fixedEvidenceAnchor: "desktop and mobile" });
+  });
+
+  it("does not treat a lone mention of mobile as answering a screen-size question", async () => {
+    const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "SKIP", adaptedFixedQuestion: null, fixedEvidenceAnchor: "a mobile app", bridge: null });
+    const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...input, snapshot: "I built a mobile app for delivery drivers.", firstFixedType: "resume", firstFixedQuestion: "How did you adapt the interface for different screen sizes?" });
+    expect(result).toMatchObject({ fixedAction: "KEEP" });
   });
 
   describe("specific question coverage never overrides the model", () => {
@@ -310,6 +370,9 @@ describe("speculative turn analysis", () => {
       secondFixedAction: "KEEP",
       adaptedSecondFixedQuestion: null,
       secondFixedEvidenceAnchor: null,
+      bridge: null,
+      bridgeFor: null,
+      followUpBridge: null,
       followUpRejected: false,
     });
   });
@@ -581,4 +644,3 @@ describe("speculative follow-up validation", () => {
     expect(kept.result).toMatchObject({ followUpAction: "KEEP", followUpRejected: false });
   });
 });
-
