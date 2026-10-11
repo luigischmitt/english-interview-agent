@@ -4,7 +4,7 @@ import { SpeculativeTurnAnalysisService } from "../src/thinking/speculative-turn
 const input = { revision: 2, currentQuestion: "What did you build?", snapshot: "I built a Kafka pipeline and reduced latency.", followUpUsed: false, askedQuestions: [], firstFixedQuestion: "How do you monitor services in production?", secondFixedQuestion: "How do you test changes?", firstFixedType: "bank" as const, secondFixedType: "job" as const, previousCandidate: null, roleContext: { targetRole: "Backend Engineer", seniority: "senior" } };
 const response = (analysis: Record<string, unknown>) => {
   const providerAction = (value: unknown) => typeof value === "string" ? `FIXED_${value}` : value;
-  const providerAnalysis = { ...analysis, fixedAction: providerAction(analysis.fixedAction), secondFixedAction: providerAction(analysis.secondFixedAction ?? "KEEP"), adaptedSecondFixedQuestion: analysis.adaptedSecondFixedQuestion ?? null, secondFixedEvidenceAnchor: analysis.secondFixedEvidenceAnchor ?? null, bridge: analysis.bridge ?? null };
+  const providerAnalysis = { ...analysis, fixedAction: providerAction(analysis.fixedAction), secondFixedAction: providerAction(analysis.secondFixedAction ?? "KEEP"), adaptedSecondFixedQuestion: analysis.adaptedSecondFixedQuestion ?? null, secondFixedEvidenceAnchor: analysis.secondFixedEvidenceAnchor ?? null, bridge: analysis.bridge ?? null, followUpBridge: analysis.followUpBridge ?? null };
   return vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(providerAnalysis) } }], usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.0001 } }), { status: 200 }));
 };
 const rawResponse = (content: unknown, status = 200) => vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status }));
@@ -40,6 +40,16 @@ describe("speculative turn analysis", () => {
     const body = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0]?.[1]?.body));
     expect(body.response_format.json_schema.schema.required).toContain("bridge");
     expect(JSON.parse(body.messages[1].content)).toMatchObject({ recentAcknowledgements, bridgeLeadIn: "You mentioned" });
+  });
+
+  it("returns a one-sentence follow-up bridge validated against the follow-up, and drops an invented one", async () => {
+    const analysis = { revision: 2, followUpAction: "REPLACE", followUpQuestion: "Why did you choose Kafka for the pipeline?", followUpAnchor: "Kafka pipeline", fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null };
+    const grounded = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response({ ...analysis, followUpBridge: "You mentioned that it reduced latency." })).analyze(input);
+    expect(grounded).toMatchObject({ followUpAction: "REPLACE", followUpBridge: "You mentioned that it reduced latency." });
+    const invented = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response({ ...analysis, followUpBridge: "You mentioned deploying it on Azure." })).analyze(input);
+    expect(invented).toMatchObject({ followUpAction: "REPLACE", followUpQuestion: analysis.followUpQuestion, followUpBridge: null });
+    const none = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response({ ...analysis, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, followUpBridge: "You mentioned that it reduced latency." })).analyze(input);
+    expect(none).toMatchObject({ followUpBridge: null });
   });
 
   it("drops an invented bridge without losing the selected question", async () => {
@@ -94,7 +104,7 @@ describe("speculative turn analysis", () => {
   it("drops only a follow-up whose anchor is absent from the snapshot", async () => {
     const fetcher = response({ revision: 2, followUpAction: "REPLACE", followUpQuestion: "Why did Redis help?", followUpAnchor: "Redis", fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null });
     await expect(new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze(input)).resolves.toEqual({
-      revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, secondFixedAction: "KEEP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: null, bridge: null, bridgeFor: null, followUpRejected: true,
+      revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, secondFixedAction: "KEEP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: null, bridge: null, bridgeFor: null, followUpBridge: null, followUpRejected: true,
     });
   });
 
@@ -362,6 +372,7 @@ describe("speculative turn analysis", () => {
       secondFixedEvidenceAnchor: null,
       bridge: null,
       bridgeFor: null,
+      followUpBridge: null,
       followUpRejected: false,
     });
   });

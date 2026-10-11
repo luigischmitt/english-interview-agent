@@ -754,7 +754,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             candidateQuestionByRevisionRef.current.set(revision, speculative.analysis.followUpQuestion!.trim());
             setFollowUpCandidateUpdate({ type: "follow-up-candidate", turnId: speculativeTurnIdRef.current, revision, speechEpoch, question: speculative.analysis.followUpQuestion!.trim(), anchor: speculative.analysis.followUpAnchor!.trim() });
           }
-          decision = { decision: "FOLLOW_UP", followUpQuestion: speculative.analysis.followUpQuestion!.trim(), nextQuestion: null, acknowledgement: null };
+          // Its own one-sentence bridge (validated against this follow-up) restates the detail it asks about.
+          decision = { decision: "FOLLOW_UP", followUpQuestion: speculative.analysis.followUpQuestion!.trim(), nextQuestion: null, acknowledgement: speculative.analysis.followUpBridge?.trim() || null };
         }
         else {
           // No follow-up (model NONE or backend-rejected): the active candidate and its retained preparations stay; only a

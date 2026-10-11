@@ -155,6 +155,8 @@ export function evaluateBridge(raw: unknown, input: Pick<BridgeInput, "decision"
   const text = raw.trim().replace(/\s+/gu, " ");
   if (!text) return { bridge: null };
   if (/[\r\n“”"]/u.test(raw) || containsNoiseToken(text)) return { dropReason: "invalid_text" };
+  // A model that echoes a prompt field name ("BridgeLeadIn You used…") must never be spoken.
+  if (/\b(?:bridge\s*lead\s*-?\s*in|follow\s*-?\s*up\s*bridge|bridgeFor)\b/iu.test(text)) return { dropReason: "invalid_text" };
   if (text.includes("?")) return { dropReason: "not_one_sentence" };
   const { decision } = input;
   const limitLength = decision === "NEXT" ? maxBridgeLength : followUpBridgeLength;

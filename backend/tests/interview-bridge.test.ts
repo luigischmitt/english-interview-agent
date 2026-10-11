@@ -101,6 +101,11 @@ describe("interview bridge call", () => {
     expect(result).toMatchObject({ bridge: "So you moved the billing service because deploys were slow.", transitionDropped: true });
   });
 
+  it("drops a bridge that echoes a prompt field name", async () => {
+    const result = await bridgeService(async () => chat({ bridge: "BridgeLeadIn So you moved the billing service because deploys were slow." })).write(bridgeInput({ decision: "NEXT", question: "How do you approach testing for services?" }));
+    expect(result).toMatchObject({ bridge: null, outcome: "dropped" });
+  });
+
   it("drops a one-sentence NEXT bridge that repeats the upcoming question", async () => {
     const result = await bridgeService(async () => chat({ bridge: "Now how do you approach testing for services." })).write(bridgeInput({ decision: "NEXT", question: "How do you approach testing for services?" }));
     expect(result).toMatchObject({ bridge: null, outcome: "dropped" });

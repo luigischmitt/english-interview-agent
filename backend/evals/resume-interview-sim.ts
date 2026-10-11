@@ -156,7 +156,7 @@ function rms(frame: Buffer) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------- room emulation
-type Analysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; followUpRejected?: boolean; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction?: "KEEP" | "SKIP" | "DEEPEN"; adaptedSecondFixedQuestion?: string | null };
+type Analysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; followUpRejected?: boolean; bridge?: string | null; bridgeFor?: string | null; followUpBridge?: string | null; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction?: "KEEP" | "SKIP" | "DEEPEN"; adaptedSecondFixedQuestion?: string | null };
 type AnalyzeResult = { enabled: boolean; analysis: Analysis | null };
 type AnalyzeFn = (payload: Record<string, unknown>, signal: AbortSignal) => Promise<AnalyzeResult>;
 type Outbound = Record<string, unknown>;
