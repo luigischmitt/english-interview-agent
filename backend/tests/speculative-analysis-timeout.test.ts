@@ -42,7 +42,7 @@ describe("speculative analysis abort classification", () => {
 
   it("sends previousCandidate to the model so KEEP is possible", async () => {
     const previousCandidate = { question: "How did Kafka help?", anchor: "Kafka" };
-    const content = { revision: 2, followUpAction: "KEEP", followUpQuestion: previousCandidate.question, followUpAnchor: previousCandidate.anchor, fixedAction: "FIXED_KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, secondFixedAction: "FIXED_KEEP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: null };
+    const content = { revision: 2, followUpAction: "KEEP", followUpQuestion: previousCandidate.question, followUpAnchor: previousCandidate.anchor, fixedAction: "FIXED_KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, secondFixedAction: "FIXED_KEEP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: null, bridge: null };
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200 }));
     const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher as unknown as typeof fetch).analyze({ ...input, previousCandidate });
     expect(result).toMatchObject({ followUpAction: "KEEP", followUpQuestion: previousCandidate.question });

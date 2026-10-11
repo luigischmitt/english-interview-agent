@@ -89,9 +89,20 @@ describe("interview bridge call", () => {
     await expect(bridgeService(async () => chat({ bridge })).write(bridgeInput({ decision: "NEXT", question: "How do you approach testing for the services you maintain?" }))).resolves.toMatchObject({ bridge });
   });
 
-  it("drops a NEXT bridge whose transition repeats the upcoming question verbatim", async () => {
+  it("drops only the transition of a NEXT bridge that repeats the upcoming question verbatim", async () => {
     const bridge = "So you moved the billing service because deploys were slow. Now how do you approach testing for services.";
     const result = await bridgeService(async () => chat({ bridge })).write(bridgeInput({ decision: "NEXT", question: "How do you approach testing for services?" }));
+    expect(result).toMatchObject({ bridge: "So you moved the billing service because deploys were slow.", transitionDropped: true });
+  });
+
+  it("drops a NEXT transition that points back at the restated detail instead of the next topic", async () => {
+    const bridge = "So you moved the billing service because deploys were slow. Let's switch to that.";
+    const result = await bridgeService(async () => chat({ bridge })).write(bridgeInput({ decision: "NEXT", question: "How do you approach testing for services?" }));
+    expect(result).toMatchObject({ bridge: "So you moved the billing service because deploys were slow.", transitionDropped: true });
+  });
+
+  it("drops a one-sentence NEXT bridge that repeats the upcoming question", async () => {
+    const result = await bridgeService(async () => chat({ bridge: "Now how do you approach testing for services." })).write(bridgeInput({ decision: "NEXT", question: "How do you approach testing for services?" }));
     expect(result).toMatchObject({ bridge: null, outcome: "dropped" });
   });
 
@@ -153,6 +164,16 @@ describe("interview bridge call", () => {
     const bridge = "I understand you moved the billing service to separate services because deploys were slow. Now I'd like to switch to a different topic.";
     const result = await bridgeService(async () => chat({ bridge })).write(bridgeInput({ decision: "NEXT", question: "What was the hardest part of splitting the billing service into separate services?" }));
     expect(result).toMatchObject({ bridge: "I understand you moved the billing service to separate services because deploys were slow.", transitionDropped: true });
+  });
+
+  it("keeps the grounded restatement when a topical transition paraphrases the whole next question", async () => {
+    const bridge = "You mentioned reducing duplicate payment requests. Let's discuss how you monitored the service in production.";
+    const result = await bridgeService(async () => chat({ bridge })).write(bridgeInput({
+      decision: "NEXT",
+      transcript: "I added exponential backoff, which reduced duplicate payment requests.",
+      question: "How did you monitor the service in production?",
+    }));
+    expect(result).toMatchObject({ bridge: "You mentioned reducing duplicate payment requests.", transitionDropped: true });
   });
 
   it("returns no bridge when the model answers null or an unusable shape", async () => {

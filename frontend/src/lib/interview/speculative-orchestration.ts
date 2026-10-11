@@ -1,6 +1,6 @@
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 
-export type SpeculativeTurnAnalysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; /** The backend validator rejected the model's follow-up (treated as no follow-up). */ followUpRejected?: boolean; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction?: "KEEP" | "SKIP" | "DEEPEN"; adaptedSecondFixedQuestion?: string | null; secondFixedEvidenceAnchor?: string | null };
+export type SpeculativeTurnAnalysis = { revision: number; followUpAction: "KEEP" | "REPLACE" | "NONE"; followUpQuestion: string | null; followUpAnchor: string | null; /** Grounded transition generated inside the existing speculative call, for the planned question in `bridgeFor` only. */ bridge?: string | null; bridgeFor?: string | null; /** The backend validator rejected the model's follow-up (treated as no follow-up). */ followUpRejected?: boolean; fixedAction: "KEEP" | "SKIP" | "DEEPEN"; adaptedFixedQuestion: string | null; fixedEvidenceAnchor: string | null; secondFixedAction?: "KEEP" | "SKIP" | "DEEPEN"; adaptedSecondFixedQuestion?: string | null; secondFixedEvidenceAnchor?: string | null };
 
 export async function requestSpeculativeHandoffStatus(signal?: AbortSignal): Promise<boolean> {
   try {

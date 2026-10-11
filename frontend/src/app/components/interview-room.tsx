@@ -41,6 +41,7 @@ import { createOpeningSpeechTiming, isOpeningTimingEnabled } from "@/lib/intervi
 import type { InterviewHandoffMetrics } from "@/lib/interview/handoff-timing.mjs";
 import { requestSpeculativeHandoffStatus, requestSpeculativeTurn } from "@/lib/interview/speculative-orchestration";
 import { canUseFixedDecisionFromFollowUp, resolveFixedFromFollowUp } from "@/lib/interview/fixed-from-follow-up.mjs";
+import { bridgeForSelection, canUsePostFollowUpPreparation, createPreparedBridgeRegistry, MAX_POST_FOLLOW_UP_ANALYSES } from "@/lib/interview/prepared-bridge.mjs";
 import { buildPlannedCoverageStartFields, finalPlannedCoverage, recordPlannedCoverage, resolvePlannedCoveredSkip, type PlannedCoverage } from "@/lib/interview/planned-coverage.mjs";
 import { FINAL_ANALYSIS_WAIT_MS, FOLLOW_UP_TOTAL_WAIT_MS, finalAnalysisWaitPredicate, remainingBudgetMs } from "@/lib/interview/final-analysis-wait.mjs";
 import { createCandidateStatusWait, shouldWaitForCandidateStatus } from "@/lib/interview/candidate-status-wait.mjs";
@@ -127,6 +128,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const [assessmentSockets] = useState(() => new AssessmentSocketRegistry());
   const [nextTurnPreparation] = useState(() => createNextTurnPreparationRegistry<PreparedTurn>());
   const [fixedHandoffPreparation] = useState(() => createFixedHandoffPreparationRegistry());
+  // The newest grounded bridge of the current answer, with its audio, for handoffs that do not use its own preparation.
+  const [preparedBridges] = useState(() => createPreparedBridgeRegistry());
   const fixedHandoffTurnIdRef = useRef<string | null>(null);
   const speculativeCallsRef = useRef({ turn: "", count: 0, revision: 0, applied: 0 });
   const speculativeAttemptedRef = useRef(false);
@@ -253,6 +256,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     currentSpeechEpochRef.current = null;
     pendingFollowUpCheckRef.current = null;
     speculativeTurnIdRef.current = globalThis.crypto?.randomUUID?.() ?? `turn_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`;
+    preparedBridges.clear();
     candidateStatusesRef.current.clear();
     latestCandidateStatusRevisionRef.current.clear();
     plannedCoverageRef.current.clear();
@@ -262,7 +266,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     closingPrewarmCancelRef.current = null;
     closingFallbackPrewarmRef.current?.();
     closingFallbackPrewarmRef.current = null;
-  }, [micTurnId, closingReaction]);
+  }, [micTurnId, closingReaction, preparedBridges]);
   useEffect(() => {
     const controller = new AbortController();
     void requestSpeculativeHandoffStatus(controller.signal).then((enabled) => { speculativeEnabledRef.current = enabled; });
@@ -430,6 +434,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       postFollowUpFixedSelectionRef.current?.cancelAudio?.();
       postFollowUpFixedSelectionRef.current = null;
       fixedHandoffPreparation.cancel();
+      preparedBridges.clear();
       acknowledgements.cancel();
       closingReaction.cancel();
       closingPrewarmCancelRef.current?.();
@@ -439,7 +444,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       if (advanceTimerRef.current !== null) window.clearTimeout(advanceTimerRef.current);
       assessmentSockets.closeAll();
     };
-  }, [abortTurnAnalyses, acknowledgements, assessmentSockets, closingReaction, fixedHandoffPreparation, nextTurnPreparation]);
+  }, [abortTurnAnalyses, acknowledgements, assessmentSockets, closingReaction, fixedHandoffPreparation, nextTurnPreparation, preparedBridges]);
 
   // At the start of the first answer, synthesize the predictable closing line so it is ready whenever the interview ends
   // (once; the blob is retained and the backend keeps fixed phrases cached).
@@ -664,7 +669,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     const answer = provisionalTranscript.trim();
     if (answer) maybePrepareClosingReaction(answer);
     if (!answer || timeLimitReached || !hasTimeForNextQuestion(elapsedSecondsRef.current, durationMinutes)) return;
-    if (followUpUsed) return;
     // A request to repeat or explain is not an answer: nothing to prepare.
     if (detectClarificationRequest(answer) !== null) return;
     const turns = appendInterviewReportPair(reportTurnsRef.current, {
@@ -675,7 +679,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     });
     const input = buildDecisionInput(turns, answer);
     if (speculativeCallsRef.current.turn !== micTurnIdRef.current) speculativeCallsRef.current = { turn: micTurnIdRef.current, count: 0, revision: 0, applied: 0 };
-    if (speculativeCallsRef.current.count >= MAX_SPECULATIVE_REVISIONS || revision < 1 || revision > MAX_SPECULATIVE_REVISIONS || revision <= speculativeCallsRef.current.revision) return;
+    // After the one follow-up, analyses only refresh coverage and the bridge of the planned handoff: a few are enough.
+    if (speculativeCallsRef.current.count >= (followUpUsed ? MAX_POST_FOLLOW_UP_ANALYSES : MAX_SPECULATIVE_REVISIONS) || revision < 1 || revision > MAX_SPECULATIVE_REVISIONS || revision <= speculativeCallsRef.current.revision) return;
     speculativeCallsRef.current.count += 1;
     speculativeCallsRef.current.revision = revision;
     speculativeAttemptedRef.current = true;
@@ -690,7 +695,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
         const planned = selectNextPlannedQuestions({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes }, 3);
         const preparationStartedAt = performance.now();
         // What this request is told about the active candidate; a concurrent analysis may change it before the result lands.
-        const sentPreviousCandidate = speculativeCandidateRef.current && !retiredCandidateQuestionsRef.current.has(speculativeCandidateRef.current.question) ? speculativeCandidateRef.current : null;
+        const sentPreviousCandidate = !followUpUsed && speculativeCandidateRef.current && !retiredCandidateQuestionsRef.current.has(speculativeCandidateRef.current.question) ? speculativeCandidateRef.current : null;
         reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "started", plannedCount: planned.length, revision });
         const speculative = planned[0] ? await requestSpeculativeTurn({
           revision,
@@ -707,6 +712,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           hasThirdFixedQuestion: planned.length > 2,
           previousCandidate: sentPreviousCandidate,
           previousAnswers: input.previousAnswers,
+          recentAcknowledgements: recentAcknowledgementsRef.current,
           roleContext: buildRoleContext(config),
         }, signal) : { enabled: true, analysis: null };
         if (speculative.enabled) speculativeEnabledRef.current = true;
@@ -734,6 +740,9 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           && typeof speculative.analysis.followUpAnchor === "string" && Boolean(speculative.analysis.followUpAnchor.trim())
           && !retiredCandidateQuestionsRef.current.has(speculative.analysis.followUpQuestion.trim());
         if (stale && !acceptedCandidate) return null;
+        // The bridge introduces a planned question: only the one it was validated for, never a follow-up or another question.
+        const selectionBridge = fixedSelection.question ? bridgeForSelection({ bridge: speculative.analysis.bridge, bridgeFor: speculative.analysis.bridgeFor, originalPrompt: fixedSelection.originalPrompt }) : null;
+        const selectionPrompt = fixedSelection.question ? fixedSelection.prompt ?? fixedSelection.question.prompt : null;
         // A concurrent analysis (sent with another previousCandidate) already set a different active candidate: this result stays
         // a retained preparation and never overwrites the active candidate nor reaches the backend.
         const activeCandidate = speculativeCandidateRef.current && !retiredCandidateQuestionsRef.current.has(speculativeCandidateRef.current.question) ? speculativeCandidateRef.current : null;
@@ -751,7 +760,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           // No follow-up (model NONE or backend-rejected): the active candidate and its retained preparations stay; only a
           // COVERED/INVALID verdict retires them. This analysis still yields its NEXT preparation.
           const nextQuestion = fixedSelection.question ? fixedSelection.prompt ?? fixedSelection.question.prompt : null;
-          decision = { decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: nextQuestion ? fixedHandoffPreparation.peek()?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) : null };
+          decision = { decision: "NEXT", followUpQuestion: null, nextQuestion, acknowledgement: nextQuestion ? selectionBridge ?? fixedHandoffPreparation.peek()?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) : null };
         }
         if (signal.aborted) return null;
         const utterance = utteranceForDecision(decision, answer);
@@ -777,6 +786,19 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           });
         }
         if (cleanupSpeech.length) onCleanup(() => { for (const cancel of cleanupSpeech) cancel(); });
+        // Keep the newest bridge's audio for a handoff that ends up not using this preparation (a follow-up that cannot play,
+        // the fixed path after a follow-up). A NEXT preparation already synthesizes this exact utterance, so it costs nothing.
+        if (!retainedOnly && selectionBridge && selectionPrompt && config.playInterviewerAudio) {
+          preparedBridges.offer({
+            turnId: speculativeTurnIdRef.current,
+            revision,
+            speechEpoch,
+            bridge: selectionBridge,
+            prompt: selectionPrompt,
+            utterance: composeAcknowledgedQuestion(spokenAcknowledgement(selectionBridge, answer), selectionPrompt),
+            prewarm: (text) => prewarmFixedInterviewerUtterance(text, config.voice),
+          });
+        }
         reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "decision_ready", plannedCount: planned.length, revision, elapsedMs: Math.max(0, Math.round(performance.now() - preparationStartedAt)) });
         const selectedQuestion = fixedSelection?.question ?? planned.find((candidate) => candidate.prompt === decision.nextQuestion) ?? null;
         return {
@@ -875,7 +897,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       const selectedId = selectedPlannedQuestionId ?? candidates.find((candidate) => candidate.prompt === current.nextQuestion)?.id ?? candidates[0]?.id ?? null;
       const skip = resolvePlannedCoveredSkip({ coverage, judgedQuestionId: start.questionId, selectedQuestionId: selectedId, candidates, excludedIds: [...skippedPlannedQuestionIds, ...speculativeFixedSkippedIdsRef.current] });
       if (!skip) return;
-      decision = { ...current, nextQuestion: skip.replacement.prompt };
+      // A grounded bridge may name the question that is now being skipped, so fall back to a neutral transition.
+      decision = { ...current, nextQuestion: skip.replacement.prompt, acknowledgement: pickFixedHandoffTransition(recentAcknowledgementsRef.current) };
       selectedPlannedQuestionId = skip.replacement.id;
       skippedPlannedQuestionIds = [...skippedPlannedQuestionIds, skip.skippedQuestionId];
       // Monotonic: a committed skip is never asked later, also by the fixed fallback.
@@ -899,37 +922,63 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       fixedPreparationSettled = true;
       decision = repeatTurnDecision("detector");
     } else if (clarificationHint === null && followUpUsed) {
-      // A fixed question always follows the one allowed follow-up. No model or dynamic bridge belongs on this path.
-      nextTurnPreparation.abort();
-      const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
-      const pendingSelection = postFollowUpFixedSelectionRef.current;
-      postFollowUpFixedSelectionRef.current = null;
-      const pendingQuestion = pendingSelection
-        ? nextPlan.remaining.find((candidate) => candidate.id === pendingSelection.questionId) ?? null
-        : null;
-      const pendingAdaptationReady = pendingSelection?.adapted
-        ? await waitForFirstChunk(pendingSelection.audioReady, 400)
-        : false;
-      pendingSelection?.cancelAudio?.();
-      const pendingPrompt = pendingQuestion
-        ? pendingSelection?.adapted
-          ? resolveFixedPromptForAudio({ prompt: pendingSelection.prompt ?? undefined, originalPrompt: pendingSelection.originalPrompt ?? pendingQuestion.prompt, adapted: true }, pendingAdaptationReady)
-          : pendingSelection?.prompt ?? pendingQuestion.prompt
-        : null;
-      const prepared = fixedHandoffPreparation.peek();
-      decision = {
-        decision: "NEXT",
-        followUpQuestion: null,
-        nextQuestion: pendingQuestion ? pendingPrompt ?? pendingQuestion.prompt : nextPlan.question?.prompt ?? null,
-        acknowledgement: pendingQuestion || nextPlan.question ? prepared?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) : null,
-      };
-      selectedPlannedQuestionId = pendingQuestion?.id ?? nextPlan.question?.id ?? null;
-      skippedPlannedQuestionIds = pendingQuestion ? pendingSelection?.skippedQuestionIds ?? [] : [];
-      applyPlannedCoveredSkip();
-      const usedIndex = prepared?.questions.findIndex((candidate) => candidate.id === selectedPlannedQuestionId) ?? -1;
-      const usesPreparedFixed = usedIndex >= 0 && decision.nextQuestion === prepared?.questions[usedIndex]?.prompt;
-      finishFixedPreparation(usesPreparedFixed ? "used" : "discarded", usesPreparedFixed ? usedIndex : undefined);
-      fixedPreparationSettled = true;
+      // A fixed question always follows the one allowed follow-up. Prefer an exact-transcript speculative preparation so
+      // its grounded bridge and coverage decision are free on the final handoff; never wait for one on this path.
+      const groundedPreparation = nextTurnPreparation.takeAnyReady({
+        accept: (value) => canUsePostFollowUpPreparation({ value, currentTurnId: speculativeTurnIdRef.current, currentSpeechEpoch: currentSpeechEpochRef.current, finalTranscript: savedAnswer }),
+      });
+      if (groundedPreparation) {
+        postFollowUpFixedSelectionRef.current?.cancelAudio?.();
+        postFollowUpFixedSelectionRef.current = null;
+        preparedTurn = await groundedPreparation.promise;
+        decision = preparedTurn?.decision ?? null;
+        selectedPlannedQuestionId = preparedTurn?.nextPlannedQuestionId ?? null;
+        skippedPlannedQuestionIds = preparedTurn?.skippedPlannedQuestionIds ?? [];
+        if (decision) {
+          handoffTimingRef.current?.markPrepared();
+          logPreparation("prepared_used", "post_follow_up_grounded_bridge");
+        } else {
+          nextTurnPreparation.release(groundedPreparation);
+          logPreparation("prepared_discarded", "unavailable");
+        }
+        finishFixedPreparation("discarded");
+        fixedPreparationSettled = true;
+      } else {
+        nextTurnPreparation.abort();
+        const nextPlan = selectNextPlannedQuestion({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes });
+        const pendingSelection = postFollowUpFixedSelectionRef.current;
+        postFollowUpFixedSelectionRef.current = null;
+        // An analysis of the follow-up answer may have committed a skip (the candidate already covered that question).
+        const committedSkips = speculativeFixedSkippedIdsRef.current;
+        const pendingQuestion = pendingSelection && !committedSkips.has(pendingSelection.questionId)
+          ? nextPlan.remaining.find((candidate) => candidate.id === pendingSelection.questionId) ?? null
+          : null;
+        const unskipped = pendingQuestion || committedSkips.size === 0 ? null : resolveSpeculativeFixedSelection(selectNextPlannedQuestions({ questions, askedQuestionIds: askedPlannedQuestionIdsRef.current, elapsedSeconds: elapsedSecondsRef.current, durationMinutes }, 3), "KEEP", null, undefined, null, committedSkips);
+        const plannedQuestion = unskipped?.question ?? nextPlan.question;
+        const pendingAdaptationReady = pendingSelection?.adapted
+          ? await waitForFirstChunk(pendingSelection.audioReady, 400)
+          : false;
+        pendingSelection?.cancelAudio?.();
+        const pendingPrompt = pendingQuestion
+          ? pendingSelection?.adapted
+            ? resolveFixedPromptForAudio({ prompt: pendingSelection.prompt ?? undefined, originalPrompt: pendingSelection.originalPrompt ?? pendingQuestion.prompt, adapted: true }, pendingAdaptationReady)
+            : pendingSelection?.prompt ?? pendingQuestion.prompt
+          : null;
+        const prepared = fixedHandoffPreparation.peek();
+        decision = {
+          decision: "NEXT",
+          followUpQuestion: null,
+          nextQuestion: pendingQuestion ? pendingPrompt ?? pendingQuestion.prompt : plannedQuestion?.prompt ?? null,
+          acknowledgement: pendingQuestion || plannedQuestion ? prepared?.transition ?? pickFixedHandoffTransition(recentAcknowledgementsRef.current) : null,
+        };
+        selectedPlannedQuestionId = pendingQuestion?.id ?? plannedQuestion?.id ?? null;
+        skippedPlannedQuestionIds = pendingQuestion ? pendingSelection?.skippedQuestionIds ?? [] : unskipped?.skippedQuestionIds ?? [];
+        applyPlannedCoveredSkip();
+        const usedIndex = prepared?.questions.findIndex((candidate) => candidate.id === selectedPlannedQuestionId) ?? -1;
+        const usesPreparedFixed = usedIndex >= 0 && decision.nextQuestion === prepared?.questions[usedIndex]?.prompt;
+        finishFixedPreparation(usesPreparedFixed ? "used" : "discarded", usesPreparedFixed ? usedIndex : undefined);
+        fixedPreparationSettled = true;
+      }
     } else if (clarificationHint === null) {
       // Use the decision prepared during the answer grace only for exactly this transcript and these inputs.
       const discardedBefore = nextTurnPreparation.stats().discarded;
@@ -1078,6 +1127,21 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     }
     // A follow-up that fell back to its fixed question above is a NEXT turn now; the same check applies.
     applyPlannedCoveredSkip();
+    // Any NEXT handoff still on a neutral transition speaks the newest grounded bridge of this answer instead, but only
+    // before the exact question it was validated and synthesized for, and only when its audio is ready (never waited for).
+    if (clarificationHint === null && decision?.decision === "NEXT" && decision.nextQuestion && config.playInterviewerAudio) {
+      const nextQuestion = decision.nextQuestion;
+      const bridge = preparedBridges.find({
+        turnId: speculativeTurnIdRef.current,
+        speechEpoch: currentSpeechEpochRef.current,
+        prompt: nextQuestion,
+        utteranceFor: (text) => composeAcknowledgedQuestion(spokenAcknowledgement(text, savedAnswer), nextQuestion),
+      });
+      if (bridge && bridge !== decision.acknowledgement) {
+        decision = { ...decision, acknowledgement: bridge };
+        reportAudioDiagnostic({ kind: "turn_preparation", preparationType: "speculative", outcome: "used", preparationReason: "grounded_bridge" });
+      }
+    }
     if (preparedTurn?.cancelFixedQuestionAudio && decision?.decision !== "FOLLOW_UP") preparedTurn.cancelFixedQuestionAudio();
     if (!fixedPreparationSettled) {
       const prepared = fixedHandoffPreparation.peek();
