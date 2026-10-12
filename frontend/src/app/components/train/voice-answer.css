@@ -1,0 +1,12 @@
+.va-control { display: inline-flex; align-items: center; gap: .65rem; min-width: 0; }
+.va-button { display: inline-grid; place-items: center; width: 2.75rem; height: 2.75rem; border: 1px solid var(--ds-border, var(--border)); border-radius: 999px; color: var(--ds-text, var(--foreground)); background: var(--ds-surface, var(--card)); cursor: pointer; transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease; }
+.va-button:hover:not(:disabled) { background: var(--ds-surface-hover, var(--muted)); }
+.va-button:focus-visible { outline: 3px solid var(--ds-focus, var(--ring)); outline-offset: 3px; }
+.va-button:disabled { cursor: not-allowed; opacity: .55; }
+.va-button-recording { color: var(--ds-danger, var(--destructive)); border-color: currentColor; }
+.va-live, .va-status { display: inline-flex; align-items: center; gap: .45rem; font-size: .875rem; color: var(--ds-text-muted, var(--muted-foreground)); }
+.va-dot { width: .5rem; height: .5rem; flex: 0 0 auto; border-radius: 50%; background: var(--ds-danger, var(--destructive)); animation: va-pulse 1.2s ease-in-out infinite; }
+.va-spinner { animation: va-spin .9s linear infinite; }
+@keyframes va-pulse { 50% { opacity: .35; } }
+@keyframes va-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .va-dot, .va-spinner { animation: none; } }
