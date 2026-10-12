@@ -29,18 +29,33 @@ describe("practice service", () => {
     expect(line).not.toContain("Redis");
   });
 
-  it("reuses existing themes, drops jargon themes and unknown keys", async () => {
+  it("reuses existing themes, drops unknown keys and rewrites a technical title instead of losing the mistake", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
-    const jargon = { ...theme, key: "gerund-after-prepositions", title: "Gerúndio depois de preposição" };
-    const result = await service({ assignments: [{ index: 0, themeKey: "articles" }, { index: 1, themeKey: "gerund-after-prepositions" }, { index: 2, themeKey: "made-up" }], newThemes: [jargon] })
-      .groupThemes({ errors: [purposeError, purposeError, purposeError], existingThemes: [{ key: "articles", title: "Esquecer o artigo antes do substantivo" }] });
-    expect(result).toEqual({ assignments: ["articles", null, null], newThemes: [] });
+    const jargon = { ...theme, key: "article-before-singular", title: "Usar artigo antes de substantivo contável singular" };
+    const responses = [
+      { assignments: [{ index: 0, themeKey: "articles" }, { index: 1, themeKey: "article-before-singular" }, { index: 2, themeKey: "made-up" }], newThemes: [jargon] },
+      { title: "Esquecer o 'a' antes de uma coisa só (a tool)" },
+    ];
+    const fetcher = (async () => chat(responses.shift())) as unknown as typeof fetch;
+    const result = await new OpenRouterPracticeService(config, fetcher).groupThemes({ errors: [purposeError, purposeError, purposeError], existingThemes: [{ key: "articles", title: "Esquecer o artigo" }] });
+    expect(result).toEqual({ assignments: ["articles", "article-before-singular", null], newThemes: [{ ...jargon, title: "Esquecer o 'a' antes de uma coisa só (a tool)" }] });
+  });
+
+  it("uses the person's own corrected sentences as examples of the vocabulary theme", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const words = { ...theme, key: "natural-words", title: "Trocar palavras que soam estranhas em inglês", examples: ["We use analyze to see.", "Generic one.", "Generic two."] };
+    const vocab = { type: "WORD_CHOICE" as const, evidence: "all of the base", suggestion: "Use foundation para a base de um sistema.", rephrasedExample: "all of the foundation" };
+    const result = await service({ assignments: [{ index: 0, themeKey: "natural-words" }], newThemes: [words] }).groupThemes({ errors: [vocab], existingThemes: [] });
+    expect(result?.newThemes[0]?.examples).toEqual(["all of the foundation", "We use analyze to see.", "Generic one."]);
   });
 
   it("validates theme drafts: Portuguese plain text, English examples, slug key", () => {
     expect(validThemeDraft(theme)).toEqual(theme);
-    expect(validThemeDraft({ ...theme, key: "Purpose To Verb" })).toBeNull();
+    expect(validThemeDraft({ ...theme, key: "Purpose To Verb" })?.key).toBe("purpose-to-verb");
+    expect(validThemeDraft({ ...theme, key: "esquecer-o-a-antes-de-som-de-vogal" })?.key).toBe("esquecer-o-a-antes-de-som");
+    expect(validThemeDraft({ ...theme, key: "!!!" })).toBeNull();
     expect(validThemeDraft({ ...theme, title: "Ortografia de palavras" })).toBeNull();
+    expect(validThemeDraft({ ...theme, title: "Ortografia de palavras" }, { allowJargonTitle: true })).toMatchObject({ title: "Ortografia de palavras" });
     expect(validThemeDraft({ ...theme, title: "Purpose clauses", explanation: "Use to plus the base verb." })).toBeNull();
     expect(validThemeDraft({ ...theme, examples: ["Usei Redis para cache."] })).toBeNull();
   });
@@ -119,6 +134,24 @@ describe("practice routes", () => {
     expect(second.headers["retry-after"]).toBe("1");
     finish();
     expect((await first).status).toBe(200);
+  });
+});
+
+describe("practice limits", () => {
+  it("lets grading run while a slow theme grouping is in flight for the same user", async () => {
+    let finish!: () => void;
+    const service: PracticeService = {
+      groupThemes: () => new Promise((resolve) => { finish = () => resolve({ assignments: [null], newThemes: [] }); }),
+      buildExercises: vi.fn(async () => null),
+      grade: vi.fn(async () => ({ verdict: "correct" as const, feedback: "Certo.", corrected: "Ok." })),
+    };
+    const app = createApp({ speechConfig, accessTokenVerifier: null, practiceService: service });
+    const themes = request(app).post("/api/v1/practice/themes").send({ errors: [purposeError], existingThemes: [] }).then((response) => response);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const grade = await request(app).post("/api/v1/practice/grade").send({ theme: { title: "t", explanation: "e" }, exercise: { kind: "build", instruction: "Faça uma frase.", source: null, target: "I did it." }, answer: "ok", mode: "text" });
+    expect(grade.status).toBe(200);
+    finish();
+    expect((await themes).status).toBe(200);
   });
 });
 
