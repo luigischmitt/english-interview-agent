@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowLeft, Check, CheckCircle2, CircleDot, Dumbbell, Loader2, Play, RotateCcw, Volume2, XCircle } from "lucide-react";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
@@ -378,6 +378,7 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     }
     return (
       <ThemeDetail
+        key={selected.theme_key}
         theme={selected}
         attempts={attempts}
         attemptsLoading={attemptsLoading}
@@ -451,7 +452,23 @@ function ThemeDetail({
   onPlay: (phrase: string) => void;
 }) {
   const [showAllErrors, setShowAllErrors] = useState(false);
+  const [activeRuleIndex, setActiveRuleIndex] = useState(0);
+  const ruleButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const lesson = practiceLessonByKey[theme.theme_key];
+  const activeRule = lesson?.rules[activeRuleIndex] ?? lesson?.rules[0];
+  const selectRule = (index: number, focus = false) => {
+    if (!lesson) return;
+    const nextIndex = (index + lesson.rules.length) % lesson.rules.length;
+    setActiveRuleIndex(nextIndex);
+    if (focus) requestAnimationFrame(() => ruleButtonRefs.current[nextIndex]?.focus());
+  };
+  const handleRuleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home") return selectRule(0, true);
+    if (event.key === "End") return selectRule((lesson?.rules.length ?? 1) - 1, true);
+    selectRule(index + (["ArrowDown", "ArrowRight"].includes(event.key) ? 1 : -1), true);
+  };
   const grouped = [...new Set((theme.error_refs ?? []).map((ref) => ref.point ?? t("Outros pontos")))].map((point) => ({
     point,
     refs: (theme.error_refs ?? []).filter((ref) => (ref.point ?? t("Outros pontos")) === point),
@@ -468,34 +485,84 @@ function ThemeDetail({
         </h2>
         <p className="ds-label mt-2">{t(lesson?.subtitle ?? theme.explanation)}</p>
         <p className="ds-body mt-3">{t(lesson?.intro ?? theme.why)}</p>
+        {lesson?.outcome && (
+          <div className="tr-outcome mt-4">
+            <span className="badge badge-soft badge-success">{t("Você vai aprender")}</span>
+            <p>{t(lesson.outcome)}</p>
+          </div>
+        )}
       </header>
-      {lesson && (
-        <div className="tr-rules mt-6">
-          {lesson.rules.map((rule) => (
-            <article className="tr-rule ds-card" key={rule.id}>
-              <h3>{t(rule.label)}</h3>
-              <p className="tr-rule-when">{t(rule.when)}</p>
-              <p className="tr-rule-explain">{t(rule.explain)}</p>
-              {(rule.wrong || rule.right) && (
+      {lesson && activeRule && (
+        <div className="tr-lesson-layout mt-6">
+          <nav className="tr-rule-nav card card-sm" aria-label={t("Conteúdo da aula")}>
+            <p className="tr-rule-nav-title">{t("Conteúdo da aula")}</p>
+            <div className="tabs tabs-border" role="tablist" aria-orientation="vertical">
+              {lesson.rules.map((rule, index) => (
+                <button
+                  ref={(node) => { ruleButtonRefs.current[index] = node; }}
+                  type="button"
+                  role="tab"
+                  id={`lesson-tab-${rule.id}`}
+                  aria-selected={index === activeRuleIndex}
+                  aria-controls="active-lesson-rule"
+                  tabIndex={index === activeRuleIndex ? 0 : -1}
+                  className={`tab tr-rule-tab ${index === activeRuleIndex ? "tab-active" : ""}`}
+                  key={rule.id}
+                  onClick={() => selectRule(index)}
+                  onKeyDown={(event) => handleRuleKeyDown(event, index)}
+                >
+                  <span aria-hidden="true">{index + 1}</span>
+                  <span>{t(rule.label)}</span>
+                </button>
+              ))}
+            </div>
+          </nav>
+          <article
+            id="active-lesson-rule"
+            className="tr-rule card card-md ds-card"
+            role="tabpanel"
+            aria-labelledby={`lesson-tab-${activeRule.id}`}
+          >
+              <div className="tr-rule-heading">
+                <p className="tr-rule-progress">{t("Parte {current} de {total}", { current: activeRuleIndex + 1, total: lesson.rules.length })}</p>
+                <h3>{t(activeRule.label)}</h3>
+                <p className="tr-rule-goal">{t(activeRule.goal)}</p>
+              </div>
+              <section className="tr-rule-section" aria-labelledby="rule-pattern-title">
+                <h4 id="rule-pattern-title">{t("A fórmula")}</h4>
+                <p className="tr-pattern">{t(activeRule.pattern)}</p>
+              </section>
+              <section className="tr-rule-section" aria-labelledby="rule-use-title">
+                <h4 id="rule-use-title">{t("Como usar")}</h4>
+                <p className="tr-rule-when">{t(activeRule.when)}</p>
+                <p className="tr-rule-explain">{t(activeRule.explain)}</p>
+                <ul className="tr-rule-points">
+                  {activeRule.points.map((point) => <li key={point}>{t(point)}</li>)}
+                </ul>
+              </section>
+              {(activeRule.wrong || activeRule.right) && (
+                <section className="tr-rule-section" aria-labelledby="rule-compare-title">
+                  <h4 id="rule-compare-title">{t("Compare")}</h4>
                 <div className="tr-contrast">
-                  {rule.wrong && (
+                  {activeRule.wrong && (
                     <p className="tr-contrast-wrong">
                       <span aria-hidden="true">✗</span>
-                      <del>{t(rule.wrong)}</del>
+                      <del lang="en">{t(activeRule.wrong)}</del>
                     </p>
                   )}
-                  {rule.right && (
+                  {activeRule.right && (
                     <p className="tr-contrast-right">
                       <span aria-hidden="true">✓</span>
-                      <span lang="en">{t(rule.right)}</span>
-                      <SpeakButton phrase={rule.right} onPlay={onPlay} />
+                      <span lang="en">{t(activeRule.right)}</span>
+                      <SpeakButton phrase={activeRule.right} onPlay={onPlay} />
                     </p>
                   )}
                 </div>
+                </section>
               )}
-              <div className="tr-examples">
-                <h4>{t("Exemplos")}</h4>
-                {rule.examples.map((example) => (
+              <section className="tr-rule-section tr-examples" aria-labelledby="rule-examples-title">
+                <h4 id="rule-examples-title">{t("Veja em outras frases")}</h4>
+                {activeRule.examples.map((example) => (
                   <div className="tr-example" key={example.en}>
                     <div className="tr-example-en" lang="en">
                       <span>{example.en}</span>
@@ -504,10 +571,19 @@ function ThemeDetail({
                     <p>{t(example.pt)}</p>
                   </div>
                 ))}
+              </section>
+              {activeRule.tip && <p className="tr-rule-tip"><strong>{t("Lembrete:")}</strong> {t(activeRule.tip)}</p>}
+              <div className="tr-rule-controls">
+                <button type="button" className="ds-btn ds-btn-soft" disabled={activeRuleIndex === 0} onClick={() => selectRule(activeRuleIndex - 1)}>
+                  <ArrowLeft className="size-4" />
+                  {t("Anterior")}
+                </button>
+                <button type="button" className="ds-btn ds-btn-soft" disabled={activeRuleIndex === lesson.rules.length - 1} onClick={() => selectRule(activeRuleIndex + 1)}>
+                  {t("Próxima parte")}
+                  <ArrowLeft className="size-4 rotate-180" />
+                </button>
               </div>
-              {rule.tip && <p className="tr-rule-tip">{t(rule.tip)}</p>}
             </article>
-          ))}
         </div>
       )}
       {!!grouped.length && (

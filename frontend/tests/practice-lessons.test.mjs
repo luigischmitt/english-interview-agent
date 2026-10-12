@@ -8,14 +8,31 @@ test("every group has a didactic lesson: explanation, contrast and translated ex
   const ids = practiceLessons.flatMap((lesson) => lesson.rules.map((rule) => rule.id));
   assert.equal(new Set(ids).size, ids.length);
   for (const lesson of practiceLessons) {
+    assert.ok(lesson.outcome.length >= 70, `${lesson.key} needs a transferable outcome`);
     assert.ok(lesson.rules.length >= 3 && lesson.rules.length <= 6, lesson.key);
     for (const rule of lesson.rules) {
       assert.ok(rule.id.startsWith(`${lesson.key}.`), rule.id);
+      assert.ok(rule.goal.length >= 45, `${rule.id} goal`);
+      assert.ok(rule.pattern.length >= 12, `${rule.id} pattern`);
+      assert.ok(rule.points.length >= 3 && rule.points.length <= 4, `${rule.id} key points`);
+      assert.ok(rule.points.every((point) => point.length >= 20), `${rule.id} key point detail`);
       assert.ok(rule.explain.length >= 80 && rule.explain.length <= 420, `${rule.id} explain length`);
       assert.ok(rule.wrong && rule.right && rule.wrong !== rule.right, `${rule.id} contrast`);
       assert.equal(rule.examples.length, 2, rule.id);
       assert.ok(rule.examples.every((example) => example.en && example.pt), `${rule.id} examples need a translation`);
     }
+  }
+});
+
+test("verb form lessons teach reusable rules instead of one isolated sentence", () => {
+  const infinitive = practiceRuleById["verb-forms.to"];
+  const thirdPerson = practiceRuleById["verb-forms.s"];
+  const irregular = practiceRuleById["verb-forms.irregular"];
+  assert.match(infinitive.points.join(" "), /need.*want.*plan.*decide/iu);
+  assert.match(thirdPerson.pattern, /he\/she\/it/iu);
+  assert.match(thirdPerson.points.join(" "), /does\/doesn't/iu);
+  for (const family of ["build → built", "lead → led", "choose → chose", "write → wrote", "run → ran", "go → went"]) {
+    assert.ok(irregular.points.join(" ").includes(family), family);
   }
 });
 

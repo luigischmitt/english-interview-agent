@@ -1,6 +1,6 @@
 // Fixed lessons and exercises of the eight practice groups (no model call to teach or to build exercises).
-// Each rule teaches in four steps: what it is (`when`), why it works that way (`explain`), the typical Brazilian mistake
-// next to the right form (`wrong` → `right`) and real interview sentences with their meaning (`examples`). Exercises are
+// Each rule teaches what it is (`when`), why it works that way (`explain`), the typical Brazilian mistake next to the
+// right form (`wrong` → `right`) and real interview sentences with their meaning (`examples`). Exercises are
 // fixed too: `choose` is graded locally; `spot` accepts the listed answers locally and only asks the model when the
 // answer is none of them (another valid wording must not be marked wrong).
 
@@ -84,10 +84,10 @@ export const practiceLessons = [
       },
       {
         id: "articles.the", label: "the", when: "Algo específico, que os dois já sabem qual é.",
-        explain: "The é \"o/a\" específico: use quando quem ouve já sabe de qual coisa você fala — porque você acabou de citar, porque só existe uma, ou porque o contexto deixa claro. Primeira vez é a; segunda vez é the.",
+        explain: "The aponta para algo identificável para quem ouve: porque já foi citado, porque é único ou porque o contexto deixa claro. Algo novo costuma usar a/an, mas também pode usar the logo na primeira menção quando o contexto já define qual é.",
         wrong: "We added a cache, and a cache cut the latency.", right: "We added a cache, and the cache cut the latency.",
         examples: [ex("The API was slow at first.", "A API era lenta no começo."), ex("The team liked the new feature.", "O time gostou da nova feature.")],
-        tip: "Primeira vez → a; já sabemos qual → the.",
+        tip: "Ainda não identificável → a/an; identificável no contexto → the.",
       },
       {
         id: "articles.none", label: "Sem artigo", when: "Plural ou ideia geral.",
@@ -123,10 +123,10 @@ export const practiceLessons = [
       },
       {
         id: "verb-tenses.perfect", label: "Desde quando", when: "Começou no passado e continua até hoje.",
-        explain: "Em português dizemos \"trabalho aqui desde 2021\" no presente. Em inglês, quando algo começou no passado e ainda é verdade, usamos have/has + o verbo no passado: I have worked here since 2021. Since vem com o ponto de início (since 2021); for, com a duração (for three years).",
+        explain: "Em português dizemos \"trabalho aqui desde 2021\" no presente. Em inglês, quando algo começou no passado e ainda é verdade, usamos have/has + particípio passado: I have worked here since 2021. Since vem com o ponto de início (since 2021); for, com a duração (for three years).",
         wrong: "I work here since 2021.", right: "I have worked here since 2021.",
         examples: [ex("I've used React for three years.", "Uso React há três anos."), ex("She has led the team since March.", "Ela lidera o time desde março.")],
-        tip: "Ainda é verdade + since/for → have + verbo.",
+        tip: "Ainda é verdade + since/for → have/has + particípio.",
       },
       {
         id: "verb-tenses.present", label: "Rotina e agora", when: "O que você faz hoje e o que está acontecendo agora.",
@@ -177,7 +177,7 @@ export const practiceLessons = [
       },
       {
         id: "verb-forms.s", label: "he / she / it + s", when: "No presente, uma pessoa ou coisa → verbo com -s.",
-        explain: "No presente, quando quem faz a ação é he, she, it ou uma coisa no singular (the service, the API), o verbo ganha -s: the service runs, she leads. Com I, you, we e they, sem -s. É um detalhe pequeno, mas um nativo percebe na hora.",
+        explain: "No presente simples afirmativo, he, she, it ou um nome no singular (the service, the API) pede verbo com -s: the service runs, she leads. Com I, you, we e they, use a forma base. Depois de does ou doesn't, o verbo também volta à forma base: Does it run?",
         wrong: "The service run on Kubernetes.", right: "The service runs on Kubernetes.",
         examples: [ex("She leads the platform team.", "Ela lidera o time de plataforma."), ex("The API returns a JSON response.", "A API retorna uma resposta em JSON.")],
         tip: "Uma coisa só, no presente → verbo com s.",
@@ -198,7 +198,7 @@ export const practiceLessons = [
       { id: "verb-forms.c5", ruleId: "verb-forms.irregular", kind: "choose", sentence: "Last month we ___ a new dashboard.", options: ["built", "builded", "build"], answer: "built", why: "Passado irregular: build → built." },
       { id: "verb-forms.c6", ruleId: "verb-forms.ing", kind: "choose", sentence: "We finished ___ the tests.", options: ["writing", "to write", "write"], answer: "writing", why: "Depois de finish → verbo com -ing." },
       { id: "verb-forms.s1", ruleId: "verb-forms.to", kind: "spot", sentence: "I created a script for automate the deploys.", answer: "I created a script to automate the deploys.", why: "Para automatizar (objetivo) → to automate." },
-      { id: "verb-forms.s2", ruleId: "verb-forms.s", kind: "spot", sentence: "She lead the backend team.", answer: "She leads the backend team.", accepted: ["She led the backend team."], why: "She, no presente → leads (ou led, se for passado)." },
+      { id: "verb-forms.s2", ruleId: "verb-forms.s", kind: "spot", sentence: "She currently lead the backend team.", answer: "She currently leads the backend team.", why: "Currently deixa claro que é presente; com she, use leads." },
       { id: "verb-forms.s3", ruleId: "verb-forms.ing", kind: "spot", sentence: "Before deploy, we always run the tests.", answer: "Before deploying, we always run the tests.", why: "Depois da preposição before → deploying." },
     ],
   },
@@ -263,8 +263,8 @@ export const practiceLessons = [
     intro: "Em entrevista, frases curtas e bem ligadas mostram raciocínio claro. Quatro hábitos resolvem a maioria dos problemas.",
     rules: [
       {
-        id: "sentence-structure.subject", label: "Sempre um sujeito", when: "Toda frase precisa de quem faz a ação.",
-        explain: "Em português é normal dizer \"Fiz o deploy na sexta\" ou \"É rápido\", sem sujeito. Em inglês o sujeito é obrigatório: I, we, they ou, para coisas e situações, it. Sem ele, a frase soa quebrada.",
+        id: "sentence-structure.subject", label: "Sujeito explícito", when: "Em respostas completas, deixe claro quem faz a ação.",
+        explain: "Em português é normal dizer \"Fiz o deploy na sexta\" ou \"É rápido\", sem sujeito. Em respostas completas em inglês, normalmente precisamos de I, we, they ou, para coisas e situações, it. Comandos são uma exceção: em Run the tests, o you fica implícito.",
         wrong: "Is very important to write tests.", right: "It is very important to write tests.",
         examples: [ex("We deployed the app on Friday.", "Fizemos o deploy do app na sexta."), ex("It was slow because of the query.", "Estava lento por causa da query.")],
         tip: "Sem sujeito? Coloque I, we ou it.",
@@ -296,7 +296,7 @@ export const practiceLessons = [
       { id: "sentence-structure.c2", ruleId: "sentence-structure.connectors", kind: "choose", sentence: "We changed the cache ___ it was using too much memory.", options: ["because", "so", "then"], answer: "because", why: "Usar memória demais é o motivo → because." },
       { id: "sentence-structure.c3", ruleId: "sentence-structure.connectors", kind: "choose", sentence: "It was fast, ___ it was expensive.", options: ["but", "so", "because"], answer: "but", why: "Rápido e caro se opõem → but." },
       { id: "sentence-structure.c4", ruleId: "sentence-structure.order", kind: "choose", sentence: "We built ___.", options: ["a fast API", "an API fast", "a API fast"], answer: "a fast API", why: "Adjetivo antes do substantivo: a fast API." },
-      { id: "sentence-structure.s1", ruleId: "sentence-structure.subject", kind: "spot", sentence: "Is very important to write tests.", answer: "It is very important to write tests.", accepted: ["It's very important to write tests."], why: "Toda frase precisa de sujeito: it is." },
+      { id: "sentence-structure.s1", ruleId: "sentence-structure.subject", kind: "spot", sentence: "Is very important to write tests.", answer: "It is very important to write tests.", accepted: ["It's very important to write tests."], why: "Esta afirmação precisa de um sujeito explícito: it is." },
       { id: "sentence-structure.s2", ruleId: "sentence-structure.subject", kind: "spot", sentence: "Deployed the new version yesterday.", answer: "We deployed the new version yesterday.", accepted: ["I deployed the new version yesterday."], why: "Falta quem fez a ação: we ou I." },
       { id: "sentence-structure.s3", ruleId: "sentence-structure.order", kind: "spot", sentence: "I worked on a project very complex.", answer: "I worked on a very complex project.", why: "Adjetivo antes do substantivo: a very complex project." },
     ],
@@ -323,10 +323,10 @@ export const practiceLessons = [
       },
       {
         id: "plural-agreement.uncountable", label: "Sem plural", when: "data, information, feedback, software, research.",
-        explain: "Algumas palavras são incontáveis em inglês: não ganham -s nem a/an, mesmo quando em português usamos plural (\"vários feedbacks\"). Para falar de quantidade use a lot of ou some: a lot of feedback, some information.",
+        explain: "Information, feedback, software e research são normalmente incontáveis: não ganham -s nem a/an. Data costuma ser tratada como incontável e singular no inglês profissional cotidiano; em escrita científica formal, também aparece como plural de datum. Para quantidade, use some ou a lot of.",
         wrong: "We received many feedbacks from users.", right: "We received a lot of feedback from users.",
         examples: [ex("We got some useful feedback.", "Recebemos um feedback útil."), ex("The data is stored in S3.", "Os dados ficam no S3.")],
-        tip: "feedback, data, information, software, research → sem -s",
+        tip: "feedback, information, software e research → sem -s; data costuma ser singular no uso cotidiano.",
       },
     ],
     exercises: [
@@ -347,10 +347,10 @@ export const practiceLessons = [
     rules: [
       {
         id: "other.clarify", label: "Pedir para repetir", when: "Quando não entendeu a pergunta.",
-        explain: "Não entender uma pergunta é normal, até para nativos. Pedir com educação mostra segurança; chutar uma resposta para a pergunta errada passa uma impressão pior. Could you…? é a forma mais educada.",
+        explain: "Não entender uma pergunta é normal, até para nativos. Pedir com educação mostra segurança; chutar uma resposta para a pergunta errada passa uma impressão pior. Could you…? é uma forma educada e profissional de pedir esclarecimento.",
         wrong: "Repeat, please.", right: "Could you repeat the question, please?",
         examples: [ex("Could you repeat the question, please?", "Você poderia repetir a pergunta?"), ex("Do you mean the backend or the whole system?", "Você quer dizer o backend ou o sistema todo?")],
-        tip: "Could you…? soa sempre educado.",
+        tip: "Could you…? costuma soar educado; acrescente please quando quiser suavizar ainda mais.",
       },
       {
         id: "other.time", label: "Ganhar tempo", when: "Para pensar sem ficar em silêncio.",
@@ -376,6 +376,59 @@ export const practiceLessons = [
     ],
   },
 ];
+
+// The compact fields above still feed grading prompts. This layer is presentation-only: it turns each rule into a
+// transferable mini-lesson without making the backend payload larger or changing exercise IDs.
+const lessonOutcomes = {
+  prepositions: "Escolher a preposição pela situação — tempo, lugar, destino ou combinação fixa — sem traduzir palavra por palavra.",
+  articles: "Decidir quando uma coisa contável precisa de a/an, quando ela já é identificável e quando não leva artigo.",
+  "verb-tenses": "Posicionar experiências na linha do tempo e escolher a forma verbal que deixa claro se algo terminou, continua ou ainda vai acontecer.",
+  "verb-forms": "Reconhecer o que vem antes do verbo e aplicar a forma correta: base, to + base, -ing, terceira pessoa ou particípio.",
+  "word-choice": "Evitar falsos cognatos e escolher combinações naturais que preservam exatamente o sentido da resposta.",
+  "sentence-structure": "Montar respostas fáceis de acompanhar, com sujeito, ordem natural e conexões claras entre motivo, contraste e consequência.",
+  "plural-agreement": "Marcar quantidade no substantivo e fazer o verbo concordar com o sujeito sem pluralizar palavras incontáveis.",
+  other: "Usar frases prontas para esclarecer, ganhar tempo e responder com naturalidade sem perder confiança.",
+};
+
+const ruleGuides = {
+  "prepositions.at": { goal: "Reconhecer um ponto específico no tempo, no lugar ou numa organização.", pattern: "at + ponto exato", points: ["Horário: at 9 a.m.; momento: at the end.", "Empresa ou ponto específico: at Nubank, at the office.", "Para cidade, país, mês ou ano, prefira in."] },
+  "prepositions.on": { goal: "Usar on para dias, plataformas e o objeto de um trabalho.", pattern: "on + dia / plataforma / projeto", points: ["Dias e datas: on Monday, on May 10.", "Plataformas e telas: on GitHub, on mobile.", "Atividade: work on a feature, focus on a problem."] },
+  "prepositions.in": { goal: "Usar in para algo dentro de um período, lugar amplo ou linguagem.", pattern: "in + período / lugar amplo / linguagem", points: ["Meses e anos: in March, in 2026.", "Cidades e países: in Recife, in Brazil.", "Linguagens: written in Go, built in Python."] },
+  "prepositions.for": { goal: "Separar duração e benefício de ponto inicial e destino.", pattern: "for + duração / beneficiário", points: ["Duração: for three years; ponto inicial: since 2023.", "Beneficiário: a dashboard for the sales team.", "Objetivo com ação usa to + verbo: to reduce costs."] },
+  "prepositions.to": { goal: "Marcar o destino de um movimento, envio ou relação.", pattern: "movimento + to + destino", points: ["Mudança: migrate to AWS, move to another team.", "Envio: send the logs to Datadog.", "Beneficiário sem movimento costuma usar for."] },
+  "prepositions.combos": { goal: "Aprender verbo ou adjetivo junto com sua preposição.", pattern: "palavra + preposição fixa", points: ["responsible for · interested in · good at", "depend on · focus on · experience with", "Memorize o par dentro de uma frase, não a preposição isolada."] },
+  "articles.a-an": { goal: "Apresentar uma coisa contável e singular ainda não identificada.", pattern: "a/an + substantivo contável singular", points: ["A escolha depende do som: an API, an hour, a user.", "Use para profissão: a software engineer.", "Plural e palavras incontáveis não aceitam a/an."] },
+  "articles.the": { goal: "Apontar para algo que o ouvinte consegue identificar.", pattern: "the + coisa identificável", points: ["Pode ter sido citada antes: a bug → the bug.", "Pode ser única ou clara pelo contexto: the CTO, the login flow.", "Primeira menção também pode usar the se ambos já sabem qual é."] },
+  "articles.none": { goal: "Falar de uma categoria geral ou de algo incontável.", pattern: "plural geral / incontável → sem artigo", points: ["Categoria geral: Users expect fast responses.", "Incontáveis: data, software, information, feedback.", "Um grupo específico volta a usar the: the users in our beta."] },
+  "verb-tenses.past": { goal: "Contar ações concluídas em um período já encerrado.", pattern: "sujeito + passado simples", points: ["Regulares recebem -ed: worked, deployed.", "Irregulares mudam: build → built; lead → led.", "Last, ago, yesterday e datas encerradas são pistas fortes."] },
+  "verb-tenses.perfect": { goal: "Ligar uma experiência que começou no passado à situação presente.", pattern: "have/has + particípio passado", points: ["Since marca o início: since 2021.", "For marca a duração: for three years.", "Use apenas quando a situação ainda vale agora."] },
+  "verb-tenses.present": { goal: "Distinguir uma rotina de algo que está acontecendo agora.", pattern: "rotina: base verb · agora: am/is/are + -ing", points: ["Rotina: I maintain the API.", "Agora ou fase temporária: I'm working on the migration.", "He/she/it recebe -s apenas no presente simples afirmativo."] },
+  "verb-tenses.future": { goal: "Diferenciar plano já decidido de previsão ou decisão imediata.", pattern: "going to + verbo · will + verbo", points: ["Plano: We're going to migrate.", "Previsão: I think it will scale.", "Depois de will, use a forma base sem to."] },
+  "verb-forms.to": { goal: "Expressar objetivo e completar verbos que pedem infinitivo.", pattern: "to + forma base do verbo", points: ["Objetivo: I wrote a script to automate deploys.", "Depois de need, want, plan, decide e try: we need to improve.", "For recebe um nome ou -ing em outros sentidos; não use for + verbo base."] },
+  "verb-forms.ing": { goal: "Usar -ing depois de preposição e dos verbos que exigem essa forma.", pattern: "preposição / enjoy / avoid / finish + verbo-ing", points: ["Depois de preposição: before deploying, interested in learning.", "Depois de enjoy, avoid, finish e keep: avoid repeating.", "Para ação em andamento, combine be + -ing."] },
+  "verb-forms.s": { goal: "Fazer o verbo concordar no presente simples afirmativo.", pattern: "he/she/it ou singular + verbo-s", points: ["Pronomes e nomes singulares: she leads; the API returns.", "I/you/we/they usam a forma base.", "Depois de does/doesn't, use a forma base: Does it work?"] },
+  "verb-forms.irregular": { goal: "Dominar as formas mais usadas para falar de experiências e resultados.", pattern: "base → passado → particípio", points: ["build → built → built · lead → led → led", "choose → chose → chosen · write → wrote → written", "find → found → found · run → ran → run", "make → made → made · take → took → taken · go → went → gone · speak → spoke → spoken"] },
+  "word-choice.actually": { goal: "Não confundir correção de informação com tempo presente.", pattern: "actually = na verdade · currently = atualmente", points: ["Actually corrige ou contrasta uma informação.", "Currently descreve a situação atual.", "Right now destaca este momento específico."] },
+  "word-choice.pretend": { goal: "Expressar intenção sem dizer que está fingindo.", pattern: "plan/intend to = pretender · pretend = fingir", points: ["Plano: I plan to migrate.", "Intenção: We intend to expand.", "Pretend só quando alguém finge algo."] },
+  "word-choice.realize": { goal: "Distinguir perceber de executar uma atividade.", pattern: "realize = perceber · do/run/carry out = realizar", points: ["Percepção: I realized the query was slow.", "Teste ou tarefa: run a test, do an analysis.", "Processo formal: carry out a migration."] },
+  "word-choice.eventually": { goal: "Separar resultado final de frequência ocasional.", pattern: "eventually = no fim · occasionally = de vez em quando", points: ["Eventually mostra o desfecho depois de um processo.", "Occasionally e sometimes indicam frequência.", "Use pistas de contexto: resultado ou repetição?"] },
+  "word-choice.do-make": { goal: "Escolher a combinação natural para diferentes sentidos de fazer.", pattern: "do + tarefa · make + criação/mudança", points: ["do research, do a review, do the work", "make a decision, make a change, make a mistake", "Aprenda as combinações completas; há exceções à ideia geral."] },
+  "sentence-structure.subject": { goal: "Deixar explícito quem executa cada ação da resposta.", pattern: "sujeito + verbo + complemento", points: ["Use I para sua ação e we para ação do time.", "Use it para situações e coisas já conhecidas.", "Comandos são exceção: Run the tests omite o you."] },
+  "sentence-structure.order": { goal: "Organizar a frase na ordem mais previsível para quem ouve.", pattern: "sujeito + verbo + adjetivo + substantivo", points: ["Comece por quem faz: We built…", "Adjetivo vem antes do nome: a complex project.", "Acrescente tempo e lugar depois da ideia principal."] },
+  "sentence-structure.short": { goal: "Dividir uma resposta longa em unidades fáceis de acompanhar.", pattern: "uma ideia principal por frase", points: ["Feche a primeira ideia antes de adicionar a próxima.", "Use First e Then para manter a sequência.", "Troque correntes de and por pausas e frases completas."] },
+  "sentence-structure.connectors": { goal: "Mostrar com clareza a relação lógica entre duas ideias.", pattern: "because + oração · because of + nome · so/but/then + ideia", points: ["Because explica o motivo; so apresenta a consequência.", "But marca contraste; then organiza a sequência.", "Use because of antes de um nome: because of the query."] },
+  "plural-agreement.plural": { goal: "Marcar mais de um corretamente no substantivo da frase.", pattern: "número/many/several + substantivo plural", points: ["three services, many users, several teams", "Alguns plurais mudam: person → people.", "Palavras incontáveis não recebem -s."] },
+  "plural-agreement.verb": { goal: "Escolher o verbo a partir do núcleo do sujeito.", pattern: "singular: is/has/verb-s · plural: are/have/base verb", points: ["The service has; the services have.", "The test passes; the tests pass.", "Em frases longas, encontre primeiro quem faz a ação."] },
+  "plural-agreement.uncountable": { goal: "Expressar quantidade sem criar plurais que não existem.", pattern: "some/a lot of + incontável", points: ["information, feedback, software e research não recebem -s.", "No uso profissional cotidiano, data costuma aceitar verbo singular.", "Para unidades, diga a piece of information ou a piece of feedback."] },
+  "other.clarify": { goal: "Confirmar o sentido da pergunta antes de responder.", pattern: "Could you + verbo base…?", points: ["Peça repetição: Could you repeat that, please?", "Confirme o escopo: Do you mean the backend or the whole system?", "Depois de could, o verbo fica na forma base."] },
+  "other.time": { goal: "Criar uma pausa curta sem abandonar a conversa.", pattern: "frase de apoio + pausa breve", points: ["Let me think about that for a second.", "That's a good question.", "Use uma frase e depois comece a resposta; não encadeie vários fillers."] },
+  "other.natural": { goal: "Trocar traduções literais por estruturas frequentes de entrevista.", pattern: "aprenda a expressão completa no contexto", points: ["Perfil para a vaga: I'm a good fit for this role.", "Ponto forte: My main strength is…", "Idade usa be: I'm 30, não I have 30 years."] },
+};
+
+for (const lesson of practiceLessons) {
+  lesson.outcome = lessonOutcomes[lesson.key];
+  for (const rule of lesson.rules) Object.assign(rule, ruleGuides[rule.id]);
+}
 
 export const practiceLessonByKey = Object.fromEntries(practiceLessons.map((lesson) => [lesson.key, lesson]));
 
