@@ -10,6 +10,17 @@
 .tr-rule { display: flex; min-width: 0; flex-direction: column; gap: .85rem; padding: 1.2rem; }
 .tr-rule h3 { color: var(--ds-ink); font-family: var(--font-display); font-size: 1.8rem; line-height: 1.05; }
 .tr-rule-when { color: var(--ds-text-2); font-size: .9rem; line-height: 1.45; }
+.tr-rule-explain { max-width: 70ch; color: var(--ds-ink); font-size: 1rem; line-height: 1.7; }
+.tr-contrast { display: grid; gap: .45rem; border-radius: var(--ds-r-md); background: var(--ds-field); padding: .8rem .9rem; }
+.tr-contrast-wrong, .tr-contrast-right { display: flex; min-width: 0; align-items: center; gap: .55rem; overflow-wrap: anywhere; }
+.tr-contrast-wrong { color: var(--ds-error); }
+.tr-contrast-right { color: var(--ds-success); }
+.tr-examples { display: grid; gap: .65rem; }
+.tr-examples h4 { color: var(--ds-text-2); font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.tr-example { display: grid; gap: .15rem; }
+.tr-example-en { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; color: var(--ds-ink); font-size: .95rem; line-height: 1.5; }
+.tr-example-en > span { overflow-wrap: anywhere; }
+.tr-example > p { color: var(--ds-text-3); font-size: .82rem; line-height: 1.45; }
 .tr-rule-tip { margin-top: auto; border-radius: var(--ds-r-md); background: var(--ds-tint); padding: .7rem .8rem; color: var(--ds-green-deep); font-size: .8125rem; line-height: 1.45; }
 .tr-examples { margin: 0; display: grid; gap: .45rem; }
 .tr-examples li { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: var(--ds-ink); font-size: .9rem; line-height: 1.5; }
@@ -54,6 +65,11 @@
 .tr-progress-track { height: .35rem; overflow: hidden; border-radius: 999px; background: var(--ds-track); }
 .tr-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--ds-green-solid); transition: width var(--ds-dur-base) var(--ease-out); }
 .tr-exercise-card { margin-top: 1.25rem; border-radius: var(--ds-r-card); background: var(--ds-surface); padding: 1.25rem; box-shadow: var(--ds-shadow-card); }
+.tr-blank { border-radius: .25rem; background: var(--ds-tint); padding: .08rem .28rem; color: var(--ds-green-deep); font-weight: 700; }
+.tr-choice-list { display: grid; gap: .65rem; margin-top: 1rem; }
+.tr-choice { width: 100%; min-height: 3.25rem; justify-content: flex-start; text-align: left; overflow-wrap: anywhere; }
+.tr-choice.is-correct { border-color: var(--ds-success); background: var(--ds-success-tint); color: var(--ds-success); }
+.tr-choice.is-wrong { border-color: var(--ds-error); background: var(--ds-error-tint); color: var(--ds-error); }
 .tr-exercise-kind { display: inline-flex; border-radius: 999px; background: var(--ds-tint); padding: .4rem .75rem; color: var(--ds-green-deep); font-size: .8rem; font-weight: 600; }
 .tr-feedback { border-radius: var(--ds-r-card); background: var(--ds-surface); padding: 1.2rem; box-shadow: var(--ds-shadow-card); }
 .tr-rule-mini { border-radius: var(--ds-r-lg); background: var(--ds-tint); padding: .9rem 1rem; color: var(--ds-green-deep); }
@@ -71,5 +87,5 @@
 .tr-spinner { animation: tr-spin .9s linear infinite; color: var(--ds-green); }
 @keyframes tr-spin { to { transform: rotate(360deg); } }
 @keyframes tr-celebrate { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-@media (min-width: 640px) { .tr-rules { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tr-sticky-action { position: static; margin: 1.5rem 0 0; padding: 0; background: transparent; } .tr-sticky-action .ds-btn { width: auto; } .tr-exercise-card, .tr-feedback, .tr-results { padding: 1.5rem; } }
+@media (min-width: 640px) { .tr-rules { grid-template-columns: minmax(0, 1fr); } .tr-sticky-action { position: static; margin: 1.5rem 0 0; padding: 0; background: transparent; } .tr-sticky-action .ds-btn { width: auto; } .tr-exercise-card, .tr-feedback, .tr-results { padding: 1.5rem; } }
 @media (prefers-reduced-motion: reduce) { .tr-spinner { animation: none; } .tr-celebration-mark { animation: none; } }

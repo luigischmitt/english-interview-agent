@@ -646,6 +646,14 @@ const englishCopy: Record<string, string> = {
   "Analisando erros novos das suas entrevistas…": "Analyzing new mistakes from your interviews…",
   "Ouvir frase": "Listen to phrase",
   "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.": "We couldn't analyze your recent errors; we'll try again next time.",
+  "Resposta correta.": "Correct answer.",
+  "A opção correta está destacada abaixo.": "The correct option is highlighted below.",
+  "Encontre e corrija o erro": "Find and correct the mistake",
+  "Reescreva sua frase corretamente": "Rewrite your sentence correctly",
+  "Escolha a opção correta": "Choose the correct option",
+  "Exemplos": "Examples",
+  "Complete a frase": "Complete the sentence",
+  "Resultado das opções": "Answer choices",
 };
 
 const interpolate = (text: string, values?: Record<string, string | number>) => values

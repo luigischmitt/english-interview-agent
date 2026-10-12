@@ -6,9 +6,15 @@ import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
 import { resolveInterviewerVoice } from "@/lib/interview/voices.mjs";
 import { interviewerVoiceStorageKey } from "@/lib/interview/voice-picker.mjs";
-import { getPracticeExercises, gradePracticeAnswer, type PracticeExercise } from "@/lib/practice/practice-requests";
-import { normalizePracticeAnswer } from "@/lib/practice/practice-categories.mjs";
-import { practiceLessonByKey, practiceRuleById, lessonRulesForRequest } from "@/lib/practice/practice-lessons.mjs";
+import { gradePracticeAnswer } from "@/lib/practice/practice-requests";
+import {
+  checkFixedAnswer,
+  pickPracticeRound,
+  practiceLessonByKey,
+  practiceRuleById,
+  ruleTextForRequest,
+} from "@/lib/practice/practice-lessons.mjs";
+import type { PracticeFixedExercise } from "@/lib/practice/practice-lessons.mjs";
 import {
   loadPracticeAttempts,
   loadPracticeGroups,
@@ -24,7 +30,8 @@ import { getCurrentLocale, t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
 import "./train.css";
 
-type Grade = { verdict: "correct" | "almost" | "incorrect"; feedback: string; corrected: string };
+type Grade = { verdict: "correct" | "almost" | "incorrect"; feedback: string; corrected: string; why?: string | null };
+type RoundExercise = PracticeFixedExercise;
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
 const syncWarning = "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.";
@@ -37,8 +44,7 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
   const [syncing, setSyncing] = useState(false);
   const [selected, setSelected] = useState<PracticeGroup | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
-  const [exercises, setExercises] = useState<PracticeExercise[]>([]);
-  const [exercisesLoading, setExercisesLoading] = useState(false);
+  const [exercises, setExercises] = useState<RoundExercise[]>([]);
   const [step, setStep] = useState(0);
   const [answer, setAnswer] = useState("");
   const [mode, setMode] = useState<"text" | "voice">("text");
@@ -135,56 +141,84 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
   const begin = async () => {
     if (!selected) return;
     setSessionStarted(true);
-    setExercisesLoading(true);
     setFormError(null);
     setResult(null);
     setAnswer("");
     setMode("text");
     setStep(0);
     setResults([]);
-    setExercises([]);
+    const refs = [...(selected.error_refs ?? [])].reverse();
+    const unique = [...new Map(refs.map((ref) => [ref.point, ref])).values()];
+    let recentIds: string[] = [];
     try {
-      const lesson = practiceLessonByKey[selected.theme_key];
-      const response = await getPracticeExercises({
-        theme: {
-          title: lesson?.title ?? selected.title,
-          explanation: lesson?.intro ?? selected.explanation,
-          examples: selected.examples ?? [],
-        },
-        userErrors: [...new Map([...(selected.error_refs ?? [])].reverse().map((ref) => [ref.point, ref])).values()]
-          .slice(0, 3)
-          .map((ref) => ({ evidence: ref.evidence, rephrasedExample: ref.rephrased })),
-        rules: lessonRulesForRequest(selected.theme_key),
-      });
-      setExercises(response.exercises.slice(0, 5));
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Não foi possível preparar os exercícios.");
-    } finally {
-      setExercisesLoading(false);
+      const saved = localStorage.getItem(`practice-recent:${selected.theme_key}`);
+      recentIds = saved ? (JSON.parse(saved) as string[]) : [];
+    } catch {
+      recentIds = [];
+    }
+    const round = pickPracticeRound({
+      key: selected.theme_key,
+      ownErrors: unique.map((ref) => ({ evidence: ref.evidence, rephrased: ref.rephrased })),
+      recentIds,
+    });
+    setExercises(round);
+    try {
+      localStorage.setItem(
+        `practice-recent:${selected.theme_key}`,
+        JSON.stringify([...recentIds, ...round.map((exercise) => exercise.id)].slice(-10)),
+      );
+    } catch {
+      // A rodada continua normalmente quando o armazenamento local não está disponível.
     }
   };
 
-  const submit = async () => {
-    if (!selected || !exercises[step] || !answer.trim() || grading) return;
+  const submit = async (chosen?: string) => {
+    const submittedAnswer = chosen ?? answer;
+    if (!selected || !exercises[step] || !submittedAnswer.trim() || grading) return;
     setGrading(true);
+    if (chosen) setAnswer(chosen);
     setFormError(null);
     const exercise = exercises[step];
-    const cleanAnswer = answer.trim();
+    const cleanAnswer = submittedAnswer.trim();
     try {
-      const rule = exercise.ruleId ? practiceRuleById[exercise.ruleId] : undefined;
+      const correctLocally = checkFixedAnswer(exercise, cleanAnswer);
       const grade =
-        normalizePracticeAnswer(cleanAnswer) === normalizePracticeAnswer(exercise.target)
-          ? { verdict: "correct" as const, feedback: t("Certo! Sua frase está correta."), corrected: exercise.target }
-          : await gradePracticeAnswer({
-              theme: { title: selected.title, explanation: selected.explanation },
-              exercise: { ...exercise, ...(rule ? { rule: `${rule.label}: ${rule.when}` } : {}) },
-              answer: cleanAnswer,
-              mode,
-            });
+        exercise.kind === "choose"
+          ? {
+              verdict: correctLocally ? ("correct" as const) : ("incorrect" as const),
+              feedback: correctLocally ? t("Resposta correta.") : t("A opção correta está destacada abaixo."),
+              corrected: exercise.sentence.replace("___", exercise.answer),
+              why: exercise.why,
+            }
+          : correctLocally
+            ? {
+                verdict: "correct" as const,
+                feedback: t("Resposta correta."),
+                corrected: cleanAnswer,
+                why: exercise.why,
+              }
+            : await gradePracticeAnswer({
+                theme: { title: selected.title, explanation: selected.explanation },
+                exercise: {
+                  kind: "fix",
+                  instruction: exercise.kind === "spot" ? "Encontre e corrija o erro" : "Sua frase: reescreva certo",
+                  source: exercise.sentence,
+                  target: cleanAnswer,
+                  ruleId: exercise.ruleId,
+                  rule: exercise.ruleId ? (ruleTextForRequest(exercise.ruleId) ?? undefined) : undefined,
+                },
+                answer: cleanAnswer,
+                mode,
+              });
       const saved = await savePracticeAttempt({
         themeId: selected.id,
-        kind: exercise.kind,
-        instruction: exercise.instruction,
+        kind: exercise.kind === "choose" ? "build" : "fix",
+        instruction:
+          exercise.kind === "choose"
+            ? t("Escolha a opção correta")
+            : exercise.kind === "spot"
+              ? t("Encontre e corrija o erro")
+              : t("Reescreva sua frase corretamente"),
         mode,
         answer: cleanAnswer,
         ...grade,
@@ -314,7 +348,6 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
       return (
         <PracticeSession
           exercises={exercises}
-          loading={exercisesLoading}
           step={step}
           answer={answer}
           grading={grading}
@@ -337,6 +370,7 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
           }}
           onVoiceError={setFormError}
           onSubmit={() => void submit()}
+          onChoose={(option) => void submit(option)}
           onNext={next}
           onInterview={onInterview}
           onNextGroup={nextTheme ? () => void selectTheme(nextTheme) : undefined}
@@ -443,14 +477,36 @@ function ThemeDetail({
             <article className="tr-rule ds-card" key={rule.id}>
               <h3>{t(rule.label)}</h3>
               <p className="tr-rule-when">{t(rule.when)}</p>
-              <ul className="tr-examples">
+              <p className="tr-rule-explain">{t(rule.explain)}</p>
+              {(rule.wrong || rule.right) && (
+                <div className="tr-contrast">
+                  {rule.wrong && (
+                    <p className="tr-contrast-wrong">
+                      <span aria-hidden="true">✗</span>
+                      <del>{t(rule.wrong)}</del>
+                    </p>
+                  )}
+                  {rule.right && (
+                    <p className="tr-contrast-right">
+                      <span aria-hidden="true">✓</span>
+                      <span lang="en">{t(rule.right)}</span>
+                      <SpeakButton phrase={rule.right} onPlay={onPlay} />
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className="tr-examples">
+                <h4>{t("Exemplos")}</h4>
                 {rule.examples.map((example) => (
-                  <li key={example} lang="en">
-                    <span>{example}</span>
-                    <SpeakButton phrase={example} onPlay={onPlay} />
-                  </li>
+                  <div className="tr-example" key={example.en}>
+                    <div className="tr-example-en" lang="en">
+                      <span>{example.en}</span>
+                      <SpeakButton phrase={example.en} onPlay={onPlay} />
+                    </div>
+                    <p>{t(example.pt)}</p>
+                  </div>
                 ))}
-              </ul>
+              </div>
               {rule.tip && <p className="tr-rule-tip">{t(rule.tip)}</p>}
             </article>
           ))}
@@ -523,7 +579,6 @@ function ThemeDetail({
 
 function PracticeSession({
   exercises,
-  loading,
   step,
   answer,
   grading,
@@ -538,13 +593,13 @@ function PracticeSession({
   onVoiceAnswer,
   onVoiceError,
   onSubmit,
+  onChoose,
   onNext,
   onInterview,
   onNextGroup,
   onPlay,
 }: {
-  exercises: PracticeExercise[];
-  loading: boolean;
+  exercises: RoundExercise[];
   step: number;
   answer: string;
   grading: boolean;
@@ -559,18 +614,12 @@ function PracticeSession({
   onVoiceAnswer: (text: string) => void;
   onVoiceError: (message: string) => void;
   onSubmit: () => void;
+  onChoose: (option: string) => void;
   onNext: () => void;
   onInterview: () => void;
   onNextGroup?: () => void;
   onPlay: (phrase: string) => void;
 }) {
-  if (loading)
-    return (
-      <section className="tr-panel ds-card p-5 sm:p-8" aria-busy="true">
-        <Loader2 className="tr-spinner size-6" aria-label={t("Carregando exercícios")} />
-        <p className="ds-body mt-3">{t("Preparando seus exercícios…")}</p>
-      </section>
-    );
   if (!exercises.length)
     return (
       <section className="tr-panel ds-card p-5 sm:p-8">
@@ -656,7 +705,9 @@ function PracticeSession({
     );
   }
   const exercise = exercises[step];
-  const kindLabel = exercise.kind === "fix" ? t("Sua frase") : exercise.kind === "spot" ? t("Encontre o erro") : t("Crie uma frase");
+  const kindLabel =
+    exercise.kind === "fix" ? t("Sua frase") : exercise.kind === "spot" ? t("Encontre e corrija o erro") : t("Escolha a opção correta");
+  const choose = exercise.kind === "choose";
   return (
     <section className="tr-panel tr-practice" aria-live="polite">
       <button className="ds-btn ds-btn-quiet mb-4" onClick={onBack}>
@@ -671,25 +722,59 @@ function PracticeSession({
       </div>
       <div className="tr-exercise-card">
         <span className="tr-exercise-kind">{kindLabel}</span>
-        <h2 className="ds-h2 mt-3">{exercise.instruction}</h2>
-        {exercise.source && (
-          <blockquote className="tr-source mt-4" lang="en">
-            {exercise.source}
-          </blockquote>
-        )}
+        <h2 className="ds-h2 mt-3">{choose ? t("Complete a frase") : kindLabel}</h2>
+        <blockquote className="tr-source mt-4" lang="en">
+          {choose
+            ? exercise.sentence.split("___").map((part, index, parts) => (
+                <span key={`${part}-${index}`}>
+                  {part}
+                  {index < parts.length - 1 && <mark className="tr-blank">___</mark>}
+                </span>
+              ))
+            : exercise.sentence}
+        </blockquote>
       </div>
       {!result ? (
-        <AnswerForm
-          value={answer}
-          disabled={grading}
-          error={error}
-          onChange={onAnswer}
-          onSubmit={onSubmit}
-          onVoiceAnswer={onVoiceAnswer}
-          onVoiceError={onVoiceError}
-        />
+        choose ? (
+          <div className="tr-choice-list" role="group" aria-label={t("Escolha a opção correta")}>
+            {exercise.options?.map((option) => (
+              <button
+                className={choiceClass(option, exercise, answer, Boolean(result))}
+                key={option}
+                disabled={grading || Boolean(result)}
+                onClick={() => {
+                  onAnswer(option);
+                  onChoose(option);
+                }}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <AnswerForm
+            value={answer}
+            disabled={grading}
+            error={error}
+            onChange={onAnswer}
+            onSubmit={onSubmit}
+            onVoiceAnswer={onVoiceAnswer}
+            onVoiceError={onVoiceError}
+          />
+        )
       ) : (
-        <PracticeFeedback result={result} exercise={exercise} error={error} speechError={speechError} onNext={onNext} onPlay={onPlay} />
+        <>
+          {choose && (
+            <div className="tr-choice-list" role="group" aria-label={t("Resultado das opções")}>
+              {exercise.options?.map((option) => (
+                <button className={choiceClass(option, exercise, answer, true)} key={option} disabled>
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+          <PracticeFeedback result={result} exercise={exercise} error={error} speechError={speechError} onNext={onNext} onPlay={onPlay} />
+        </>
       )}
     </section>
   );
@@ -768,7 +853,7 @@ function PracticeFeedback({
   onPlay,
 }: {
   result: Grade;
-  exercise: PracticeExercise;
+  exercise: RoundExercise;
   error: string | null;
   speechError: boolean;
   onNext: () => void;
@@ -779,6 +864,7 @@ function PracticeFeedback({
     <div className="tr-feedback mt-5">
       <Verdict verdict={result.verdict} />
       <p className="ds-body mt-2">{result.feedback}</p>
+      {(result.why || exercise.why) && <p className="ds-small mt-2">{t(result.why ?? exercise.why ?? "")}</p>}
       {error && (
         <p className="tr-form-error mt-3" role="status">
           {error}
@@ -830,4 +916,10 @@ function SpeakButton({ phrase, onPlay }: { phrase: string; onPlay: (phrase: stri
       <Volume2 className="size-4" />
     </button>
   );
+}
+
+function choiceClass(option: string, exercise: RoundExercise, answer: string, reveal: boolean) {
+  const correct = reveal && option === exercise.answer;
+  const wrong = reveal && answer === option && option !== exercise.answer;
+  return `ds-btn ds-btn-soft tr-choice ${correct ? "is-correct" : ""} ${wrong ? "is-wrong" : ""}`;
 }
