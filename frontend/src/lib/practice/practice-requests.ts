@@ -2,7 +2,7 @@ import { authorizedFetch } from "@/lib/auth/backend-auth";
 
 const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 type RequestKind = "themes" | "exercises" | "grade";
-const timeout: Record<RequestKind, number> = { themes: 25_000, exercises: 15_000, grade: 12_000 };
+const timeout: Record<RequestKind, number> = { themes: 35_000, exercises: 15_000, grade: 12_000 };
 const fallback: Record<RequestKind, string> = { themes: "Não foi possível organizar seus temas agora. Tente novamente.", exercises: "Não foi possível preparar os exercícios. Tente novamente.", grade: "Não foi possível avaliar sua resposta. Tente novamente." };
 
 async function request<T>(kind: RequestKind, body: unknown): Promise<T> {

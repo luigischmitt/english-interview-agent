@@ -25,6 +25,7 @@ type Exercise = { kind: "fix" | "build"; instruction: string; source: string | n
 type Grade = { verdict: "correct" | "almost" | "incorrect"; feedback: string; corrected: string };
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
+const maxSyncBatches = 4;
 const syncWarning = "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.";
 
 export function TrainView({ onInterview }: { onInterview: () => void }) {
@@ -32,6 +33,7 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
   const [themeLoading, setThemeLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [syncFailed, setSyncFailed] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [selected, setSelected] = useState<PracticeTheme | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -97,13 +99,18 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     }
     setThemes(sortThemes(loaded.value));
     setThemeLoading(false);
-    const synced = await syncPracticeThemes(loaded.value);
-    if (synced.ok) {
-      setThemes(sortThemes(synced.value));
+    // New report errors are grouped a few at a time; the list grows after each batch. A few batches per visit bound the wait.
+    setSyncing(true);
+    let current = loaded.value;
+    for (let batch = 0; batch < maxSyncBatches; batch += 1) {
+      const synced = await syncPracticeThemes(current);
+      if (!synced.ok) { setSyncFailed(true); break; }
       setSyncFailed(false);
-    } else {
-      setSyncFailed(true);
+      current = synced.value.themes;
+      setThemes(sortThemes(current));
+      if (!synced.value.remaining) break;
     }
+    setSyncing(false);
   }, []);
 
   useEffect(() => {
@@ -192,10 +199,16 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
       ) : (
         <>
           {syncFailed && <p className="tr-sync-warning" role="status">{t(syncWarning)}</p>}
+          {syncing && sorted.length > 0 && !selected && <p className="ds-hint mb-3" role="status">{t("Analisando erros novos das suas entrevistas…")}</p>}
           {selected ? (
             selectedView()
           ) : themeLoading ? (
             <div className="tr-skeleton skeleton h-48 w-full" aria-busy="true" />
+          ) : sorted.length === 0 && syncing ? (
+            <section className="shl-dashed flex items-center gap-3 p-6" aria-busy="true">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              <p className="ds-body">{t("Analisando os erros das suas entrevistas… isso leva alguns segundos na primeira vez.")}</p>
+            </section>
           ) : sorted.length === 0 ? (
             <section className="shl-dashed p-6">
               <p className="ds-body">{t("Faça uma entrevista para descobrirmos o que você precisa treinar")}</p>

@@ -14,12 +14,12 @@ export function extractProgressErrors(records) {
   })));
 }
 
-export function findMissingErrors(errors, themes) {
+export function findMissingErrors(errors, themes, limit = 20) {
   const known = new Set(themes.flatMap((theme) => (theme.error_refs ?? []).map(errorKey)));
   return errors
     .filter((error) => !known.has(errorKey(error)))
     .sort((a, b) => safeDate(b.created_at) - safeDate(a.created_at))
-    .slice(0, 20);
+    .slice(0, limit);
 }
 
 export function mergeRefs(existing = [], incoming = []) {

@@ -63,7 +63,11 @@ export async function loadPracticeThemes(): Promise<Result<PracticeTheme[]>> {
   return { ok: true, value: withFrequency((data ?? []) as PracticeTheme[]) };
 }
 
-export async function syncPracticeThemes(themes: PracticeTheme[]): Promise<Result<PracticeTheme[]>> {
+/** Errors grouped per call: the model answers a small batch well within the backend timeout. */
+export const practiceSyncBatchSize = 6;
+
+/** Groups the newest unassigned report errors (one batch). `remaining` says whether another batch is still waiting. */
+export async function syncPracticeThemes(themes: PracticeTheme[]): Promise<Result<{ themes: PracticeTheme[]; remaining: boolean }>> {
   const auth = await authenticatedClient();
   if (!auth.ok) return auth;
   const progress = await loadProgressRecords();
@@ -74,8 +78,9 @@ export async function syncPracticeThemes(themes: PracticeTheme[]): Promise<Resul
       ? validatedPatterns(record.feedback.analysis) ?? []
       : [],
   }));
-  const missing = findMissingErrors(extractProgressErrors(records), themes);
-  if (!missing.length) return { ok: true, value: themes };
+  const allMissing = findMissingErrors(extractProgressErrors(records), themes, Number.POSITIVE_INFINITY);
+  const missing = allMissing.slice(0, practiceSyncBatchSize);
+  if (!missing.length) return { ok: true, value: { themes, remaining: false } };
 
   let assignments: Array<string | null>;
   let newThemes: Array<{ key: string; title: string; explanation: string; why: string; examples: string[] }>;
@@ -141,7 +146,7 @@ export async function syncPracticeThemes(themes: PracticeTheme[]): Promise<Resul
 
   const { data, error } = await client.from("practice_themes").select("*").eq("user_id", auth.value.userId);
   if (error) return failure("Não foi possível atualizar os temas.");
-  return { ok: true, value: withFrequency((data ?? []) as PracticeTheme[]) };
+  return { ok: true, value: { themes: withFrequency((data ?? []) as PracticeTheme[]), remaining: allMissing.length > missing.length } };
 }
 
 export async function savePracticeAttempt(input: {
