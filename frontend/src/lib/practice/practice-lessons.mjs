@@ -406,7 +406,7 @@ export function checkFixedAnswer(exercise, answer) {
  * Picks a practice round: up to `ownCount` of the person's own sentences first, then fixed exercises not done recently,
  * one per rule where possible and alternating choose and spot. `random` is injectable for tests.
  */
-export function pickPracticeRound({ key, ownErrors = [], recentIds = [], size = 5, ownCount = 2, random = Math.random }) {
+export function pickPracticeRound({ key, ownErrors = [], recentIds = [], size = 5, ownCount = 0, chooseShare = 0.6, random = Math.random }) {
   const lesson = practiceLessonByKey[key];
   const own = ownErrors.slice(0, Math.min(ownCount, size)).map((error, index) => ({
     id: `own.${index}`, ruleId: null, kind: "fix", sentence: error.evidence, answer: error.rephrased, accepted: [], why: null,
@@ -420,13 +420,21 @@ export function pickPracticeRound({ key, ownErrors = [], recentIds = [], size = 
   const picked = [];
   const usedRules = new Set();
   const room = () => size - own.length - picked.length;
+  // Most items are multiple choice (direct, instant); the rest ask to rewrite a sentence with one known mistake.
+  const chooseTarget = Math.round((size - own.length) * chooseShare);
+  const count = (kind) => picked.filter((exercise) => exercise.kind === kind).length;
+  const wanted = (exercise) => exercise.kind === "choose" ? count("choose") < chooseTarget : count("spot") < size - own.length - chooseTarget;
   // First pass: a new rule each time, alternating kinds when possible; second pass: fill what is left.
   for (const exercise of pool) {
     if (room() <= 0) break;
     const lastKind = picked[picked.length - 1]?.kind;
-    if (usedRules.has(exercise.ruleId) || exercise.kind === lastKind) continue;
+    if (usedRules.has(exercise.ruleId) || exercise.kind === lastKind || !wanted(exercise)) continue;
     picked.push(exercise);
     usedRules.add(exercise.ruleId);
+  }
+  for (const exercise of pool) {
+    if (room() <= 0) break;
+    if (!picked.includes(exercise) && wanted(exercise)) picked.push(exercise);
   }
   for (const exercise of pool) {
     if (room() <= 0) break;

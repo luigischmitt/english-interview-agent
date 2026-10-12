@@ -147,8 +147,6 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     setMode("text");
     setStep(0);
     setResults([]);
-    const refs = [...(selected.error_refs ?? [])].reverse();
-    const unique = [...new Map(refs.map((ref) => [ref.point, ref])).values()];
     let recentIds: string[] = [];
     try {
       const saved = localStorage.getItem(`practice-recent:${selected.theme_key}`);
@@ -158,7 +156,7 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     }
     const round = pickPracticeRound({
       key: selected.theme_key,
-      ownErrors: unique.map((ref) => ({ evidence: ref.evidence, rephrased: ref.rephrased })),
+      // Only fixed exercises: the person's own interview sentences lack context and were too vague to practice with.
       recentIds,
     });
     setExercises(round);
@@ -256,7 +254,7 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
       <header className="mb-8">
         <h1 className="font-display text-4xl tracking-tight">{t("Treinar")}</h1>
-        <p className="ds-body mt-2">{t("Aprenda um padrão por vez e pratique com frases das suas entrevistas.")}</p>
+        <p className="ds-body mt-2">{t("Aprenda um padrão por vez e pratique com exercícios curtos.")}</p>
       </header>
       {loadError ? (
         <div className="tr-error" role="alert">
@@ -708,6 +706,7 @@ function PracticeSession({
   const kindLabel =
     exercise.kind === "fix" ? t("Sua frase") : exercise.kind === "spot" ? t("Encontre e corrija o erro") : t("Escolha a opção correta");
   const choose = exercise.kind === "choose";
+  const hintRule = exercise.ruleId ? practiceRuleById[exercise.ruleId] : undefined;
   return (
     <section className="tr-panel tr-practice" aria-live="polite">
       <button className="ds-btn ds-btn-quiet mb-4" onClick={onBack}>
@@ -722,7 +721,10 @@ function PracticeSession({
       </div>
       <div className="tr-exercise-card">
         <span className="tr-exercise-kind">{kindLabel}</span>
-        <h2 className="ds-h2 mt-3">{choose ? t("Complete a frase") : kindLabel}</h2>
+        <h2 className="ds-h2 mt-3">{choose ? t("Complete a frase") : t("Esta frase tem um erro. Reescreva-a corrigida.")}</h2>
+        {!choose && hintRule && (
+          <p className="tr-hint mt-2">{t("Dica: {label} — {when}", { label: hintRule.label, when: hintRule.when })}</p>
+        )}
         <blockquote className="tr-source mt-4" lang="en">
           {choose
             ? exercise.sentence.split("___").map((part, index, parts) => (

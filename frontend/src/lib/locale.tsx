@@ -121,7 +121,7 @@ const englishCopy: Record<string, string> = {
   "Soa melhor": "Sounds better",
   "Treinar": "Practice",
   "Praticar": "Practice",
-  "Aprenda um padrão por vez e pratique com frases das suas entrevistas.": "Learn one pattern at a time and practice with sentences from your interviews.",
+  "Aprenda um padrão por vez e pratique com exercícios curtos.": "Learn one pattern at a time and practice with short exercises.",
   "{count} erros nas suas entrevistas": "{count} patterns in your interviews",
   "{count} entrevistas": "{count} interviews",
   "Começar": "Start",
@@ -654,6 +654,8 @@ const englishCopy: Record<string, string> = {
   "Exemplos": "Examples",
   "Complete a frase": "Complete the sentence",
   "Resultado das opções": "Answer choices",
+  "Esta frase tem um erro. Reescreva-a corrigida.": "This sentence has one mistake. Rewrite it correctly.",
+  "Dica: {label} — {when}": "Hint: {label} — {when}",
 };
 
 const interpolate = (text: string, values?: Record<string, string | number>) => values
