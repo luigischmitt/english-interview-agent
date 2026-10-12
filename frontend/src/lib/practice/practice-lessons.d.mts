@@ -1,6 +1,11 @@
-export type PracticeLessonRule = { id: string; label: string; when: string; examples: string[]; tip?: string };
-export type PracticeLesson = { key: string; title: string; subtitle: string; intro: string; rules: PracticeLessonRule[] };
+export type PracticeExample = { en: string; pt: string };
+export type PracticeLessonRule = { id: string; label: string; when: string; explain: string; wrong?: string; right?: string; examples: PracticeExample[]; tip?: string };
+export type PracticeFixedExercise = { id: string; ruleId: string | null; kind: "choose" | "spot" | "fix"; sentence: string; options?: string[]; answer: string; accepted?: string[]; why: string | null };
+export type PracticeLesson = { key: string; title: string; subtitle: string; intro: string; rules: PracticeLessonRule[]; exercises: PracticeFixedExercise[] };
 export const practiceLessons: PracticeLesson[];
 export const practiceLessonByKey: Record<string, PracticeLesson>;
 export const practiceRuleById: Record<string, PracticeLessonRule>;
+export function ruleTextForRequest(ruleId: string): string | null;
 export function lessonRulesForRequest(key: string): Array<{ id: string; rule: string }>;
+export function checkFixedAnswer(exercise: Pick<PracticeFixedExercise, "answer" | "accepted">, answer: string): boolean;
+export function pickPracticeRound(input: { key: string; ownErrors?: Array<{ evidence: string; rephrased: string }>; recentIds?: string[]; size?: number; ownCount?: number; random?: () => number }): PracticeFixedExercise[];
