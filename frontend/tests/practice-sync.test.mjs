@@ -47,9 +47,9 @@ test("reclassifies legacy refs once and combines them with new errors in bounded
   assert.equal(findPracticeSyncWork(errors, [...themes, { id: "ignored", theme_key: "_ignored", error_refs: [legacyRef] }])[0].evidence, "new");
 });
 
-test("merges refs by identity without dropping legacy references", () => {
+test("merges refs by identity and keeps the newest 200 (the table limit)", () => {
   assert.equal(mergeRefs([ref("a")], [ref("a"), ref("b")]).length, 2);
-  assert.equal(mergeRefs([], Array.from({ length: 205 }, (_, index) => ref(String(index)))).length, 205);
+  assert.equal(mergeRefs([], Array.from({ length: 205 }, (_, index) => ref(String(index)))).length, 200);
   assert.deepEqual(mergeRefs([], [
     { ...ref("newer"), created_at: "2025-02-01" },
     { ...ref("older"), created_at: "2025-01-01" },

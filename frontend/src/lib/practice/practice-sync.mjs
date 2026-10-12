@@ -47,7 +47,8 @@ export function completedLegacyThemeIds(themes) {
 export function mergeRefs(existing = [], incoming = []) {
   const byKey = new Map(existing.map((ref) => [errorKey(ref), ref]));
   incoming.forEach((ref) => byKey.set(errorKey(ref), ref));
-  return [...byKey.values()].sort((a, b) => safeDate(a.created_at) - safeDate(b.created_at));
+  // The table keeps at most 200 refs per group: the newest ones matter for practice.
+  return [...byKey.values()].sort((a, b) => safeDate(a.created_at) - safeDate(b.created_at)).slice(-200);
 }
 
 export function recencyWeight(ref, lastErrorAt = null, now = Date.now()) {
