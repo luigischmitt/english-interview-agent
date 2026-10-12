@@ -51,7 +51,7 @@ test("local check ignores case and punctuation and accepts listed variants", () 
 test("a round puts own sentences first, then fresh fixed exercises across different rules", () => {
   let seed = 0.1;
   const random = () => (seed = (seed * 9301 + 0.49297) % 1);
-  const round = pickPracticeRound({ key: "prepositions", ownErrors: [{ evidence: "I worked in the project", rephrased: "I worked on the project" }], recentIds: ["prepositions.c1"], random });
+  const round = pickPracticeRound({ key: "prepositions", ownErrors: [{ evidence: "I worked in the project", rephrased: "I worked on the project" }], ownCount: 1, recentIds: ["prepositions.c1"], random });
   assert.equal(round.length, 5);
   assert.equal(round[0].kind, "fix");
   assert.equal(round[0].answer, "I worked on the project");
@@ -59,6 +59,15 @@ test("a round puts own sentences first, then fresh fixed exercises across differ
   assert.equal(new Set(fixed.map((exercise) => exercise.ruleId)).size, fixed.length);
   assert.ok(!fixed.some((exercise) => exercise.id === "prepositions.c1"));
   assert.ok(fixed.some((exercise) => exercise.kind === "choose") && fixed.some((exercise) => exercise.kind === "spot"));
+});
+
+test("by default a round has only fixed exercises: three choose and two spot", () => {
+  for (const lesson of practiceLessons) {
+    const round = pickPracticeRound({ key: lesson.key, ownErrors: [{ evidence: "x", rephrased: "y" }] });
+    assert.equal(round.length, 5, lesson.key);
+    assert.ok(round.every((exercise) => exercise.kind !== "fix"), lesson.key);
+    assert.equal(round.filter((exercise) => exercise.kind === "choose").length, 3, lesson.key);
+  }
 });
 
 test("rule text for grading is compact", () => {
