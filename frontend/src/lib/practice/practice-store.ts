@@ -18,6 +18,7 @@ export type PracticeGroup = {
   status: "active" | "mastered" | "hidden";
   correct_streak: number;
   last_error_at: string | null;
+  updated_at?: string | null;
   weighted_frequency: number;
 };
 
@@ -155,7 +156,7 @@ export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Resul
 
 export async function savePracticeAttempt(input: {
   themeId: string;
-  kind: "fix" | "build";
+  kind: "fix" | "spot" | "build";
   instruction: string;
   mode: "text" | "voice";
   answer: string;
@@ -168,7 +169,8 @@ export async function savePracticeAttempt(input: {
   const { data, error } = await auth.value.client.from("practice_attempts").insert({
     user_id: auth.value.userId,
     theme_id: input.themeId,
-    kind: input.kind,
+    // The existing database constraint predates spot exercises; both are correction exercises.
+    kind: input.kind === "spot" ? "fix" : input.kind,
     instruction: input.instruction,
     mode: input.mode,
     answer: input.answer.slice(0, 1000),
@@ -180,10 +182,10 @@ export async function savePracticeAttempt(input: {
   return { ok: true, value: data as PracticeAttempt };
 }
 
-export async function updateGroupProgress(theme: PracticeGroup, verdict: "correct" | "almost" | "incorrect"): Promise<Result<PracticeGroup>> {
+export async function updateGroupProgress(theme: PracticeGroup, correct: number, total: number): Promise<Result<PracticeGroup>> {
   const auth = await authenticatedClient();
   if (!auth.ok) return auth;
-  const domain = applyPracticeResult(theme, verdict);
+  const domain = applyPracticeResult(theme, correct, total);
   const { data, error } = await auth.value.client.from("practice_themes")
     .update(domain).eq("id", theme.id).eq("user_id", auth.value.userId).select("*").single();
   if (error) return failure("Não foi possível atualizar seu progresso.");

@@ -6,5 +6,5 @@ export function completedLegacyThemeIds<T extends { id: string; theme_key: strin
 export function mergeRefs(existing?: PracticeErrorRef[], incoming?: PracticeErrorRef[]): PracticeErrorRef[];
 export function recencyWeight(ref: PracticeErrorRef, lastErrorAt?: string | null, now?: number): number;
 export function weightedFrequency(refs?: PracticeErrorRef[], lastErrorAt?: string | null, now?: number): number;
-export function applyPracticeResult(theme: { correct_streak: number; status: "active" | "mastered" | "hidden" }, verdict: "correct" | "almost" | "incorrect"): { correct_streak: number; status: "active" | "mastered" | "hidden" };
+export function applyPracticeResult(theme: { correct_streak: number; status: "active" | "mastered" | "hidden" }, correct: number, total: number): { correct_streak: number; status: "active" | "mastered" | "hidden" };
 export function sortPracticeGroups<T extends { theme_key: string; status: string; weighted_frequency: number; last_error_at: string | null; error_refs?: PracticeErrorRef[] }>(groups: T[]): T[];
