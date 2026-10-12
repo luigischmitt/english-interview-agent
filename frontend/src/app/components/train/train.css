@@ -6,22 +6,43 @@
 .tr-points li::before { content: "·"; margin-right: .45rem; color: var(--ds-green); }
 .tr-panel { min-width: 0; }
 .tr-lesson-head { max-width: 46rem; }
-.tr-rules { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-.tr-rule { display: flex; min-width: 0; flex-direction: column; gap: .85rem; padding: 1.2rem; }
-.tr-rule h3 { color: var(--ds-ink); font-family: var(--font-display); font-size: 1.8rem; line-height: 1.05; }
+.tr-outcome { display: grid; max-width: 43rem; gap: .55rem; border-left: 3px solid var(--ds-green); padding-left: .9rem; }
+.tr-outcome .badge { width: fit-content; }
+.tr-outcome p { color: var(--ds-ink); font-size: .92rem; line-height: 1.55; }
+.tr-lesson-layout { display: grid; min-width: 0; gap: 1rem; }
+.tr-rule-nav { min-width: 0; border: 1px solid var(--ds-line); background: var(--ds-surface); padding: .85rem; }
+.tr-rule-nav-title { margin: 0 .35rem .55rem; color: var(--ds-text-3); font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.tr-rule-nav .tabs { display: grid; height: auto; gap: .3rem; overflow: visible; }
+.tr-rule-tab.tab { display: flex; width: 100%; height: auto; min-height: 2.75rem; justify-content: flex-start; gap: .65rem; border: 0; border-radius: var(--ds-r-md); padding: .55rem .65rem; color: var(--ds-text-2); text-align: left; white-space: normal; }
+.tr-rule-tab > span:first-child { display: grid; width: 1.5rem; height: 1.5rem; flex: 0 0 auto; place-items: center; border: 1px solid var(--ds-line); border-radius: 999px; font-size: .72rem; font-weight: 700; }
+.tr-rule-tab.tab-active { background: var(--ds-tint); color: var(--ds-green-deep); font-weight: 650; }
+.tr-rule-tab.tab-active > span:first-child { border-color: var(--ds-green); background: var(--ds-green-solid); color: var(--ds-on-green); }
+.tr-rule-tab:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
+.tr-rule { display: flex; min-width: 0; flex-direction: column; gap: 1.25rem; padding: 1.2rem; animation: tr-rule-in var(--ds-dur-base) var(--ease-out) both; }
+.tr-rule-heading { display: grid; gap: .4rem; padding-bottom: 1rem; border-bottom: 1px solid var(--ds-line); }
+.tr-rule-progress { color: var(--ds-green-deep); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.tr-rule h3 { color: var(--ds-ink); font-family: var(--font-sans); font-size: 1.65rem; font-weight: 700; line-height: 1.15; }
+.tr-rule-goal { max-width: 60ch; color: var(--ds-text-2); font-size: .95rem; line-height: 1.55; }
+.tr-rule-section { display: grid; gap: .65rem; }
+.tr-rule-section > h4 { color: var(--ds-text-3); font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.tr-pattern { width: fit-content; max-width: 100%; border-radius: var(--ds-r-md); background: var(--ds-tint); padding: .75rem .9rem; color: var(--ds-green-deep); font-size: .95rem; font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; }
 .tr-rule-when { color: var(--ds-text-2); font-size: .9rem; line-height: 1.45; }
 .tr-rule-explain { max-width: 70ch; color: var(--ds-ink); font-size: 1rem; line-height: 1.7; }
+.tr-rule-points { display: grid; gap: .45rem; margin-top: .15rem; }
+.tr-rule-points li { position: relative; padding-left: 1.15rem; color: var(--ds-text-2); font-size: .9rem; line-height: 1.55; }
+.tr-rule-points li::before { content: ""; position: absolute; top: .63em; left: .1rem; width: .35rem; height: .35rem; border-radius: 999px; background: var(--ds-green); }
 .tr-contrast { display: grid; gap: .45rem; border-radius: var(--ds-r-md); background: var(--ds-field); padding: .8rem .9rem; }
 .tr-contrast-wrong, .tr-contrast-right { display: flex; min-width: 0; align-items: center; gap: .55rem; overflow-wrap: anywhere; }
 .tr-contrast-wrong { color: var(--ds-error); }
 .tr-contrast-right { color: var(--ds-success); }
 .tr-examples { display: grid; gap: .65rem; }
-.tr-examples h4 { color: var(--ds-text-2); font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .tr-example { display: grid; gap: .15rem; }
 .tr-example-en { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; color: var(--ds-ink); font-size: .95rem; line-height: 1.5; }
 .tr-example-en > span { overflow-wrap: anywhere; }
 .tr-example > p { color: var(--ds-text-3); font-size: .82rem; line-height: 1.45; }
-.tr-rule-tip { margin-top: auto; border-radius: var(--ds-r-md); background: var(--ds-tint); padding: .7rem .8rem; color: var(--ds-green-deep); font-size: .8125rem; line-height: 1.45; }
+.tr-rule-tip { margin-top: auto; border-radius: var(--ds-r-md); background: var(--ds-tint); padding: .75rem .85rem; color: var(--ds-green-deep); font-size: .85rem; line-height: 1.5; }
+.tr-rule-controls { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; padding-top: .25rem; }
+.tr-rule-controls .ds-btn { min-height: 2.75rem; }
 .tr-examples { margin: 0; display: grid; gap: .45rem; }
 .tr-examples li { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: var(--ds-ink); font-size: .9rem; line-height: 1.5; }
 .tr-examples li span:first-child { min-width: 0; overflow-wrap: anywhere; }
@@ -87,5 +108,7 @@
 .tr-spinner { animation: tr-spin .9s linear infinite; color: var(--ds-green); }
 @keyframes tr-spin { to { transform: rotate(360deg); } }
 @keyframes tr-celebrate { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-@media (min-width: 640px) { .tr-rules { grid-template-columns: minmax(0, 1fr); } .tr-sticky-action { position: static; margin: 1.5rem 0 0; padding: 0; background: transparent; } .tr-sticky-action .ds-btn { width: auto; } .tr-exercise-card, .tr-feedback, .tr-results { padding: 1.5rem; } }
-@media (prefers-reduced-motion: reduce) { .tr-spinner { animation: none; } .tr-celebration-mark { animation: none; } }
+@keyframes tr-rule-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@media (min-width: 640px) { .tr-rule { padding: 1.5rem; } .tr-sticky-action { position: static; margin: 1.5rem 0 0; padding: 0; background: transparent; } .tr-sticky-action .ds-btn { width: auto; } .tr-exercise-card, .tr-feedback, .tr-results { padding: 1.5rem; } }
+@media (min-width: 900px) { .tr-lesson-layout { grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr); align-items: start; } .tr-rule-nav { position: sticky; top: 1rem; } }
+@media (prefers-reduced-motion: reduce) { .tr-spinner, .tr-celebration-mark, .tr-rule { animation: none; } }
