@@ -36,8 +36,9 @@ function parseClassifyInput(body: unknown): { errors: PracticeError[] } | null {
 }
 
 function parseExercisesInput(body: unknown) {
-  if (!isRecord(body) || !onlyKeys(body, ["theme", "userErrors"])) return null;
-  const { theme, userErrors } = body;
+  if (!isRecord(body) || !onlyKeys(body, ["theme", "userErrors", "rules"])) return null;
+  const { theme, userErrors, rules } = body;
+  if (rules != null && (!Array.isArray(rules) || rules.length > practiceLimits.rules || !rules.every((rule) => isRecord(rule) && onlyKeys(rule, ["id", "rule"]) && text(rule.id, 60) && text(rule.rule, 240)))) return null;
   if (!isRecord(theme) || !onlyKeys(theme, ["title", "explanation", "examples"]) || !text(theme.title, 120) || !text(theme.explanation, 400)) return null;
   if (!Array.isArray(theme.examples) || theme.examples.length > 5 || !theme.examples.every((example) => text(example, 200))) return null;
   if (!Array.isArray(userErrors) || userErrors.length > practiceLimits.userErrors) return null;
@@ -46,14 +47,14 @@ function parseExercisesInput(body: unknown) {
     if (!isRecord(error) || !onlyKeys(error, ["evidence", "rephrasedExample"]) || !text(error.evidence, 300) || !text(error.rephrasedExample, 400)) return null;
     errors.push({ evidence: error.evidence, rephrasedExample: error.rephrasedExample });
   }
-  return { theme: { title: theme.title, explanation: theme.explanation, examples: theme.examples as string[] }, userErrors: errors };
+  return { theme: { title: theme.title, explanation: theme.explanation, examples: theme.examples as string[] }, userErrors: errors, ...(Array.isArray(rules) ? { rules: rules as Array<{ id: string; rule: string }> } : {}) };
 }
 
 function parseGradeInput(body: unknown) {
   if (!isRecord(body) || !onlyKeys(body, ["theme", "exercise", "answer", "mode"])) return null;
   const { theme, exercise, answer, mode } = body;
   if (!isRecord(theme) || !onlyKeys(theme, ["title", "explanation"]) || !text(theme.title, 120) || !text(theme.explanation, 400)) return null;
-  if (!isRecord(exercise) || !onlyKeys(exercise, ["kind", "instruction", "source", "target"]) || (exercise.kind !== "fix" && exercise.kind !== "build") || !text(exercise.instruction, 400) || !nullableText(exercise.source, 300) || !text(exercise.target, 300)) return null;
+  if (!isRecord(exercise) || !onlyKeys(exercise, ["kind", "instruction", "source", "target", "ruleId", "rule"]) || (exercise.kind !== "fix" && exercise.kind !== "spot" && exercise.kind !== "build") || !(exercise.ruleId == null || text(exercise.ruleId, 60)) || !(exercise.rule == null || text(exercise.rule, 240)) || !text(exercise.instruction, 400) || !nullableText(exercise.source, 300) || !text(exercise.target, 300)) return null;
   if (!text(answer, 500) || (mode !== "text" && mode !== "voice")) return null;
   return { theme: { title: theme.title, explanation: theme.explanation }, exercise: exercise as unknown as PracticeExercise, answer, mode: mode as "text" | "voice" };
 }

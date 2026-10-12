@@ -11,7 +11,7 @@ export const practiceLessons = [
     rules: [
       { id: "prepositions.at", label: "at", when: "Um ponto exato: horário, empresa, lugar específico.", examples: ["The daily is at 9 a.m.", "I work at Nubank."], tip: "Ponto no relógio ou no mapa → at." },
       { id: "prepositions.on", label: "on", when: "Dias, plataformas e aquilo em que você trabalha.", examples: ["I worked on the payments project.", "The code is on GitHub."], tip: "Trabalhar em um projeto é work on a project." },
-      { id: "prepositions.in", label: "in", when: "Dentro de algo: meses, anos, cidades, times e linguagens.", examples: ["I joined the team in 2021.", "We wrote it in Python."], tip: "Período longo ou dentro de algo → in." },
+      { id: "prepositions.in", label: "in", when: "Dentro de algo: meses, anos, cidades, empresas grandes e linguagens.", examples: ["I joined the team in 2021.", "We wrote it in Python."], tip: "Período longo ou dentro de algo → in." },
       { id: "prepositions.for", label: "for", when: "Quanto tempo durou e para quem é algo.", examples: ["I worked there for three years.", "We built a dashboard for the sales team."], tip: "Para fazer algo não é for: é to + verbo (I used it to cache)." },
       { id: "prepositions.to", label: "to", when: "Destino e direção.", examples: ["We migrated the app to AWS.", "I report to the CTO."] },
       { id: "prepositions.combos", label: "Pares prontos", when: "Algumas palavras sempre vêm com a mesma preposição: decore o par.", examples: ["I'm responsible for the backend.", "I'm interested in distributed systems."], tip: "responsible for · interested in · good at · depend on · focus on" },

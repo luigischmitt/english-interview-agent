@@ -71,6 +71,28 @@ describe("practice service", () => {
     expect(result?.[0]?.source).toBe(purposeError.evidence);
   });
 
+  it("writes exercises with the exercises model and grades with the default one", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const models: string[] = [];
+    const record = (async (_url: string, init: RequestInit) => { models.push(JSON.parse(String(init.body)).model); return chat({ exercises: [] }); }) as unknown as typeof fetch;
+    const practice = new OpenRouterPracticeService({ ...config, exercisesModel: "openai/gpt-4.1-mini" }, record);
+    await practice.buildExercises({ theme: { title: theme.title, explanation: theme.explanation, examples: theme.examples }, userErrors: [] });
+    await practice.grade({ theme, exercise: { kind: "build", instruction: "Faça uma frase.", source: null, target: "I did it." }, answer: "I did it", mode: "text" });
+    expect(models).toEqual(["openai/gpt-4.1-mini", "test-model"]);
+  });
+
+  it("mixes own, spot and build exercises tagged with known lesson rules", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const rules = [{ id: "verb-forms.to", rule: "to + verbo: para dizer o objetivo." }];
+    const result = await service({ exercises: [
+      { kind: "fix", instruction: "Reescreva a sua frase dizendo para que você usou o Redis.", source: "I used Redis for cache the sessions", target: "I used Redis to cache the sessions.", ruleId: "verb-forms.to" },
+      { kind: "spot", instruction: "Encontre e corrija o erro desta frase.", source: "We added a queue for process the events.", target: "We added a queue to process the events.", ruleId: "unknown.rule" },
+      { kind: "spot", instruction: "Encontre e corrija o erro desta frase.", source: "We added a queue to process the events.", target: "We added a queue to process the events.", ruleId: null },
+      { kind: "build", instruction: "Faça uma frase em inglês dizendo que você criou testes para evitar regressões.", source: null, target: "I wrote tests to prevent regressions.", ruleId: "verb-forms.to" },
+    ] }).buildExercises({ theme: { title: theme.title, explanation: theme.explanation, examples: theme.examples }, userErrors: [{ evidence: purposeError.evidence, rephrasedExample: purposeError.rephrasedExample }], rules });
+    expect(result?.map((exercise) => [exercise.kind, exercise.ruleId])).toEqual([["fix", "verb-forms.to"], ["spot", null], ["build", "verb-forms.to"]]);
+  });
+
   it("grades an answer and rejects a malformed verdict", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const exercise = { kind: "build" as const, instruction: "Faça uma frase dizendo que você usou Redis para guardar sessões.", source: null, target: "I used Redis to store sessions." };
@@ -79,6 +101,7 @@ describe("practice service", () => {
     await expect(service({ ...grade, themeCorrect: false }).grade({ theme, exercise, answer: "I used Redis for store sessions", mode: "text" })).resolves.toMatchObject({ verdict: "incorrect" });
     await expect(service({ ...grade, otherMistake: false }).grade({ theme, exercise, answer: "I used Redis to store the sessions", mode: "text" })).resolves.toMatchObject({ verdict: "correct" });
     await expect(service({ ...grade, doesTask: false }).grade({ theme, exercise, answer: "I like Docker", mode: "text" })).resolves.toMatchObject({ verdict: "incorrect", feedback: "Sua frase não faz o que o exercício pediu; releia o pedido e tente de novo." });
+    await expect(service({ ...grade, doesTask: false, themeCorrect: false, feedback: "Use on com projetos, porque é aquilo em que você trabalha." }).grade({ theme, exercise, answer: "I worked at the project", mode: "text" })).resolves.toMatchObject({ verdict: "incorrect", feedback: "Use on com projetos, porque é aquilo em que você trabalha." });
     await expect(service({ ...grade, themeCorrect: false, feedback: "Use to antes do verbo: to store." }).grade({ theme, exercise, answer: "I used Redis for store sessions", mode: "text" })).resolves.toMatchObject({ verdict: "incorrect", feedback: "Use to antes do verbo: to store." });
     await expect(service({ ...grade, doesTask: "yes" }).grade({ theme, exercise, answer: "x y", mode: "text" })).resolves.toBeNull();
     await expect(service({ ...grade, feedback: "Good job, the purpose is right." }).grade({ theme, exercise, answer: "x y", mode: "text" })).resolves.toBeNull();
@@ -127,6 +150,15 @@ describe("practice routes", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ assignments: [{ category: "verb-forms", point: "Usar 'for' antes do verbo (o certo é 'to')" }] });
     expect((await request(app).post("/api/v1/practice/classify").send({ errors: [purposeError], existingThemes: [] })).status).toBe(400);
+  });
+
+  it("accepts lesson rules on exercises and rule tags on graded exercises", async () => {
+    const app = createApp({ speechConfig, accessTokenVerifier: null, practiceService: fake() });
+    const rules = [{ id: "prepositions.on", rule: "on: dias, plataformas e aquilo em que você trabalha." }];
+    expect((await request(app).post("/api/v1/practice/exercises").send({ theme: { title: theme.title, explanation: theme.explanation, examples: theme.examples }, userErrors: [], rules })).status).toBe(200);
+    expect((await request(app).post("/api/v1/practice/exercises").send({ theme: { title: theme.title, explanation: theme.explanation, examples: theme.examples }, userErrors: [], rules: [{ id: "x", rule: "y", extra: 1 }] })).status).toBe(400);
+    const graded = await request(app).post("/api/v1/practice/grade").send({ theme: { title: "t", explanation: "e" }, exercise: { kind: "spot", instruction: "Corrija.", source: "I work in the project.", target: "I work on the project.", ruleId: "prepositions.on", rule: rules[0]!.rule }, answer: "I work on the project", mode: "text" });
+    expect(graded.status).toBe(200);
   });
 
   it("serves themes, exercises and grades", async () => {
