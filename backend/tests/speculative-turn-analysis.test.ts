@@ -313,6 +313,13 @@ describe("speculative turn analysis", () => {
     expect(result).toMatchObject({ fixedAction: "DEEPEN", adaptedFixedQuestion: "How did you monitor service health before customer impact?", fixedEvidenceAnchor: "Grafana alerts" });
   });
 
+  it("rejects a DEEPEN that presupposes a detail the candidate never said", async () => {
+    const snapshot = "I worked on a booking dashboard in React. We tested it with Playwright.";
+    const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "DEEPEN", adaptedFixedQuestion: "How did you verify the accessibility features worked?", fixedEvidenceAnchor: "We tested it with Playwright" });
+    const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...input, snapshot, firstFixedType: "resume", firstFixedQuestion: "How did you handle accessibility in the interface?" });
+    expect(result).toMatchObject({ fixedAction: "KEEP", adaptedFixedQuestion: null });
+  });
+
   it("skips a specific second non-job question only when literal evidence contains its competency and a third question exists", async () => {
     const snapshot = "We monitored service health with Grafana alerts before customer impact.";
     const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, secondFixedAction: "SKIP", adaptedSecondFixedQuestion: null, secondFixedEvidenceAnchor: "monitored service health" });
@@ -570,8 +577,15 @@ describe("speculative analysis on disfluent speech and covered resume questions"
   it("accepts a competency term elsewhere in the anchor sentence for a rejected DEEPEN, but not for an explicit SKIP", async () => {
     const deepen = { fixedAction: "DEEPEN", adaptedFixedQuestion: metricsQuestion, fixedEvidenceAnchor: "precision and recall" };
     expect(await run(deepen)).toMatchObject({ fixedAction: "SKIP", fixedEvidenceAnchor: "precision and, um, recall" });
-    expect(await run({ fixedAction: "SKIP", fixedEvidenceAnchor: "precision and recall" })).toMatchObject({ fixedAction: "KEEP" });
+    // Naming the metrics themselves (precision, recall) answers a metrics question; an anchor without any metric does not.
+    expect(await run({ fixedAction: "SKIP", fixedEvidenceAnchor: "precision and recall" })).toMatchObject({ fixedAction: "SKIP" });
+    expect(await run({ fixedAction: "SKIP", fixedEvidenceAnchor: "we we used" })).toMatchObject({ fixedAction: "KEEP" });
     expect(await run(deepen, { snapshot: "We are not sure how to evaluate it, but we saw precision and recall in a blog." })).toMatchObject({ fixedAction: "KEEP" });
+  });
+  it("accepts a DEEPEN that keeps the topic by shared nouns and rejects one that moves to the other planned question's topic", async () => {
+    const overrides = { firstFixedQuestion: "Which metrics do you use to evaluate the quality of the synthetic data you generate?", secondFixedQuestion: "How do you make sure the synthetic data does not leak private information?", snapshot: "We generate synthetic data with a GAN and compare it with real data using the TSTR baseline." };
+    expect(await run({ fixedAction: "DEEPEN", adaptedFixedQuestion: "How do you choose the TSTR baseline for the synthetic data?", fixedEvidenceAnchor: "the TSTR baseline" }, overrides)).toMatchObject({ fixedAction: "DEEPEN" });
+    expect(await run({ fixedAction: "DEEPEN", adaptedFixedQuestion: "How do you ensure the synthetic data does not contain private information?", fixedEvidenceAnchor: "synthetic data with a GAN" }, { ...overrides, snapshot: "We generate synthetic data with a GAN for the bank." })).toMatchObject({ fixedAction: "KEEP" });
   });
   it("keeps the question when the DEEPEN anchor is missing, there is no following question, or it is a job question", async () => {
     const deepen = { fixedAction: "DEEPEN", adaptedFixedQuestion: metricsQuestion };
