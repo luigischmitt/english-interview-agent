@@ -21,7 +21,7 @@ import { t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
 import "./train.css";
 
- type Exercise = { kind: "fix" | "build"; instruction: string; source: string | null; target: string };
+type Exercise = { kind: "fix" | "build"; instruction: string; source: string | null; target: string };
 type Grade = { verdict: "correct" | "almost" | "incorrect"; feedback: string; corrected: string };
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
@@ -65,7 +65,7 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     const requestId = speechRequestRef.current;
     setSpeechError(false);
     try {
-      let voice = "am_echo";
+      let voice = resolveInterviewerVoice(null);
       try { voice = resolveInterviewerVoice(localStorage.getItem(interviewerVoiceStorageKey)); } catch { /* Use the default voice. */ }
       const blob = await fetchSpeechBlob(phrase, { endpoint: speechEndpoint, fetcher: authorizedFetch, voice });
       if (requestId !== speechRequestRef.current) return;

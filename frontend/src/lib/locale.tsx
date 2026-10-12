@@ -517,13 +517,18 @@ const englishCopy: Record<string, string> = {
   "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.": "We couldn't analyze your recent errors; we'll try again next time.",
 };
 
+const interpolate = (text: string, values?: Record<string, string | number>) => values
+  ? text.replace(/\{(\w+)\}/g, (match, key: string) => key in values ? String(values[key]) : match)
+  : text;
+
 export function translate(locale: Locale, source: string, values?: Record<string, string | number>): string {
+  if (locale !== "en") return interpolate(source, values);
   const trimmed = source.trim().replace(/\s+/g, " ");
-  const translated = locale === "en" ? englishCopy[trimmed] ?? source : source;
+  const translated = englishCopy[trimmed];
+  if (!translated) return interpolate(source, values);
   const leading = source.match(/^\s*/)?.[0] ?? "";
   const trailing = source.match(/\s*$/)?.[0] ?? "";
-  const interpolated = translated.replace(/\{(\w+)\}/g, (match, key: string) => values && key in values ? String(values[key]) : match);
-  return `${leading}${interpolated}${trailing}`;
+  return `${leading}${interpolate(translated, values)}${trailing}`;
 }
 
 /** Translates a literal using the locale currently subscribed to by the active authenticated app. */
