@@ -843,11 +843,37 @@ describe("semantic end of answer", () => {
   }, 12_000);
 
   it("reports the speech epoch and no pending check on complete", async () => {
-    const { connect } = await startServer(createWhisper([answerText]).service, options({ isComplete: async () => true }));
+    const assess = vi.fn(async () => ({ complete: false, candidateCompatibility: "OPEN" as const }));
+    const { connect } = await startServer(createWhisper([answerText]).service, options({ isComplete: async () => true, assess }));
     const { socket, waitFor } = await connect({ question });
     await speak(socket, 800, 0.05);
     await speak(socket, 800, 0.001);
     await expect(waitFor("complete")).resolves.toMatchObject({ speechEpoch: 0, pendingFollowUpCheck: null });
+    expect(assess).not.toHaveBeenCalled();
+  }, 12_000);
+
+  it.each([false, true])("starts a candidate check received during finalization and delivers it after complete (Azure: %s)", async (withAzure) => {
+    const assessCandidate = vi.fn(() => delay(300).then(() => ({ complete: false, candidateCompatibility: "OPEN" as const })));
+    const assessmentService: PronunciationAssessmentService | null = withAzure
+      ? { assess: vi.fn(async () => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 90, fluency: 85, prosody: 80 } })) }
+      : null;
+    const whisper = createWhisper([answerText], answerText, 250);
+    const { connect } = await startServer(whisper.service, options({ isComplete: async () => false, assess: assessCandidate }), assessmentService);
+    const { socket, messages, waitFor } = await connect({ question });
+    await speak(socket, 800, 0.05);
+    socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+    await waitFor("finalizing");
+    socket.send(JSON.stringify({ type: "follow-up-candidate", turnId: "turn_12345678", revision: 11, question: "Why did the lock help?", anchor: "a lock" }));
+
+    const complete = await waitFor("complete");
+    expect(complete).toMatchObject({ speechEpoch: 0, pendingFollowUpCheck: { turnId: "turn_12345678", revision: 11 } });
+    const status = await waitFor("follow-up-candidate-status");
+    expect(status).toMatchObject({ revision: 11, speechEpoch: 0, status: "OPEN" });
+    expect(status.at).toBeGreaterThanOrEqual(complete.at);
+    expect(assessCandidate).toHaveBeenCalledTimes(1);
+    expect(messages.findIndex((message) => message.type === "follow-up-candidate-status"))
+      .toBeGreaterThan(messages.findIndex((message) => message.type === "complete"));
+    if (withAzure) await expect(waitFor("assessment")).resolves.toMatchObject({ type: "assessment" });
   }, 12_000);
 
   it("names the in-flight check on complete and delivers its status within the post-complete grace", async () => {

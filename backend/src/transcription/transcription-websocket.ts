@@ -631,7 +631,7 @@ export function attachTranscriptionWebSocket(
     const runCandidateCompatibilityCheck = (candidate: FollowUpCandidateUpdate, transcript: string) => {
       const classifier = streaming?.answerCompletion;
       syncSpeechEpoch();
-      if (!classifier || candidateChecksInEpoch >= 2
+      if (!classifier || !interviewerQuestion || candidateChecksInEpoch >= 2
         || (lastAssessedCandidate?.turnId === candidate.turnId && lastAssessedCandidate.revision === candidate.revision)) return;
       // A newer revision supersedes an unfinished check; that call was already made, so it keeps its budget unit.
       candidateAbort?.abort();
@@ -642,9 +642,16 @@ export function attachTranscriptionWebSocket(
       lastAssessedCandidate = { turnId: candidate.turnId, revision: candidate.revision };
       const epochAtStart = speechEpoch;
       const assessment = classifier.assess
-        ? classifier.assess({ question: interviewerQuestion!, answer: transcript, candidate: { question: candidate.question, anchor: candidate.anchor }, signal: controller.signal })
+        ? classifier.assess({ question: interviewerQuestion, answer: transcript, candidate: { question: candidate.question, anchor: candidate.anchor }, signal: controller.signal })
         : Promise.resolve({ complete: false, candidateCompatibility: "NONE" as CandidateCompatibility });
       settleAssessment(assessment).then(({ status, kind }) => deliverCandidateStatus(candidate, epochAtStart, controller, status, kind));
+    };
+    // A candidate can arrive after the pause grace has started finalization but before the final transcript is ready.
+    // Judge that newest revision against the final transcript so `complete` can tell the browser to await its verdict.
+    const startFinalCandidateCheck = (transcript: string) => {
+      const candidate = followUpCandidate;
+      if (!candidate || !transcript) return;
+      runCandidateCompatibilityCheck(candidate, transcript);
     };
     let speculation: Speculation | null = null;
     let speculationOutcome: SpeculationOutcome = "none";
@@ -891,6 +898,7 @@ export function attachTranscriptionWebSocket(
           const durationMs = session.bytes / (pcmSampleRate * 2) * 1_000;
           logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: "whisper-incremental", provider: "whisper-incremental", incrementalTurns: stream.turnCount, ...stream.diagnostics?.(), preparesSent, answerEndReason, ...(semanticChecks > 0 ? { semanticChecks, semanticVerdict: semanticCheckAborted ? "aborted" : semanticVerdict, semanticLatencyMs, semanticCheckStartedAfterSilenceMs: Math.round(semanticStartedAfterSilenceMs), semanticCompleteHeldMs: semanticHeldMs } : { semanticChecks: 0, semanticVerdict: "none" }), speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())) });
           syncSpeechEpoch();
+          startFinalCandidateCheck(transcript);
           send(socket, { type: "complete", status: "complete", provider: "whisper-incremental", durationMs, transcript, speechEpoch, pendingFollowUpCheck: pendingFollowUpCheck() });
           clearTimeout(timer);
 
@@ -990,6 +998,7 @@ export function attachTranscriptionWebSocket(
               }
               logStreamDiagnostic({ status: "complete", reason, vadReason: session.vad.finalizationReason ?? "client_or_limit", ambientActivityHoldMs: Math.round(session.vad.ambientActivityHoldMs), durationMs: Math.round(durationMs), speechDurationMs: Math.round(session.vad.speechDurationMs), transcriptionDurationMs, requestedEngine: requestedEngine ?? "default", resolvedMode: streaming ? "whisper-incremental" : "whisper", provider: "whisper", answerEndReason, ...(streamSession ? { incrementalTurns: streamSession.turnCount, ...streamSession.diagnostics?.() } : {}), ...(fallbackReason ? { fallbackReason } : {}), preparesSent, speechEndToCompleteMs: Math.round(session.vad.speechEndToFinalizationAt(Date.now())), speculation: speculationOutcome, hedge: activeHedge.outcome, ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}) });
               syncSpeechEpoch();
+              startFinalCandidateCheck(result.transcript);
               send(socket, {
                 type: "complete",
                 status: "complete",
