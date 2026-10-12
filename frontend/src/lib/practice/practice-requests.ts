@@ -1,9 +1,9 @@
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 
 const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
-type RequestKind = "themes" | "exercises" | "grade";
-const timeout: Record<RequestKind, number> = { themes: 35_000, exercises: 15_000, grade: 12_000 };
-const fallback: Record<RequestKind, string> = { themes: "Não foi possível organizar seus temas agora. Tente novamente.", exercises: "Não foi possível preparar os exercícios. Tente novamente.", grade: "Não foi possível avaliar sua resposta. Tente novamente." };
+type RequestKind = "classify" | "exercises" | "grade";
+const timeout: Record<RequestKind, number> = { classify: 30_000, exercises: 15_000, grade: 12_000 };
+const fallback: Record<RequestKind, string> = { classify: "Não foi possível analisar seus erros mais recentes.", exercises: "Não foi possível preparar os exercícios. Tente novamente.", grade: "Não foi possível avaliar sua resposta. Tente novamente." };
 
 async function request<T>(kind: RequestKind, body: unknown): Promise<T> {
   let response: Response;
@@ -19,6 +19,7 @@ async function request<T>(kind: RequestKind, body: unknown): Promise<T> {
   }
   return response.json() as Promise<T>;
 }
-export const createPracticeThemes = (body: { errors: Array<{ type: string; evidence: string; suggestion: string; rephrasedExample: string }>; existingThemes: Array<{ key: string; title: string }> }) => request<{ assignments: Array<string | null>; newThemes: Array<{ key: string; title: string; explanation: string; why: string; examples: string[] }> }>("themes", body);
+export type PracticeClassification = { assignments: Array<{ category: string; point: string } | null> };
+export const classifyPracticeErrors = (body: { errors: Array<{ type: string; evidence: string; suggestion: string; rephrasedExample: string }> }) => request<PracticeClassification>("classify", body);
 export const getPracticeExercises = (body: { theme: { title: string; explanation: string; examples: string[] }; userErrors: Array<{ evidence: string; rephrasedExample: string }> }) => request<{ exercises: Array<{ kind: "fix" | "build"; instruction: string; source: string | null; target: string }> }>("exercises", body);
 export const gradePracticeAnswer = (body: { theme: { title: string; explanation: string }; exercise: { kind: "fix" | "build"; instruction: string; source: string | null; target: string }; answer: string; mode: "text" | "voice" }) => request<{ verdict: "correct" | "almost" | "incorrect"; feedback: string; corrected: string }>("grade", body);

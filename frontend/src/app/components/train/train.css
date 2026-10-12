@@ -1,5 +1,6 @@
 .tr-list { display: grid; gap: 1rem; }
 .tr-card { border: 1px solid var(--ds-line); }
+.tr-point-chip { display: inline-flex; max-width: 100%; align-items: center; border-radius: 999px; background: var(--ds-tint); padding: .35rem .7rem; color: var(--ds-green-deep); font-size: .78rem; line-height: 1.25; overflow-wrap: anywhere; }
 .tr-panel { min-width: 0; }
 .tr-source,
 .tr-corrected {
