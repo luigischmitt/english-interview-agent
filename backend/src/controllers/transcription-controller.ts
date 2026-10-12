@@ -1,7 +1,9 @@
 import type { RequestHandler } from "express";
 
 import { TranscriptionUnavailableError } from "../transcription/errors.js";
-import { transcriptionProviders, type TranscriptionProvider, type TranscriptionService } from "../transcription/types.js";
+import { transcriptionProviders, type AudioFormat, type TranscriptionProvider, type TranscriptionService } from "../transcription/types.js";
+
+const formatByContentType: Record<string, AudioFormat> = { "audio/wav": "wav", "audio/webm": "webm", "audio/mp4": "mp4" };
 
 const maximumAudioBytes = 4 * 1024 * 1024;
 
@@ -24,7 +26,7 @@ export function createTranscriptionController(service: TranscriptionService): { 
 
     if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
       response.status(400).json({
-        error: { code: "INVALID_TRANSCRIPTION_REQUEST", message: "Send a completed WAV audio recording." },
+        error: { code: "INVALID_TRANSCRIPTION_REQUEST", message: "Send a completed WAV, WebM or MP4 audio recording." },
       });
       return;
     }
@@ -36,8 +38,10 @@ export function createTranscriptionController(service: TranscriptionService): { 
       return;
     }
 
+    // Browser recordings (practice answers) arrive as webm (Chrome/Firefox) or mp4 (Safari); the parser only accepts these types.
+    const format = formatByContentType[(request.header("content-type") ?? "audio/wav").split(";")[0]!.trim().toLowerCase()] ?? "wav";
     try {
-      response.status(200).json(await service.transcribe(request.body, provider));
+      response.status(200).json(await service.transcribe(request.body, provider, format));
     } catch (error) {
       if (error instanceof TranscriptionUnavailableError) {
         response.status(503).json({

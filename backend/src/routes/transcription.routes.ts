@@ -8,7 +8,7 @@ export function createTranscriptionRouter(service: TranscriptionService) {
   const controller = createTranscriptionController(service);
 
   transcriptionRouter.get("/providers", controller.providers);
-  transcriptionRouter.post("/", express.raw({ type: "audio/wav", limit: "4mb" }), controller.transcribe);
+  transcriptionRouter.post("/", express.raw({ type: ["audio/wav", "audio/webm", "audio/mp4"], limit: "4mb" }), controller.transcribe);
 
   return transcriptionRouter;
 }
