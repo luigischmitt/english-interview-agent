@@ -26,6 +26,9 @@ type Grade = { verdict: "correct" | "almost" | "incorrect"; feedback: string; co
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
 const maxSyncBatches = 4;
+const occurrenceCopy = (count: number, interviews: number) => count === 1
+  ? "Apareceu 1 vez em 1 entrevista."
+  : interviews === 1 ? "Apareceu {count} vezes em 1 entrevista." : "Apareceu {count} vezes em {interviews} entrevistas.";
 const syncWarning = "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.";
 
 export function TrainView({ onInterview }: { onInterview: () => void }) {
@@ -280,7 +283,7 @@ function ThemeCard({ theme, onSelect }: { theme: PracticeTheme; onSelect: (theme
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="ds-h2">{theme.title}</h3>
-          <p className="ds-small mt-1">{t("Apareceu {count} vezes em {interviews} entrevistas.", { count: theme.error_refs?.length ?? 0, interviews })}</p>
+          <p className="ds-small mt-1">{t(occurrenceCopy(theme.error_refs?.length ?? 0, interviews), { count: theme.error_refs?.length ?? 0, interviews })}</p>
           {theme.last_error_at && <p className="ds-small mt-1">{t("Última vez: {date}", { date: new Date(theme.last_error_at).toLocaleDateString("pt-BR") })}</p>}
         </div>
         <span className="shl-pill shl-pill-on">{t(theme.status === "mastered" ? "Dominado" : "Treinando")}</span>

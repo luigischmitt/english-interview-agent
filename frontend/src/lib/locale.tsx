@@ -502,6 +502,8 @@ const englishCopy: Record<string, string> = {
   "Prepare a entrevista": "Set up interview",
   "A sua sessão expirou. Entre novamente para continuar.": "Your session has expired. Sign in again to continue.",
   "Apareceu {count} vezes em {interviews} entrevistas.": "Appeared {count} times in {interviews} interviews.",
+  "Apareceu {count} vezes em 1 entrevista.": "Appeared {count} times in 1 interview.",
+  "Apareceu 1 vez em 1 entrevista.": "Appeared once in 1 interview.",
   "Última vez: {date}": "Last seen: {date}",
   "Você acertou {correct} de {total}.": "You got {correct} out of {total} correct.",
   "Exercício {current} de {total}": "Exercise {current} of {total}",

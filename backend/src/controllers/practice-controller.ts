@@ -83,10 +83,10 @@ function handler<T, R>(service: PracticeService | null, limit: JobDirectionUserL
   };
 }
 
-export function createPracticeControllers(service: PracticeService | null, limit: JobDirectionUserLimit) {
+export function createPracticeControllers(service: PracticeService | null, themesLimit: JobDirectionUserLimit, practiceLimit: JobDirectionUserLimit = themesLimit) {
   return {
-    themes: handler(service, limit, "INVALID_PRACTICE_THEMES", parseThemesInput, (practice, input, signal) => practice.groupThemes({ ...input, signal }), (response, result) => { response.status(200).json(result); }),
-    exercises: handler(service, limit, "INVALID_PRACTICE_EXERCISES", parseExercisesInput, (practice, input, signal) => practice.buildExercises({ ...input, signal }), (response, exercises) => { response.status(200).json({ exercises }); }),
-    grade: handler(service, limit, "INVALID_PRACTICE_GRADE", parseGradeInput, (practice, input, signal) => practice.grade({ ...input, signal }), (response, result) => { response.status(200).json(result); }),
+    themes: handler(service, themesLimit, "INVALID_PRACTICE_THEMES", parseThemesInput, (practice, input, signal) => practice.groupThemes({ ...input, signal }), (response, result) => { response.status(200).json(result); }),
+    exercises: handler(service, practiceLimit, "INVALID_PRACTICE_EXERCISES", parseExercisesInput, (practice, input, signal) => practice.buildExercises({ ...input, signal }), (response, exercises) => { response.status(200).json({ exercises }); }),
+    grade: handler(service, practiceLimit, "INVALID_PRACTICE_GRADE", parseGradeInput, (practice, input, signal) => practice.grade({ ...input, signal }), (response, result) => { response.status(200).json(result); }),
   };
 }
