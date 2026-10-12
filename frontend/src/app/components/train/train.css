@@ -1,0 +1,42 @@
+.tr-list { display: grid; gap: 1rem; }
+.tr-card { border: 1px solid var(--ds-line); }
+.tr-panel { min-width: 0; }
+.tr-source,
+.tr-corrected {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-left: 3px solid var(--ds-green);
+  border-radius: var(--ds-r-md);
+  background: var(--ds-field);
+  padding: 1rem;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.tr-answer { display: grid; gap: .75rem; margin-top: 1.25rem; }
+.tr-answer textarea { width: 100%; resize: vertical; min-height: 7rem; padding: .85rem 1rem; }
+.tr-answer textarea:disabled { opacity: .65; }
+.tr-skeleton { border-radius: var(--ds-r-card); }
+.tr-evidence { border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); padding: .9rem 1rem; overflow-wrap: anywhere; }
+.tr-examples { margin: 0; padding-left: 1.25rem; display: grid; gap: .5rem; }
+.tr-examples li { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.tr-speak { display: inline-grid; flex: 0 0 auto; place-items: center; width: 2.25rem; height: 2.25rem; border: 1px solid var(--ds-line); border-radius: 999px; color: var(--ds-green); background: var(--ds-surface); }
+.tr-speak:hover { background: var(--ds-hover-wash); }
+.tr-speak:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
+.tr-sync-warning,
+.tr-hint { margin-bottom: 1rem; border-radius: var(--ds-r-md); background: var(--ds-warning-tint); padding: .75rem 1rem; color: var(--ds-text-2); font-size: .875rem; }
+.tr-error,
+.tr-form-error { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; border: 1px solid var(--ds-error); border-radius: var(--ds-r-md); background: var(--ds-error-tint); padding: 1rem; color: var(--ds-error); }
+.tr-form-error { display: block; padding: .65rem .8rem; }
+.tr-history { display: grid; gap: .75rem; }
+.tr-history li { display: grid; gap: .35rem; border-bottom: 1px solid var(--ds-line); padding: .75rem 0; overflow-wrap: anywhere; }
+.tr-history time { color: var(--ds-text-3); font-size: .8rem; }
+.tr-verdict { display: inline-flex; align-items: center; gap: .45rem; font-weight: 600; }
+.tr-verdict-correct { color: var(--ds-success); }
+.tr-verdict-almost { color: var(--ds-warning); }
+.tr-verdict-incorrect { color: var(--ds-error); }
+.tr-spinner { animation: tr-spin .9s linear infinite; color: var(--ds-green); }
+@keyframes tr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tr-spinner { animation: none; } }

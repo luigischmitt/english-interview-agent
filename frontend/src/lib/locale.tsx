@@ -501,21 +501,39 @@ const englishCopy: Record<string, string> = {
   "Confira o volume e a conexão e tente novamente. Sua escolha com áudio foi mantida; as perguntas também ficam visíveis na sala.": "Check your volume and connection, then try again. Audio mode is still selected, and questions remain visible in the room.",
   "Prepare a entrevista": "Set up interview",
   "A sua sessão expirou. Entre novamente para continuar.": "Your session has expired. Sign in again to continue.",
+  "Apareceu {count} vezes em {interviews} entrevistas.": "Appeared {count} times in {interviews} interviews.",
+  "Última vez: {date}": "Last seen: {date}",
+  "Você acertou {correct} de {total}.": "You got {correct} out of {total} correct.",
+  "Exercício {current} de {total}": "Exercise {current} of {total}",
+  "Certo": "Correct",
+  "Quase": "Almost",
+  "Ainda não": "Not yet",
+  "Últimas tentativas": "Recent attempts",
+  "Suas tentativas aparecerão aqui.": "Your attempts will appear here.",
+  "Carregando exercícios": "Loading exercises",
+  "Preparando seus exercícios…": "Preparing your exercises…",
+  "Avaliando…": "Checking…",
+  "Ouvir frase": "Listen to phrase",
+  "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.": "We couldn't analyze your recent errors; we'll try again next time.",
 };
 
-export function translate(locale: Locale, source: string): string {
-  if (locale !== "en") return source;
+const interpolate = (text: string, values?: Record<string, string | number>) => values
+  ? text.replace(/\{(\w+)\}/g, (match, key: string) => key in values ? String(values[key]) : match)
+  : text;
+
+export function translate(locale: Locale, source: string, values?: Record<string, string | number>): string {
+  if (locale !== "en") return interpolate(source, values);
   const trimmed = source.trim().replace(/\s+/g, " ");
   const translated = englishCopy[trimmed];
-  if (!translated) return source;
+  if (!translated) return interpolate(source, values);
   const leading = source.match(/^\s*/)?.[0] ?? "";
   const trailing = source.match(/\s*$/)?.[0] ?? "";
-  return `${leading}${translated}${trailing}`;
+  return `${leading}${interpolate(translated, values)}${trailing}`;
 }
 
 /** Translates a literal using the locale currently subscribed to by the active authenticated app. */
-export function t(source: string): string {
-  return translate(activeLocale, source);
+export function t(source: string, values?: Record<string, string | number>): string {
+  return translate(activeLocale, source, values);
 }
 
 export function getCurrentLocale(): Locale {
@@ -538,6 +556,6 @@ export function useLocale() {
     activeLocale = locale;
     window.dispatchEvent(new Event(localeChangeEvent));
   }, [locale]);
-  const t = useCallback((source: string) => translate(locale, source), [locale]);
+  const t = useCallback((source: string, values?: Record<string, string | number>) => translate(locale, source, values), [locale]);
   return { locale, t, setLocale };
 }
