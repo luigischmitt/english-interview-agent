@@ -91,13 +91,42 @@ describe("practice service", () => {
   });
 });
 
+describe("practice classification", () => {
+  it("keeps only known groups, falls back to the suggestion for an unusable label and logs no content", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const result = await service({ assignments: [
+      { index: 0, category: "verb-forms", point: "Usar 'for' antes do verbo (o certo é 'to')" },
+      { index: 1, category: "none", point: "" },
+      { index: 2, category: "prepositions", point: "Wrong preposition with project" },
+      { index: 9, category: "articles", point: "fora do intervalo" },
+    ] }).classify({ errors: [purposeError, purposeError, purposeError] });
+    expect(result).toEqual([
+      { category: "verb-forms", point: "Usar 'for' antes do verbo (o certo é 'to')" },
+      null,
+      { category: "prepositions", point: "Use to + verbo base para indicar finalidade: to cache." },
+    ]);
+    const line = String(info.mock.calls[0]?.[0]);
+    expect(JSON.parse(line)).toMatchObject({ event: "practice_classify", outcome: "success", errorCount: 3, assigned: 2 });
+    expect(line).not.toContain("Redis");
+  });
+});
+
 describe("practice routes", () => {
   const exercise = { kind: "build", instruction: "Faça uma frase dizendo que você usou Redis para guardar sessões.", source: null, target: "I used Redis to store sessions." };
   const fake = (overrides: Partial<PracticeService> = {}): PracticeService => ({
+    classify: vi.fn(async () => [{ category: "verb-forms" as const, point: "Usar 'for' antes do verbo (o certo é 'to')" }]),
     groupThemes: vi.fn(async () => ({ assignments: ["purpose-to-verb"], newThemes: [theme] })),
     buildExercises: vi.fn(async () => [exercise as never]),
     grade: vi.fn(async () => ({ verdict: "correct" as const, feedback: "Certo, você usou to para o objetivo.", corrected: "I used Redis to store sessions." })),
     ...overrides,
+  });
+
+  it("classifies errors into fixed groups", async () => {
+    const app = createApp({ speechConfig, accessTokenVerifier: null, practiceService: fake() });
+    const response = await request(app).post("/api/v1/practice/classify").send({ errors: [purposeError] });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ assignments: [{ category: "verb-forms", point: "Usar 'for' antes do verbo (o certo é 'to')" }] });
+    expect((await request(app).post("/api/v1/practice/classify").send({ errors: [purposeError], existingThemes: [] })).status).toBe(400);
   });
 
   it("serves themes, exercises and grades", async () => {
@@ -141,6 +170,7 @@ describe("practice limits", () => {
   it("lets grading run while a slow theme grouping is in flight for the same user", async () => {
     let finish!: () => void;
     const service: PracticeService = {
+      classify: vi.fn(async () => null),
       groupThemes: () => new Promise((resolve) => { finish = () => resolve({ assignments: [null], newThemes: [] }); }),
       buildExercises: vi.fn(async () => null),
       grade: vi.fn(async () => ({ verdict: "correct" as const, feedback: "Certo.", corrected: "Ok." })),
