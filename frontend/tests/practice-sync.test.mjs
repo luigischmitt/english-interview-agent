@@ -62,9 +62,11 @@ test("recency weighting stays finite when dates are absent or invalid", () => {
   assert.ok(recencyWeight({ ...ref("old"), created_at: new Date(0).toISOString() }, null, 30 * 86_400_000) < 1);
 });
 
-test("mastery requires three consecutive correct answers", () => {
-  assert.deepEqual(applyPracticeResult({ correct_streak: 2, status: "active" }, "correct"), { correct_streak: 3, status: "mastered" });
-  assert.deepEqual(applyPracticeResult({ correct_streak: 2, status: "active" }, "almost"), { correct_streak: 0, status: "active" });
+test("mastery is based on the completed practice session score", () => {
+  assert.deepEqual(applyPracticeResult({ correct_streak: 2, status: "active" }, 4, 5), { correct_streak: 3, status: "mastered" });
+  assert.deepEqual(applyPracticeResult({ correct_streak: 2, status: "active" }, 3, 5), { correct_streak: 3, status: "active" });
+  assert.deepEqual(applyPracticeResult({ correct_streak: 0, status: "active" }, 4, 4), { correct_streak: 1, status: "mastered" });
+  assert.deepEqual(applyPracticeResult({ correct_streak: 1, status: "mastered" }, 2, 5), { correct_streak: 2, status: "mastered" });
 });
 
 test("orders active themes before mastered themes", () => {

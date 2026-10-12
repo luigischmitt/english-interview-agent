@@ -63,9 +63,10 @@ export function weightedFrequency(refs = [], lastErrorAt = null, now = Date.now(
   return refs.reduce((total, ref) => total + recencyWeight(ref, lastErrorAt, now), 0);
 }
 
-export function applyPracticeResult(theme, verdict) {
-  const correct_streak = verdict === "correct" ? theme.correct_streak + 1 : 0;
-  return { correct_streak, status: correct_streak >= 3 ? "mastered" : theme.status === "mastered" ? "active" : theme.status };
+export function applyPracticeResult(theme, correct, total) {
+  const correct_streak = Math.min(1000, (theme.correct_streak ?? 0) + 1);
+  const mastered = total > 0 && correct / total >= 0.8;
+  return { correct_streak, status: mastered || theme.status === "mastered" ? "mastered" : "active" };
 }
 
 export function sortPracticeGroups(groups) {
