@@ -1,72 +1,510 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, Dumbbell, Play, RotateCcw } from "lucide-react";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { loadProgressRecords } from "@/lib/interview/persistence";
-import { validatedPatterns } from "@/lib/interview/progress-insights.mjs";
-import { applyPracticeResult, findMissingErrors, mergeRefs, sortThemes } from "@/lib/practice/practice-sync.mjs";
-import { createPracticeThemes, getPracticeExercises, gradePracticeAnswer } from "@/lib/practice/practice-requests";
-import type { PracticeErrorRef } from "@/lib/practice/practice-sync.mjs";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, CheckCircle2, CircleDot, Dumbbell, Loader2, Play, RotateCcw, Volume2, XCircle } from "lucide-react";
+import { authorizedFetch } from "@/lib/auth/backend-auth";
+import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
+import { resolveInterviewerVoice } from "@/lib/interview/voices.mjs";
+import { interviewerVoiceStorageKey } from "@/lib/interview/voice-picker.mjs";
+import { getPracticeExercises, gradePracticeAnswer } from "@/lib/practice/practice-requests";
+import {
+  loadPracticeAttempts,
+  loadPracticeThemes,
+  savePracticeAttempt,
+  syncPracticeThemes,
+  updateThemeProgress,
+  type PracticeAttempt,
+  type PracticeTheme,
+} from "@/lib/practice/practice-store";
+import { sortThemes } from "@/lib/practice/practice-sync.mjs";
 import { t } from "@/lib/locale";
+import { VoiceAnswerButton } from "./voice-answer-button";
 import "./train.css";
 
-type Theme = { id: string; user_id: string; theme_key: string; title: string; explanation: string; why: string; examples: string[]; error_refs: PracticeErrorRef[]; status: "active" | "mastered" | "hidden"; correct_streak: number; last_error_at: string | null; weighted_frequency: number };
-type Exercise = { kind: "fix" | "build"; instruction: string; source: string | null; target: string };
-type VoiceHelpers = { setAnswer: (text: string) => void };
-function AnswerForm({ value, onChange, onSubmit, disabled, voiceInput }: { value: string; onChange: (text: string) => void; onSubmit: () => void; disabled: boolean; voiceInput?: (helpers: VoiceHelpers) => ReactNode }) {
-  return <form className="tr-answer" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}><label className="ds-label" htmlFor="practice-answer">{t("Sua resposta em inglês")}</label><textarea id="practice-answer" value={value} maxLength={500} onChange={(event) => onChange(event.target.value)} lang="en" rows={4} /><div className="flex flex-wrap items-center gap-3">{voiceInput?.({ setAnswer: onChange })}<button className="ds-btn ds-btn-cta" type="submit" disabled={disabled || !value.trim()}>{t("Enviar")}</button></div></form>;
+ type Exercise = { kind: "fix" | "build"; instruction: string; source: string | null; target: string };
+type Grade = { verdict: "correct" | "almost" | "incorrect"; feedback: string; corrected: string };
+const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
+const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
+const syncWarning = "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.";
+
+export function TrainView({ onInterview }: { onInterview: () => void }) {
+  const [themes, setThemes] = useState<PracticeTheme[]>([]);
+  const [themeLoading, setThemeLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [syncFailed, setSyncFailed] = useState(false);
+  const [selected, setSelected] = useState<PracticeTheme | null>(null);
+  const [sessionStarted, setSessionStarted] = useState(false);
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercisesLoading, setExercisesLoading] = useState(false);
+  const [step, setStep] = useState(0);
+  const [answer, setAnswer] = useState("");
+  const [mode, setMode] = useState<"text" | "voice">("text");
+  const [grading, setGrading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [result, setResult] = useState<Grade | null>(null);
+  const [completed, setCompleted] = useState(0);
+  const [attempts, setAttempts] = useState<PracticeAttempt[]>([]);
+  const [attemptsLoading, setAttemptsLoading] = useState(false);
+  const [speechError, setSpeechError] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const speechRequestRef = useRef(0);
+  const objectUrlRef = useRef<string | null>(null);
+
+  const releaseAudio = useCallback(() => {
+    speechRequestRef.current += 1;
+    audioRef.current?.pause();
+    audioRef.current = null;
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = null;
+  }, []);
+
+  useEffect(() => () => releaseAudio(), [releaseAudio]);
+
+  const playPhrase = async (phrase: string) => {
+    releaseAudio();
+    const requestId = speechRequestRef.current;
+    setSpeechError(false);
+    try {
+      let voice = "am_echo";
+      try { voice = resolveInterviewerVoice(localStorage.getItem(interviewerVoiceStorageKey)); } catch { /* Use the default voice. */ }
+      const blob = await fetchSpeechBlob(phrase, { endpoint: speechEndpoint, fetcher: authorizedFetch, voice });
+      if (requestId !== speechRequestRef.current) return;
+      const url = URL.createObjectURL(blob);
+      objectUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      const cleanup = () => {
+        if (audioRef.current === audio) releaseAudio();
+      };
+      audio.onended = cleanup;
+      audio.onerror = cleanup;
+      await audio.play();
+    } catch {
+      if (requestId !== speechRequestRef.current) return;
+      releaseAudio();
+      setSpeechError(true);
+    }
+  };
+
+  const load = useCallback(async () => {
+    setThemeLoading(true);
+    setLoadError(null);
+    const loaded = await loadPracticeThemes();
+    if (!loaded.ok) {
+      setLoadError(loaded.message);
+      setThemeLoading(false);
+      return;
+    }
+    setThemes(sortThemes(loaded.value));
+    setThemeLoading(false);
+    const synced = await syncPracticeThemes(loaded.value);
+    if (synced.ok) {
+      setThemes(sortThemes(synced.value));
+      setSyncFailed(false);
+    } else {
+      setSyncFailed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  const selectTheme = async (theme: PracticeTheme) => {
+    setSelected(theme);
+    setAttemptsLoading(true);
+    const history = await loadPracticeAttempts(theme.id);
+    setAttempts(history.ok ? history.value : []);
+    setAttemptsLoading(false);
+  };
+
+  const begin = async () => {
+    if (!selected) return;
+    setSessionStarted(true);
+    setExercisesLoading(true);
+    setFormError(null);
+    setResult(null);
+    setAnswer("");
+    setMode("text");
+    setStep(0);
+    setCompleted(0);
+    setExercises([]);
+    try {
+      const response = await getPracticeExercises({
+        theme: { title: selected.title, explanation: selected.explanation, examples: selected.examples ?? [] },
+        userErrors: (selected.error_refs ?? []).slice(-3).map((ref) => ({ evidence: ref.evidence, rephrasedExample: ref.rephrased })),
+      });
+      setExercises(response.exercises.slice(0, 3));
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Não foi possível preparar os exercícios.");
+    } finally {
+      setExercisesLoading(false);
+    }
+  };
+
+  const submit = async () => {
+    if (!selected || !exercises[step] || !answer.trim() || grading) return;
+    setGrading(true);
+    setFormError(null);
+    const exercise = exercises[step];
+    const cleanAnswer = answer.trim();
+    try {
+      const grade = await gradePracticeAnswer({ theme: { title: selected.title, explanation: selected.explanation }, exercise, answer: cleanAnswer, mode });
+      const saved = await savePracticeAttempt({ themeId: selected.id, kind: exercise.kind, instruction: exercise.instruction, mode, answer: cleanAnswer, ...grade });
+      if (!saved.ok) throw new Error(saved.message);
+      setResult(grade);
+      setAttempts((current) => [saved.value, ...current].slice(0, 5));
+      const updated = await updateThemeProgress(selected, grade.verdict);
+      if (updated.ok) {
+        setSelected(updated.value);
+        setThemes((current) => current.map((theme) => theme.id === updated.value.id ? updated.value : theme));
+      } else {
+        setFormError(updated.message);
+      }
+      setCompleted((count) => count + (grade.verdict === "correct" ? 1 : 0));
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Não foi possível avaliar sua resposta.");
+    } finally {
+      setGrading(false);
+    }
+  };
+
+  const next = () => {
+    setResult(null);
+    setAnswer("");
+    setMode("text");
+    setStep((current) => current + 1);
+  };
+  const sorted = useMemo(() => sortThemes(themes), [themes]);
+
+  return (
+    <main id="main-content" className="mx-auto w-full min-w-0 max-w-5xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
+      <header className="mb-8">
+        <h1 className="font-display text-4xl tracking-tight">{t("Treinar")}</h1>
+        <p className="ds-body mt-2">{t("Pratique os padrões de inglês que aparecem nas suas entrevistas.")}</p>
+      </header>
+      {loadError ? (
+        <div className="tr-error" role="alert">
+          <p>{loadError}</p>
+          <button className="ds-btn ds-btn-soft" onClick={() => void load()}>{t("Tentar de novo")}</button>
+        </div>
+      ) : (
+        <>
+          {syncFailed && <p className="tr-sync-warning" role="status">{t(syncWarning)}</p>}
+          {selected ? (
+            selectedView()
+          ) : themeLoading ? (
+            <div className="tr-skeleton skeleton h-48 w-full" aria-busy="true" />
+          ) : sorted.length === 0 ? (
+            <section className="shl-dashed p-6">
+              <p className="ds-body">{t("Faça uma entrevista para descobrirmos o que você precisa treinar")}</p>
+              <button className="ds-btn ds-btn-cta mt-5" onClick={onInterview}><Play className="size-4" />{t("Preparar entrevista")}</button>
+            </section>
+          ) : (
+            <ThemeList themes={sorted} onSelect={(theme) => void selectTheme(theme)} />
+          )}
+        </>
+      )}
+    </main>
+  );
+
+  function selectedView() {
+    if (!selected) return null;
+    if (sessionStarted) {
+      return (
+        <PracticeSession
+          exercises={exercises}
+          loading={exercisesLoading}
+          step={step}
+          answer={answer}
+          grading={grading}
+          result={result}
+          error={formError}
+          speechError={speechError}
+          completed={completed}
+          onBack={() => { setSelected(null); setExercises([]); setSessionStarted(false); }}
+          onBegin={() => void begin()}
+          onAnswer={setAnswer}
+          onVoiceAnswer={(text) => { setMode("voice"); setAnswer(text); setFormError(null); }}
+          onVoiceError={setFormError}
+          onSubmit={() => void submit()}
+          onNext={next}
+          onInterview={onInterview}
+          onPlay={(phrase) => void playPhrase(phrase)}
+        />
+      );
+    }
+    return (
+      <ThemeDetail
+        theme={selected}
+        attempts={attempts}
+        attemptsLoading={attemptsLoading}
+        speechError={speechError}
+        onBack={() => { setSelected(null); setSessionStarted(false); }}
+        onBegin={() => void begin()}
+        onPlay={(phrase) => void playPhrase(phrase)}
+      />
+    );
+  }
 }
 
-export function TrainView({ onInterview, voiceInput }: { onInterview: () => void; voiceInput?: (helpers: VoiceHelpers) => ReactNode }) {
-  const [themes, setThemes] = useState<Theme[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [reload, setReload] = useState(0);
-  const [selected, setSelected] = useState<Theme | null>(null); const [isPracticing, setIsPracticing] = useState(false); const [exercises, setExercises] = useState<Exercise[]>([]); const [step, setStep] = useState(0); const [answer, setAnswer] = useState(""); const [mode, setMode] = useState<"text" | "voice">("text"); const [grading, setGrading] = useState(false); const [result, setResult] = useState<{ verdict: string; feedback: string; corrected: string } | null>(null); const [completed, setCompleted] = useState(0);
-  const load = useCallback(async () => {
-    setLoading(true); setError(null);
-    try {
-      const client = getSupabaseBrowserClient(); const { data: auth, error: authError } = await client.auth.getUser(); if (authError || !auth.user) throw new Error("Sua sessão expirou. Entre novamente.");
-      const { data, error: readError } = await client.from("practice_themes").select("*").eq("user_id", auth.user.id); if (readError) throw new Error("Não foi possível carregar seus temas. Tente novamente.");
-      let current = (data ?? []) as Theme[];
-      setThemes(sortThemes(current.map((theme) => ({ ...theme, weighted_frequency: theme.error_refs?.length ?? 0 }))));
-      const progress = await loadProgressRecords(); if (!progress.ok) throw new Error(progress.message);
-      const newErrors: PracticeErrorRef[] = [];
-      for (const record of progress.value) {
-        const patterns = record.feedback?.status === "ready" ? validatedPatterns(record.feedback.analysis) : null;
-        if (!patterns || record.answerCount < 1) continue;
-        for (const pattern of patterns) newErrors.push({ interview_id: record.id, sequence_number: pattern.sequenceNumber, evidence: pattern.evidence, rephrased: pattern.rephrasedExample, type: pattern.type, suggestion: pattern.suggestion, created_at: record.completedAt ?? record.createdAt });
-      }
-      const missing = findMissingErrors(newErrors, current);
-      if (missing.length) {
-        const response = await createPracticeThemes({ errors: missing.map((ref) => ({ type: ref.type ?? "GRAMMAR", evidence: ref.evidence, suggestion: ref.suggestion ?? "", rephrasedExample: ref.rephrased })), existingThemes: current.filter((theme) => theme.theme_key !== "_ignored").map((theme) => ({ key: theme.theme_key, title: theme.title })) });
-        const assignments = missing.map((_, index) => response.assignments[index] ?? null);
-        const now = new Date().toISOString();
-        const newRows = response.newThemes.map((theme) => ({ user_id: auth.user.id, theme_key: theme.key, title: theme.title, explanation: theme.explanation, why: theme.why, examples: theme.examples.slice(0, 5), error_refs: [] as PracticeErrorRef[], status: "active", correct_streak: 0, last_error_at: now }));
-        if (assignments.includes(null) && !current.some((theme) => theme.theme_key === "_ignored")) newRows.push({ user_id: auth.user.id, theme_key: "_ignored", title: "Ignorados", explanation: "", why: "", examples: [], error_refs: [], status: "hidden", correct_streak: 0, last_error_at: now });
-        for (const row of newRows) { const { error: insertError } = await client.from("practice_themes").upsert(row, { onConflict: "user_id,theme_key" }); if (insertError) throw new Error("Não foi possível salvar seus temas. Tente novamente."); }
-        const { data: refreshed, error: refreshError } = await client.from("practice_themes").select("*").eq("user_id", auth.user.id); if (refreshError) throw new Error("Não foi possível atualizar seus temas. Tente novamente."); current = (refreshed ?? []) as Theme[];
-        for (let index = 0; index < missing.length; index += 1) {
-          const assigned = assignments[index]; const target = current.find((theme) => theme.theme_key === (assigned ?? "_ignored"));
-          if (!target) continue;
-          const refs = mergeRefs(target.error_refs, [missing[index]]);
-          const { error: updateError } = await client.from("practice_themes").update({ error_refs: refs, last_error_at: missing[index].created_at ?? now, ...(target.status === "mastered" ? { status: "active", correct_streak: 0 } : {}) }).eq("id", target.id).eq("user_id", auth.user.id);
-          if (updateError) throw new Error("Não foi possível atualizar seus temas. Tente novamente.");
-          target.error_refs = refs; target.last_error_at = missing[index].created_at ?? now; if (target.status === "mastered") { target.status = "active"; target.correct_streak = 0; }
-        }
-      }
-      const countByTheme = new Map<string, number>();
-      for (const theme of current) countByTheme.set(theme.id, theme.error_refs?.length ?? 0);
-      current = current.map((theme) => ({ ...theme, weighted_frequency: (theme.error_refs ?? []).reduce((sum, ref) => sum + Math.pow(0.85, Math.max(0, (Date.now() - Date.parse(ref.created_at ?? theme.last_error_at ?? "")) / 86400000 / 30)), 0) }));
-      setThemes(sortThemes(current));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível carregar seus temas. Tente novamente."); }
-    finally { setLoading(false); }
-  }, []);
-  useEffect(() => { const timer = window.setTimeout(() => { void load(); }, 0); return () => window.clearTimeout(timer); }, [load, reload]);
-  const begin = async (theme: Theme) => { setSelected(theme); setIsPracticing(true); setResult(null); setAnswer(""); setMode("text"); setStep(0); setCompleted(0); setExercises([]); setLoading(true); try { const response = await getPracticeExercises({ theme: { title: theme.title, explanation: theme.explanation, examples: theme.examples ?? [] }, userErrors: (theme.error_refs ?? []).slice(-3).map((ref) => ({ evidence: ref.evidence, rephrasedExample: ref.rephrased })) }); setExercises(response.exercises.slice(0, 3)); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível preparar os exercícios."); setSelected(null); } finally { setLoading(false); } };
-  const submit = async () => { if (!selected || !exercises[step] || !answer.trim()) return; setGrading(true); try { const exercise = exercises[step]; const grade = await gradePracticeAnswer({ theme: { title: selected.title, explanation: selected.explanation }, exercise, answer: answer.trim(), mode }); setResult(grade); const client = getSupabaseBrowserClient(); const { data: auth } = await client.auth.getUser(); if (!auth.user) throw new Error("Sua sessão expirou. Entre novamente."); const { error: saveError } = await client.from("practice_attempts").insert({ user_id: auth.user.id, theme_id: selected.id, kind: exercise.kind, instruction: exercise.instruction, mode, answer: answer.trim().slice(0, 1000), verdict: grade.verdict, feedback: grade.feedback, corrected: grade.corrected }); if (saveError) throw new Error("Não foi possível salvar sua resposta."); const domain = applyPracticeResult(selected, grade.verdict); const { error: domainError } = await client.from("practice_themes").update(domain).eq("id", selected.id).eq("user_id", auth.user.id); if (domainError) throw new Error("Não foi possível atualizar seu progresso."); setSelected({ ...selected, ...domain }); setCompleted((n) => n + (grade.verdict === "correct" ? 1 : 0)); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível avaliar sua resposta."); } finally { setGrading(false); } };
-  const next = () => { setResult(null); setAnswer(""); setMode("text"); setStep((value) => value + 1); };
-  const sorted = useMemo(() => sortThemes(themes), [themes]);
-  return <main id="main-content" className="mx-auto w-full min-w-0 max-w-5xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14"><header className="mb-8"><h1 className="font-display text-4xl tracking-tight">{t("Treinar")}</h1><p className="ds-body mt-2">{t("Pratique os padrões de inglês que aparecem nas suas entrevistas.")}</p></header>
-    {error && <div className="shl-error mb-5 flex flex-wrap items-center justify-between gap-3 p-4" role="alert"><p>{error}</p><button className="ds-btn ds-btn-soft" onClick={() => { setError(null); if (selected) void begin(selected); else setReload((n) => n + 1); }}>{t("Tentar de novo")}</button></div>}
-    {loading ? <div aria-busy="true" className="tr-skeleton skeleton h-48 w-full" /> : selected && !isPracticing ? <section className="tr-panel ds-card p-5 sm:p-8"><button className="ds-btn ds-btn-quiet mb-4" onClick={() => setSelected(null)}><ArrowLeft className="size-4" />{t("Voltar aos temas")}</button><h2 className="ds-h2">{selected.title}</h2><section className="mt-5"><h3 className="ds-label">{t("O que está acontecendo")}</h3><p className="ds-body mt-1">{selected.explanation}</p></section><section className="mt-5"><h3 className="ds-label">{t("Você disse → Soa melhor")}</h3><div className="mt-2 grid gap-3">{(selected.error_refs ?? []).slice(-3).reverse().map((ref, index) => <div className="tr-evidence" key={`${ref.interview_id}-${ref.sequence_number}-${index}`}><p className="ds-small">{t("Você disse")}</p><p lang="en">{ref.evidence}</p><p className="ds-small mt-2">{t("Soa melhor")}</p><p lang="en">{ref.rephrased}</p></div>)}</div></section><section className="mt-5"><h3 className="ds-label">{t("Frases que você vai usar muito")}</h3><ul className="tr-examples mt-2">{(selected.examples ?? []).map((example, index) => <li key={index} lang="en">{example}</li>)}</ul></section><section className="mt-5"><h3 className="ds-label">{t("Por quê")}</h3><p className="ds-body mt-1">{selected.why}</p></section><button className="ds-btn ds-btn-cta mt-6" onClick={() => void begin(selected)}><Dumbbell className="size-4" />{t("Praticar")}</button></section> : selected ? <section className="tr-panel ds-card p-5 sm:p-8" aria-live="polite">{step >= exercises.length ? <><h2 className="ds-h2">{t("Prática concluída")}</h2><p className="ds-body mt-2">{t("Você acertou ")}{completed} {t("de ")}{exercises.length}.</p><div className="mt-6 flex flex-wrap gap-3"><button className="ds-btn ds-btn-cta" onClick={() => void begin(selected)}><RotateCcw className="size-4" />{t("Treinar de novo")}</button><button className="ds-btn ds-btn-soft" onClick={() => { setSelected(null); setIsPracticing(false); }}>{t("Voltar aos temas")}</button></div></> : <><button className="ds-btn ds-btn-quiet mb-4" onClick={() => { setSelected(null); setIsPracticing(false); }}><ArrowLeft className="size-4" />{t("Voltar aos temas")}</button><p className="ds-hint">{t("Exercício ")}{step + 1} {t("de ")}{exercises.length}</p><h2 className="ds-h2 mt-2">{exercises[step]?.instruction}</h2>{exercises[step]?.kind === "fix" && <blockquote className="tr-source mt-4" lang="en">{exercises[step].source}</blockquote>}{!result ? <AnswerForm value={answer} onChange={(text) => { setAnswer(text); }} onSubmit={() => void submit()} disabled={grading} voiceInput={voiceInput ? (helpers) => voiceInput({ setAnswer: (text) => { setMode("voice"); helpers.setAnswer(text); } }) : undefined} /> : <div className="mt-5"><p className="ds-h2">{result.verdict === "correct" ? "✅ Certo" : result.verdict === "almost" ? "🟡 Quase" : "❌ Ainda não"}</p><p className="ds-body mt-2">{result.feedback}</p><p className="tr-corrected mt-3" lang="en">{result.corrected}</p><button className="ds-btn ds-btn-cta mt-5" onClick={next}>{t("Próximo")}</button></div>}</>}</section> : sorted.length === 0 ? <section className="shl-dashed p-6"><p className="ds-body">{t("Faça uma entrevista para descobrirmos o que você precisa treinar")}</p><button className="ds-btn ds-btn-cta mt-5" onClick={onInterview}><Play className="size-4" />{t("Preparar entrevista")}</button></section> : <section className="tr-list" aria-labelledby="train-topics"><h2 id="train-topics" className="ds-h2">{t("Seus erros mais frequentes")}</h2><div className="mt-4 grid gap-4">{sorted.map((theme) => <article className="tr-card ds-card p-5 sm:p-6" key={theme.id}><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="ds-h2">{theme.title}</h3><p className="ds-small mt-1">{t("apareceu ")}{theme.error_refs?.length ?? 0} {t("vezes em ")}{new Set(theme.error_refs?.map((ref) => ref.interview_id)).size} {t("entrevistas")}</p><p className="ds-small mt-1">{theme.last_error_at ? `${t("Última vez: ")}${new Date(theme.last_error_at).toLocaleDateString("pt-BR")}` : ""}</p></div><span className="shl-pill shl-pill-on">{t(theme.status === "mastered" ? "Dominado" : "Treinando")}</span></div><button className="ds-btn ds-btn-cta mt-5" onClick={() => { setSelected(theme); setIsPracticing(false); }}><Dumbbell className="size-4" />{t("Treinar")}</button></article>)}</div></section>}
-  </main>;
+function ThemeList({ themes, onSelect }: { themes: PracticeTheme[]; onSelect: (theme: PracticeTheme) => void }) {
+  return (
+    <section className="tr-list" aria-labelledby="train-topics">
+      <h2 id="train-topics" className="ds-h2">{t("Seus erros mais frequentes")}</h2>
+      <div className="mt-4 grid gap-4">
+        {themes.map((theme) => <ThemeCard key={theme.id} theme={theme} onSelect={onSelect} />)}
+      </div>
+    </section>
+  );
+}
+
+function ThemeCard({ theme, onSelect }: { theme: PracticeTheme; onSelect: (theme: PracticeTheme) => void }) {
+  const interviews = new Set(theme.error_refs?.map((ref) => ref.interview_id)).size;
+  return (
+    <article className="tr-card ds-card p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="ds-h2">{theme.title}</h3>
+          <p className="ds-small mt-1">{t("Apareceu {count} vezes em {interviews} entrevistas.", { count: theme.error_refs?.length ?? 0, interviews })}</p>
+          {theme.last_error_at && <p className="ds-small mt-1">{t("Última vez: {date}", { date: new Date(theme.last_error_at).toLocaleDateString("pt-BR") })}</p>}
+        </div>
+        <span className="shl-pill shl-pill-on">{t(theme.status === "mastered" ? "Dominado" : "Treinando")}</span>
+      </div>
+      <button className="ds-btn ds-btn-cta mt-5" onClick={() => onSelect(theme)}><Dumbbell className="size-4" />{t("Treinar")}</button>
+    </article>
+  );
+}
+
+function ThemeDetail({ theme, attempts, attemptsLoading, speechError, onBack, onBegin, onPlay }: {
+  theme: PracticeTheme; attempts: PracticeAttempt[]; attemptsLoading: boolean; speechError: boolean;
+  onBack: () => void; onBegin: () => void; onPlay: (phrase: string) => void;
+}) {
+  return (
+    <section className="tr-panel ds-card p-5 sm:p-8">
+      <button className="ds-btn ds-btn-quiet mb-4" onClick={onBack}><ArrowLeft className="size-4" />{t("Voltar aos temas")}</button>
+      <h2 className="ds-h2">{theme.title}</h2>
+      <section className="mt-5"><h3 className="ds-label">{t("O que está acontecendo")}</h3><p className="ds-body mt-1">{theme.explanation}</p></section>
+      <section className="mt-5">
+        <h3 className="ds-label">{t("Você disse → Soa melhor")}</h3>
+        <div className="mt-2 grid gap-3">
+          {(theme.error_refs ?? []).slice(-3).reverse().map((ref, index) => (
+            <div className="tr-evidence" key={`${ref.interview_id}-${ref.sequence_number}-${index}`}>
+              <p className="ds-small">{t("Você disse")}</p><p lang="en">{ref.evidence}</p>
+              <p className="ds-small mt-2">{t("Soa melhor")}</p><p lang="en">{ref.rephrased}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="mt-5">
+        <h3 className="ds-label">{t("Frases que você vai usar muito")}</h3>
+        <ul className="tr-examples mt-2">
+          {(theme.examples ?? []).map((example, index) => <li key={index} lang="en"><span>{example}</span><SpeakButton phrase={example} onPlay={onPlay} /></li>)}
+        </ul>
+        {speechError && <p className="tr-hint">{t("O áudio não está disponível agora. Você pode continuar sem ele.")}</p>}
+      </section>
+      <section className="mt-5"><h3 className="ds-label">{t("Por quê")}</h3><p className="ds-body mt-1">{theme.why}</p></section>
+      <section className="mt-6">
+        <h3 className="ds-label">{t("Últimas tentativas")}</h3>
+        {attemptsLoading ? <Loader2 className="tr-spinner mt-3 size-5" aria-label={t("Carregando")} /> : attempts.length ? (
+          <ol className="tr-history mt-2">
+            {attempts.map((attempt) => (
+              <li key={attempt.id}>
+                <time>{new Date(attempt.created_at).toLocaleDateString("pt-BR")}</time>
+                <p lang="en">{attempt.answer}</p>
+                <Verdict verdict={attempt.verdict} />
+              </li>
+            ))}
+          </ol>
+        ) : <p className="ds-small mt-2">{t("Suas tentativas aparecerão aqui.")}</p>}
+      </section>
+      <button className="ds-btn ds-btn-cta mt-6" onClick={onBegin}><Dumbbell className="size-4" />{t("Praticar")}</button>
+    </section>
+  );
+}
+
+function PracticeSession({
+  exercises,
+  loading,
+  step,
+  answer,
+  grading,
+  result,
+  error,
+  speechError,
+  completed,
+  onBack,
+  onBegin,
+  onAnswer,
+  onVoiceAnswer,
+  onVoiceError,
+  onSubmit,
+  onNext,
+  onInterview,
+  onPlay,
+}: {
+  exercises: Exercise[];
+  loading: boolean;
+  step: number;
+  answer: string;
+  grading: boolean;
+  result: Grade | null;
+  error: string | null;
+  speechError: boolean;
+  completed: number;
+  onBack: () => void;
+  onBegin: () => void;
+  onAnswer: (text: string) => void;
+  onVoiceAnswer: (text: string) => void;
+  onVoiceError: (message: string) => void;
+  onSubmit: () => void;
+  onNext: () => void;
+  onInterview: () => void;
+  onPlay: (phrase: string) => void;
+}) {
+  if (loading) {
+    return (
+      <section className="tr-panel ds-card p-5 sm:p-8" aria-busy="true">
+        <Loader2 className="tr-spinner size-6" aria-label={t("Carregando exercícios")} />
+        <p className="ds-body mt-3">{t("Preparando seus exercícios…")}</p>
+      </section>
+    );
+  }
+
+  if (!exercises.length) {
+    return (
+      <section className="tr-panel ds-card p-5 sm:p-8">
+        <button className="ds-btn ds-btn-quiet" onClick={onBack}>
+          <ArrowLeft className="size-4" />{t("Voltar aos temas")}
+        </button>
+        {error && <p className="tr-form-error mt-4" role="alert">{error}</p>}
+        <button className="ds-btn ds-btn-cta mt-4" onClick={onBegin}>{t("Tentar de novo")}</button>
+      </section>
+    );
+  }
+
+  if (step >= exercises.length) {
+    return (
+      <section className="tr-panel ds-card p-5 sm:p-8">
+        <h2 className="ds-h2">{t("Prática concluída")}</h2>
+        <p className="ds-body mt-2">{t("Você acertou {correct} de {total}.", { correct: completed, total: exercises.length })}</p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button className="ds-btn ds-btn-cta" onClick={onBegin}>
+            <RotateCcw className="size-4" />{t("Treinar de novo")}
+          </button>
+          <button className="ds-btn ds-btn-soft" onClick={onBack}>{t("Voltar aos temas")}</button>
+          <button className="ds-btn ds-btn-soft" onClick={onInterview}>
+            <Play className="size-4" />{t("Preparar entrevista")}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  const exercise = exercises[step];
+  return (
+    <section className="tr-panel ds-card p-5 sm:p-8" aria-live="polite">
+      <button className="ds-btn ds-btn-quiet mb-4" onClick={onBack}>
+        <ArrowLeft className="size-4" />{t("Voltar aos temas")}
+      </button>
+      <p className="ds-hint">{t("Exercício {current} de {total}", { current: step + 1, total: exercises.length })}</p>
+      <h2 className="ds-h2 mt-2">{exercise.instruction}</h2>
+      {exercise.kind === "fix" && exercise.source && (
+        <blockquote className="tr-source mt-4" lang="en">{exercise.source}</blockquote>
+      )}
+      {!result ? (
+        <AnswerForm
+          value={answer}
+          disabled={grading}
+          error={error}
+          onChange={onAnswer}
+          onSubmit={onSubmit}
+          onVoiceAnswer={onVoiceAnswer}
+          onVoiceError={onVoiceError}
+        />
+      ) : (
+        <PracticeFeedback result={result} error={error} speechError={speechError} onNext={onNext} onPlay={onPlay} />
+      )}
+    </section>
+  );
+}
+
+function AnswerForm({ value, disabled, error, onChange, onSubmit, onVoiceAnswer, onVoiceError }: {
+  value: string;
+  disabled: boolean;
+  error: string | null;
+  onChange: (text: string) => void;
+  onSubmit: () => void;
+  onVoiceAnswer: (text: string) => void;
+  onVoiceError: (message: string) => void;
+}) {
+  return (
+    <form
+      className="tr-answer"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <label className="ds-label" htmlFor="practice-answer">{t("Sua resposta em inglês")}</label>
+      <textarea
+        id="practice-answer"
+        className="ds-field"
+        value={value}
+        maxLength={500}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            onSubmit();
+          }
+        }}
+        lang="en"
+        rows={4}
+        disabled={disabled}
+      />
+      {error && <p className="tr-form-error" role="alert">{error}</p>}
+      <div className="flex flex-wrap items-center gap-3">
+        <VoiceAnswerButton onTranscript={onVoiceAnswer} onError={onVoiceError} disabled={disabled} />
+        <button className="ds-btn ds-btn-cta" type="submit" disabled={disabled || !value.trim()}>{gradingLabel(disabled)}</button>
+      </div>
+    </form>
+  );
+}
+
+function gradingLabel(disabled: boolean) {
+  return disabled ? <><Loader2 className="tr-spinner size-4" />{t("Avaliando…")}</> : t("Enviar");
+}
+
+function PracticeFeedback({ result, error, speechError, onNext, onPlay }: {
+  result: Grade;
+  error: string | null;
+  speechError: boolean;
+  onNext: () => void;
+  onPlay: (phrase: string) => void;
+}) {
+  return (
+    <div className="mt-5">
+      <Verdict verdict={result.verdict} />
+      <p className="ds-body mt-2">{result.feedback}</p>
+      {error && <p className="tr-form-error mt-3" role="status">{error}</p>}
+      <div className="tr-corrected mt-3" lang="en">
+        <span>{result.corrected}</span>
+        <SpeakButton phrase={result.corrected} onPlay={onPlay} />
+      </div>
+      {speechError && <p className="tr-hint mt-2">{t("O áudio não está disponível agora. Você pode continuar sem ele.")}</p>}
+      <button className="ds-btn ds-btn-cta mt-5" onClick={onNext}>{t("Próximo")}</button>
+    </div>
+  );
+}
+
+function Verdict({ verdict }: { verdict: Grade["verdict"] }) {
+  if (verdict === "correct") return <p className="tr-verdict tr-verdict-correct"><CheckCircle2 aria-hidden="true" />{t("Certo")}</p>;
+  if (verdict === "almost") return <p className="tr-verdict tr-verdict-almost"><CircleDot aria-hidden="true" />{t("Quase")}</p>;
+  return <p className="tr-verdict tr-verdict-incorrect"><XCircle aria-hidden="true" />{t("Ainda não")}</p>;
+}
+
+function SpeakButton({ phrase, onPlay }: { phrase: string; onPlay: (phrase: string) => void }) {
+  return <button type="button" className="tr-speak" aria-label={t("Ouvir frase")} onClick={() => onPlay(phrase)}><Volume2 className="size-4" /></button>;
 }
