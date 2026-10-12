@@ -10,12 +10,20 @@ let memoryLocale: Locale | null = null;
 let activeLocale: Locale = "pt-BR";
 
 function getStorage(): Storage | null {
-  try { return window.localStorage; } catch { return null; }
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
 function readLocale(): Locale {
   if (memoryLocale) return memoryLocale;
-  try { return getStorage()?.getItem(localeStorageKey) === "en" ? "en" : "pt-BR"; } catch { return "pt-BR"; }
+  try {
+    return getStorage()?.getItem(localeStorageKey) === "en" ? "en" : "pt-BR";
+  } catch {
+    return "pt-BR";
+  }
 }
 
 function subscribe(onChange: () => void) {
@@ -28,10 +36,18 @@ function subscribe(onChange: () => void) {
 }
 
 const englishCopy: Record<string, string> = {
-  "Início": "Home",
-  "Entrevista": "Interview",
-  "Progresso": "Progress",
-  "Configurações": "Settings",
+  "Resposta correta.": "Correct answer.",
+  "A opção correta está destacada abaixo.": "The correct option is highlighted below.",
+  "Encontre e corrija o erro": "Find and correct the mistake",
+  "Reescreva sua frase corretamente": "Rewrite your sentence correctly",
+  "Escolha a opção correta": "Choose the correct option",
+  Exemplos: "Examples",
+  "Complete a frase": "Complete the sentence",
+  "Resultado das opções": "Answer choices",
+  Início: "Home",
+  Entrevista: "Interview",
+  Progresso: "Progress",
+  Configurações: "Settings",
   "Preparar entrevista": "Set up interview",
   "Recolher barra lateral": "Collapse sidebar",
   "Expandir barra lateral": "Expand sidebar",
@@ -41,15 +57,17 @@ const englishCopy: Record<string, string> = {
   "Navegação móvel": "Mobile navigation",
   "Pratique inglês para entrevistas.": "Practice English for interviews.",
   "Vamos praticar?": "Ready to practice?",
-  "Monte uma entrevista para o cargo que você busca e responda em inglês.": "Set up an interview for the role you want and answer in English.",
+  "Monte uma entrevista para o cargo que você busca e responda em inglês.":
+    "Set up an interview for the role you want and answer in English.",
   "Prepare sua prática.": "Set up your practice.",
-  "Escolha o cargo e o foco. Na entrevista, as perguntas aparecem em texto e também podem ser lidas em voz alta.": "Choose a role and focus. During the interview, questions appear on screen and can also be read aloud.",
+  "Escolha o cargo e o foco. Na entrevista, as perguntas aparecem em texto e também podem ser lidas em voz alta.":
+    "Choose a role and focus. During the interview, questions appear on screen and can also be read aloud.",
   "Começar prática": "Start practice",
-  "Modo": "Mode",
+  Modo: "Mode",
   "Inglês, respostas faladas": "English, spoken answers",
-  "Foco": "Focus",
+  Foco: "Focus",
   "Escolha na configuração": "Choose during setup",
-  "Sala": "Interview room",
+  Sala: "Interview room",
   "Você responde no seu ritmo e escolhe quando ver as legendas.": "Answer at your own pace and choose when to view the captions.",
   "Feito no Brasil, para vaga lá fora": "Made in Brazil for opportunities abroad",
   "Aquecimento opcional": "Optional warm-up",
@@ -59,39 +77,44 @@ const englishCopy: Record<string, string> = {
   "Veja as sessões que você já concluiu.": "See the sessions you have completed.",
   "Ver progresso": "View progress",
   "Escolha como você prefere usar a plataforma.": "Choose how you prefer to use the platform.",
-  "Aparência": "Appearance",
+  Aparência: "Appearance",
   "Tema da plataforma": "Platform theme",
   "Escolha entre claro, escuro ou acompanhar o tema do seu dispositivo.": "Choose light, dark, or follow your device theme.",
-  "Claro": "Light",
-  "Escuro": "Dark",
-  "Sistema": "System",
-  "Idioma": "Language",
+  Claro: "Light",
+  Escuro: "Dark",
+  Sistema: "System",
+  Idioma: "Language",
   "Escolha o idioma da plataforma.": "Choose the platform language.",
   "Português (Brasil)": "Portuguese (Brazil)",
   "Experiência da entrevista": "Interview experience",
   "Voz do entrevistador": "Interviewer voice",
-  "A escolha fica salva neste navegador e pode ser alterada ao preparar cada entrevista.": "Your choice is saved in this browser and can be changed when setting up each interview.",
+  "A escolha fica salva neste navegador e pode ser alterada ao preparar cada entrevista.":
+    "Your choice is saved in this browser and can be changed when setting up each interview.",
   "Câmera e avatar do entrevistador": "Interviewer camera and avatar",
   "Esses recursos ainda não estão disponíveis.": "These features are not available yet.",
-  "Indisponível": "Unavailable",
+  Indisponível: "Unavailable",
   "Pular para o conteúdo": "Skip to content",
-  "Não foi possível abrir a sala de entrevista neste navegador. Libere o armazenamento do site e tente novamente.": "Could not open the interview room in this browser. Allow site storage and try again.",
-  "Sair": "Sign out",
+  "Não foi possível abrir a sala de entrevista neste navegador. Libere o armazenamento do site e tente novamente.":
+    "Could not open the interview room in this browser. Allow site storage and try again.",
+  Sair: "Sign out",
   "Não foi possível sair. Tente novamente.": "Could not sign out. Try again.",
   "Seu progresso": "Your progress",
-  "O que se repete nas suas respostas, o que estudar primeiro e como você evolui a cada prática.": "What repeats in your answers, what to study first, and how you improve with each practice.",
+  "O que se repete nas suas respostas, o que estudar primeiro e como você evolui a cada prática.":
+    "What repeats in your answers, what to study first, and how you improve with each practice.",
   "Carregando progresso": "Loading progress",
   "Não foi possível carregar seu progresso.": "Could not load your progress.",
   "Verifique sua conexão e tente novamente.": "Check your connection and try again.",
   "Tentar novamente": "Try again",
   "Nenhuma sessão concluída ainda": "No completed sessions yet",
   "Sua primeira prática começa o seu painel.": "Your first practice will start your dashboard.",
-  "Depois de concluir uma entrevista você vê aqui seus erros mais comuns, o que estudar primeiro e a evolução a cada prática. Sessões em andamento ou abandonadas não entram.": "After completing an interview, you’ll see your most common patterns, what to study first, and how you improve over time. In-progress and abandoned sessions are not included.",
+  "Depois de concluir uma entrevista você vê aqui seus erros mais comuns, o que estudar primeiro e a evolução a cada prática. Sessões em andamento ou abandonadas não entram.":
+    "After completing an interview, you’ll see your most common patterns, what to study first, and how you improve over time. In-progress and abandoned sessions are not included.",
   "Começar primeira prática": "Start your first practice",
   "Nova prática": "New practice",
   "Entrar novamente": "Sign in again",
   "Data indisponível": "Date unavailable",
-  "Seu perfil aparece aqui assim que o relatório de uma prática ficar pronto.": "Your profile will appear here once a practice report is ready.",
+  "Seu perfil aparece aqui assim que o relatório de uma prática ficar pronto.":
+    "Your profile will appear here once a practice report is ready.",
   "Prática de entrevista": "Interview practice",
   "Prática pelo currículo": "Resume practice",
   "prática concluída": "practice completed",
@@ -105,29 +128,30 @@ const englishCopy: Record<string, string> = {
   "Os pontos de atenção aparecem com o primeiro relatório.": "Areas to focus on will appear with your first report.",
   "Dimensões do seu perfil": "Profile dimensions",
   "Sem ocorrência": "No patterns",
-  "Fala": "Speech",
+  Fala: "Speech",
   "Baseado em": "Based on",
   "resposta analisada": "analyzed answer",
   "respostas analisadas": "analyzed answers",
-  "prática": "practice",
-  "práticas": "practices",
+  prática: "practice",
+  práticas: "practices",
   "Isto não é uma medida do seu nível de inglês.": "This is not a measure of your English level.",
   "Mais frequente nas últimas práticas": "More frequent in recent practices",
   "Menos frequente nas últimas práticas": "Less frequent in recent practices",
-  "Estável": "Stable",
-  "ocorrência": "occurrence",
-  "ocorrências": "occurrences",
+  Estável: "Stable",
+  ocorrência: "occurrence",
+  ocorrências: "occurrences",
   "Você disse": "You said",
   "Soa melhor": "Sounds better",
-  "Treinar": "Practice",
-  "Praticar": "Practice",
-  "Aprenda um padrão por vez e pratique com frases das suas entrevistas.": "Learn one pattern at a time and practice with sentences from your interviews.",
+  Treinar: "Practice",
+  Praticar: "Practice",
+  "Aprenda um padrão por vez e pratique com frases das suas entrevistas.":
+    "Learn one pattern at a time and practice with sentences from your interviews.",
   "{count} erros nas suas entrevistas": "{count} patterns in your interviews",
   "{count} entrevistas": "{count} interviews",
-  "Começar": "Start",
+  Começar: "Start",
   "Concluídos ({count})": "Completed ({count})",
   "Concluído em {date}": "Completed on {date}",
-  "Revisar": "Review",
+  Revisar: "Review",
   "Você concluiu todos os grupos!": "You completed all groups!",
   "Faça uma nova entrevista para descobrir o próximo ponto.": "Do another interview to find your next area to practice.",
   "Praticar · 5 exercícios": "Practice · 5 exercises",
@@ -138,11 +162,13 @@ const englishCopy: Record<string, string> = {
   "Crie uma frase": "Create a sentence",
   "Grupo concluído!": "Group completed!",
   "Faltou pouco: faça de novo para concluir": "So close: try again to complete this group",
-  "Ele saiu da sua lista e volta se o erro aparecer de novo numa entrevista": "This group left your list. It will return if the pattern appears in another interview.",
+  "Ele saiu da sua lista e volta se o erro aparecer de novo numa entrevista":
+    "This group left your list. It will return if the pattern appears in another interview.",
   "Exercício {current}": "Exercise {current}",
   "Praticar de novo": "Practice again",
   "Próximo grupo": "Next group",
-  "Pense em zoom: at é um ponto, on é uma superfície, in é estar dentro de algo.": "Think of zoom: at is a point, on is a surface, and in means inside something.",
+  "Pense em zoom: at é um ponto, on é uma superfície, in é estar dentro de algo.":
+    "Think of zoom: at is a point, on is a surface, and in means inside something.",
   "Um ponto exato: horário, empresa, lugar específico.": "An exact point: a time, company, or specific place.",
   "Ponto no relógio ou no mapa → at.": "A point on the clock or map → at.",
   "Dias, plataformas e aquilo em que você trabalha.": "Days, platforms, and the things you work on.",
@@ -166,7 +192,7 @@ const englishCopy: Record<string, string> = {
   "Ainda é verdade hoje + since/for → have + verbo.": "Still true today + since/for → have + verb.",
   "Rotina e hoje": "Routines and now",
   "O que você faz no trabalho atual e fatos que valem sempre.": "What you do in your current job and facts that are always true.",
-  "Planos": "Plans",
+  Planos: "Plans",
   "O que vai acontecer: going to, will, plan to.": "What will happen: going to, will, or plan to.",
   "Formas do verbo": "Verb forms",
   "Para dizer o objetivo e depois de need, want, plan, decide, try.": "For a purpose, and after need, want, plan, decide, or try.",
@@ -176,7 +202,7 @@ const englishCopy: Record<string, string> = {
   "Uma coisa só fazendo algo hoje → verbo com s.": "One thing doing something now → add s to the verb.",
   "Passados irregulares": "Irregular past verbs",
   "Alguns verbos mudam no passado.": "Some verbs change in the past.",
-  "Vocabulário": "Vocabulary",
+  Vocabulário: "Vocabulary",
   "actually é na verdade; atualmente é currently.": "Actually means in fact; atualmente is currently.",
   "actually ≠ atualmente": "actually ≠ atualmente (currently)",
   "pretend é fingir; para intenção use plan ou intend.": "Pretend means to act falsely; for intention, use plan or intend.",
@@ -187,27 +213,32 @@ const englishCopy: Record<string, string> = {
   "eventually ≠ eventualmente": "eventually ≠ eventualmente (occasionally)",
   "do para tarefas e research; make para decisões e mudanças.": "Use do for tasks and research; make for decisions and changes.",
   "Palavra mais natural": "More natural wording",
-  "Prefira a palavra que um dev nativo usaria no lugar da tradução literal.": "Choose the word an English-speaking developer would use instead of a literal translation.",
+  "Prefira a palavra que um dev nativo usaria no lugar da tradução literal.":
+    "Choose the word an English-speaking developer would use instead of a literal translation.",
   "Estrutura da frase": "Sentence structure",
-  "Frases curtas e na ordem certa são mais fáceis de acompanhar numa entrevista.": "Short sentences in the right order are easier to follow in an interview.",
+  "Frases curtas e na ordem certa são mais fáceis de acompanhar numa entrevista.":
+    "Short sentences in the right order are easier to follow in an interview.",
   "Toda frase precisa de quem faz: I, we, it, they.": "Every sentence needs a subject: I, we, it, or they.",
   "Em português dá para omitir; em inglês, não.": "Portuguese can leave the subject out; English cannot.",
   "Quem + ação + resto": "Who + action + the rest",
-  "Sujeito, verbo e complemento, nessa ordem; adjetivo antes do substantivo.": "Use subject, verb, then object; put adjectives before nouns.",
+  "Sujeito, verbo e complemento, nessa ordem; adjetivo antes do substantivo.":
+    "Use subject, verb, then object; put adjectives before nouns.",
   "Frases curtas": "Short sentences",
   "Troque uma corrente de and por duas ou três frases.": "Replace a long chain of and with two or three sentences.",
-  "Conectores": "Connecting words",
-  "because explica o motivo, so a consequência, but o contraste, then a sequência.": "Because gives a reason, so gives a result, but shows contrast, and then shows sequence.",
+  Conectores: "Connecting words",
+  "because explica o motivo, so a consequência, but o contraste, then a sequência.":
+    "Because gives a reason, so gives a result, but shows contrast, and then shows sequence.",
   "Plural e concordância": "Plurals and agreement",
   "Mais de um pede plural, e o verbo acompanha o sujeito.": "More than one takes the plural, and the verb agrees with its subject.",
   "Plural com -s": "Plural with -s",
   "Mais de uma coisa: two, many, several, a lot of.": "More than one: two, many, several, or a lot of.",
   "Verbo combina": "Match the verb",
-  "Uma coisa → is, has, verbo com s; várias → are, have, verbo sem s.": "One thing → is, has, verb with s; several → are, have, verb without s.",
+  "Uma coisa → is, has, verbo com s; várias → are, have, verbo sem s.":
+    "One thing → is, has, verb with s; several → are, have, verb without s.",
   "Sem plural": "No plural ending",
   "data, information, feedback, software e research não ganham -s.": "Data, information, feedback, software, and research do not take -s.",
-  "Treinando": "Practicing",
-  "Dominado": "Mastered",
+  Treinando: "Practicing",
+  Dominado: "Mastered",
   "Seus grupos para treinar": "Your practice groups",
   "Pratique os padrões de inglês que aparecem nas suas entrevistas.": "Practice English patterns that show up in your interviews.",
   "{count} erros em {interviews} entrevistas": "{count} patterns across {interviews} interviews",
@@ -228,80 +259,100 @@ const englishCopy: Record<string, string> = {
   "Vocabulário e falsos amigos": "Vocabulary and false friends",
   "Estrutura da frase (ordem e conexão das ideias)": "Sentence structure (order and linking ideas)",
   "Singular, plural e concordância": "Singular, plural, and agreement",
-  "Em inglês cada situação pede uma preposição fixa, que muitas vezes não é a tradução direta do português: work on a project, in the team, at the company.": "In English, each situation calls for a fixed preposition, which often is not a direct translation from Portuguese: work on a project, in the team, at the company.",
+  "Em inglês cada situação pede uma preposição fixa, que muitas vezes não é a tradução direta do português: work on a project, in the team, at the company.":
+    "In English, each situation calls for a fixed preposition, which often is not a direct translation from Portuguese: work on a project, in the team, at the company.",
   "É um dos deslizes que mais chamam a atenção de quem ouve.": "This is one of the slips listeners notice most.",
-  "Use a/an antes de uma coisa só citada pela primeira vez (a tool, an API) e the quando já se sabe qual é.": "Use a/an before something mentioned for the first time (a tool, an API), and the when it is already clear which one.",
+  "Use a/an antes de uma coisa só citada pela primeira vez (a tool, an API) e the quando já se sabe qual é.":
+    "Use a/an before something mentioned for the first time (a tool, an API), and the when it is already clear which one.",
   "Sem artigo a frase soa incompleta para um nativo.": "Without an article, a sentence can sound incomplete to a native speaker.",
-  "Projetos que terminaram vão no passado (I built, we used); algo que começou no passado e continua usa have + verbo: I have worked here since 2021.": "Finished projects use the past (I built, we used); something that started in the past and continues uses have + a verb: I have worked here since 2021.",
-  "O tempo certo deixa claro o que você já fez e o que faz hoje.": "The right tense makes it clear what you have done and what you do today.",
-  "Depois de need, want e plan use to + verbo; para dizer o objetivo use to + verbo (to cache); com he, she e it o verbo ganha -s (the service runs).": "After need, want, and plan, use to + a verb; use to + a verb for a purpose (to cache); with he, she, and it, add -s (the service runs).",
+  "Projetos que terminaram vão no passado (I built, we used); algo que começou no passado e continua usa have + verbo: I have worked here since 2021.":
+    "Finished projects use the past (I built, we used); something that started in the past and continues uses have + a verb: I have worked here since 2021.",
+  "O tempo certo deixa claro o que você já fez e o que faz hoje.":
+    "The right tense makes it clear what you have done and what you do today.",
+  "Depois de need, want e plan use to + verbo; para dizer o objetivo use to + verbo (to cache); com he, she e it o verbo ganha -s (the service runs).":
+    "After need, want, and plan, use to + a verb; use to + a verb for a purpose (to cache); with he, she, and it, add -s (the service runs).",
   "Formas erradas atrapalham a fluidez e a clareza das explicações.": "Incorrect forms make explanations less clear and fluent.",
-  "Algumas palavras parecem certas pelo português, mas soam estranhas ou mudam o sentido (pretend é fingir; actually é na verdade). Prefira a palavra que um dev nativo usaria.": "Some words look right because of Portuguese but sound odd or change the meaning (pretend means fingir; actually means na verdade). Choose the word a native speaking developer would use.",
+  "Algumas palavras parecem certas pelo português, mas soam estranhas ou mudam o sentido (pretend é fingir; actually é na verdade). Prefira a palavra que um dev nativo usaria.":
+    "Some words look right because of Portuguese but sound odd or change the meaning (pretend means fingir; actually means na verdade). Choose the word a native speaking developer would use.",
   "A palavra certa evita mal-entendidos e passa segurança.": "The right word prevents misunderstandings and builds confidence.",
-  "Frases curtas, na ordem sujeito + verbo + complemento, ficam mais claras; troque sequências de and por frases separadas ou por then, so e because.": "Short sentences in subject + verb + object order are clearer; replace long chains of and with separate sentences or then, so, and because.",
+  "Frases curtas, na ordem sujeito + verbo + complemento, ficam mais claras; troque sequências de and por frases separadas ou por then, so e because.":
+    "Short sentences in subject + verb + object order are clearer; replace long chains of and with separate sentences or then, so, and because.",
   "Respostas organizadas são mais fáceis de acompanhar numa entrevista.": "Organized answers are easier to follow in an interview.",
-  "Mais de um vai no plural (two services, many users) e o verbo combina com o sujeito: the tests pass, the test passes.": "More than one takes the plural (two services, many users), and the verb agrees with its subject: the tests pass, the test passes.",
+  "Mais de um vai no plural (two services, many users) e o verbo combina com o sujeito: the tests pass, the test passes.":
+    "More than one takes the plural (two services, many users), and the verb agrees with its subject: the tests pass, the test passes.",
   "Concordância certa deixa sua fala mais natural e precisa.": "Correct agreement makes your speech sound more natural and precise.",
-  "Pontos que não se encaixam nos outros grupos; pratique com as suas próprias frases.": "Points that do not fit the other groups; practice with your own sentences.",
+  "Pontos que não se encaixam nos outros grupos; pratique com as suas próprias frases.":
+    "Points that do not fit the other groups; practice with your own sentences.",
   "Cada ajuste pequeno soma na impressão final.": "Every small improvement adds up to a stronger impression.",
   "Seus grupos de treino ficam em Treinar": "Your practice groups are in Practice",
   "Abra os grupos para praticar com exercícios curtos.": "Open a group to practice with short exercises.",
   "Erros mais comuns": "Most common patterns",
-  "Padrões de inglês validados nos seus relatórios, do mais frequente ao menos. Erros de transcrição não entram.": "English patterns confirmed in your reports, from most to least frequent. Transcription errors are excluded.",
-  "Nenhum padrão de inglês foi destacado nos relatórios analisados. Continue praticando para manter esse resultado.": "No English patterns were flagged in the reports analyzed. Keep practicing to maintain this result.",
-  "Quando o relatório de uma prática ficar pronto, seus padrões mais frequentes aparecem aqui, com exemplos das suas próprias respostas.": "Once a practice report is ready, your most frequent patterns will appear here with examples from your own answers.",
-  "vez": "time",
-  "vezes": "times",
+  "Padrões de inglês validados nos seus relatórios, do mais frequente ao menos. Erros de transcrição não entram.":
+    "English patterns confirmed in your reports, from most to least frequent. Transcription errors are excluded.",
+  "Nenhum padrão de inglês foi destacado nos relatórios analisados. Continue praticando para manter esse resultado.":
+    "No English patterns were flagged in the reports analyzed. Keep practicing to maintain this result.",
+  "Quando o relatório de uma prática ficar pronto, seus padrões mais frequentes aparecem aqui, com exemplos das suas próprias respostas.":
+    "Once a practice report is ready, your most frequent patterns will appear here with examples from your own answers.",
+  vez: "time",
+  vezes: "times",
   "Foco dos relatórios:": "Report focus:",
-  "Exercício": "Exercise",
+  Exercício: "Exercise",
   "do seu relatório": "from your report",
   "sugestão geral": "general suggestion",
   "Conteúdo técnico": "Technical content",
   "O que estudar agora": "What to study next",
-  "Ordenado por frequência e por quão recente é o tema. Prioridades e exercícios vêm dos seus relatórios.": "Ranked by frequency and recency. Priorities and exercises come from your reports.",
-  "Os temas de estudo aparecem depois do primeiro relatório pronto, com um exercício para cada um.": "Study topics will appear after your first report is ready, with an exercise for each one.",
+  "Ordenado por frequência e por quão recente é o tema. Prioridades e exercícios vêm dos seus relatórios.":
+    "Ranked by frequency and recency. Priorities and exercises come from your reports.",
+  "Os temas de estudo aparecem depois do primeiro relatório pronto, com um exercício para cada um.":
+    "Study topics will appear after your first report is ready, with an exercise for each one.",
   "Padrões por resposta": "Patterns per answer",
   "por resposta": "per answer",
-  "Quantos padrões de inglês validados apareceram, em média, em cada resposta. Menos é melhor.": "Average number of confirmed English patterns per answer. Lower is better.",
+  "Quantos padrões de inglês validados apareceram, em média, em cada resposta. Menos é melhor.":
+    "Average number of confirmed English patterns per answer. Lower is better.",
   "Lacunas técnicas": "Technical gaps",
-  "Quantas lacunas de conteúdo técnico o relatório apontou por resposta. Menos é melhor.": "Number of technical content gaps reported per answer. Lower is better.",
+  "Quantas lacunas de conteúdo técnico o relatório apontou por resposta. Menos é melhor.":
+    "Number of technical content gaps reported per answer. Lower is better.",
   "de 100": "out of 100",
-  "Avaliação de fala (Azure), só em práticas com fala suficiente. Sinal experimental, não é seu nível de inglês.": "Speech assessment (Azure), available only when there is enough speech. Experimental signal, not your English level.",
+  "Avaliação de fala (Azure), só em práticas com fala suficiente. Sinal experimental, não é seu nível de inglês.":
+    "Speech assessment (Azure), available only when there is enough speech. Experimental signal, not your English level.",
   "Evolução por prática": "Progress by practice",
   "Métrica do gráfico": "Chart metric",
-  "Ainda não há práticas com fala suficiente para esta métrica. Respostas mais longas ajudam a deixar o sinal confiável.": "There are no practices with enough speech for this metric yet. Longer answers help make the signal more reliable.",
+  "Ainda não há práticas com fala suficiente para esta métrica. Respostas mais longas ajudam a deixar o sinal confiável.":
+    "There are no practices with enough speech for this metric yet. Longer answers help make the signal more reliable.",
   "Esta métrica aparece depois do primeiro relatório pronto.": "This metric will appear after your first report is ready.",
   "Ver dados em tabela": "View data as a table",
-  "Prática": "Practice",
+  Prática: "Practice",
   "Práticas por semana": "Practices per week",
   "Nenhuma prática concluída nas últimas 8 semanas.": "No practices completed in the last 8 weeks.",
   "Sessões concluídas": "Completed sessions",
   "Suas práticas de entrevista, da mais recente para a mais antiga.": "Your interview practices, from newest to oldest.",
   "Lista de sessões concluídas": "List of completed sessions",
-  "resposta": "answer",
-  "respostas": "answers",
-  "padrão": "pattern",
-  "padrões": "patterns",
+  resposta: "answer",
+  respostas: "answers",
+  padrão: "pattern",
+  padrões: "patterns",
   "Mostrar menos": "Show less",
   "Relatório pronto": "Report ready",
   "Relatório em preparo": "Report in progress",
   "Relatório indisponível": "Report unavailable",
   "Sem relatório": "No report",
-  "Gramática": "Grammar",
+  Gramática: "Grammar",
   "Escolha de palavras": "Word choice",
   "Falsos cognatos": "False cognates",
   "Estrutura da resposta": "Answer structure",
   "Precisão da pronúncia": "Pronunciation accuracy",
-  "Precisão": "Accuracy",
-  "Fluência": "Fluency",
-  "Entonação": "Intonation",
+  Precisão: "Accuracy",
+  Fluência: "Fluency",
+  Entonação: "Intonation",
   "Abrir no": "Open in",
-  "A IA identifica experiências e projetos para criar perguntas específicas. Você revisa tudo antes de começar.": "AI identifies experiences and projects to create tailored questions. Review everything before you begin.",
-  "A IA identifica o cargo, a senioridade e o foco, e resume as prioridades. Depois você ajusta o que quiser.": "AI identifies the role, seniority, and focus, then summarizes priorities. You can adjust anything afterward.",
+  "A IA identifica experiências e projetos para criar perguntas específicas. Você revisa tudo antes de começar.":
+    "AI identifies experiences and projects to create tailored questions. Review everything before you begin.",
+  "A IA identifica o cargo, a senioridade e o foco, e resume as prioridades. Depois você ajusta o que quiser.":
+    "AI identifies the role, seniority, and focus, then summarizes priorities. You can adjust anything afterward.",
   "A análise não avalia seu sotaque.": "The analysis does not assess your accent.",
   "As respostas por voz foram transcritas; o áudio não é salvo.": "Spoken answers are transcribed; audio is not saved.",
   "Baseado na resposta": "Based on your answer",
-  "Cargo": "Role",
+  Cargo: "Role",
   "Cargo para praticar": "Role to practice",
   "Clareza geral em inglês:": "Overall clarity in English:",
   "Clareza geral:": "Overall clarity:",
@@ -322,17 +373,19 @@ const englishCopy: Record<string, string> = {
   "Direcionamento da entrevista": "Interview focus",
   "A entrevista já está sendo encerrada.": "The interview is already ending.",
   "Duração da sessão": "Session duration",
-  "Encerrar": "End",
+  Encerrar: "End",
   "Encerrar a entrevista?": "End the interview?",
   "Encerrar e ver relatório": "End and view report",
   "Entrevista em andamento:": "Interview in progress:",
-  "Entrevistador": "Interviewer",
+  Entrevistador: "Interviewer",
   "Envie uma versão com texto selecionável": "Upload a version with selectable text",
-  "Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.": "Choose how you want to receive the introduction and each question. The question text remains available if audio fails.",
+  "Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.":
+    "Choose how you want to receive the introduction and each question. The question text remains available if audio fails.",
   "Escolha o cargo, o foco e o tempo que você quer praticar.": "Choose the role, focus, and practice duration.",
   "Escolha ou digite, ex.: Software Engineer": "Choose or type, e.g. Software Engineer",
-  "Essas opções mudam a voz, o que aparece e quando o microfone começa a capturar.": "These options control the voice, what appears on screen, and when the microphone starts recording.",
-  "Exemplo": "Example",
+  "Essas opções mudam a voz, o que aparece e quando o microfone começa a capturar.":
+    "These options control the voice, what appears on screen, and when the microphone starts recording.",
+  Exemplo: "Example",
   "Exercício ·": "Exercise ·",
   "Exercício:": "Exercise:",
   "Fechar aviso": "Dismiss notice",
@@ -343,24 +396,33 @@ const englishCopy: Record<string, string> = {
   "Legendas das perguntas": "Question captions",
   "Legendas do entrevistador": "Interviewer captions",
   "Limpar análise": "Clear analysis",
-  "Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.": "Microphone is active during the interview. Audio is sent only while you answer.",
+  "Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.":
+    "Microphone is active during the interview. Audio is sent only while you answer.",
   "Microfone escolhido indisponível — usando o padrão.": "The selected microphone is unavailable. Using the default.",
   "Microfone usado na entrevista": "Microphone used for the interview",
-  "Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo.": "Show your camera only in this browser. Video is not uploaded or saved.",
-  "Nenhum ponto técnico relevante foi apontado com segurança nesta sessão.": "No material technical gaps were identified with confidence in this session.",
-  "Nenhuma resposta foi enviada nesta sessão. Sem respostas, não há evidência para uma análise detalhada.": "No answers were submitted in this session. Without answers, there is no evidence for a detailed analysis.",
-  "O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.": "The interviewer speaks the introduction and questions in English. You can also read the text.",
-  "O entrevistador não terá voz. A introdução e as perguntas aparecem por escrito.": "The interviewer will be silent. The introduction and questions will appear on screen.",
+  "Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo.":
+    "Show your camera only in this browser. Video is not uploaded or saved.",
+  "Nenhum ponto técnico relevante foi apontado com segurança nesta sessão.":
+    "No material technical gaps were identified with confidence in this session.",
+  "Nenhuma resposta foi enviada nesta sessão. Sem respostas, não há evidência para uma análise detalhada.":
+    "No answers were submitted in this session. Without answers, there is no evidence for a detailed analysis.",
+  "O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.":
+    "The interviewer speaks the introduction and questions in English. You can also read the text.",
+  "O entrevistador não terá voz. A introdução e as perguntas aparecem por escrito.":
+    "The interviewer will be silent. The introduction and questions will appear on screen.",
   "O que correspondeu à pergunta": "What addressed the question",
   "O que precisava de mais explicação": "What needed more explanation",
-  "O tempo chegou ao fim. Você pode concluir esta resposta; uma nova pergunta não será iniciada.": "Time is up. You can finish this answer, but no new question will start.",
-  "O texto é enviado ao provedor de IA para análise e não é salvo pelo app.": "The text is sent to the AI provider for analysis and is not saved by the app.",
-  "Padrão": "Default",
+  "O tempo chegou ao fim. Você pode concluir esta resposta; uma nova pergunta não será iniciada.":
+    "Time is up. You can finish this answer, but no new question will start.",
+  "O texto é enviado ao provedor de IA para análise e não é salvo pelo app.":
+    "The text is sent to the AI provider for analysis and is not saved by the app.",
+  Padrão: "Default",
   "Padrão do sistema": "System default",
   "Participantes da sala": "Interview participants",
-  "Pergunta": "Question",
+  Pergunta: "Question",
   "Pergunta:": "Question:",
-  "Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala.": "Request access and start after each question. You can also start manually in the room.",
+  "Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala.":
+    "Request access and start after each question. You can also start manually in the room.",
   "Pontos principais": "Key points",
   "Pontuação da fala": "Speech scores",
   "Prioridade da vaga avaliada nesta resposta:": "Role priority assessed in this answer:",
@@ -370,142 +432,172 @@ const englishCopy: Record<string, string> = {
   "Prévia da câmera": "Camera preview",
   "Prévia local da sua câmera": "Your local camera preview",
   "Próximos passos": "Next steps",
-  "Pular": "Skip",
+  Pular: "Skip",
   "Pular sem enviar": "Skip without submitting",
-  "Recomendado": "Recommended",
+  Recomendado: "Recommended",
   "Relatório baseado nas respostas às perguntas personalizadas do currículo.": "Report based on answers to the resume-tailored questions.",
   "Relatório direcionado para esta vaga:": "Report tailored to this role:",
   "Remover análise": "Remove analysis",
   "Respostas registradas": "Answers recorded",
-  "Resumo": "Summary",
+  Resumo: "Summary",
   "Sair sem concluir": "Leave without completing",
-  "Se o navegador estiver usando o microfone errado, a entrevista não ouve você. Teste e escolha o certo. Você pode pular esta etapa.": "If your browser is using the wrong microphone, the interviewer will not hear you. Test and select the right one. You can skip this step.",
-  "Senioridade": "Seniority",
+  "Se o navegador estiver usando o microfone errado, a entrevista não ouve você. Teste e escolha o certo. Você pode pular esta etapa.":
+    "If your browser is using the wrong microphone, the interviewer will not hear you. Test and select the right one. You can skip this step.",
+  Senioridade: "Seniority",
   "Seu microfone": "Your microphone",
-  "Somente PDF, até 5 MB e 20 páginas. O arquivo não é salvo pelo app.": "PDF only, up to 5 MB and 20 pages. The file is not saved by the app.",
+  "Somente PDF, até 5 MB e 20 páginas. O arquivo não é salvo pelo app.":
+    "PDF only, up to 5 MB and 20 pages. The file is not saved by the app.",
   "Somente texto": "Text only",
   "Sua resposta:": "Your answer:",
   "Sua sessão": "Your session",
   "Tentar de novo": "Try again",
-  "Toque em ▶ para ouvir a mesma frase em cada voz e selecione a que preferir.": "Select ▶ to hear the same sentence in each voice, then choose your favorite.",
+  "Toque em ▶ para ouvir a mesma frase em cada voz e selecione a que preferir.":
+    "Select ▶ to hear the same sentence in each voice, then choose your favorite.",
   "Trecho: “": "Excerpt: “",
   "Trocar microfone": "Change microphone",
-  "Técnico": "Technical",
+  Técnico: "Technical",
   "Uma competência por linha, até cinco.": "One competency per line, up to five.",
-  "Você": "You",
+  Você: "You",
   "Você está no navegador do": "You are using the browser in",
-  "Você pode encerrar a qualquer momento. Uma resposta já iniciada pode terminar após o tempo planejado.": "You can end the interview at any time. An answer already in progress may finish after the planned time.",
+  "Você pode encerrar a qualquer momento. Uma resposta já iniciada pode terminar após o tempo planejado.":
+    "You can end the interview at any time. An answer already in progress may finish after the planned time.",
   "e ative o Microfone": "and enable Microphone",
   "abra Configurações → Apps →": "open Settings → Apps →",
   "abra os Ajustes do iPhone →": "open iPhone Settings →",
-  "com relatório pronto para ver se cada padrão está aumentando ou diminuindo. Com menos de": "with a ready report to see whether each pattern is increasing or decreasing. With fewer than",
-  "restantes": "remaining",
+  "com relatório pronto para ver se cada padrão está aumentando ou diminuindo. Com menos de":
+    "with a ready report to see whether each pattern is increasing or decreasing. With fewer than",
+  restantes: "remaining",
   "→ Permissões e ative o Microfone": "→ Permissions and enable Microphone",
-  "Este": "This",
+  Este: "This",
   "Os sinais vocais disponíveis continuam abaixo.": "The available vocal signals are still shown below.",
   "Preferências da sala": "Room preferences",
   "Principal ênfase da entrevista": "Main interview emphasis",
-  "Inglês": "English",
-  "Resposta": "Answer",
-  "Respostas": "Answers",
+  Inglês: "English",
+  Resposta: "Answer",
+  Respostas: "Answers",
   "Resumo da sua prática": "Practice summary",
   "Seu relatório de entrevista": "Your interview report",
   "Sugestão:": "Suggestion:",
-  "Tempo": "Time",
+  Tempo: "Time",
   "Faça mais": "Complete",
   "práticas qualquer tendência seria só ruído.": "practices would make any trend unreliable.",
   "por prática": "per practice",
   "corrigido para": "corrected to",
   "Voltar ao dashboard": "Back to dashboard",
   "Voltar à visão geral": "Back to overview",
-  "Voz do entrevistador, legendas, câmera e início da gravação. Os padrões já funcionam bem.": "Interviewer voice, captions, camera, and recording controls. The defaults work well.",
+  "Voz do entrevistador, legendas, câmera e início da gravação. Os padrões já funcionam bem.":
+    "Interviewer voice, captions, camera, and recording controls. The defaults work well.",
   "Cobertura: ": "Coverage: ",
   "de ": "of ",
   "respostas com sinais disponíveis.": "answers with available signals.",
-  "avaliação(ões) ainda em processamento; a conclusão da sessão não espera por elas.": "assessment(s) still processing; the session does not wait for them to finish.",
-  "Médias do Azure por resposta, ponderadas pelo tempo de fala avaliado. São sinais experimentais, calculados sobre a transcrição da sua fala: um erro de transcrição pode reduzir a nota sem que você tenha errado. Não representam seu nível geral de inglês nem avaliam sotaque.": "Azure averages per answer, weighted by assessed speaking time. These experimental signals are calculated from your transcript, so a transcription error can lower a score even when you spoke correctly. They do not represent your overall English level or assess your accent.",
+  "avaliação(ões) ainda em processamento; a conclusão da sessão não espera por elas.":
+    "assessment(s) still processing; the session does not wait for them to finish.",
+  "Médias do Azure por resposta, ponderadas pelo tempo de fala avaliado. São sinais experimentais, calculados sobre a transcrição da sua fala: um erro de transcrição pode reduzir a nota sem que você tenha errado. Não representam seu nível geral de inglês nem avaliam sotaque.":
+    "Azure averages per answer, weighted by assessed speaking time. These experimental signals are calculated from your transcript, so a transcription error can lower a score even when you spoke correctly. They do not represent your overall English level or assess your accent.",
   "Ritmo da fala": "Speech rhythm",
-  "Prosódia": "Prosody",
-  "Mede o quanto os sons de cada palavra se aproximam da pronúncia esperada pelo Azure. Não mede vocabulário, gramática nem sotaque.": "Measures how closely each word's sounds match Azure's expected pronunciation. It does not measure vocabulary, grammar, or accent.",
-  "É um sinal do ritmo dentro dos trechos avaliados, como pausas e interrupções entre palavras — não uma nota de fluência geral. Pausas entre trechos e o tempo para começar a responder não entram no cálculo.": "A signal of rhythm within assessed segments, such as pauses and breaks between words—not an overall fluency score. Pauses between segments and response start time are not included.",
-  "Mede a entonação e o acento das palavras, ou seja, se a fala soa natural e expressiva. É a medida mais sensível a áudio curto ou ruidoso.": "Measures intonation and word stress, or how natural and expressive speech sounds. This metric is most sensitive to short or noisy audio.",
+  Prosódia: "Prosody",
+  "Mede o quanto os sons de cada palavra se aproximam da pronúncia esperada pelo Azure. Não mede vocabulário, gramática nem sotaque.":
+    "Measures how closely each word's sounds match Azure's expected pronunciation. It does not measure vocabulary, grammar, or accent.",
+  "É um sinal do ritmo dentro dos trechos avaliados, como pausas e interrupções entre palavras — não uma nota de fluência geral. Pausas entre trechos e o tempo para começar a responder não entram no cálculo.":
+    "A signal of rhythm within assessed segments, such as pauses and breaks between words—not an overall fluency score. Pauses between segments and response start time are not included.",
+  "Mede a entonação e o acento das palavras, ou seja, se a fala soa natural e expressiva. É a medida mais sensível a áudio curto ou ruidoso.":
+    "Measures intonation and word stress, or how natural and expressive speech sounds. This metric is most sensitive to short or noisy audio.",
   "Áudio avaliado curto demais para mostrar um valor confiável.": "Too little assessed audio for a reliable value.",
   "Estimativa baseada em pouco áudio; use apenas como indício.": "Estimate based on limited audio; use as a rough signal only.",
   "resposta avaliada": "answer assessed",
   "respostas avaliadas": "answers assessed",
-  "Resumo qualitativo do quanto suas respostas foram fáceis de entender, com base apenas no texto transcrito. Não avalia pronúncia nem é um nível de inglês.": "A qualitative summary of how easy your answers were to understand, based only on the transcript. It does not assess pronunciation or represent an English level.",
-  "Avalia o que a resposta disse sobre o tema, separado da forma como foi dita em inglês. Um erro de gramática não conta como falha técnica.": "Assesses what the answer said about the topic, separately from how it was said in English. A grammar error is not a technical gap.",
-  "Trechos literais das suas respostas com padrões comuns de falantes de português. Se o trecho pode ter sido um erro de transcrição, ele não é apontado.": "Exact excerpts from your answers showing patterns common among Portuguese speakers. Excerpts that may be transcription errors are not flagged.",
-  "Quantas respostas tiveram sinais de voz calculados. Respostas muito curtas ou sem avaliação disponível ficam fora das médias.": "How many answers had vocal signals calculated. Very short answers and answers without an available assessment are excluded from the averages.",
+  "Resumo qualitativo do quanto suas respostas foram fáceis de entender, com base apenas no texto transcrito. Não avalia pronúncia nem é um nível de inglês.":
+    "A qualitative summary of how easy your answers were to understand, based only on the transcript. It does not assess pronunciation or represent an English level.",
+  "Avalia o que a resposta disse sobre o tema, separado da forma como foi dita em inglês. Um erro de gramática não conta como falha técnica.":
+    "Assesses what the answer said about the topic, separately from how it was said in English. A grammar error is not a technical gap.",
+  "Trechos literais das suas respostas com padrões comuns de falantes de português. Se o trecho pode ter sido um erro de transcrição, ele não é apontado.":
+    "Exact excerpts from your answers showing patterns common among Portuguese speakers. Excerpts that may be transcription errors are not flagged.",
+  "Quantas respostas tiveram sinais de voz calculados. Respostas muito curtas ou sem avaliação disponível ficam fora das médias.":
+    "How many answers had vocal signals calculated. Very short answers and answers without an available assessment are excluded from the averages.",
   "Muito clara": "Very clear",
-  "Clara": "Clear",
+  Clara: "Clear",
   "Parcialmente clara": "Mostly clear",
   "Pouco clara": "Unclear",
   "Falso cognato": "False cognate",
-  "Masculinas": "Male voices",
-  "Masculinos": "Male voices",
-  "Femininas": "Female voices",
-  "Femininos": "Female voices",
-  "Pausar": "Pause",
-  "Ouvir": "Play",
+  Masculinas: "Male voices",
+  Masculinos: "Male voices",
+  Femininas: "Female voices",
+  Femininos: "Female voices",
+  Pausar: "Pause",
+  Ouvir: "Play",
   "Analisando currículo…": "Analyzing resume…",
   "Analisando vaga…": "Analyzing job description…",
-  "Cancelar": "Cancel",
+  Cancelar: "Cancel",
   "Descrição da vaga": "Job description",
-  "Preenchido a partir da vaga. Ajuste o que não estiver certo.": "Filled in from the job description. Adjust anything that does not look right.",
+  "Preenchido a partir da vaga. Ajuste o que não estiver certo.":
+    "Filled in from the job description. Adjust anything that does not look right.",
   "Ver análise completa": "View full analysis",
   "Você pode mudar essas opções a cada nova sessão.": "You can change these options for each new session.",
-  "de": "of",
+  de: "of",
   "Sua sessão expirou. Entre novamente para continuar.": "Your session has expired. Sign in again to continue.",
-  "Júnior": "Junior",
-  "Pleno": "Mid-level",
-  "Sênior": "Senior",
+  Júnior: "Junior",
+  Pleno: "Mid-level",
+  Sênior: "Senior",
   "Profundidade técnica": "Technical depth",
   "Comunicação e clareza": "Communication and clarity",
   "Prática equilibrada": "Balanced practice",
-  "A análise demorou mais do que o esperado. Tente novamente ou mude para “Manual”.": "The analysis took longer than expected. Try again or switch to “Manual.”",
+  "A análise demorou mais do que o esperado. Tente novamente ou mude para “Manual”.":
+    "The analysis took longer than expected. Try again or switch to “Manual.”",
   "A análise está ocupada agora. Tente novamente ou mude para “Manual”.": "Analysis is busy right now. Try again or switch to “Manual.”",
-  "A descrição tem pouco conteúdo para identificar as prioridades da vaga. Cole mais detalhes e tente novamente, ou mude para “Manual”.": "There is too little information to identify the role’s priorities. Add more details and try again, or switch to “Manual.”",
-  "Não foi possível analisar esta vaga agora. Tente novamente ou mude para “Manual”.": "We could not analyze this job description right now. Try again or switch to “Manual.”",
+  "A descrição tem pouco conteúdo para identificar as prioridades da vaga. Cole mais detalhes e tente novamente, ou mude para “Manual”.":
+    "There is too little information to identify the role’s priorities. Add more details and try again, or switch to “Manual.”",
+  "Não foi possível analisar esta vaga agora. Tente novamente ou mude para “Manual”.":
+    "We could not analyze this job description right now. Try again or switch to “Manual.”",
   "O PDF pode ter no máximo 5 MB. Escolha uma versão menor.": "The PDF can be up to 5 MB. Choose a smaller file.",
   "O currículo pode ter no máximo 20 páginas.": "The resume can have up to 20 pages.",
-  "Não conseguimos ler este PDF. Use um arquivo com texto selecionável e sem senha.": "We could not read this PDF. Use a password-free file with selectable text.",
-  "O PDF tem pouco texto útil. Envie uma versão com experiências e projetos descritos.": "This PDF has too little useful text. Upload a version that describes your experience and projects.",
-  "O currículo tem texto demais para a análise. Envie uma versão mais curta.": "This resume has too much text to analyze. Upload a shorter version.",
+  "Não conseguimos ler este PDF. Use um arquivo com texto selecionável e sem senha.":
+    "We could not read this PDF. Use a password-free file with selectable text.",
+  "O PDF tem pouco texto útil. Envie uma versão com experiências e projetos descritos.":
+    "This PDF has too little useful text. Upload a version that describes your experience and projects.",
+  "O currículo tem texto demais para a análise. Envie uma versão mais curta.":
+    "This resume has too much text to analyze. Upload a shorter version.",
   "A análise demorou mais do que o esperado. Tente novamente.": "The analysis took longer than expected. Try again.",
   "A análise está ocupada agora. Aguarde um pouco e tente novamente.": "Analysis is busy right now. Wait a moment and try again.",
   "Escolha um arquivo PDF válido para analisar.": "Choose a valid PDF file to analyze.",
-  "Não foi possível analisar este currículo agora. Tente novamente ou use o modo manual.": "We could not analyze this resume right now. Try again or use manual setup.",
-  "Mantenha no máximo cinco competências; as linhas extras não foram adicionadas.": "Keep up to five competencies; extra lines were not added.",
+  "Não foi possível analisar este currículo agora. Tente novamente ou use o modo manual.":
+    "We could not analyze this resume right now. Try again or use manual setup.",
+  "Mantenha no máximo cinco competências; as linhas extras não foram adicionadas.":
+    "Keep up to five competencies; extra lines were not added.",
   "Reproduzindo uma frase em inglês…": "Playing an English sentence…",
   "Não foi possível reproduzir o áudio neste dispositivo.": "Audio could not be played on this device.",
   "A reprodução terminou neste dispositivo.": "Playback finished on this device.",
   "Voz indisponível": "Voice unavailable",
   "Iniciar com áudio": "Start with audio",
   "Iniciar somente com texto": "Start with text only",
-  "Analise o currículo e mantenha ao menos uma pergunta válida para continuar.": "Analyze the resume and keep at least one valid question to continue.",
+  "Analise o currículo e mantenha ao menos uma pergunta válida para continuar.":
+    "Analyze the resume and keep at least one valid question to continue.",
   "Analise a vaga para continuar, ou mude para “Manual”.": "Analyze the job description to continue, or switch to “Manual.”",
   "Tente ligar a voz novamente ou escolha “Somente texto”.": "Try enabling voice again or choose “Text only.”",
-  "Aguarde a voz do entrevistador ficar pronta para iniciar com áudio.": "Wait for the interviewer’s voice to be ready before starting with audio.",
-  "Manual": "Manual",
+  "Aguarde a voz do entrevistador ficar pronta para iniciar com áudio.":
+    "Wait for the interviewer’s voice to be ready before starting with audio.",
+  Manual: "Manual",
   "Pela vaga": "From job description",
   "Analisar vaga": "Analyze job description",
   "Analisar novamente": "Analyze again",
   "Nenhum arquivo selecionado.": "No file selected.",
-  "Currículo analisado. As oito perguntas personalizadas ficam ocultas e aparecem somente durante a entrevista.": "Resume analyzed. The eight tailored questions stay hidden and appear only during the interview.",
-  "Revise o direcionamento geral. As oito perguntas específicas ficam ocultas e aparecem somente durante a entrevista.": "Review the overall focus. The eight tailored questions stay hidden and appear only during the interview.",
+  "Currículo analisado. As oito perguntas personalizadas ficam ocultas e aparecem somente durante a entrevista.":
+    "Resume analyzed. The eight tailored questions stay hidden and appear only during the interview.",
+  "Revise o direcionamento geral. As oito perguntas específicas ficam ocultas e aparecem somente durante a entrevista.":
+    "Review the overall focus. The eight tailored questions stay hidden and appear only during the interview.",
   "Link copiado": "Link copied",
   "Copiar link": "Copy link",
   "Cancelar teste": "Cancel test",
   "Testar áudio": "Test audio",
   "Opcional: ouça uma frase curta antes de começar.": "Optional: listen to a short sentence before you begin.",
   "O teste será liberado quando a voz estiver pronta.": "The test will be available when the voice is ready.",
-  "Disponível com áudio. No modo somente texto o entrevistador não fala.": "Available with audio. In text-only mode, the interviewer does not speak.",
-  "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar.": "Keep the written questions visible. If you turn this off, text appears when audio fails.",
+  "Disponível com áudio. No modo somente texto o entrevistador não fala.":
+    "Available with audio. In text-only mode, the interviewer does not speak.",
+  "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar.":
+    "Keep the written questions visible. If you turn this off, text appears when audio fails.",
   "No modo somente texto, as perguntas ficam sempre visíveis.": "Questions are always visible in text-only mode.",
   "Sempre visível": "Always visible",
-  "britânica": "British",
-  "americana": "American",
+  britânica: "British",
+  americana: "American",
   "Na maior parte clara": "Mostly clear",
   "Precisa de mais clareza": "Needs more clarity",
   "Para reforçar": "To strengthen",
@@ -525,10 +617,11 @@ const englishCopy: Record<string, string> = {
   "Preparando microfone…": "Preparing microphone…",
   "Pode falar. A resposta será concluída automaticamente após uma pausa.": "Go ahead. Your answer will finish automatically after a pause.",
   "Processando sua resposta…": "Processing your answer…",
-  "Não foi possível concluir. Tente gravar novamente, pule a pergunta ou encerre a prática.": "We could not finish that answer. Try recording again, skip the question, or end the practice.",
+  "Não foi possível concluir. Tente gravar novamente, pule a pergunta ou encerre a prática.":
+    "We could not finish that answer. Try recording again, skip the question, or end the practice.",
   "Resposta concluída.": "Answer complete.",
   "Inicie a gravação e responda em inglês.": "Start recording and answer in English.",
-  "Salva": "Saved",
+  Salva: "Saved",
   "Só local": "Local only",
   "Salvando…": "Saving…",
   "Concluir resposta": "Finish answer",
@@ -539,30 +632,42 @@ const englishCopy: Record<string, string> = {
   "Iniciar gravação": "Start recording",
   "Não estamos recebendo áudio do seu microfone.": "We are not receiving audio from your microphone.",
   "Ainda não ouvimos sua voz.": "We have not heard your voice yet.",
-  "Confira se o microfone certo está selecionado e se não está mudo. Fones Bluetooth às vezes levam alguns segundos para ativar o microfone.": "Check that the right microphone is selected and not muted. Bluetooth headsets can take a few seconds to activate their microphone.",
+  "Confira se o microfone certo está selecionado e se não está mudo. Fones Bluetooth às vezes levam alguns segundos para ativar o microfone.":
+    "Check that the right microphone is selected and not muted. Bluetooth headsets can take a few seconds to activate their microphone.",
   "Fale normalmente perto do microfone ou tente de novo.": "Speak normally near the microphone or try again.",
-  "A resposta está disponível nesta tela, mas não foi possível sincronizá-la com sua conta.": "Your answer is available on this screen, but we could not sync it to your account.",
-  "O relatório está disponível nesta tela, mas não foi possível sincronizá-lo com sua conta.": "Your report is available on this screen, but we could not sync it to your account.",
-  "A câmera não pôde ser iniciada. Você ainda pode praticar sem vídeo.": "The camera could not start. You can still practice without video.",
+  "A resposta está disponível nesta tela, mas não foi possível sincronizá-la com sua conta.":
+    "Your answer is available on this screen, but we could not sync it to your account.",
+  "O relatório está disponível nesta tela, mas não foi possível sincronizá-lo com sua conta.":
+    "Your report is available on this screen, but we could not sync it to your account.",
+  "A câmera não pôde ser iniciada. Você ainda pode praticar sem vídeo.":
+    "The camera could not start. You can still practice without video.",
   "Não foi possível montar o relatório detalhado.": "We could not prepare the detailed report.",
   "Não há respostas para analisar.": "There are no answers to analyze.",
-  "Nenhum item foi incluído nesta seção. O relatório anterior não registrava se isso ocorreu por ausência de um achado seguro ou por validação das citações.": "No items were included in this section. This older report does not record whether there were no supported findings or whether examples were omitted during validation.",
+  "Nenhum item foi incluído nesta seção. O relatório anterior não registrava se isso ocorreu por ausência de um achado seguro ou por validação das citações.":
+    "No items were included in this section. This older report does not record whether there were no supported findings or whether examples were omitted during validation.",
   "Nenhum item específico foi apontado com segurança nesta seção.": "No specific items were confidently identified in this section.",
-  "Os itens recebidos nesta seção foram omitidos porque não passaram pela validação das evidências.": "Items received in this section were omitted because they did not pass evidence validation.",
-  "Nenhum padrão específico de inglês foi apontado com segurança nas respostas. Isso não é uma avaliação do seu nível geral de inglês.": "No specific English patterns were confidently identified in your answers. This is not an assessment of your overall English level.",
-  "Os exemplos recebidos não passaram pela validação das evidências e foram omitidos. Por isso, não há um padrão específico para comentar.": "The examples did not pass evidence validation and were omitted. There is no specific pattern to comment on.",
-  "Nenhum padrão específico foi incluído neste relatório. Em relatórios anteriores, não há dados para distinguir ausência de um achado seguro de exemplos omitidos na validação.": "No specific patterns were included in this report. Older reports do not distinguish between no supported findings and examples omitted during validation.",
+  "Os itens recebidos nesta seção foram omitidos porque não passaram pela validação das evidências.":
+    "Items received in this section were omitted because they did not pass evidence validation.",
+  "Nenhum padrão específico de inglês foi apontado com segurança nas respostas. Isso não é uma avaliação do seu nível geral de inglês.":
+    "No specific English patterns were confidently identified in your answers. This is not an assessment of your overall English level.",
+  "Os exemplos recebidos não passaram pela validação das evidências e foram omitidos. Por isso, não há um padrão específico para comentar.":
+    "The examples did not pass evidence validation and were omitted. There is no specific pattern to comment on.",
+  "Nenhum padrão específico foi incluído neste relatório. Em relatórios anteriores, não há dados para distinguir ausência de um achado seguro de exemplos omitidos na validação.":
+    "No specific patterns were included in this report. Older reports do not distinguish between no supported findings and examples omitted during validation.",
   "Revisão automática: ": "Automatic review: ",
   "item recebido": "item received",
   "itens recebidos": "items received",
-  "incluído": "included",
-  "incluídos": "included",
-  "omitido": "omitted",
-  "omitidos": "omitted",
-  "Não foi possível testar o microfone agora. Você ainda pode iniciar a entrevista.": "We could not test your microphone right now. You can still start the interview.",
-  "O navegador bloqueou o microfone. Libere o acesso no ícone de cadeado da barra de endereço e tente de novo.": "Your browser blocked the microphone. Allow access from the lock icon in the address bar and try again.",
+  incluído: "included",
+  incluídos: "included",
+  omitido: "omitted",
+  omitidos: "omitted",
+  "Não foi possível testar o microfone agora. Você ainda pode iniciar a entrevista.":
+    "We could not test your microphone right now. You can still start the interview.",
+  "O navegador bloqueou o microfone. Libere o acesso no ícone de cadeado da barra de endereço e tente de novo.":
+    "Your browser blocked the microphone. Allow access from the lock icon in the address bar and try again.",
   "Nenhum microfone foi encontrado neste dispositivo.": "No microphone was found on this device.",
-  "Não foi possível abrir este microfone. Ele pode estar em uso por outro app.": "We could not open this microphone. Another app may be using it.",
+  "Não foi possível abrir este microfone. Ele pode estar em uso por outro app.":
+    "We could not open this microphone. Another app may be using it.",
   "O microfone foi desconectado. Escolha outro e teste de novo.": "The microphone was disconnected. Choose another one and test again.",
   "Captando sua voz": "Hearing your voice",
   "Não ouvimos nada deste microfone — tente outro": "No sound from this microphone—try another one",
@@ -570,9 +675,12 @@ const englishCopy: Record<string, string> = {
   "Abrindo o microfone…": "Opening microphone…",
   "Parar teste": "Stop test",
   "Testar microfone": "Test microphone",
-  "Vamos usar o microfone que você escolheu antes. Teste para conferir.": "We will use the microphone you selected earlier. Test it to make sure it works.",
-  "Opcional: confira se o navegador está ouvindo o microfone certo.": "Optional: check that your browser is picking up the right microphone.",
-  "Faça mais prática com esta métrica disponível para ver a evolução. Até lá, um ou dois pontos não formam uma tendência.": "Complete more practices with this metric available to see progress. Until then, one or two points do not show a trend.",
+  "Vamos usar o microfone que você escolheu antes. Teste para conferir.":
+    "We will use the microphone you selected earlier. Test it to make sure it works.",
+  "Opcional: confira se o navegador está ouvindo o microfone certo.":
+    "Optional: check that your browser is picking up the right microphone.",
+  "Faça mais prática com esta métrica disponível para ver a evolução. Até lá, um ou dois pontos não formam uma tendência.":
+    "Complete more practices with this metric available to see progress. Until then, one or two points do not show a trend.",
   "Mostrar todas (": "Show all (",
   "· atual": "· current",
   "Pelo currículo": "From resume",
@@ -580,12 +688,18 @@ const englishCopy: Record<string, string> = {
   "Mostrar sugestões de cargo": "Show role suggestions",
   "Cargos sugeridos": "Suggested roles",
   "Ligando voz…": "Connecting interviewer voice…",
-  "Complete os campos do direcionamento ou mude para “Manual” para continuar sem ele.": "Complete the interview focus fields or switch to “Manual” to continue without them.",
-  "Aguarde a conclusão automática ou descarte a gravação antes de encerrar a prática.": "Wait for the answer to finish automatically or discard the recording before ending the practice.",
-  "A transcrição ainda está sendo concluída. Aguarde, tente gravar novamente ou encerre depois.": "The transcript is still being finalized. Wait, try recording again, or end the practice later.",
-  "Aguarde a gravação ou transcrição terminar antes de pular a pergunta.": "Wait for the recording or transcript to finish before skipping the question.",
-  "Nenhuma resposta foi enviada. Não foi solicitada uma análise sem evidências.": "No answers were submitted. We did not request an analysis without evidence.",
-  "A análise detalhada falhou ou excedeu o tempo limite. As respostas registradas continuam disponíveis abaixo.": "The detailed analysis failed or timed out. Your recorded answers are still available below.",
+  "Complete os campos do direcionamento ou mude para “Manual” para continuar sem ele.":
+    "Complete the interview focus fields or switch to “Manual” to continue without them.",
+  "Aguarde a conclusão automática ou descarte a gravação antes de encerrar a prática.":
+    "Wait for the answer to finish automatically or discard the recording before ending the practice.",
+  "A transcrição ainda está sendo concluída. Aguarde, tente gravar novamente ou encerre depois.":
+    "The transcript is still being finalized. Wait, try recording again, or end the practice later.",
+  "Aguarde a gravação ou transcrição terminar antes de pular a pergunta.":
+    "Wait for the recording or transcript to finish before skipping the question.",
+  "Nenhuma resposta foi enviada. Não foi solicitada uma análise sem evidências.":
+    "No answers were submitted. We did not request an analysis without evidence.",
+  "A análise detalhada falhou ou excedeu o tempo limite. As respostas registradas continuam disponíveis abaixo.":
+    "The detailed analysis failed or timed out. Your recorded answers are still available below.",
   "Desligar câmera": "Turn camera off",
   "Cancelar câmera": "Cancel camera",
   "Tentar câmera": "Try camera",
@@ -606,26 +720,43 @@ const englishCopy: Record<string, string> = {
   "Se ele ainda não pediu o microfone,": "If it has not requested microphone access yet,",
   "Ou abra esta página no": "Or open this page in",
   "“Somente texto” funciona em qualquer caso.": "“Text only” works either way.",
-  "A entrevista foi encerrada localmente. Não foi possível salvar seu status.": "The interview was ended locally. We could not save its status.",
-  "Esta entrevista está sendo executada localmente. Não foi possível criar a sessão na sua conta.": "This interview is running locally. We could not create a session in your account.",
-  "Algumas respostas estão apenas locais porque não foi possível salvá-las na sua conta.": "Some answers are only stored locally because we could not save them to your account.",
-  "Entrevista concluída localmente. Não foi possível criar a sessão na sua conta.": "The interview was completed locally. We could not create a session in your account.",
-  "Entrevista concluída localmente. Não foi possível atualizar seu status na sua conta.": "The interview was completed locally. We could not update its status in your account.",
-  "A conexão de áudio está lenta. Trechos parciais não podem ser enviados; tente novamente ou pule esta pergunta.": "The audio connection is slow. Partial segments cannot be sent; try again or skip this question.",
-  "A conexão com o transcritor demorou para responder. Tente novamente ou pule esta pergunta.": "The transcription service took too long to respond. Try again or skip this question.",
-  "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.": "The audio connection was interrupted. Try again or skip this question.",
-  "A conexão com o transcritor foi interrompida. Tente novamente ou pule a pergunta.": "The transcription service connection was interrupted. Try again or skip the question.",
-  "Este navegador não pode transmitir áudio. Tente novamente em um navegador compatível ou pule esta pergunta.": "This browser cannot stream audio. Try again in a compatible browser or skip this question.",
-  "A conexão com o transcritor falhou. Tente novamente ou pule esta pergunta.": "The transcription service connection failed. Try again or skip this question.",
-  "Toque para ouvir o entrevistador. Seu navegador bloqueou o áudio automático.": "Tap to hear the interviewer. Your browser blocked autoplay.",
-  "Não conseguimos reproduzir a voz do entrevistador. Leia a pergunta e responda normalmente.": "We could not play the interviewer’s voice. Read the question and answer as usual.",
+  "A entrevista foi encerrada localmente. Não foi possível salvar seu status.":
+    "The interview was ended locally. We could not save its status.",
+  "Esta entrevista está sendo executada localmente. Não foi possível criar a sessão na sua conta.":
+    "This interview is running locally. We could not create a session in your account.",
+  "Algumas respostas estão apenas locais porque não foi possível salvá-las na sua conta.":
+    "Some answers are only stored locally because we could not save them to your account.",
+  "Entrevista concluída localmente. Não foi possível criar a sessão na sua conta.":
+    "The interview was completed locally. We could not create a session in your account.",
+  "Entrevista concluída localmente. Não foi possível atualizar seu status na sua conta.":
+    "The interview was completed locally. We could not update its status in your account.",
+  "A conexão de áudio está lenta. Trechos parciais não podem ser enviados; tente novamente ou pule esta pergunta.":
+    "The audio connection is slow. Partial segments cannot be sent; try again or skip this question.",
+  "A conexão com o transcritor demorou para responder. Tente novamente ou pule esta pergunta.":
+    "The transcription service took too long to respond. Try again or skip this question.",
+  "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.":
+    "The audio connection was interrupted. Try again or skip this question.",
+  "A conexão com o transcritor foi interrompida. Tente novamente ou pule a pergunta.":
+    "The transcription service connection was interrupted. Try again or skip the question.",
+  "Este navegador não pode transmitir áudio. Tente novamente em um navegador compatível ou pule esta pergunta.":
+    "This browser cannot stream audio. Try again in a compatible browser or skip this question.",
+  "A conexão com o transcritor falhou. Tente novamente ou pule esta pergunta.":
+    "The transcription service connection failed. Try again or skip this question.",
+  "Toque para ouvir o entrevistador. Seu navegador bloqueou o áudio automático.":
+    "Tap to hear the interviewer. Your browser blocked autoplay.",
+  "Não conseguimos reproduzir a voz do entrevistador. Leia a pergunta e responda normalmente.":
+    "We could not play the interviewer’s voice. Read the question and answer as usual.",
   "O áudio não está disponível agora. Você pode continuar sem ele.": "Audio is not available right now. You can continue without it.",
-  "A permissão para o microfone foi negada. No Safari, toque em “aA” na barra de endereço, abra Ajustes do site e permita o Microfone.": "Microphone access was denied. In Safari, tap “aA” in the address bar, open Website Settings, and allow Microphone.",
-  "A permissão para o microfone foi negada. Permita o microfone nas configurações do site (ícone ao lado do endereço) e tente novamente.": "Microphone access was denied. Allow microphone access in this site’s settings (the icon beside the address bar), then try again.",
+  "A permissão para o microfone foi negada. No Safari, toque em “aA” na barra de endereço, abra Ajustes do site e permita o Microfone.":
+    "Microphone access was denied. In Safari, tap “aA” in the address bar, open Website Settings, and allow Microphone.",
+  "A permissão para o microfone foi negada. Permita o microfone nas configurações do site (ícone ao lado do endereço) e tente novamente.":
+    "Microphone access was denied. Allow microphone access in this site’s settings (the icon beside the address bar), then try again.",
   "Nenhum microfone foi encontrado. Conecte um dispositivo e tente novamente.": "No microphone was found. Connect a device and try again.",
   "O microfone já está em uso. Libere o dispositivo e tente novamente.": "The microphone is already in use. Free the device and try again.",
-  "A captura de áudio não está disponível agora. Tente novamente ou pule a pergunta.": "Audio capture is not available right now. Try again or skip the question.",
-  "Confira o volume e a conexão e tente novamente. Sua escolha com áudio foi mantida; as perguntas também ficam visíveis na sala.": "Check your volume and connection, then try again. Audio mode is still selected, and questions remain visible in the room.",
+  "A captura de áudio não está disponível agora. Tente novamente ou pule a pergunta.":
+    "Audio capture is not available right now. Try again or skip the question.",
+  "Confira o volume e a conexão e tente novamente. Sua escolha com áudio foi mantida; as perguntas também ficam visíveis na sala.":
+    "Check your volume and connection, then try again. Audio mode is still selected, and questions remain visible in the room.",
   "Prepare a entrevista": "Set up interview",
   "A sua sessão expirou. Entre novamente para continuar.": "Your session has expired. Sign in again to continue.",
   "Apareceu {count} vezes em {interviews} entrevistas.": "Appeared {count} times in {interviews} interviews.",
@@ -634,23 +765,24 @@ const englishCopy: Record<string, string> = {
   "Última vez: {date}": "Last seen: {date}",
   "Você acertou {correct} de {total}.": "You got {correct} out of {total} correct.",
   "Exercício {current} de {total}": "Exercise {current} of {total}",
-  "Certo": "Correct",
-  "Quase": "Almost",
+  Certo: "Correct",
+  Quase: "Almost",
   "Ainda não": "Not yet",
   "Últimas tentativas": "Recent attempts",
   "Suas tentativas aparecerão aqui.": "Your attempts will appear here.",
   "Carregando exercícios": "Loading exercises",
   "Preparando seus exercícios…": "Preparing your exercises…",
   "Avaliando…": "Checking…",
-  "Analisando os erros das suas entrevistas… isso leva alguns segundos na primeira vez.": "Analyzing the mistakes from your interviews… this takes a few seconds the first time.",
+  "Analisando os erros das suas entrevistas… isso leva alguns segundos na primeira vez.":
+    "Analyzing the mistakes from your interviews… this takes a few seconds the first time.",
   "Analisando erros novos das suas entrevistas…": "Analyzing new mistakes from your interviews…",
   "Ouvir frase": "Listen to phrase",
-  "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.": "We couldn't analyze your recent errors; we'll try again next time.",
+  "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.":
+    "We couldn't analyze your recent errors; we'll try again next time.",
 };
 
-const interpolate = (text: string, values?: Record<string, string | number>) => values
-  ? text.replace(/\{(\w+)\}/g, (match, key: string) => key in values ? String(values[key]) : match)
-  : text;
+const interpolate = (text: string, values?: Record<string, string | number>) =>
+  values ? text.replace(/\{(\w+)\}/g, (match, key: string) => (key in values ? String(values[key]) : match)) : text;
 
 export function translate(locale: Locale, source: string, values?: Record<string, string | number>): string {
   if (locale !== "en") return interpolate(source, values);
@@ -677,7 +809,9 @@ export function setLocale(next: Locale): void {
   try {
     const storage = getStorage();
     if (storage) storage.setItem(localeStorageKey, next);
-  } catch { /* Keep the selected language for this tab if storage is blocked. */ }
+  } catch {
+    /* Keep the selected language for this tab if storage is blocked. */
+  }
   window.dispatchEvent(new Event(localeChangeEvent));
 }
 
