@@ -119,7 +119,7 @@ function MainPoints({ main, result, turns }: { main: ReturnType<typeof deriveMai
   );
 }
 
-function ReadyReport({ result, turns, azureSummary, coverage }: { result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number } }) {
+function ReadyReport({ result, turns, azureSummary, coverage, onTrain }: { result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onTrain?: () => void }) {
   const main = deriveMainPoints(result);
   return (
     <div className="rp-stack">
@@ -159,6 +159,7 @@ function ReadyReport({ result, turns, azureSummary, coverage }: { result: Interv
             ))}
           </ol>
           ) : <p className="rp-priority-empty">{t(emptyReportEvidenceMessage(result.evidenceReview?.priorities))}</p>}
+        {result.englishCommunication.patterns.length > 0 && onTrain && <button type="button" className="ds-btn ds-btn-cta mt-5" onClick={onTrain}><Dumbbell className="size-4" aria-hidden="true" />{t("Treinar meus erros")}</button>}
       </section>
 
       <details className="rp-more ds-enter" style={enter(4)}>
@@ -209,7 +210,7 @@ function ReadyReport({ result, turns, azureSummary, coverage }: { result: Interv
   );
 }
 
-export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave }: {
+export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave, onTrain }: {
   config: InterviewConfig;
   elapsed: string;
   totalClock: string;
@@ -223,6 +224,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
   azureSummary: AzureMetricSummary;
   coverage: { available: number; pending: number; total: number };
   onLeave: () => void;
+  onTrain?: () => void;
 }): ReactNode {
   const reportDirection = reportState.result?.jobDirection ?? config.jobDirection;
   return (
@@ -266,13 +268,16 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
             <AzureVoiceReport summary={azureSummary} coverage={coverage} />
           </div>
         ) : reportState.status === "ready" && reportState.result ? (
-          <ReadyReport result={reportState.result} turns={turns} azureSummary={azureSummary} coverage={coverage} />
+          <ReadyReport result={reportState.result} turns={turns} azureSummary={azureSummary} coverage={coverage} onTrain={onTrain} />
         ) : null}
       </div>
 
       <div className="rp-foot">
         <p className="rp-hint">{persistenceLabel}</p>
-        <button type="button" className="ds-btn ds-btn-cta-green rp-back" onClick={onLeave}>{t("Voltar ao dashboard ")}<ArrowUpRight className="ds-arrow size-4" aria-hidden="true" /></button>
+        <div className="flex flex-wrap gap-3">
+          {reportState.result?.englishCommunication.patterns.length && onTrain ? <button type="button" className="ds-btn ds-btn-soft" onClick={onTrain}><Dumbbell className="size-4" aria-hidden="true" />{t("Treinar meus erros")}</button> : null}
+          <button type="button" className="ds-btn ds-btn-cta-green rp-back" onClick={onLeave}>{t("Voltar ao dashboard ")}<ArrowUpRight className="ds-arrow size-4" aria-hidden="true" /></button>
+        </div>
       </div>
     </section>
   );

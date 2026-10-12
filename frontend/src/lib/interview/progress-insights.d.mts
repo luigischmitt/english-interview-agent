@@ -44,6 +44,7 @@ export const voiceDimensionCopy: Record<AzureReportDimension, { label: string; s
 export const defaultExercises: Record<PatternType, string>;
 export const minAnswersForProfile: number;
 export const minSessionsForTrends: number;
+export function validatedPatterns(analysis: unknown): Array<{ type: PatternType; sequenceNumber: number; evidence: string; suggestion: string; rephrasedExample: string }> | null;
 export function sessionDurationMs(record: { startedAt: string | null; completedAt: string | null }): number | null;
 export function weeklySessions(sessions: Array<{ time: number | null }>, now?: number, locale?: "pt-BR" | "en"): ProgressInsights["weekly"];
 export function buildProgressInsights(records: ProgressRecord[], options?: { now?: number; locale?: "pt-BR" | "en" }): ProgressInsights;

@@ -16,6 +16,7 @@ import {
   Target,
   Video,
   Volume2,
+  Dumbbell,
 } from "lucide-react";
 
 import { SessionExpiredNotice } from "@/components/auth/session-expired-notice";
@@ -30,11 +31,12 @@ import { useLocale, t } from "@/lib/locale";
 
 import "./components/shell.css";
 
-type View = "home" | "interview-setup" | "progress" | "settings";
+type View = "home" | "interview-setup" | "train" | "progress" | "settings";
 
 const primaryNavigationItems = [
   { id: "home" as const, label: "Início", icon: Home },
   { id: "interview-setup" as const, label: "Entrevista", icon: Video },
+  { id: "train" as const, label: "Treinar", icon: Dumbbell },
   { id: "progress" as const, label: "Progresso", icon: LineChart },
 ];
 
@@ -44,6 +46,7 @@ const navigationItems = [...primaryNavigationItems, settingsNavigationItem];
 import { InterviewSetup } from "./components/interview-setup";
 import { prewarmInterviewerUtterance, useSpeechWarmup, useVoiceReadiness } from "./hooks/use-speech-playback";
 import { ProgressView } from "./components/progress-view";
+import { TrainView } from "./components/train/train-view";
 import { PageIntro } from "./components/shared";
 import { VoicePicker } from "./components/voice-picker";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
@@ -58,6 +61,7 @@ function isNavigationItemActive(view: View, item: View) {
 const viewTrail: Record<View, readonly [string, string?]> = {
   home: ["Início"],
   "interview-setup": ["Entrevista", "Preparar entrevista"],
+  train: ["Treinar"],
   progress: ["Progresso"],
   settings: ["Configurações"],
 };
@@ -474,7 +478,8 @@ export default function App({ initialView = "home" }: { initialView?: View }) {
               }}
             />
           )}
-          {view === "progress" && <ProgressView onStart={() => navigate("interview-setup")} />}
+          {view === "train" && <TrainView onInterview={() => navigate("interview-setup")} />}
+          {view === "progress" && <ProgressView onStart={() => navigate("interview-setup")} onTrain={() => navigate("train")} />}
           {view === "settings" && <SettingsView />}
         </div>
       </div>

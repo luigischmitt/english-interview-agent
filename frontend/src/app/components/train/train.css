@@ -1,0 +1,9 @@
+.tr-list { display: grid; gap: 1rem; }
+.tr-card { border: 1px solid var(--ds-border); }
+.tr-source, .tr-corrected { border-left: 3px solid var(--ds-brand-warm); background: var(--ds-surface-2); border-radius: .5rem; padding: 1rem; font-size: 1.05rem; line-height: 1.7; overflow-wrap: anywhere; }
+.tr-answer { display: grid; gap: .75rem; margin-top: 1.25rem; }
+.tr-answer textarea { width: 100%; resize: vertical; min-height: 7rem; border: 1px solid var(--ds-border); border-radius: .75rem; padding: .85rem 1rem; background: var(--ds-surface); color: var(--ds-ink); }
+.tr-voice-slot { display: contents; }
+.tr-skeleton { border-radius: var(--ds-r-panel); }
+.tr-evidence { border: 1px solid var(--ds-border); border-radius: .75rem; padding: .9rem 1rem; overflow-wrap: anywhere; }
+.tr-examples { margin: 0; padding-left: 1.25rem; display: grid; gap: .5rem; }

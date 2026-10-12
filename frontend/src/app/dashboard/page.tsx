@@ -19,5 +19,5 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ v
 
   if (!isAuthenticated) redirect("/login?next=%2Fdashboard");
 
-  return <HomeClient initialView={view === "interview-setup" ? "interview-setup" : "home"} />;
+  return <HomeClient initialView={view === "interview-setup" ? "interview-setup" : view === "train" ? "train" : "home"} />;
 }

@@ -89,7 +89,7 @@ function readAnalysis(feedback) {
 }
 
 /** Validated English patterns of one session, or null when the report cannot support pattern statistics. */
-function validatedPatterns(analysis) {
+export function validatedPatterns(analysis) {
   const english = analysis?.englishCommunication;
   if (!english || !Array.isArray(english.patterns)) return null;
   if (english.evidenceStatus !== undefined && !usableEvidenceStatuses.has(english.evidenceStatus)) return null;

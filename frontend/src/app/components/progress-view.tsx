@@ -10,7 +10,7 @@ import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { PageIntro } from "./shared";
 import { ProgressContent } from "./progress/progress-content";
 
-export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
+export function ProgressView({ onStart, onTrain }: { onStart?: () => void; onTrain?: () => void } = {}) {
   const { locale } = useLocale();
   const [records, setRecords] = useState<ProgressRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -92,7 +92,7 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
           </div>
         </section>
       ) : (
-        <ProgressContent insights={insights} />
+        <ProgressContent insights={insights} onTrain={onTrain} />
       )}
     </main>
   );

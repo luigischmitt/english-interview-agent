@@ -99,7 +99,7 @@ function assessmentSamples(entries: Record<string, AssessmentEntry>, excluded: R
     : state.status === "pending" ? { status: "pending" } : { status: "unavailable" });
 }
 
-export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; onLeave: () => void }) {
+export function InterviewRoom({ config, onLeave, onTrain }: { config: InterviewConfig; onLeave: () => void; onTrain?: () => void }) {
   const { locale } = useLocale();
   useSpeechWarmup();
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
@@ -1517,6 +1517,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             azureSummary={currentAzureSummary}
             coverage={coverage}
             onLeave={onLeave}
+            onTrain={onTrain}
           />
         </>
       )}
