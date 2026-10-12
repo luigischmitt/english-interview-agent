@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyPracticeResult, extractProgressErrors, findMissingErrors, mergeRefs, recencyWeight, sortThemes, weightedFrequency } from "../src/lib/practice/practice-sync.mjs";
+import { applyPracticeResult, completedLegacyThemeIds, extractProgressErrors, findPracticeSyncWork, mergeRefs, recencyWeight, sortPracticeGroups, weightedFrequency } from "../src/lib/practice/practice-sync.mjs";
 
 const ref = (evidence, interview_id = "i1") => ({ interview_id, sequence_number: 1, evidence });
 
@@ -26,16 +26,34 @@ test("extracts errors from progress records", () => {
   });
 });
 
-test("finds missing errors by identity and keeps the twenty newest", () => {
+test("sync work excludes saved group refs and keeps the twenty newest", () => {
   const errors = Array.from({ length: 25 }, (_, index) => ({ ...ref(String(index)), created_at: new Date(index * 1000).toISOString() }));
-  const missing = findMissingErrors(errors, [{ error_refs: [ref("0")] }]);
+  const missing = findPracticeSyncWork(errors, [{ id: "g", theme_key: "articles", error_refs: [ref("0")] }]);
   assert.equal(missing.length, 20);
   assert.equal(missing[0].evidence, "24");
 });
 
-test("merges refs by identity and caps stored history", () => {
+test("reclassifies legacy refs once and combines them with new errors in bounded work", () => {
+  const legacyRef = { ...ref("legacy"), rephrased: "Better", created_at: "2025-01-01" };
+  const groupRef = { ...ref("already grouped"), point: "Artigos", category: "articles" };
+  const themes = [
+    { id: "old", theme_key: "old-topic", error_refs: [legacyRef] },
+    { id: "articles", theme_key: "articles", error_refs: [groupRef] },
+  ];
+  const errors = [legacyRef, ref("new")];
+  assert.deepEqual(findPracticeSyncWork(errors, themes).map((item) => item.evidence), ["legacy", "new"]);
+  assert.deepEqual(completedLegacyThemeIds(themes), []);
+  assert.deepEqual(completedLegacyThemeIds([...themes, { id: "ignored", theme_key: "_ignored", error_refs: [legacyRef] }]), ["old"]);
+  assert.equal(findPracticeSyncWork(errors, [...themes, { id: "ignored", theme_key: "_ignored", error_refs: [legacyRef] }])[0].evidence, "new");
+});
+
+test("merges refs by identity without dropping legacy references", () => {
   assert.equal(mergeRefs([ref("a")], [ref("a"), ref("b")]).length, 2);
-  assert.equal(mergeRefs([], Array.from({ length: 205 }, (_, index) => ref(String(index)))).length, 200);
+  assert.equal(mergeRefs([], Array.from({ length: 205 }, (_, index) => ref(String(index)))).length, 205);
+  assert.deepEqual(mergeRefs([], [
+    { ...ref("newer"), created_at: "2025-02-01" },
+    { ...ref("older"), created_at: "2025-01-01" },
+  ]).map((item) => item.evidence), ["older", "newer"]);
 });
 
 test("recency weighting stays finite when dates are absent or invalid", () => {
@@ -51,8 +69,9 @@ test("mastery requires three consecutive correct answers", () => {
 
 test("orders active themes before mastered themes", () => {
   const themes = [
-    { theme_key: "m", status: "mastered", weighted_frequency: 8, last_error_at: null },
-    { theme_key: "a", status: "active", weighted_frequency: 1, last_error_at: null },
+    { theme_key: "articles", status: "mastered", weighted_frequency: 8, last_error_at: null, error_refs: [ref("m")] },
+    { theme_key: "prepositions", status: "active", weighted_frequency: 1, last_error_at: null, error_refs: [ref("a")] },
+    { theme_key: "legacy", status: "active", weighted_frequency: 99, last_error_at: null, error_refs: [ref("old")] },
   ];
-  assert.deepEqual(sortThemes(themes).map((theme) => theme.theme_key), ["a", "m"]);
+  assert.deepEqual(sortPracticeGroups(themes).map((theme) => theme.theme_key), ["prepositions", "articles"]);
 });

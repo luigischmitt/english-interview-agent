@@ -2,10 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import { validatedPatterns } from "@/lib/interview/progress-insights.mjs";
-import { applyPracticeResult, extractProgressErrors, findMissingErrors, mergeRefs, weightedFrequency, type PracticeErrorRef } from "@/lib/practice/practice-sync.mjs";
-import { createPracticeThemes } from "@/lib/practice/practice-requests";
+import { applyPracticeResult, completedLegacyThemeIds, extractProgressErrors, findPracticeSyncWork, mergeRefs, weightedFrequency, type PracticeErrorRef } from "@/lib/practice/practice-sync.mjs";
+import { practiceCategoryByKey } from "@/lib/practice/practice-categories.mjs";
+import { classifyPracticeErrors } from "@/lib/practice/practice-requests";
 
-export type PracticeTheme = {
+export type PracticeGroup = {
   id: string;
   user_id: string;
   theme_key: string;
@@ -45,29 +46,29 @@ async function authenticatedClient(): Promise<Result<{ client: SupabaseClient; u
   }
 }
 
-function withFrequency(themes: PracticeTheme[]): PracticeTheme[] {
+function withFrequency(themes: PracticeGroup[]): PracticeGroup[] {
   return themes.map((theme) => ({
     ...theme,
     weighted_frequency: weightedFrequency(theme.error_refs, theme.last_error_at),
   }));
 }
 
-export async function loadPracticeThemes(): Promise<Result<PracticeTheme[]>> {
+export async function loadPracticeGroups(): Promise<Result<PracticeGroup[]>> {
   const auth = await authenticatedClient();
   if (!auth.ok) return auth;
   const { data, error } = await auth.value.client
     .from("practice_themes")
     .select("*")
     .eq("user_id", auth.value.userId);
-  if (error) return failure("Não foi possível carregar seus temas. Tente novamente.");
-  return { ok: true, value: withFrequency((data ?? []) as PracticeTheme[]) };
+  if (error) return failure("Não foi possível carregar seus grupos. Tente novamente.");
+  return { ok: true, value: withFrequency((data ?? []) as PracticeGroup[]) };
 }
 
-/** Errors grouped per call: the model answers a small batch well within the backend timeout. */
-export const practiceSyncBatchSize = 6;
+export const practiceSyncBatchSize = 20;
+export const practiceSyncMaxBatches = 3;
 
-/** Groups the newest unassigned report errors (one batch). `remaining` says whether another batch is still waiting. */
-export async function syncPracticeThemes(themes: PracticeTheme[]): Promise<Result<{ themes: PracticeTheme[]; remaining: boolean }>> {
+/** Classifies unassigned and legacy errors in one bounded batch. */
+export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Result<{ themes: PracticeGroup[]; remaining: boolean }>> {
   const auth = await authenticatedClient();
   if (!auth.ok) return auth;
   const progress = await loadProgressRecords();
@@ -78,75 +79,78 @@ export async function syncPracticeThemes(themes: PracticeTheme[]): Promise<Resul
       ? validatedPatterns(record.feedback.analysis) ?? []
       : [],
   }));
-  const allMissing = findMissingErrors(extractProgressErrors(records), themes, Number.POSITIVE_INFINITY);
-  const missing = allMissing.slice(0, practiceSyncBatchSize);
-  if (!missing.length) return { ok: true, value: { themes, remaining: false } };
+  const allErrors = extractProgressErrors(records);
+  const missing = findPracticeSyncWork(allErrors, themes, practiceSyncBatchSize);
+  if (!missing.length) {
+    const removable = completedLegacyThemeIds(themes);
+    if (removable.length) {
+      const { error } = await auth.value.client.from("practice_themes").delete().in("id", removable).eq("user_id", auth.value.userId);
+      if (error) return failure("Não foi possível concluir a atualização dos grupos.");
+    }
+    return { ok: true, value: { themes, remaining: false } };
+  }
 
-  let assignments: Array<string | null>;
-  let newThemes: Array<{ key: string; title: string; explanation: string; why: string; examples: string[] }>;
+  let assignments: Array<{ category: string; point: string } | null>;
   try {
-    const response = await createPracticeThemes({
+    const response = await classifyPracticeErrors({
       errors: missing.map((ref) => ({ type: ref.type ?? "GRAMMAR", evidence: ref.evidence, suggestion: ref.suggestion ?? "", rephrasedExample: ref.rephrased })),
-      existingThemes: themes.filter((theme) => theme.theme_key !== "_ignored").map((theme) => ({ key: theme.theme_key, title: theme.title })),
     });
-    assignments = missing.map((_, index) => response.assignments[index] ?? null);
-    newThemes = response.newThemes;
+    if (response.assignments.length !== missing.length) throw new Error("Invalid assignment count");
+    assignments = response.assignments.map((assignment) => assignment && practiceCategoryByKey[assignment.category] && assignment.point?.trim()
+      ? { category: assignment.category, point: assignment.point.trim().slice(0, 80) }
+      : null);
   } catch {
     return failure("Não foi possível analisar seus erros mais recentes.");
   }
 
   const client = auth.value.client;
   const now = new Date().toISOString();
-  const rows = newThemes.map((theme) => ({
-    user_id: auth.value.userId,
-    theme_key: theme.key,
-    title: theme.title,
-    explanation: theme.explanation,
-    why: theme.why,
-    examples: theme.examples.slice(0, 5),
-    error_refs: [] as PracticeErrorRef[],
-    status: "active",
-    correct_streak: 0,
-    last_error_at: now,
-  }));
-  if (assignments.includes(null) && !themes.some((theme) => theme.theme_key === "_ignored")) {
-    rows.push({ user_id: auth.value.userId, theme_key: "_ignored", title: "Ignorados", explanation: "", why: "", examples: [], error_refs: [], status: "hidden", correct_streak: 0, last_error_at: now });
-  }
-  for (const row of rows) {
-    const { error } = await client.from("practice_themes").upsert(row, { onConflict: "user_id,theme_key" });
-    if (error) return failure("Não foi possível salvar os novos temas.");
+  const incomingByCategory = new Map<string, PracticeErrorRef[]>();
+  const ignoredRefs: PracticeErrorRef[] = [];
+  for (let index = 0; index < missing.length; index += 1) {
+    const assignment = assignments[index];
+    const ref = { ...missing[index], ...(assignment ? { category: assignment.category, point: assignment.point } : {}) };
+    if (assignment) incomingByCategory.set(assignment.category, [...(incomingByCategory.get(assignment.category) ?? []), ref]);
+    else ignoredRefs.push(ref);
   }
 
-  const { data: savedThemes, error: readError } = await client
-    .from("practice_themes")
-    .select("*")
-    .eq("user_id", auth.value.userId);
-  if (readError) return failure("Não foi possível atualizar os temas.");
-  const updated = new Map(((savedThemes ?? []) as PracticeTheme[]).map((theme) => [
-    theme.theme_key,
-    { ...theme, error_refs: [...(theme.error_refs ?? [])] },
-  ]));
-  for (let index = 0; index < missing.length; index += 1) {
-    const key = assignments[index] ?? "_ignored";
-    const theme = updated.get(key);
-    if (!theme) continue;
-    const refs = mergeRefs(theme.error_refs, [missing[index]]);
-    const domain = {
-      error_refs: refs,
-      last_error_at: missing[index].created_at ?? now,
-      ...(theme.status === "mastered" ? { status: "active" as const, correct_streak: 0 } : {}),
+  if (ignoredRefs.length) {
+    const current = themes.find((theme) => theme.theme_key === "_ignored");
+    const { error } = await client.from("practice_themes").upsert({
+      user_id: auth.value.userId, theme_key: "_ignored", title: "Ignorados", explanation: "", why: "", examples: [],
+      error_refs: mergeRefs(current?.error_refs, ignoredRefs), status: "hidden", correct_streak: 0, last_error_at: ignoredRefs[0].created_at ?? now,
+    }, { onConflict: "user_id,theme_key" });
+    if (error) return failure("Não foi possível salvar os pontos não praticáveis.");
+  }
+
+  for (const [key, incoming] of incomingByCategory) {
+    const category = practiceCategoryByKey[key];
+    const current = themes.find((theme) => theme.theme_key === key);
+    const row = {
+      user_id: auth.value.userId, theme_key: key,
+      title: category.title, explanation: category.explanation, why: category.why, examples: category.examples,
+      error_refs: mergeRefs(current?.error_refs, incoming),
+      status: current?.status === "mastered" ? "active" : current?.status ?? "active",
+      correct_streak: current?.status === "mastered" ? 0 : current?.correct_streak ?? 0,
+      last_error_at: current?.last_error_at && Date.parse(current.last_error_at) > Date.parse(incoming[0].created_at ?? now)
+        ? current.last_error_at
+        : incoming[0].created_at ?? now,
     };
-    const { error } = await client.from("practice_themes")
-      .update(domain)
-      .eq("id", theme.id)
-      .eq("user_id", auth.value.userId);
-    if (error) return failure("Não foi possível atualizar os temas.");
-    Object.assign(theme, domain);
+    const { error } = await client.from("practice_themes").upsert(row, { onConflict: "user_id,theme_key" });
+    if (error) return failure("Não foi possível salvar os grupos de treino.");
   }
 
   const { data, error } = await client.from("practice_themes").select("*").eq("user_id", auth.value.userId);
-  if (error) return failure("Não foi possível atualizar os temas.");
-  return { ok: true, value: { themes: withFrequency((data ?? []) as PracticeTheme[]), remaining: allMissing.length > missing.length } };
+  if (error) return failure("Não foi possível atualizar os grupos.");
+  const saved = (data ?? []) as PracticeGroup[];
+  const removable = completedLegacyThemeIds(saved);
+  if (removable.length) {
+    const { error: deleteError } = await client.from("practice_themes").delete().in("id", removable).eq("user_id", auth.value.userId);
+    if (deleteError) return failure("Não foi possível concluir a atualização dos grupos.");
+  }
+  const finalRows = removable.length ? saved.filter((theme) => !removable.includes(theme.id)) : saved;
+  const remaining = findPracticeSyncWork(allErrors, finalRows, Number.POSITIVE_INFINITY).length > 0;
+  return { ok: true, value: { themes: withFrequency(finalRows), remaining } };
 }
 
 export async function savePracticeAttempt(input: {
@@ -176,14 +180,14 @@ export async function savePracticeAttempt(input: {
   return { ok: true, value: data as PracticeAttempt };
 }
 
-export async function updateThemeProgress(theme: PracticeTheme, verdict: "correct" | "almost" | "incorrect"): Promise<Result<PracticeTheme>> {
+export async function updateGroupProgress(theme: PracticeGroup, verdict: "correct" | "almost" | "incorrect"): Promise<Result<PracticeGroup>> {
   const auth = await authenticatedClient();
   if (!auth.ok) return auth;
   const domain = applyPracticeResult(theme, verdict);
   const { data, error } = await auth.value.client.from("practice_themes")
     .update(domain).eq("id", theme.id).eq("user_id", auth.value.userId).select("*").single();
   if (error) return failure("Não foi possível atualizar seu progresso.");
-  return { ok: true, value: { ...(data as PracticeTheme), weighted_frequency: theme.weighted_frequency } };
+  return { ok: true, value: { ...(data as PracticeGroup), weighted_frequency: theme.weighted_frequency } };
 }
 
 export async function loadPracticeAttempts(themeId: string): Promise<Result<PracticeAttempt[]>> {

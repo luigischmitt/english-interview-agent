@@ -7,16 +7,18 @@ import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
 import { resolveInterviewerVoice } from "@/lib/interview/voices.mjs";
 import { interviewerVoiceStorageKey } from "@/lib/interview/voice-picker.mjs";
 import { getPracticeExercises, gradePracticeAnswer } from "@/lib/practice/practice-requests";
+import { normalizePracticeAnswer } from "@/lib/practice/practice-categories.mjs";
 import {
   loadPracticeAttempts,
-  loadPracticeThemes,
+  loadPracticeGroups,
   savePracticeAttempt,
-  syncPracticeThemes,
-  updateThemeProgress,
+  syncPracticeGroups,
+  practiceSyncMaxBatches,
+  updateGroupProgress,
   type PracticeAttempt,
-  type PracticeTheme,
+  type PracticeGroup,
 } from "@/lib/practice/practice-store";
-import { sortThemes } from "@/lib/practice/practice-sync.mjs";
+import { sortPracticeGroups } from "@/lib/practice/practice-sync.mjs";
 import { t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
 import "./train.css";
@@ -25,19 +27,15 @@ type Exercise = { kind: "fix" | "build"; instruction: string; source: string | n
 type Grade = { verdict: "correct" | "almost" | "incorrect"; feedback: string; corrected: string };
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
-const maxSyncBatches = 4;
-const occurrenceCopy = (count: number, interviews: number) => count === 1
-  ? "Apareceu 1 vez em 1 entrevista."
-  : interviews === 1 ? "Apareceu {count} vezes em 1 entrevista." : "Apareceu {count} vezes em {interviews} entrevistas.";
 const syncWarning = "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.";
 
 export function TrainView({ onInterview }: { onInterview: () => void }) {
-  const [themes, setThemes] = useState<PracticeTheme[]>([]);
+  const [themes, setThemes] = useState<PracticeGroup[]>([]);
   const [themeLoading, setThemeLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [syncFailed, setSyncFailed] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [selected, setSelected] = useState<PracticeTheme | null>(null);
+  const [selected, setSelected] = useState<PracticeGroup | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [exercisesLoading, setExercisesLoading] = useState(false);
@@ -94,23 +92,23 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
   const load = useCallback(async () => {
     setThemeLoading(true);
     setLoadError(null);
-    const loaded = await loadPracticeThemes();
+    const loaded = await loadPracticeGroups();
     if (!loaded.ok) {
       setLoadError(loaded.message);
       setThemeLoading(false);
       return;
     }
-    setThemes(sortThemes(loaded.value));
+    setThemes(sortPracticeGroups(loaded.value));
     setThemeLoading(false);
     // New report errors are grouped a few at a time; the list grows after each batch. A few batches per visit bound the wait.
     setSyncing(true);
     let current = loaded.value;
-    for (let batch = 0; batch < maxSyncBatches; batch += 1) {
-      const synced = await syncPracticeThemes(current);
+    for (let batch = 0; batch < practiceSyncMaxBatches; batch += 1) {
+      const synced = await syncPracticeGroups(current);
       if (!synced.ok) { setSyncFailed(true); break; }
       setSyncFailed(false);
       current = synced.value.themes;
-      setThemes(sortThemes(current));
+      setThemes(sortPracticeGroups(current));
       if (!synced.value.remaining) break;
     }
     setSyncing(false);
@@ -121,7 +119,7 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const selectTheme = async (theme: PracticeTheme) => {
+  const selectTheme = async (theme: PracticeGroup) => {
     setSelected(theme);
     setAttemptsLoading(true);
     const history = await loadPracticeAttempts(theme.id);
@@ -143,7 +141,8 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     try {
       const response = await getPracticeExercises({
         theme: { title: selected.title, explanation: selected.explanation, examples: selected.examples ?? [] },
-        userErrors: (selected.error_refs ?? []).slice(-3).map((ref) => ({ evidence: ref.evidence, rephrasedExample: ref.rephrased })),
+        userErrors: [...new Map([...(selected.error_refs ?? [])].reverse().map((ref) => [ref.point, ref])).values()]
+          .slice(0, 3).map((ref) => ({ evidence: ref.evidence, rephrasedExample: ref.rephrased })),
       });
       setExercises(response.exercises.slice(0, 3));
     } catch (error) {
@@ -160,12 +159,14 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     const exercise = exercises[step];
     const cleanAnswer = answer.trim();
     try {
-      const grade = await gradePracticeAnswer({ theme: { title: selected.title, explanation: selected.explanation }, exercise, answer: cleanAnswer, mode });
+      const grade = normalizePracticeAnswer(cleanAnswer) === normalizePracticeAnswer(exercise.target)
+        ? { verdict: "correct" as const, feedback: "Certo! Sua frase está correta.", corrected: exercise.target }
+        : await gradePracticeAnswer({ theme: { title: selected.title, explanation: selected.explanation }, exercise, answer: cleanAnswer, mode });
       const saved = await savePracticeAttempt({ themeId: selected.id, kind: exercise.kind, instruction: exercise.instruction, mode, answer: cleanAnswer, ...grade });
       if (!saved.ok) throw new Error(saved.message);
       setResult(grade);
       setAttempts((current) => [saved.value, ...current].slice(0, 5));
-      const updated = await updateThemeProgress(selected, grade.verdict);
+      const updated = await updateGroupProgress(selected, grade.verdict);
       if (updated.ok) {
         setSelected(updated.value);
         setThemes((current) => current.map((theme) => theme.id === updated.value.id ? updated.value : theme));
@@ -186,7 +187,7 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     setMode("text");
     setStep((current) => current + 1);
   };
-  const sorted = useMemo(() => sortThemes(themes), [themes]);
+  const sorted = useMemo(() => sortPracticeGroups(themes), [themes]);
 
   return (
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-5xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14">
@@ -265,10 +266,10 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
   }
 }
 
-function ThemeList({ themes, onSelect }: { themes: PracticeTheme[]; onSelect: (theme: PracticeTheme) => void }) {
+function ThemeList({ themes, onSelect }: { themes: PracticeGroup[]; onSelect: (theme: PracticeGroup) => void }) {
   return (
     <section className="tr-list" aria-labelledby="train-topics">
-      <h2 id="train-topics" className="ds-h2">{t("Seus erros mais frequentes")}</h2>
+      <h2 id="train-topics" className="ds-h2">{t("Seus grupos para treinar")}</h2>
       <div className="mt-4 grid gap-4">
         {themes.map((theme) => <ThemeCard key={theme.id} theme={theme} onSelect={onSelect} />)}
       </div>
@@ -276,41 +277,45 @@ function ThemeList({ themes, onSelect }: { themes: PracticeTheme[]; onSelect: (t
   );
 }
 
-function ThemeCard({ theme, onSelect }: { theme: PracticeTheme; onSelect: (theme: PracticeTheme) => void }) {
+function ThemeCard({ theme, onSelect }: { theme: PracticeGroup; onSelect: (theme: PracticeGroup) => void }) {
   const interviews = new Set(theme.error_refs?.map((ref) => ref.interview_id)).size;
+  const points = [...new Set((theme.error_refs ?? []).map((ref) => ref.point).filter((point): point is string => Boolean(point)))];
   return (
-    <article className="tr-card ds-card p-5 sm:p-6">
+    <article className="tr-card card ds-card p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="ds-h2">{theme.title}</h3>
-          <p className="ds-small mt-1">{t(occurrenceCopy(theme.error_refs?.length ?? 0, interviews), { count: theme.error_refs?.length ?? 0, interviews })}</p>
-          {theme.last_error_at && <p className="ds-small mt-1">{t("Última vez: {date}", { date: new Date(theme.last_error_at).toLocaleDateString("pt-BR") })}</p>}
+          <h3 className="ds-h2">{t(theme.title)}</h3>
+          <p className="ds-small mt-1">{t("{count} erros em {interviews} entrevistas", { count: theme.error_refs?.length ?? 0, interviews })}</p>
         </div>
         <span className="shl-pill shl-pill-on">{t(theme.status === "mastered" ? "Dominado" : "Treinando")}</span>
       </div>
+      <div className="mt-4 flex flex-wrap gap-2" aria-label={t("Pontos específicos")}>{points.slice(0, 3).map((point) => <span className="tr-point-chip" key={point}>{point}</span>)}{points.length > 3 && <span className="tr-point-chip">+{points.length - 3}</span>}</div>
       <button className="ds-btn ds-btn-cta mt-5" onClick={() => onSelect(theme)}><Dumbbell className="size-4" />{t("Treinar")}</button>
     </article>
   );
 }
 
 function ThemeDetail({ theme, attempts, attemptsLoading, speechError, onBack, onBegin, onPlay }: {
-  theme: PracticeTheme; attempts: PracticeAttempt[]; attemptsLoading: boolean; speechError: boolean;
+  theme: PracticeGroup; attempts: PracticeAttempt[]; attemptsLoading: boolean; speechError: boolean;
   onBack: () => void; onBegin: () => void; onPlay: (phrase: string) => void;
 }) {
   return (
     <section className="tr-panel ds-card p-5 sm:p-8">
-      <button className="ds-btn ds-btn-quiet mb-4" onClick={onBack}><ArrowLeft className="size-4" />{t("Voltar aos temas")}</button>
-      <h2 className="ds-h2">{theme.title}</h2>
-      <section className="mt-5"><h3 className="ds-label">{t("O que está acontecendo")}</h3><p className="ds-body mt-1">{theme.explanation}</p></section>
+      <button className="ds-btn ds-btn-quiet mb-4" onClick={onBack}><ArrowLeft className="size-4" />{t("Voltar aos grupos")}</button>
+      <h2 className="ds-h2">{t(theme.title)}</h2>
+      <section className="mt-5"><h3 className="ds-label">{t("O que observar")}</h3><p className="ds-body mt-1">{t(theme.explanation)}</p></section>
+      <section className="mt-4"><h3 className="ds-label">{t("Por quê")}</h3><p className="ds-body mt-1">{t(theme.why)}</p></section>
       <section className="mt-5">
-        <h3 className="ds-label">{t("Você disse → Soa melhor")}</h3>
+        <h3 className="ds-label">{t("Seus pontos")}</h3>
         <div className="mt-2 grid gap-3">
-          {(theme.error_refs ?? []).slice(-3).reverse().map((ref, index) => (
-            <div className="tr-evidence" key={`${ref.interview_id}-${ref.sequence_number}-${index}`}>
-              <p className="ds-small">{t("Você disse")}</p><p lang="en">{ref.evidence}</p>
-              <p className="ds-small mt-2">{t("Soa melhor")}</p><p lang="en">{ref.rephrased}</p>
-            </div>
-          ))}
+          {[...new Set((theme.error_refs ?? []).map((ref) => ref.point ?? t("Outros pontos")))].map((point) => {
+            const pointRefs = (theme.error_refs ?? []).filter((ref) => (ref.point ?? t("Outros pontos")) === point);
+            const refs = pointRefs.slice().reverse().slice(0, 2);
+            return <div className="tr-evidence" key={point}>
+              <h4 className="ds-label">{point} <span className="ds-small">· {pointRefs.length === 1 ? t("1 vez") : t("{count} vezes", { count: pointRefs.length })}</span></h4>
+              <div className="mt-3 grid gap-3">{refs.map((ref, index) => <div key={`${ref.interview_id}-${ref.sequence_number}-${index}`}><p className="ds-small">{t("Você disse")}</p><p lang="en">{ref.evidence}</p><p className="ds-small mt-2">{t("Soa melhor")}</p><p lang="en">{ref.rephrased}</p></div>)}</div>
+            </div>;
+          })}
         </div>
       </section>
       <section className="mt-5">
@@ -320,7 +325,6 @@ function ThemeDetail({ theme, attempts, attemptsLoading, speechError, onBack, on
         </ul>
         {speechError && <p className="tr-hint">{t("O áudio não está disponível agora. Você pode continuar sem ele.")}</p>}
       </section>
-      <section className="mt-5"><h3 className="ds-label">{t("Por quê")}</h3><p className="ds-body mt-1">{theme.why}</p></section>
       <section className="mt-6">
         <h3 className="ds-label">{t("Últimas tentativas")}</h3>
         {attemptsLoading ? <Loader2 className="tr-spinner mt-3 size-5" aria-label={t("Carregando")} /> : attempts.length ? (
@@ -392,7 +396,7 @@ function PracticeSession({
     return (
       <section className="tr-panel ds-card p-5 sm:p-8">
         <button className="ds-btn ds-btn-quiet" onClick={onBack}>
-          <ArrowLeft className="size-4" />{t("Voltar aos temas")}
+          <ArrowLeft className="size-4" />{t("Voltar aos grupos")}
         </button>
         {error && <p className="tr-form-error mt-4" role="alert">{error}</p>}
         <button className="ds-btn ds-btn-cta mt-4" onClick={onBegin}>{t("Tentar de novo")}</button>
@@ -409,7 +413,7 @@ function PracticeSession({
           <button className="ds-btn ds-btn-cta" onClick={onBegin}>
             <RotateCcw className="size-4" />{t("Treinar de novo")}
           </button>
-          <button className="ds-btn ds-btn-soft" onClick={onBack}>{t("Voltar aos temas")}</button>
+          <button className="ds-btn ds-btn-soft" onClick={onBack}>{t("Voltar aos grupos")}</button>
           <button className="ds-btn ds-btn-soft" onClick={onInterview}>
             <Play className="size-4" />{t("Preparar entrevista")}
           </button>
@@ -422,7 +426,7 @@ function PracticeSession({
   return (
     <section className="tr-panel ds-card p-5 sm:p-8" aria-live="polite">
       <button className="ds-btn ds-btn-quiet mb-4" onClick={onBack}>
-        <ArrowLeft className="size-4" />{t("Voltar aos temas")}
+        <ArrowLeft className="size-4" />{t("Voltar aos grupos")}
       </button>
       <p className="ds-hint">{t("Exercício {current} de {total}", { current: step + 1, total: exercises.length })}</p>
       <h2 className="ds-h2 mt-2">{exercise.instruction}</h2>

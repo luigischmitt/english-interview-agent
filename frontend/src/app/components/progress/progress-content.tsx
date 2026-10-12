@@ -486,7 +486,7 @@ export function ProgressContent({ insights, onTrain }: { insights: ProgressInsig
   return (
     <div className="pg-stack mt-8 gap-10 lg:mt-10">
       <ProgressHero insights={insights} />
-      <section className="ds-card flex flex-col items-start justify-between gap-4 p-5 sm:flex-row sm:items-center sm:p-6"><div><h2 className="ds-h2">{t("Seus erros mais frequentes agora ficam em Treinar")}</h2><p className="ds-small mt-1">{t("Abra seus temas para praticar com exercícios curtos.")}</p></div>{onTrain && <button type="button" className="ds-btn ds-btn-soft shrink-0" onClick={onTrain}><Dumbbell className="size-4" aria-hidden="true" />{t("Abrir Treinar")}</button>}</section>
+      <section className="ds-card flex flex-col items-start justify-between gap-4 p-5 sm:flex-row sm:items-center sm:p-6"><div><h2 className="ds-h2">{t("Seus grupos de treino ficam em Treinar")}</h2><p className="ds-small mt-1">{t("Abra os grupos para praticar com exercícios curtos.")}</p></div>{onTrain && <button type="button" className="ds-btn ds-btn-soft shrink-0" onClick={onTrain}><Dumbbell className="size-4" aria-hidden="true" />{t("Abrir Treinar")}</button>}</section>
       <div className="pg-stack">
         <EvolutionChart insights={insights} />
         <WeeklyChart insights={insights} />

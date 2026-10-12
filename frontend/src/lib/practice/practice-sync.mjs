@@ -1,3 +1,5 @@
+import { practiceCategoryKeys } from "./practice-categories.mjs";
+
 export function errorKey(ref) {
   return `${ref.interview_id}|${ref.sequence_number}|${ref.evidence}`;
 }
@@ -14,18 +16,38 @@ export function extractProgressErrors(records) {
   })));
 }
 
-export function findMissingErrors(errors, themes, limit = 20) {
-  const known = new Set(themes.flatMap((theme) => (theme.error_refs ?? []).map(errorKey)));
-  return errors
-    .filter((error) => !known.has(errorKey(error)))
+export function findPracticeSyncWork(errors, themes, limit = 20) {
+  const known = new Set(themes
+    .filter((theme) => theme.theme_key === "_ignored" || practiceCategoryKeys.includes(theme.theme_key))
+    .flatMap((theme) => (theme.error_refs ?? []).map(errorKey)));
+  const legacy = themes.filter((theme) => !practiceCategoryKeys.includes(theme.theme_key) && theme.theme_key !== "_ignored");
+  const legacyRefs = legacy.flatMap((theme) => (theme.error_refs ?? []).filter((ref) => !known.has(errorKey(ref))));
+  const missing = errors.filter((error) => !known.has(errorKey(error)));
+  const byKey = new Map();
+  [...legacyRefs, ...missing].forEach((ref) => {
+    const key = errorKey(ref);
+    if (!byKey.has(key)) byKey.set(key, ref);
+  });
+  const work = [...byKey.values()]
     .sort((a, b) => safeDate(b.created_at) - safeDate(a.created_at))
     .slice(0, limit);
+  return work;
+}
+
+export function completedLegacyThemeIds(themes) {
+  const persisted = new Set(themes
+    .filter((theme) => theme.theme_key === "_ignored" || practiceCategoryKeys.includes(theme.theme_key))
+    .flatMap((theme) => (theme.error_refs ?? []).map(errorKey)));
+  return themes
+    .filter((theme) => !practiceCategoryKeys.includes(theme.theme_key) && theme.theme_key !== "_ignored")
+    .filter((theme) => (theme.error_refs ?? []).every((ref) => persisted.has(errorKey(ref))))
+    .map((theme) => theme.id);
 }
 
 export function mergeRefs(existing = [], incoming = []) {
   const byKey = new Map(existing.map((ref) => [errorKey(ref), ref]));
   incoming.forEach((ref) => byKey.set(errorKey(ref), ref));
-  return [...byKey.values()].slice(-200);
+  return [...byKey.values()].sort((a, b) => safeDate(a.created_at) - safeDate(b.created_at));
 }
 
 export function recencyWeight(ref, lastErrorAt = null, now = Date.now()) {
@@ -45,9 +67,9 @@ export function applyPracticeResult(theme, verdict) {
   return { correct_streak, status: correct_streak >= 3 ? "mastered" : theme.status === "mastered" ? "active" : theme.status };
 }
 
-export function sortThemes(themes) {
-  return [...themes]
-    .filter((theme) => theme.theme_key !== "_ignored" && theme.status !== "hidden")
+export function sortPracticeGroups(groups) {
+  return [...groups]
+    .filter((theme) => practiceCategoryKeys.includes(theme.theme_key) && theme.status !== "hidden" && (theme.error_refs ?? []).length > 0)
     .sort((a, b) => Number(b.status !== "mastered") - Number(a.status !== "mastered")
       || b.weighted_frequency - a.weighted_frequency
       || safeDate(b.last_error_at) - safeDate(a.last_error_at));
