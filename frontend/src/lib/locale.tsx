@@ -513,6 +513,8 @@ const englishCopy: Record<string, string> = {
   "Carregando exercícios": "Loading exercises",
   "Preparando seus exercícios…": "Preparing your exercises…",
   "Avaliando…": "Checking…",
+  "Analisando os erros das suas entrevistas… isso leva alguns segundos na primeira vez.": "Analyzing the mistakes from your interviews… this takes a few seconds the first time.",
+  "Analisando erros novos das suas entrevistas…": "Analyzing new mistakes from your interviews…",
   "Ouvir frase": "Listen to phrase",
   "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.": "We couldn't analyze your recent errors; we'll try again next time.",
 };

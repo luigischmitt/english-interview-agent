@@ -177,7 +177,7 @@ export class OpenRouterPracticeService implements PracticeService {
     await this.call("themes", themesSystemPrompt, {
       existingThemes: input.existingThemes,
       mistakes: input.errors.map((error, index) => ({ index, type: error.type, evidence: error.evidence, suggestion: error.suggestion, rephrasedExample: error.rephrasedExample })),
-    }, themesSchema, 1_200, 20_000, input.signal, (value) => {
+    }, themesSchema, 1_200, 30_000, input.signal, (value) => {
       if (!value || typeof value !== "object") return { ok: false };
       const record = value as { assignments?: unknown; newThemes?: unknown };
       if (!Array.isArray(record.assignments) || !Array.isArray(record.newThemes)) return { ok: false };
