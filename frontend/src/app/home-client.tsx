@@ -3,7 +3,7 @@
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { startTransition, useEffect, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import {
   ArrowUpRight,
   Home,
@@ -28,6 +28,7 @@ import { composeContextualOpening } from "@/lib/interview/speech-playback.mjs";
 import { storeRoomHandoff } from "@/lib/interview/room-handoff.mjs";
 import { readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
 import { DEFAULT_INTERVIEWER_VOICE } from "@/lib/interview/voices.mjs";
+import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { useLocale, t } from "@/lib/locale";
 
 import "./components/shell.css";
@@ -465,8 +466,34 @@ export default function App({ initialView = "home", initialLesson, initialPart }
   useSpeechWarmup(voiceWarmupAttempt); // Wake the interviewer voice as soon as the signed-in user lands here.
   const voiceReadiness = useVoiceReadiness(true, voiceWarmupAttempt);
   const [view, setView] = useState<View>(initialView);
+  const dashboardPrefetchStarted = useRef(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [startError, setStartError] = useState(false);
+
+  const prefetchDashboardData = useCallback(() => {
+    if (initialView === "interview-setup" || dashboardPrefetchStarted.current) return;
+    dashboardPrefetchStarted.current = true;
+    void (async () => {
+      try {
+        const [{ getSupabaseBrowserClient }, { getLocalSessionUserId }] = await Promise.all([
+          import("@/lib/supabase/client"),
+          import("@/lib/auth/browser-session"),
+        ]);
+        const client = getSupabaseBrowserClient();
+        if (!(await getLocalSessionUserId(client))) return;
+        const tasks: Promise<unknown>[] = [];
+        if (readDashboardCache("progress") === undefined) {
+          tasks.push(import("@/lib/interview/persistence").then(({ loadProgressRecords }) => loadProgressRecords()));
+        }
+        if (readDashboardCache("practice") === undefined) {
+          tasks.push(import("@/lib/practice/practice-store").then(({ loadPracticeGroups }) => loadPracticeGroups()));
+        }
+        await Promise.all(tasks);
+      } catch {
+        // Prefetch is best-effort; view loaders own any user-facing errors.
+      }
+    })();
+  }, [initialView]);
 
   useEffect(() => {
     const idleWindow = window as Window & { requestIdleCallback?: (callback: () => void) => number };
@@ -475,17 +502,19 @@ export default function App({ initialView = "home", initialLesson, initialPart }
           preloadView("interview-setup");
           preloadView("train");
           preloadView("progress");
+          prefetchDashboardData();
         })
       : window.setTimeout(() => {
           preloadView("interview-setup");
           preloadView("train");
           preloadView("progress");
+          prefetchDashboardData();
         }, 1200);
     return () => {
       if (idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(idleId);
       else window.clearTimeout(idleId);
     };
-  }, []);
+  }, [initialView, prefetchDashboardData]);
 
   const navigate = (nextView: View) => {
     startTransition(() => setView(nextView));
@@ -499,7 +528,10 @@ export default function App({ initialView = "home", initialLesson, initialPart }
         <Navigation
           view={view}
           onNavigate={navigate}
-          onPrefetch={preloadView}
+          onPrefetch={(target) => {
+            preloadView(target);
+            if (target === "train" || target === "progress") prefetchDashboardData();
+          }}
           sidebarExpanded={sidebarExpanded}
           onToggleSidebar={() => setSidebarExpanded((expanded) => !expanded)}
         />
