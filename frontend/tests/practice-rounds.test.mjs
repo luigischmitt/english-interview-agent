@@ -41,6 +41,9 @@ test("weights, missed preference, mine scope and missed requeue", () => {
   assert.ok(buildRound({ mode: "quick", key: "a", lessons, weights: { r2: 100 }, random }).filter((x) => x.ruleId === "r2").length >= 3);
   assert.equal(buildRound({ mode: "quick", key: "a", lessons, missedIds: ["a0"], random })[0].id, "a0");
   assert.ok(buildRound({ mode: "mine", lessons, weights: { r1: 2, r3: 1 }, random }).every((x) => ["r1", "r3"].includes(x.ruleId)));
+  const lessonFallback = buildRound({ mode: "mine", lessons, lessonWeights: { a: 9, b: 3 }, random });
+  assert.equal(lessonFallback.length, 10);
+  assert.ok(lessonFallback.filter((item) => item.id.startsWith("a")).length > lessonFallback.filter((item) => item.id.startsWith("b-")).length);
   assert.deepEqual(buildRound({ mode: "mine", lessons, random }), []);
   const round = exercises.slice(0, 3); const queued = requeueMissed(round, [{ verdict: "incorrect" }, { verdict: "correct" }, { verdict: "almost" }]);
   assert.deepEqual(queued.slice(3).map((x) => x.id), [round[0].id, round[2].id]);
