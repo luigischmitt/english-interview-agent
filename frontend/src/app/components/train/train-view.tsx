@@ -36,14 +36,11 @@ import {
   loadPracticeAttempts,
   loadPracticeGroups,
   savePracticeAttempt,
-  syncPracticeGroups,
-  practiceSyncMaxBatches,
   type PracticeAttempt,
   type PracticeGroup,
 } from "@/lib/practice/practice-store";
 import { sortPracticeGroups } from "@/lib/practice/practice-sync.mjs";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
-import { loadProgressRecords } from "@/lib/interview/persistence";
 import { getCurrentLocale, t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
 import "./train.css";
@@ -53,7 +50,6 @@ type RoundExercise = PracticeFixedExercise;
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
 const speechCacheLimit = 30;
-const syncWarning = "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.";
 
 // How many of the person's mistakes belong to each lesson part: practice leans toward the parts they miss most.
 // Scroll helpers: one place for how Treinar moves the page. Smooth for short hops, instant for long jumps, never animated under reduced motion.
@@ -120,8 +116,6 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
   const [themes, setThemes] = useState<PracticeGroup[]>(() => cachedThemes ? sortPracticeGroups(cachedThemes) : []);
   const [themeLoading, setThemeLoading] = useState(!cachedThemes);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [syncFailed, setSyncFailed] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [selected, setSelected] = useState<PracticeGroup | null>(null);
   // -1 is the lesson overview; 0 and up are the lesson parts.
   const [startRule, setStartRule] = useState(-1);
@@ -206,7 +200,6 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
 
   const load = useCallback(async () => {
     const cached = readDashboardCache("practice") as PracticeGroup[] | undefined;
-    const progressWarmup = loadProgressRecords();
     if (!cached) setThemeLoading(true);
     setLoadError(null);
     const loaded = await loadPracticeGroups();
@@ -217,23 +210,6 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     }
     setThemes(sortPracticeGroups(loaded.value));
     setThemeLoading(false);
-    setSyncing(true);
-    void (async () => {
-      await progressWarmup;
-      let current = loaded.value;
-      for (let batch = 0; batch < practiceSyncMaxBatches; batch += 1) {
-        const synced = await syncPracticeGroups(current);
-        if (!synced.ok) {
-          setSyncFailed(true);
-          break;
-        }
-        setSyncFailed(false);
-        current = synced.value.themes;
-        setThemes(sortPracticeGroups(current));
-        if (!synced.value.remaining) break;
-      }
-      setSyncing(false);
-    })();
   }, []);
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -409,17 +385,6 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
       ) : (
         <>
           <ListHeader />
-          {syncFailed && (
-            <p className="tr-sync-warning" role="status">
-              {t(syncWarning)}
-            </p>
-          )}
-          {syncing && sorted.length > 0 && (
-            <p className="tr-syncing" role="status">
-              <Loader2 className="tr-spinner size-4" aria-hidden="true" />
-              {t("Analisando erros novos das suas entrevistas…")}
-            </p>
-          )}
           {themeLoading ? (
             <div className="tr-grid" aria-busy="true">
               {[0, 1, 2, 3].map((index) => (
@@ -428,7 +393,7 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
             </div>
           ) : (
             <>
-              <Recommended themes={sorted} syncing={syncing} onOpen={(theme) => void selectTheme(theme)} onInterview={onInterview} />
+              <Recommended themes={sorted} onOpen={(theme) => void selectTheme(theme)} onInterview={onInterview} />
               <Contents
                 themes={sorted}
                 onOpen={(theme, ruleIndex) => void selectTheme(theme, ruleIndex)}
@@ -527,12 +492,10 @@ function ProgressRing({ value, size, children }: { value: number; size: number; 
 // Up to three of the person's own groups with the most mistakes: a shortcut into the table of contents below.
 function Recommended({
   themes,
-  syncing,
   onOpen,
   onInterview,
 }: {
   themes: PracticeGroup[];
-  syncing: boolean;
   onOpen: (theme: PracticeGroup) => void;
   onInterview: () => void;
 }) {
@@ -541,13 +504,6 @@ function Recommended({
     .sort((a, b) => b.weighted_frequency - a.weighted_frequency)
     .slice(0, 3);
   if (!top.length) {
-    if (syncing)
-      return (
-        <p className="tr-syncing" role="status" aria-busy="true">
-          <Loader2 className="tr-spinner size-4" aria-hidden="true" />
-          {t("Analisando os erros das suas entrevistas… isso leva alguns segundos na primeira vez.")}
-        </p>
-      );
     return (
       <p className="tr-reco-hint">
         {t("Faça uma entrevista para descobrirmos o que você precisa treinar")}

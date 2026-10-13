@@ -75,7 +75,7 @@ async function loadPracticeGroupsUncached(): Promise<Result<PracticeGroup[]>> {
 }
 
 export const practiceSyncBatchSize = 20;
-export const practiceSyncMaxBatches = 3;
+export const practiceSyncBackgroundMaxBatches = 10;
 
 const classifyRules = () => buildClassifyRules(practiceCategoryKeys, lessonRulesForRequest);
 
