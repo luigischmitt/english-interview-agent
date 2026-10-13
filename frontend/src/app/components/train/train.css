@@ -160,7 +160,7 @@
 .tr-history p { color: var(--ds-ink); font-size: .88rem; overflow-wrap: anywhere; }
 .tr-history time { color: var(--ds-text-3); font-size: .75rem; white-space: nowrap; }
 
-.tr-practice-cta { position: sticky; z-index: 3; bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.5rem; border-radius: var(--ds-r-card); background: color-mix(in srgb, var(--ds-surface) 92%, transparent); padding: .75rem .75rem .75rem 1rem; box-shadow: var(--ds-shadow-pop); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); animation: tr-rise var(--ds-dur-slow) var(--ease-out) 150ms both; }
+.tr-practice-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.5rem; border-radius: var(--ds-r-card); background: var(--ds-surface); padding: 1rem 1rem 1rem 1.25rem; box-shadow: var(--ds-shadow-card); animation: tr-rise var(--ds-dur-slow) var(--ease-out) 150ms both; }
 .tr-practice-cta-copy { display: flex; min-width: 0; align-items: center; gap: .75rem; }
 .tr-practice-cta-icon { display: none; width: 2.5rem; height: 2.5rem; flex: 0 0 auto; place-items: center; border-radius: 999px; background: var(--ds-tint); color: var(--ds-green-deep); }
 .tr-practice-cta-copy > div { display: grid; min-width: 0; line-height: 1.3; }
@@ -245,6 +245,11 @@
 .tr-confetti span:nth-child(3n) { background: var(--ds-brand-warm, var(--ds-warning)); }
 .tr-confetti span:nth-child(3n + 1) { background: var(--ds-green-deep); width: .55rem; height: .55rem; border-radius: 999px; }
 
+/* The design-system CTA is full width by default; inside Treinar buttons size to their label. */
+.tr-panel .ds-btn-cta-green, .tr-card .ds-btn-cta-green, .tr-all-done .ds-btn-cta-green { width: auto; min-height: 2.75rem; }
+.tr-card-actions .ds-btn-cta-green { flex: 1 1 auto; }
+.tr-panel .tr-next { width: 100%; }
+
 /* Shared states */
 .tr-skeleton { border-radius: var(--ds-r-card); }
 .tr-sync-warning, .tr-hint { margin-bottom: 1rem; border-radius: var(--ds-r-md); background: var(--ds-warning-tint); padding: .75rem 1rem; color: var(--ds-warning); font-size: .875rem; }
@@ -277,10 +282,9 @@
   .tr-practice-cta-icon { display: grid; }
   .tr-exercise-card, .tr-feedback { padding: 1.5rem; }
   .tr-results { padding: 2rem; }
-  .tr-next { width: auto; }
+  .tr-panel .tr-next { width: auto; }
 }
 @media (min-width: 1024px) {
-  .tr-practice-cta { bottom: 1rem; }
   .tr-explore-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .tr-lesson-hero { grid-template-columns: minmax(0, 1.5fr) minmax(16rem, 1fr); align-items: end; }
   .tr-lesson-layout { grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr); align-items: start; }
