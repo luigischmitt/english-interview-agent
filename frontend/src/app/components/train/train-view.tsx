@@ -56,7 +56,8 @@ function prefersReducedMotion() {
   return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
 function scrollBehaviorFor(distance: number): ScrollBehavior {
-  return prefersReducedMotion() || Math.abs(distance) > window.innerHeight * 1.2 ? "auto" : "smooth";
+  // "instant", not "auto": the page sets scroll-behavior: smooth globally, which "auto" would inherit.
+  return prefersReducedMotion() || Math.abs(distance) > window.innerHeight * 1.2 ? "instant" : "smooth";
 }
 function scrollPageTo(top: number) {
   window.scrollTo({ top, behavior: scrollBehaviorFor(top - window.scrollY) });
@@ -75,14 +76,14 @@ function revealNearest(element: HTMLElement | null) {
   if (!element) return;
   const rect = element.getBoundingClientRect();
   if (rect.top >= 0 && rect.bottom <= window.innerHeight) return;
-  element.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+  element.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "instant" : "smooth" });
 }
 // Centres the active tab in a horizontally scrolling tab strip without moving the page vertically.
 function centerTabInStrip(tab: HTMLElement | null) {
   const strip = tab?.parentElement;
   if (!tab || !strip || strip.scrollWidth <= strip.clientWidth) return;
   const delta = tab.getBoundingClientRect().left - strip.getBoundingClientRect().left - (strip.clientWidth - tab.offsetWidth) / 2;
-  strip.scrollBy({ left: delta, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+  strip.scrollBy({ left: delta, behavior: prefersReducedMotion() ? "instant" : "smooth" });
 }
 
 function ruleWeights(theme: PracticeGroup): Record<string, number> {
@@ -690,8 +691,9 @@ function ThemeDetail({
     if (!partChanged.current) return;
     partChanged.current = false;
     const layout = ruleTopRef.current;
-    scrollToTopOf(layout);
+    // Focus first: focusing during a smooth scroll cancels it.
     if (!keepTabFocus.current) layout?.querySelector<HTMLElement>("#active-lesson-rule h2")?.focus({ preventScroll: true });
+    scrollToTopOf(layout);
   }, [activeIndex]);
   const handleRuleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -1504,7 +1506,7 @@ function PracticeFeedback({
   const nextRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     nextRef.current?.focus({ preventScroll: true });
-    nextRef.current?.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    nextRef.current?.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "instant" : "smooth" });
   }, []);
   return (
     <div className={`tr-feedback is-${result.verdict}`}>
