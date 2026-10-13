@@ -21,15 +21,13 @@ import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
 import { resolveInterviewerVoice } from "@/lib/interview/voices.mjs";
 import { interviewerVoiceStorageKey } from "@/lib/interview/voice-picker.mjs";
 import { staticPracticeAudioUrl } from "@/lib/practice/practice-audio.mjs";
-import { gradePracticeAnswer } from "@/lib/practice/practice-requests";
 import {
-  checkFixedAnswer,
-  pickPracticeRound,
   practiceLessonByKey,
   practiceLessons,
   practiceRuleById,
-  ruleTextForRequest,
 } from "@/lib/practice/practice-lessons.mjs";
+import { buildRound, gradeLocally, requeueMissed } from "@/lib/practice/practice-rounds.mjs";
+import { lessonStats, relativeErrorDate, topParts } from "@/lib/practice/practice-insights.mjs";
 import type { PracticeFixedExercise, PracticeLesson, PracticeLessonRule } from "@/lib/practice/practice-lessons.mjs";
 import {
   loadPracticeAttempts,
@@ -46,11 +44,31 @@ import "./train.css";
 
 let practiceAudioManifestPromise: Promise<typeof import("@/lib/practice/practice-audio-manifest.json")> | null = null;
 
-type Grade = { verdict: "correct" | "almost" | "incorrect"; feedback: string; corrected: string; why?: string | null };
+type Grade = {
+  verdict: "correct" | "almost" | "incorrect";
+  feedback: string;
+  corrected: string;
+  why?: string | null;
+};
 type RoundExercise = PracticeFixedExercise;
+type PracticeMode = "quick" | "focused" | "mine";
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
 const speechCacheLimit = 30;
+const missedStorageKey = "practice-missed";
+function readMissedIds(): string[] {
+  try { return Object.keys(JSON.parse(localStorage.getItem(missedStorageKey) ?? "{}") as Record<string, unknown>); } catch { return []; }
+}
+function updateMissed(id: string, correct: boolean) {
+  try {
+    const current = JSON.parse(localStorage.getItem(missedStorageKey) ?? "{}") as Record<string, { misses: number; lastMissedAt: string }>;
+    if (correct) {
+      if (current[id]) { current[id].misses -= 1; if (current[id].misses <= 0) delete current[id]; }
+    } else current[id] = { misses: (current[id]?.misses ?? 0) + 1, lastMissedAt: new Date().toISOString() };
+    const capped = Object.fromEntries(Object.entries(current).sort((a, b) => b[1].lastMissedAt.localeCompare(a[1].lastMissedAt)).slice(0, 300));
+    localStorage.setItem(missedStorageKey, JSON.stringify(capped));
+  } catch { /* Practice remains usable without local storage. */ }
+}
 
 // How many of the person's mistakes belong to each lesson part: practice leans toward the parts they miss most.
 // Scroll helpers: one place for how Treinar moves the page. Smooth for short hops, instant for long jumps, never animated under reduced motion.
@@ -94,6 +112,17 @@ function ruleWeights(theme: PracticeGroup): Record<string, number> {
   return weights;
 }
 
+function localizedRelativeErrorDate(timestamp: string, now: Date): string {
+  const relative = relativeErrorDate(timestamp, now);
+  if (relative === "hoje" || relative === "ontem") return t(relative);
+  const days = relative.match(/^há (\d+) dias$/);
+  if (days) return t("há {days} dias", { days: Number(days[1]) });
+  const months = relative.match(/^há (\d+) meses$/);
+  if (months) return t("há {months} meses", { months: Number(months[1]) });
+  if (relative === "há 1 mês") return t("há 1 mês");
+  return relative;
+}
+
 // Lessons with no saved group (nothing from the interviews yet): the person can study and practice, but nothing is stored.
 function exploreGroup(lesson: PracticeLesson): PracticeGroup {
   return {
@@ -122,6 +151,10 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
   const [startRule, setStartRule] = useState(-1);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [exercises, setExercises] = useState<RoundExercise[]>([]);
+  const [roundMode, setRoundMode] = useState<PracticeMode>("quick");
+  const [roundSize, setRoundSize] = useState(10);
+  const [focusedRule, setFocusedRule] = useState<string | undefined>();
+  const [hasRequeued, setHasRequeued] = useState(false);
   const [step, setStep] = useState(0);
   const [answer, setAnswer] = useState("");
   const [mode, setMode] = useState<"text" | "voice">("text");
@@ -254,7 +287,7 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time open of the lesson requested by the link
     void selectTheme(theme, ruleIndex);
   });
-  const begin = (theme: PracticeGroup | null = selected) => {
+  const begin = (theme: PracticeGroup | null = selected, options: { mode?: PracticeMode; size?: number; ruleId?: string } = {}) => {
     if (!theme) return;
     setSelected(theme);
     setSessionStarted(true);
@@ -272,12 +305,13 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     } catch {
       recentIds = [];
     }
-    const round = pickPracticeRound({
-      key: theme.theme_key,
-      // Only fixed exercises: the person's own interview sentences lack context and were too vague to practice with.
-      recentIds,
-      weights: ruleWeights(theme),
-    });
+    const chosenMode = options.mode ?? "quick";
+    const weights = chosenMode === "mine" ? Object.assign({}, ...themes.map(ruleWeights)) : ruleWeights(theme);
+    const round = buildRound({ mode: chosenMode, key: theme.theme_key, lessons: practiceLessons, size: options.size, ruleId: options.ruleId, recentIds, missedIds: readMissedIds(), weights });
+    setRoundMode(chosenMode);
+    setRoundSize(options.size ?? 10);
+    setFocusedRule(options.ruleId);
+    setHasRequeued(false);
     setExercises(round);
     try {
       localStorage.setItem(
@@ -297,40 +331,27 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     setFormError(null);
     const exercise = exercises[step];
     const cleanAnswer = submittedAnswer.trim();
-    const tracked = Boolean(selected.id);
+    const exerciseLessonKey = practiceLessons.find((lesson) => lesson.exercises.some((item) => item.id === exercise.id))?.key;
+    const attemptTheme = themes.find((theme) => theme.theme_key === exerciseLessonKey);
+    const tracked = Boolean(attemptTheme?.id);
     try {
-      const correctLocally = checkFixedAnswer(exercise, cleanAnswer);
-      const grade =
-        exercise.kind === "choose"
-          ? {
-              verdict: correctLocally ? ("correct" as const) : ("incorrect" as const),
-              feedback: correctLocally ? t("Resposta correta.") : t("A opção correta está destacada acima."),
-              corrected: exercise.sentence.replace("___", exercise.answer),
-              why: exercise.why,
-            }
-          : correctLocally
-            ? {
-                verdict: "correct" as const,
-                feedback: t("Resposta correta."),
-                corrected: cleanAnswer,
-                why: exercise.why,
-              }
-            : await gradePracticeAnswer({
-                theme: { title: selected.title, explanation: selected.explanation },
-                exercise: {
-                  kind: "fix",
-                  instruction: exercise.kind === "spot" ? "Encontre e corrija o erro" : "Sua frase: reescreva certo",
-                  source: exercise.sentence,
-                  target: cleanAnswer,
-                  ruleId: exercise.ruleId,
-                  rule: exercise.ruleId ? (ruleTextForRequest(exercise.ruleId) ?? undefined) : undefined,
-                },
-                answer: cleanAnswer,
-                mode,
-              });
-      if (tracked) {
+      const local = gradeLocally(exercise, cleanAnswer);
+      const feedback = local.verdict === "correct"
+        ? t("Resposta correta.")
+        : local.verdict === "almost"
+          ? t("A correção principal está certa; confira o restante da frase.")
+          : exercise.kind === "choose"
+            ? t("A opção correta está destacada acima.")
+            : t("Confira a frase corrigida e tente perceber a diferença.");
+      const grade: Grade = {
+        ...local,
+        feedback,
+        why: exercise.why,
+      };
+      updateMissed(exercise.id, grade.verdict === "correct");
+      if (tracked && attemptTheme?.id) {
         const saved = await savePracticeAttempt({
-          themeId: selected.id,
+          themeId: attemptTheme.id,
           kind: exercise.kind === "choose" ? "build" : "fix",
           instruction:
             exercise.kind === "choose"
@@ -343,7 +364,7 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
           ...grade,
         });
         if (!saved.ok) throw new Error(saved.message);
-        setAttempts((current) => [saved.value, ...current].slice(0, 5));
+        if (attemptTheme?.id === selected.id) setAttempts((current) => [saved.value, ...current].slice(0, 5));
       }
       setResult(grade);
       setResults((current) => [...current, grade]);
@@ -354,6 +375,10 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     }
   };
   const next = () => {
+    if (roundMode === "focused" && !hasRequeued && step === exercises.length - 1) {
+      setExercises((current) => requeueMissed(current, results));
+      setHasRequeued(true);
+    }
     setResult(null);
     setAnswer("");
     setMode("text");
@@ -370,6 +395,23 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     setSelected(null);
     setExercises([]);
     setSessionStarted(false);
+  };
+
+  const restartMissed = (missed: RoundExercise[]) => {
+    setExercises(missed);
+    setRoundMode("focused");
+    setHasRequeued(false);
+    setResults([]);
+    setStep(0);
+    setResult(null);
+    setSessionStarted(true);
+  };
+
+  const reviewPart = (ruleId: string) => {
+    const lesson = practiceLessons.find((item) => item.rules.some((rule) => rule.id === ruleId));
+    if (!lesson) return;
+    const group = themes.find((item) => item.theme_key === lesson.key) ?? exploreGroup(lesson);
+    void selectTheme(group, lesson.rules.findIndex((rule) => rule.id === ruleId));
   };
 
   return (
@@ -397,7 +439,12 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
             </div>
           ) : (
             <>
-              <Recommended themes={sorted} onOpen={(theme) => void selectTheme(theme)} onInterview={onInterview} />
+      <Recommended
+        themes={sorted}
+        onOpen={(theme) => void selectTheme(theme)}
+        onInterview={onInterview}
+        onPractice={(theme, ruleId) => begin(theme, ruleId ? { mode: "quick", ruleId } : { mode: "mine" })}
+      />
               <Contents
                 themes={sorted}
                 onOpen={(theme, ruleIndex) => void selectTheme(theme, ruleIndex)}
@@ -426,7 +473,9 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
           theme={selected}
           onBack={backToList}
           onLesson={() => void selectTheme(selected)}
-          onBegin={() => begin()}
+          onBegin={() => begin(selected, { mode: roundMode, size: roundSize, ruleId: focusedRule })}
+          mode={roundMode}
+          hasRequeued={hasRequeued}
           onAnswer={setAnswer}
           onVoiceAnswer={(value) => {
             setMode("voice");
@@ -437,6 +486,8 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
           onSubmit={() => void submit()}
           onChoose={(option) => void submit(option)}
           onNext={next}
+          onRestartMissed={restartMissed}
+          onReviewPart={reviewPart}
           onPlay={(phrase) => void playPhrase(phrase)}
         />
       );
@@ -451,6 +502,8 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
         speechError={speechError}
         onBack={backToList}
         onBegin={() => begin()}
+        onFocused={(size, ruleId) => begin(selected, { mode: "focused", size, ruleId })}
+        activeRuleId={startRule >= 0 ? practiceLessonByKey[selected.theme_key]?.rules[startRule]?.id : undefined}
         onPlay={(phrase) => void playPhrase(phrase)}
       />
     );
@@ -498,15 +551,15 @@ function Recommended({
   themes,
   onOpen,
   onInterview,
+  onPractice,
 }: {
   themes: PracticeGroup[];
-  onOpen: (theme: PracticeGroup) => void;
+  onOpen: (theme: PracticeGroup, ruleIndex?: number) => void;
   onInterview: () => void;
+  onPractice: (theme: PracticeGroup, ruleId?: string) => void;
 }) {
-  const top = themes
-    .filter((theme) => practiceLessonByKey[theme.theme_key] && (theme.error_refs?.length ?? 0) > 0)
-    .sort((a, b) => b.weighted_frequency - a.weighted_frequency)
-    .slice(0, 3);
+  const top = topParts(themes, practiceLessons, 3);
+  const hasErrors = themes.some((theme) => (theme.error_refs?.length ?? 0) > 0);
   if (!top.length) {
     return (
       <p className="tr-reco-hint">
@@ -518,24 +571,70 @@ function Recommended({
     );
   }
   return (
+    <>
+    {hasErrors && <MineCard themes={themes} onPractice={onPractice} />}
     <section className="tr-reco" aria-labelledby="train-reco">
       <h2 id="train-reco" className="tr-mini-label">
-        {t("Recomendado para você")}
+        {t("Onde você mais erra")}
       </h2>
       <ul className="tr-reco-list">
-        {top.map((theme, index) => (
-          <li key={theme.id} style={{ "--i": index } as CSSProperties}>
-            <button type="button" className="tr-reco-tile" onClick={() => onOpen(theme)}>
-              <span>
-                <strong>{t(practiceLessonByKey[theme.theme_key].title)}</strong>
-                <small>{t("{count} erros", { count: theme.error_refs?.length ?? 0 })}</small>
-              </span>
-              <ArrowRight className="tr-reco-arrow size-4" aria-hidden="true" />
-            </button>
-          </li>
-        ))}
+        {top.map((part, index) => {
+          const lesson = practiceLessonByKey[part.lessonKey];
+          const theme = themes.find((item) => item.theme_key === part.lessonKey) ?? exploreGroup(lesson);
+          const partIndex = lesson.rules.findIndex((rule) => rule.id === part.ruleId);
+          return (
+            <PartCard
+              key={part.ruleId}
+              part={part}
+              lesson={lesson}
+              theme={theme}
+              index={index}
+              partIndex={partIndex}
+              onOpen={onOpen}
+              onPractice={onPractice}
+            />
+          );
+        })}
       </ul>
     </section>
+    </>
+  );
+}
+
+function MineCard({ themes, onPractice }: { themes: PracticeGroup[]; onPractice: (theme: PracticeGroup, ruleId?: string) => void }) {
+  const theme = themes.find((item) => (item.error_refs?.length ?? 0) > 0);
+  if (!theme) return null;
+  return (
+    <button type="button" className="tr-mine-card" onClick={() => onPractice(theme)}>
+      <strong>{t("Meus erros")}</strong>
+      <span>{t("Treino com os seus erros · 10 exercícios das partes em que você mais erra")}</span>
+      <ArrowRight className="size-4" aria-hidden="true" />
+    </button>
+  );
+}
+
+function PartCard({ part, lesson, theme, index, partIndex, onOpen, onPractice }: {
+  part: ReturnType<typeof topParts>[number];
+  lesson: PracticeLesson;
+  theme: PracticeGroup;
+  index: number;
+  partIndex: number;
+  onOpen: (theme: PracticeGroup, ruleIndex?: number) => void;
+  onPractice: (theme: PracticeGroup, ruleId?: string) => void;
+}) {
+  return (
+    <li style={{ "--i": index } as CSSProperties} className="tr-part-card">
+      <strong>{t(lesson.title)} · {t(part.label)} · {part.count}×</strong>
+      <p lang="en"><s>{part.latest.evidence}</s> → {part.latest.rephrased}</p>
+      <div className="tr-card-actions">
+        <button type="button" className="ds-btn ds-btn-soft" onClick={() => onOpen(theme, partIndex)}>
+          {t("Rever a parte")}
+        </button>
+        <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => onPractice(theme, part.ruleId)}>
+          {t("Treino rápido")}
+        </button>
+      </div>
+    </li>
   );
 }
 
@@ -549,7 +648,10 @@ function Contents({
   onOpen: (theme: PracticeGroup, ruleIndex?: number) => void;
   onPractice: (theme: PracticeGroup) => void;
 }) {
-  const maxErrors = Math.max(1, ...themes.map((theme) => theme.error_refs?.length ?? 0));
+  const [now] = useState(() => new Date());
+  const stats = lessonStats(themes, practiceLessons, now);
+  const ranked = [...stats.filter((item) => item.errors > 0).sort((a, b) => b.errors - a.errors || (b.lastErrorAt ?? "").localeCompare(a.lastErrorAt ?? "")), ...stats.filter((item) => !item.errors)];
+  const maxErrors = Math.max(1, ...stats.map((item) => item.errors));
   return (
     <section aria-labelledby="train-topics">
       <div className="tr-section-head">
@@ -559,17 +661,23 @@ function Contents({
         <p className="ds-small">{t("Estude na ordem ou vá direto ao que precisa. Toque numa parte para ir direto a ela.")}</p>
       </div>
       <div className="tr-grid">
-        {practiceLessons.map((lesson, index) => (
+        {ranked.map((stat, index) => {
+          const lesson = practiceLessonByKey[stat.lessonKey];
+          const group = themes.find((theme) => theme.theme_key === lesson.key);
+          const rank = stat.errors ? ranked.filter((item) => item.errors).findIndex((item) => item.lessonKey === lesson.key) + 1 : null;
+          return (
           <LessonCard
             key={lesson.key}
             lesson={lesson}
-            group={themes.find((theme) => theme.theme_key === lesson.key)}
+            group={group}
             index={index}
             maxErrors={maxErrors}
+            stat={{ ...stat, rank }}
             onOpen={onOpen}
             onPractice={onPractice}
           />
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -579,6 +687,7 @@ function LessonCard({
   group,
   index,
   maxErrors,
+  stat,
   onOpen,
   onPractice,
 }: {
@@ -586,26 +695,31 @@ function LessonCard({
   group?: PracticeGroup;
   index: number;
   maxErrors: number;
+  stat: ReturnType<typeof lessonStats>[number];
   onOpen: (theme: PracticeGroup, ruleIndex?: number) => void;
   onPractice: (theme: PracticeGroup) => void;
 }) {
+  const [now] = useState(() => new Date());
   const theme = group ?? exploreGroup(lesson);
   const errors = group?.error_refs?.length ?? 0;
-  const interviews = new Set(group?.error_refs?.map((ref) => ref.interview_id)).size;
+  const interviews = stat.interviews;
   return (
     <article className="tr-card" style={{ "--i": index } as CSSProperties}>
       <div className="min-w-0">
-        <p className="tr-chapter">{t("Capítulo {number}", { number: index + 1 })}</p>
+        <p className="tr-chapter">{stat.rank ? t("{rank}º onde você mais erra", { rank: stat.rank }) : t("Capítulo {number}", { number: stat.chapter })}</p>
         <h3 className="tr-card-title">{t(lesson.title)}</h3>
         <p className="ds-small">{t(lesson.subtitle)}</p>
       </div>
       {errors > 0 && (
         <div className="tr-meter">
-          <p className="tr-personal">{t("{count} erros nas suas entrevistas", { count: errors })}</p>
+          <p className="tr-personal">{t("{count} erros em {interviews} entrevistas", { count: errors, interviews })}</p>
           <div className="tr-meter-track" aria-hidden="true">
             <span style={{ width: `${Math.max(8, (errors / maxErrors) * 100)}%` }} />
           </div>
-          <p>{t("{count} entrevistas", { count: interviews })}</p>
+          <p>{stat.rank === 1 ? t("a aula em que você mais erra") : t("comparado à aula com mais erros")}</p>
+          {stat.lastErrorAt && <p>{t("Último erro: {date}", { date: localizedRelativeErrorDate(stat.lastErrorAt, now) })}</p>}
+          {stat.trend === "up" ? <p>{t("Aparece mais nas últimas entrevistas")}</p> : stat.trend === "down" ? <p>{t("Menos que antes")}</p> : null}
+          {stat.topParts.slice(0, 2).map((part) => <span className="tr-insight-chip" key={part.ruleId}>{t(part.label)} · {part.count}×</span>)}
         </div>
       )}
       {lesson.rules.length > 0 && (
@@ -647,6 +761,8 @@ function ThemeDetail({
   speechError,
   onBack,
   onBegin,
+  onFocused,
+  activeRuleId,
   onPlay,
 }: {
   theme: PracticeGroup;
@@ -656,11 +772,14 @@ function ThemeDetail({
   speechError: boolean;
   onBack: () => void;
   onBegin: () => void;
+  onFocused: (size: number, ruleId?: string) => void;
+  activeRuleId?: string;
   onPlay: (phrase: string) => void;
 }) {
   const lesson = practiceLessonByKey[theme.theme_key];
   const ruleCount = lesson?.rules.length ?? 0;
   const [showAllErrors, setShowAllErrors] = useState(false);
+  const [focusedOpen, setFocusedOpen] = useState(false);
   // -1 is the overview page; 0..ruleCount-1 are the parts.
   const [activeIndex, setActiveIndex] = useState(() => Math.max(-1, Math.min(initialRule, ruleCount - 1)));
   const [direction, setDirection] = useState<"next" | "prev">("next");
@@ -1062,15 +1181,62 @@ function ThemeDetail({
           </span>
           <div>
             <strong>{t("Pronto para praticar?")}</strong>
-            <span>{t("5 exercícios rápidos · escolha e correção")}</span>
+            <span>{t("5 exercícios · cerca de 2 minutos")}</span>
           </div>
         </div>
-        <button className="ds-btn ds-btn-cta-green" onClick={onBegin}>
-          {t("Praticar")}
-          <ArrowRight className="size-4" />
-        </button>
+        <div className="tr-mode-actions">
+          <button className="ds-btn ds-btn-cta-green" onClick={onBegin}>
+            {t("Treino rápido")}
+            <ArrowRight className="size-4" />
+          </button>
+          <button className="ds-btn ds-btn-soft" aria-expanded={focusedOpen} onClick={() => setFocusedOpen((open) => !open)}>
+            {t("Treino focado")}
+          </button>
+        </div>
       </div>
+      {focusedOpen && <FocusedPicker lesson={lesson} activeRuleId={activeRuleId} onStart={onFocused} />}
     </section>
+  );
+}
+
+function FocusedPicker({ lesson, activeRuleId, onStart }: {
+  lesson?: PracticeLesson;
+  activeRuleId?: string;
+  onStart: (size: number, ruleId?: string) => void;
+}) {
+  const [size, setSize] = useState(10);
+  const [onlyPart, setOnlyPart] = useState(false);
+  const activeRule = lesson?.rules.find((rule) => rule.id === activeRuleId);
+  return (
+    <div className="tr-focused-picker">
+      <div className="tr-size-options" role="group" aria-label={t("Tamanho do treino")}>
+        {[10, 15, 20].map((option) => (
+          <button
+            type="button"
+            className={`ds-btn ${size === option ? "ds-btn-cta-green" : "ds-btn-soft"}`}
+            key={option}
+            aria-pressed={size === option}
+            onClick={() => setSize(option)}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+      {lesson?.rules.length ? (
+        <label>
+          <input
+            type="checkbox"
+            checked={onlyPart}
+            disabled={!activeRule}
+            onChange={(event) => setOnlyPart(event.target.checked)}
+          />
+          {t("Só esta parte: {label}", { label: t(activeRule?.label ?? "") })}
+        </label>
+      ) : null}
+      <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => onStart(size, onlyPart ? activeRuleId : undefined)}>
+        {t("Começar treino focado")}
+      </button>
+    </div>
   );
 }
 
@@ -1141,6 +1307,8 @@ function PracticeSession({
   error,
   speechError,
   theme,
+  mode,
+  hasRequeued,
   onBack,
   onLesson,
   onBegin,
@@ -1150,6 +1318,8 @@ function PracticeSession({
   onSubmit,
   onChoose,
   onNext,
+  onRestartMissed,
+  onReviewPart,
   onPlay,
 }: {
   exercises: RoundExercise[];
@@ -1161,6 +1331,8 @@ function PracticeSession({
   error: string | null;
   speechError: boolean;
   theme: PracticeGroup;
+  mode: PracticeMode;
+  hasRequeued: boolean;
   onBack: () => void;
   onLesson: () => void;
   onBegin: () => void;
@@ -1170,11 +1342,14 @@ function PracticeSession({
   onSubmit: () => void;
   onChoose: (option: string) => void;
   onNext: () => void;
+  onRestartMissed: (missed: RoundExercise[]) => void;
+  onReviewPart: (ruleId: string) => void;
   onPlay: (phrase: string) => void;
 }) {
   const exercise = exercises[step] as RoundExercise | undefined;
   const choose = exercise?.kind === "choose";
   const lessonTitle = t(practiceLessonByKey[theme.theme_key]?.title ?? theme.title);
+  const sessionTitle = mode === "mine" ? t("Seus erros · todas as aulas") : lessonTitle;
   const practiceRef = useRef<HTMLElement | null>(null);
   const lastStep = useRef(step);
   useEffect(() => {
@@ -1220,7 +1395,11 @@ function PracticeSession({
       <PracticeResults
         results={results}
         total={exercises.length}
-        lessonTitle={lessonTitle}
+          sessionTitle={sessionTitle}
+        mode={mode}
+        exercises={exercises}
+        onRestartMissed={onRestartMissed}
+        onReviewPart={onReviewPart}
         error={error}
         onBack={onBack}
         onBegin={onBegin}
@@ -1239,7 +1418,12 @@ function PracticeSession({
           <ArrowLeft className="size-4" />
           {t("Voltar aos temas")}
         </button>
-        <p className="tr-practice-theme">{lessonTitle}</p>
+        <div className="tr-practice-heading">
+          <p className="tr-practice-lesson">{sessionTitle}</p>
+          <p className="tr-practice-theme">
+            {t(mode === "quick" ? "Treino rápido" : mode === "mine" ? "Treino com os seus erros" : "Treino focado")} · {step + 1} {t("de")} {exercises.length}
+          </p>
+        </div>
         {streak >= 2 ? (
           <span className="tr-streak" key={streak}>
             <Flame className="size-4" aria-hidden="true" />
@@ -1253,15 +1437,13 @@ function PracticeSession({
         {exercises.map((item, index) => {
           const done = results[index];
           const state = done ? (done.verdict === "correct" ? "is-correct" : "is-wrong") : index === step ? "is-current" : "";
-          return <li key={item.id} className={`tr-step ${state}`} />;
+          return <li key={`${item.id}-${index}`} className={`tr-step ${state}`} />;
         })}
       </ol>
       <div className="tr-exercise-card" key={exercise.id}>
         <div className="tr-exercise-meta">
           <span className="tr-exercise-kind">{kindLabel}</span>
-          <span className="tr-exercise-count">
-            {step + 1}/{exercises.length}
-          </span>
+          {mode === "focused" && exercises.slice(0, step).some((item) => item.id === exercise.id) && <span className="tr-review-tag">{t("Revisão")}</span>}
         </div>
         <h2 id="exercise-title" className="tr-exercise-title">
           {choose ? t("Qual opção completa a frase?") : t("Esta frase tem um erro. Reescreva-a corrigida.")}
@@ -1325,7 +1507,7 @@ function PracticeSession({
           exercise={exercise}
           error={error}
           speechError={speechError}
-          last={step === exercises.length - 1}
+          last={step === exercises.length - 1 && !(mode === "focused" && !hasRequeued && results.some((item) => item.verdict !== "correct"))}
           onNext={onNext}
           onPlay={onPlay}
         />
@@ -1337,7 +1519,11 @@ function PracticeSession({
 function PracticeResults({
   results,
   total,
-  lessonTitle,
+  sessionTitle,
+  mode,
+  exercises,
+  onRestartMissed,
+  onReviewPart,
   error,
   onBack,
   onBegin,
@@ -1345,7 +1531,11 @@ function PracticeResults({
 }: {
   results: Grade[];
   total: number;
-  lessonTitle: string;
+  sessionTitle: string;
+  mode: PracticeMode;
+  exercises: RoundExercise[];
+  onRestartMissed: (missed: RoundExercise[]) => void;
+  onReviewPart: (ruleId: string) => void;
   error: string | null;
   onBack: () => void;
   onBegin: () => void;
@@ -1355,6 +1545,8 @@ function PracticeResults({
   const great = correct / Math.max(1, total) >= 0.8;
   const title = great ? t("Mandou bem!") : t("Rodada concluída");
   const resultsRef = useRef<HTMLElement | null>(null);
+  const missed = exercises.filter((_, index) => results[index]?.verdict !== "correct");
+  const restartMissed = () => onRestartMissed(missed);
   useEffect(() => {
     scrollToTopOf(resultsRef.current);
   }, []);
@@ -1369,7 +1561,7 @@ function PracticeResults({
           </span>
         </ProgressRing>
         <div className="min-w-0">
-          <p className="tr-eyebrow">{lessonTitle}</p>
+          <p className="tr-eyebrow">{t(mode === "quick" ? "Treino rápido" : mode === "mine" ? "Treino com os seus erros" : "Treino focado")} · {sessionTitle}</p>
           <h2 className="font-display text-3xl sm:text-4xl">{title}</h2>
           <p className="ds-body mt-2">{t("Você acertou {correct} de {total}.", { correct, total })}</p>
         </div>
@@ -1382,6 +1574,9 @@ function PracticeResults({
           </li>
         ))}
       </ol>
+      {results.some((item) => item.verdict !== "correct") && (
+        <MissedParts exercises={exercises} results={results} onReviewPart={onReviewPart} />
+      )}
       {error && (
         <p className="tr-form-error mt-3" role="status">
           {error}
@@ -1392,13 +1587,45 @@ function PracticeResults({
           <RotateCcw className="size-4" />
           {t("Praticar de novo")}
         </button>
-        <button className="ds-btn ds-btn-soft" onClick={onLesson}>
-          <BookOpen className="size-4" />
-          {t("Rever a aula")}
-        </button>
+        {results.some((item) => item.verdict !== "correct") && (
+          <button className="ds-btn ds-btn-soft" onClick={restartMissed}>
+            {t("Treinar só o que errei")}
+          </button>
+        )}
+        {mode !== "mine" && (
+          <button className="ds-btn ds-btn-soft" onClick={onLesson}>
+            <BookOpen className="size-4" />
+            {t("Rever a aula")}
+          </button>
+        )}
         <button className="ds-btn ds-btn-quiet" onClick={onBack}>
           {t("Voltar aos temas")}
         </button>
+      </div>
+    </section>
+  );
+}
+
+function MissedParts({ exercises, results, onReviewPart }: {
+  exercises: RoundExercise[];
+  results: Grade[];
+  onReviewPart: (ruleId: string) => void;
+}) {
+  const ruleIds = [...new Set(
+    exercises
+      .filter((_, index) => results[index]?.verdict !== "correct")
+      .map((exercise) => exercise.ruleId)
+      .filter((ruleId): ruleId is string => Boolean(ruleId)),
+  )];
+  return (
+    <section className="tr-missed-parts" aria-label={t("Partes para revisar")}>
+      <h3 className="tr-mini-label">{t("Partes em que errou")}</h3>
+      <div className="tr-missed-actions">
+        {ruleIds.map((ruleId) => (
+          <button className="ds-btn ds-btn-soft" key={ruleId} onClick={() => onReviewPart(ruleId)}>
+            {t(practiceRuleById[ruleId]?.label ?? ruleId)} · {t("Rever a parte")}
+          </button>
+        ))}
       </div>
     </section>
   );

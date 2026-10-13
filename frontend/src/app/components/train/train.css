@@ -23,6 +23,24 @@
 .tr-chip:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
 .tr-card-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: auto; padding-top: .25rem; }
 .tr-card-actions .ds-btn { min-height: 2.75rem; }
+.tr-insight-chip { display: inline-flex; width: fit-content; border-radius: 999px; background: var(--ds-tint); padding: .25rem .65rem; color: var(--ds-green-deep); font-size: .78rem; font-weight: 600; }
+.tr-mine-card { display: flex; width: 100%; min-width: 0; align-items: center; flex-wrap: wrap; gap: .5rem .8rem; margin-bottom: 1.25rem; border-radius: var(--ds-r-card); background: var(--ds-tint); padding: 1rem 1.2rem; color: var(--ds-ink); text-align: left; }
+.tr-mine-card strong { color: var(--ds-green-deep); }
+.tr-mine-card span { min-width: 0; flex: 1; font-size: .88rem; }
+.tr-part-card { display: grid; min-width: 0; gap: .6rem; border-radius: var(--ds-r-lg); background: var(--ds-surface); padding: 1rem; box-shadow: var(--ds-shadow-card); overflow-wrap: anywhere; }
+.tr-part-card > p { color: var(--ds-text-2); font-size: .9rem; line-height: 1.5; }
+.tr-part-card .tr-card-actions { min-width: 0; }
+.tr-part-card .tr-card-actions .ds-btn { min-width: 0; flex: 1 1 9rem; white-space: normal; }
+.tr-mode-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.tr-focused-picker { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: .75rem; border-radius: var(--ds-r-lg); background: var(--ds-field); padding: .9rem; }
+.tr-focused-picker label { display: flex; min-width: 0; flex: 1 1 12rem; align-items: center; gap: .45rem; color: var(--ds-text-2); font-size: .88rem; overflow-wrap: anywhere; }
+.tr-size-options { display: flex; flex: 0 0 auto; gap: .35rem; }
+.tr-focused-picker > .ds-btn { flex: 1 1 100%; }
+.tr-practice-heading { display: grid; min-width: 0; gap: .1rem; text-align: center; }
+.tr-practice-lesson { overflow: hidden; color: var(--ds-ink); font-size: .82rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.tr-missed-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.tr-missed-actions .ds-btn, .tr-results-actions .ds-btn { min-width: 0; max-width: 100%; white-space: normal; }
+.tr-review-tag { border-radius: 999px; background: var(--ds-warning-tint); padding: .2rem .5rem; color: var(--ds-warning); font-size: .7rem; font-weight: 700; }
 .tr-chapter { margin-bottom: .3rem; color: var(--ds-green-deep); font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .tr-personal { color: var(--ds-warning); font-size: .8rem; font-weight: 650; }
 .tr-chip-num { display: grid; width: 1.15rem; height: 1.15rem; flex: 0 0 auto; place-items: center; border-radius: 999px; background: var(--ds-field); color: var(--ds-text-2); font-size: .68rem; font-weight: 700; }
