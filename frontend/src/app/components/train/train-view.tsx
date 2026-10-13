@@ -1359,6 +1359,7 @@ function PracticeSession({
 }) {
   const exercise = exercises[step] as RoundExercise | undefined;
   const choose = exercise?.kind === "choose";
+  const spot = exercise?.kind === "spot";
   const lessonTitle = t(practiceLessonByKey[theme.theme_key]?.title ?? theme.title);
   const sessionTitle = mode === "mine" ? t("Seus erros · todas as aulas") : lessonTitle;
   const practiceRef = useRef<HTMLElement | null>(null);
@@ -1368,10 +1369,12 @@ function PracticeSession({
   const [helpOpen, setHelpOpen] = useState(false);
   const [assisted, setAssisted] = useState(false);
   const [announcement, setAnnouncement] = useState("");
+  const [hasEditedOnce, setHasEditedOnce] = useState(false);
   useEffect(() => {
     if (lastStep.current === step) return;
     lastStep.current = step;
     setHintOpen(false);
+    setHasEditedOnce(false);
     setWordEdits({}); setHelpOpen(false); setAssisted(false);
     scrollToTopOf(practiceRef.current);
   }, [step]);
@@ -1429,9 +1432,10 @@ function PracticeSession({
   for (let index = results.length - 1; index >= 0 && results[index].verdict === "correct"; index -= 1) streak += 1;
   const kindLabel = choose ? t("Complete a frase") : t("Encontre e corrija o erro");
   const hintRule = exercise.ruleId ? practiceRuleById[exercise.ruleId] : undefined;
-  const blocks = !choose ? toBlocks(exercise.sentence) : [];
-  const region = !choose ? mistakeRegion(exercise) : { blockIds: [], correct: "", mistaken: "" };
-  const editedSentence = !choose ? applyEdits(blocks, wordEdits) : "";
+  const owningLesson = practiceLessons.find((lesson) => lesson.exercises.some((item) => item.id === exercise.id || (exercise.ruleId && item.ruleId === exercise.ruleId)));
+  const blocks = spot ? toBlocks(exercise.sentence) : [];
+  const region = spot ? mistakeRegion(exercise) : { blockIds: [], correct: "", mistaken: "" };
+  const editedSentence = spot ? applyEdits(blocks, wordEdits) : "";
   const wholeSentenceOptions = Boolean(choose && /___\s*$/u.test(exercise.sentence) && exercise.options?.length && exercise.options.every((option) => /[.!?]\s*$/u.test(option)));
   const topicByLesson: Record<string, string> = {
     prepositions: "preposição", articles: "artigo", "verb-tenses": "tempo verbal", "verb-forms": "forma do verbo",
@@ -1472,11 +1476,15 @@ function PracticeSession({
           {hintRule && <span className="tr-part-chip">{t("Parte: {label}", { label: t(hintRule.label) })}</span>}
           {mode === "focused" && exercises.slice(0, step).some((item) => item.id === exercise.id) && <span className="tr-review-tag">{t("Revisão")}</span>}
         </div>
-        {exercise.context && <p className="tr-exercise-context"><span>{t("Situação")}</span>{exercise.context}</p>}
-        {exercise.meaning && <p className="tr-exercise-meaning"><span>{t("Você quer dizer")}</span><q lang="pt-BR">{exercise.meaning}</q></p>}
-        <h2 id="exercise-title" className="tr-exercise-title">
-          {choose ? t(wholeSentenceOptions ? "Qual destas frases você usaria?" : "Qual opção completa a frase?") : t("Esta frase tem 1 erro de {topic}. Reescreva a frase corrigida.", { topic: t(topicByLesson[theme.theme_key] ?? "expressão") })}
-        </h2>
+        {(exercise.context || exercise.meaning) && <div className="tr-exercise-prompt">{exercise.context && <p className="tr-exercise-context">{exercise.context}</p>}{exercise.meaning && <p className="tr-exercise-meaning"><q lang="pt-BR">{exercise.meaning}</q></p>}</div>}
+        <div className="tr-instruction-row">
+          <h2 id="exercise-title" className="tr-exercise-title">
+            {choose ? t(wholeSentenceOptions ? "Qual destas frases você usaria?" : "Qual opção completa a frase?") : spot ? t("Esta frase tem 1 erro de {topic}.", { topic: t(topicByLesson[owningLesson?.key ?? exercise.ruleId?.split(".")[0] ?? "other"] ?? "expressão") }) : t("Reescreva sua frase corretamente")}
+          </h2>
+          {hintRule && !result && <button type="button" className="tr-hint-button" aria-expanded={hintOpen} onClick={() => setHintOpen((open) => !open)}>{t("Dica")}</button>}
+        </div>
+        {hintRule && hintOpen && !result && <div className="tr-hint-content"><p className="tr-mini-label">{t("Fórmula")}</p><p className="tr-pattern">{t(hintRule.pattern)}</p><p className="tr-mini-label">{t("Quando usar")}</p><p>{t(hintRule.when)}</p></div>}
+        {spot && !result && <p className="tr-word-instruction">{t("Toque na palavra errada e corrija só ela")}</p>}
         <blockquote className="tr-source" lang="en">
           {choose
             ? exercise.sentence.split("___").map((part, index, parts) => (
@@ -1489,41 +1497,29 @@ function PracticeSession({
                   )}
                 </span>
               ))
-            : result ? exercise.sentence : (
+            : spot && !result ? (
               <span className="tr-word-sentence" aria-label={editedSentence}>
                 <SpotSentenceEditor
                   sentence={blocks}
                   edits={wordEdits}
-                  onEditsChange={setWordEdits}
+                  onEditsChange={(edits) => { setWordEdits(edits); if (Object.keys(edits).length) setHasEditedOnce(true); }}
                   disabled={grading}
                   highlightIds={helpOpen ? region.blockIds : []}
                   onAnnounce={(edits) => setAnnouncement(applyEdits(blocks, edits))}
                 />
               </span>
-            )}
+            ) : exercise.sentence}
         </blockquote>
-        {!choose && !result && <>
+        {spot && !result && <>
           <p className="sr-only" aria-live="polite">{announcement}</p>
           <div className="tr-word-actions">
-            <button className="ds-btn ds-btn-cta-green" disabled={grading} onClick={() => onSubmit(answer.trim() || editedSentence, assisted)}>{grading ? t("Avaliando…") : t("Verificar")}</button>
-            <span className="tr-voice-option"><span>{t("Responder falando")}</span><VoiceAnswerButton onTranscript={onVoiceAnswer} onError={onVoiceError} disabled={grading} /></span>
-            <button className="ds-btn ds-btn-soft" disabled={grading} onClick={() => setHelpOpen((open) => !open)}>{t("Não sei — ver alternativas")}</button>
+            <button className={`ds-btn ${hasEditedOnce ? "ds-btn-cta-green tr-verify-ready" : "ds-btn-soft"}`} disabled={grading || !Object.keys(wordEdits).length} onClick={() => onSubmit(editedSentence, assisted)}>{grading ? t("Avaliando…") : t("Verificar")}</button>
+            <button className="tr-text-action" disabled={grading} onClick={() => setHelpOpen((open) => !open)}>{t("Não sei — ver alternativas")}</button>
           </div>
           {helpOpen && <div className="tr-alternatives" role="group" aria-label={t("Alternativas para a parte destacada")}>
-            {alternativesFor({ ...exercise, ruleId: exercise.ruleId ?? "" }, practiceLessons.map((lesson) => ({ exercises: lesson.exercises.map((item) => ({ ...item, ruleId: item.ruleId ?? "", kind: item.kind ?? "", options: item.options ?? [] })) }))).map((option) => <button type="button" key={`${option.value}:${option.label}`} className="tr-alternative" onClick={() => { const ids = region.blockIds; const words = option.value.trim().split(/\s+/u); const replacement = ids.map((_, index) => [ids[index], index === ids.length - 1 ? words.slice(index).join(" ") : (words[index] ?? "")]); const edits = Object.fromEntries([...Object.entries(wordEdits), ...replacement]); setWordEdits(edits); setAssisted(true); setAnnouncement(applyEdits(blocks, edits)); }}>{option.label}</button>)}
+            {alternativesFor({ ...exercise, ruleId: exercise.ruleId ?? "" }, practiceLessons.map((lesson) => ({ exercises: lesson.exercises.map((item) => ({ ...item, ruleId: item.ruleId ?? "", kind: item.kind ?? "", options: item.options ?? [] })) }))).map((option) => <button type="button" key={`${option.value}:${option.label}`} className="tr-alternative" onClick={() => { const ids = region.blockIds; const words = option.value.trim().split(/\s+/u); const replacement = ids.map((_, index) => [ids[index], index === ids.length - 1 ? words.slice(index).join(" ") : (words[index] ?? "")]); const edits = Object.fromEntries([...Object.entries(wordEdits), ...replacement]); setWordEdits(edits); setHasEditedOnce(true); setAssisted(true); setAnnouncement(applyEdits(blocks, edits)); }}>{option.label}</button>)}
           </div>}
         </>}
-        {hintRule && (
-          <details className="tr-hint-toggle" onToggle={(event) => { const open = event.currentTarget.open; setHintOpen(open); if (open) revealOnOpen(event); }}>
-            <summary aria-expanded={hintOpen}>{t("Dica")}</summary>
-            <div className="tr-hint-content">
-              <p className="tr-mini-label">{t("Fórmula")}</p>
-              <p className="tr-pattern">{t(hintRule.pattern)}</p>
-              <p className="tr-mini-label">{t("Quando usar")}</p>
-              <p>{t(hintRule.when)}</p>
-            </div>
-          </details>
-        )}
         {choose ? (
           <div className="tr-choice-list" role="group" aria-label={t("Escolha a opção correta")}>
             {exercise.options?.map((option, index) => (
@@ -1542,19 +1538,7 @@ function PracticeSession({
               </button>
             ))}
           </div>
-        ) : (
-          !result && (
-            <AnswerForm
-              value={answer}
-              disabled={grading}
-              error={error}
-              onChange={onAnswer}
-              onSubmit={onSubmit}
-              onVoiceAnswer={onVoiceAnswer}
-              onVoiceError={onVoiceError}
-            />
-          )
-        )}
+        ) : !spot && !result ? <AnswerForm value={answer} disabled={grading} error={error} onChange={onAnswer} onSubmit={onSubmit} onVoiceAnswer={onVoiceAnswer} onVoiceError={onVoiceError} /> : null}
         {choose && !result && <p className="tr-keys-hint">{t("Atalho: teclas 1 a {count}", { count: exercise.options?.length ?? 0 })}</p>}
       </div>
       {result && (

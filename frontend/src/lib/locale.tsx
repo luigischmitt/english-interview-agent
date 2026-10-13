@@ -298,6 +298,8 @@ const englishCopy: Record<string, string> = {
   "Qual opção completa a frase?": "Which option completes the sentence?",
   "Qual destas frases você usaria?": "Which of these sentences would you use?",
   "Esta frase tem 1 erro de {topic}. Reescreva a frase corrigida.": "This sentence has 1 {topic} error. Rewrite the corrected sentence.",
+  "Esta frase tem 1 erro de {topic}.": "This sentence has one {topic} error.",
+  "Toque na palavra errada e corrija só ela": "Tap the wrong word and correct only that word",
   "Parte: {label}": "Part: {label}",
   "Situação": "Situation",
   "Você quer dizer": "You want to say",
