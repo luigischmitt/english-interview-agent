@@ -1,0 +1,98 @@
+{
+  "plural-agreement.s1": {
+    "choices": [
+      "clients",
+      "client's",
+      "clientes"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s2": {
+    "choices": [
+      "are",
+      "has",
+      "be"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s3": {
+    "choices": [
+      "feedback",
+      "feedbackes",
+      "feedbacking"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s4": {
+    "choices": [
+      "batches",
+      "batchies",
+      "batch"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s5": {
+    "choices": [
+      "much",
+      "few",
+      "several"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s6": {
+    "choices": [
+      "year",
+      "yearly",
+      "year's"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s7": {
+    "choices": [
+      "engineers",
+      "engineer's",
+      "engineeres"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s8": {
+    "choices": [
+      "proxies",
+      "proxys",
+      "proxy"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s9": {
+    "choices": [
+      "shows",
+      "showing",
+      "showes"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s10": {
+    "choices": [
+      "a lot of",
+      "several",
+      "a few"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s11": {
+    "choices": [
+      "much",
+      "a few",
+      "several"
+    ],
+    "accepted": []
+  },
+  "plural-agreement.s12": {
+    "choices": [
+      "week",
+      "week's",
+      "weekly"
+    ],
+    "accepted": []
+  }
+}

@@ -1366,16 +1366,24 @@ function PracticeSession({
   const lastStep = useRef(step);
   const [hintOpen, setHintOpen] = useState(false);
   const [wordEdits, setWordEdits] = useState<Record<number, string>>({});
+  const [wordOrder, setWordOrder] = useState<number[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
   const [assisted, setAssisted] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [hasEditedOnce, setHasEditedOnce] = useState(false);
+  const alternatives = useMemo(() => {
+    if (!spot || !exercise) return [];
+    let seed = Array.from(`${exercise.id}:${step}`).reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619), 2166136261) >>> 0;
+    const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+    return alternativesFor({ ...exercise, ruleId: exercise.ruleId ?? "" }, practiceLessons.map((lesson) => ({ exercises: lesson.exercises.map((item) => ({ ...item, ruleId: item.ruleId ?? "", kind: item.kind ?? "", options: item.options ?? [] })) })), random);
+  }, [exercise, step, spot]);
   useEffect(() => {
     if (lastStep.current === step) return;
     lastStep.current = step;
     setHintOpen(false);
     setHasEditedOnce(false);
     setWordEdits({}); setHelpOpen(false); setAssisted(false);
+    setWordOrder([]);
     scrollToTopOf(practiceRef.current);
   }, [step]);
   useEffect(() => {
@@ -1434,8 +1442,10 @@ function PracticeSession({
   const hintRule = exercise.ruleId ? practiceRuleById[exercise.ruleId] : undefined;
   const owningLesson = practiceLessons.find((lesson) => lesson.exercises.some((item) => item.id === exercise.id || (exercise.ruleId && item.ruleId === exercise.ruleId)));
   const blocks = spot ? toBlocks(exercise.sentence) : [];
+  const activeOrder = wordOrder.length ? wordOrder : blocks.map(({ id }) => id);
   const region = spot ? mistakeRegion(exercise) : { blockIds: [], correct: "", mistaken: "" };
-  const editedSentence = spot ? applyEdits(blocks, wordEdits) : "";
+  const editedSentence = spot ? applyEdits(blocks, wordEdits, activeOrder) : "";
+  const anythingChanged = Object.keys(wordEdits).length > 0 || (wordOrder.length > 0 && wordOrder.some((id, index) => id !== index));
   const wholeSentenceOptions = Boolean(choose && /___\s*$/u.test(exercise.sentence) && exercise.options?.length && exercise.options.every((option) => /[.!?]\s*$/u.test(option)));
   const topicByLesson: Record<string, string> = {
     prepositions: "preposição", articles: "artigo", "verb-tenses": "tempo verbal", "verb-forms": "forma do verbo",
@@ -1502,10 +1512,12 @@ function PracticeSession({
                 <SpotSentenceEditor
                   sentence={blocks}
                   edits={wordEdits}
+                  order={activeOrder}
+                  onOrderChange={(order) => { setWordOrder(order); if (order.some((id, index) => id !== index)) setHasEditedOnce(true); }}
                   onEditsChange={(edits) => { setWordEdits(edits); if (Object.keys(edits).length) setHasEditedOnce(true); }}
                   disabled={grading}
                   highlightIds={helpOpen ? region.blockIds : []}
-                  onAnnounce={(edits) => setAnnouncement(applyEdits(blocks, edits))}
+                  onAnnounce={(edits, order = activeOrder) => setAnnouncement(applyEdits(blocks, edits, order))}
                 />
               </span>
             ) : exercise.sentence}
@@ -1513,11 +1525,12 @@ function PracticeSession({
         {spot && !result && <>
           <p className="sr-only" aria-live="polite">{announcement}</p>
           <div className="tr-word-actions">
-            <button className={`ds-btn ${hasEditedOnce ? "ds-btn-cta-green tr-verify-ready" : "ds-btn-soft"}`} disabled={grading || !Object.keys(wordEdits).length} onClick={() => onSubmit(editedSentence, assisted)}>{grading ? t("Avaliando…") : t("Verificar")}</button>
+            <button className={`ds-btn ${hasEditedOnce ? "ds-btn-cta-green tr-verify-ready" : "ds-btn-soft"}`} disabled={grading || !anythingChanged} onClick={() => onSubmit(editedSentence, assisted)}>{grading ? t("Avaliando…") : t("Verificar")}</button>
+            {anythingChanged && <button type="button" className="tr-text-action" disabled={grading} onClick={() => { setWordEdits({}); setWordOrder([]); setHasEditedOnce(false); setAnnouncement(exercise.sentence); }}>{t("Desfazer tudo")}</button>}
             <button className="tr-text-action" disabled={grading} onClick={() => setHelpOpen((open) => !open)}>{t("Não sei — ver alternativas")}</button>
           </div>
           {helpOpen && <div className="tr-alternatives" role="group" aria-label={t("Alternativas para a parte destacada")}>
-            {alternativesFor({ ...exercise, ruleId: exercise.ruleId ?? "" }, practiceLessons.map((lesson) => ({ exercises: lesson.exercises.map((item) => ({ ...item, ruleId: item.ruleId ?? "", kind: item.kind ?? "", options: item.options ?? [] })) }))).map((option) => <button type="button" key={`${option.value}:${option.label}`} className="tr-alternative" onClick={() => { const ids = region.blockIds; const words = option.value.trim().split(/\s+/u); const replacement = ids.map((_, index) => [ids[index], index === ids.length - 1 ? words.slice(index).join(" ") : (words[index] ?? "")]); const edits = Object.fromEntries([...Object.entries(wordEdits), ...replacement]); setWordEdits(edits); setHasEditedOnce(true); setAssisted(true); setAnnouncement(applyEdits(blocks, edits)); }}>{option.label}</button>)}
+            {alternatives.map((option) => <button type="button" key={`${option.value}:${option.label}`} className="tr-alternative" onClick={() => { const ids = region.blockIds; const words = option.value.trim().split(/\s+/u); const replacement = ids.map((_, index) => [ids[index], index === ids.length - 1 ? words.slice(index).join(" ") : (words[index] ?? "")]); const edits = Object.fromEntries([...Object.entries(wordEdits), ...replacement]); setWordEdits(edits); setHasEditedOnce(true); setAssisted(true); setAnnouncement(applyEdits(blocks, edits, activeOrder)); }}>{option.label}</button>)}
           </div>}
         </>}
         {choose ? (
@@ -1559,18 +1572,23 @@ function PracticeSession({
 type SpotSentenceEditorProps = {
   sentence: ReturnType<typeof toBlocks>;
   edits: Record<number, string>;
+  order: number[];
+  onOrderChange: (order: number[]) => void;
   onEditsChange: (edits: Record<number, string>) => void;
   disabled: boolean;
   highlightIds: number[];
-  onAnnounce: (edits: Record<number, string>) => void;
+  onAnnounce: (edits: Record<number, string>, order?: number[]) => void;
 };
 
-function SpotSentenceEditor({ sentence, edits, onEditsChange, disabled, highlightIds, onAnnounce }: SpotSentenceEditorProps) {
+function SpotSentenceEditor({ sentence, edits, order, onOrderChange, onEditsChange, disabled, highlightIds, onAnnounce }: SpotSentenceEditorProps) {
   const [editingBlock, setEditingBlock] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const measureRef = useRef<HTMLSpanElement | null>(null);
   const listRef = useRef<HTMLSpanElement | null>(null);
+  const dragged = useRef<number | null>(null);
+  const pointerStart = useRef<{ id: number; x: number; y: number } | null>(null);
+  const [dropBefore, setDropBefore] = useState<number | null>(null);
   const previousRects = useRef(new Map<number, DOMRect>());
   const captureRects = () => {
     const nodes = listRef.current?.querySelectorAll<HTMLElement>("[data-block-id]");
@@ -1589,7 +1607,7 @@ function SpotSentenceEditor({ sentence, edits, onEditsChange, disabled, highligh
       node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }], { duration: 220, easing: getComputedStyle(node).getPropertyValue("--ease-out").trim() || "ease-out" });
     });
     previousRects.current.clear();
-  }, [edits]);
+  }, [edits, order]);
   useEffect(() => {
     if (editingBlock === null) return;
     inputRef.current?.focus();
@@ -1609,15 +1627,59 @@ function SpotSentenceEditor({ sentence, edits, onEditsChange, disabled, highligh
     onEditsChange(next);
     onAnnounce(next);
   };
+  const move = (id: number, delta: number) => {
+    const index = order.indexOf(id);
+    const target = Math.max(0, Math.min(order.length - 1, index + delta));
+    if (target === index) return;
+    captureRects();
+    const next = [...order];
+    next.splice(index, 1);
+    next.splice(target, 0, id);
+    onOrderChange(next);
+    onAnnounce(edits, next);
+  };
+  const dropAt = (id: number, beforeId: number | null) => {
+    const source = dragged.current;
+    dragged.current = null;
+    setDropBefore(null);
+    if (source === null || source === beforeId) return;
+    captureRects();
+    const next = order.filter((value) => value !== source);
+    const at = beforeId === null ? next.length : next.indexOf(beforeId);
+    next.splice(Math.max(0, at), 0, source);
+    onOrderChange(next);
+    onAnnounce(edits, next);
+  };
+  useEffect(() => {
+    const onMove = (event: PointerEvent) => {
+      if (!pointerStart.current) return;
+      if (dragged.current === null && Math.hypot(event.clientX - pointerStart.current.x, event.clientY - pointerStart.current.y) > 7) dragged.current = pointerStart.current.id;
+      if (dragged.current === null) return;
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-block-id]");
+      setDropBefore(target ? Number(target.dataset.blockId) : -1);
+    };
+    const onUp = (event: PointerEvent) => {
+      if (!pointerStart.current) return;
+      if (dragged.current !== null) {
+        event.preventDefault();
+        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-block-id]");
+        dropAt(pointerStart.current.id, target ? Number(target.dataset.blockId) : null);
+      }
+      pointerStart.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+  });
   return (
-    <span ref={listRef} className="tr-word-sentence">
-      {sentence.map((block) => {
+    <span ref={listRef} className={`tr-word-sentence${dropBefore === -1 ? " is-drop-end" : ""}`}>
+      {order.map((id) => sentence.find((entry) => entry.id === id)!).filter(Boolean).map((block) => {
         const edited = Object.hasOwn(edits, block.id);
         const value = edited ? edits[block.id] : block.text;
         const active = editingBlock === block.id;
         const highlighted = highlightIds.includes(block.id);
         return (
-          <span key={block.id} data-block-id={block.id} className={`tr-word-wrap${edited ? " is-edited" : ""}${!value ? " is-empty" : ""}${highlighted ? " is-helped" : ""}`}>
+          <span key={block.id} data-block-id={block.id} className={`tr-word-wrap${edited ? " is-edited" : ""}${!value ? " is-empty" : ""}${highlighted ? " is-helped" : ""}${dropBefore === block.id ? " is-drop-before" : ""}`} onDragOver={(event) => { event.preventDefault(); setDropBefore(block.id); }} onDrop={(event) => { event.preventDefault(); dropAt(block.id, block.id); }}>
             {active ? (
               <span className="tr-word-editor-measure-wrap">
                 <span ref={measureRef} className="tr-word-measure" aria-hidden="true">{draft || " "}</span>
@@ -1645,6 +1707,8 @@ function SpotSentenceEditor({ sentence, edits, onEditsChange, disabled, highligh
               <button
                 type="button"
                 className={`tr-word-block${!value ? " is-placeholder" : ""}`}
+                onPointerDown={(event) => { if (disabled || active) return; pointerStart.current = { id: block.id, x: event.clientX, y: event.clientY }; }}
+                onKeyDown={(event) => { if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) { event.preventDefault(); move(block.id, event.key === "ArrowLeft" ? -1 : 1); } }}
                 aria-label={value ? t("Editar palavra: {word}", { word: value }) : t("Reabrir palavra: {word}", { word: block.text })}
                 disabled={disabled}
                 onClick={() => { setDraft(value); setEditingBlock(block.id); }}
@@ -1652,6 +1716,10 @@ function SpotSentenceEditor({ sentence, edits, onEditsChange, disabled, highligh
                 {value || <span aria-hidden="true">&nbsp;</span>}
               </button>
             )}
+            <span className="tr-word-move" aria-label={t("Mover palavra") }>
+              <button type="button" aria-label={t("Mover {word} para a esquerda", { word: value || block.text })} disabled={disabled || order.indexOf(block.id) === 0} onClick={() => move(block.id, -1)}>←</button>
+              <button type="button" aria-label={t("Mover {word} para a direita", { word: value || block.text })} disabled={disabled || order.indexOf(block.id) === order.length - 1} onClick={() => move(block.id, 1)}>→</button>
+            </span>
             <span className="tr-word-trailing">{block.trailing}</span>
             {edited && (
               <button type="button" className="tr-word-undo" aria-label={t("Desfazer: {word}", { word: block.text })} disabled={disabled} onClick={() => undo(block.id)}>

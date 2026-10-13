@@ -1,0 +1,113 @@
+{
+  "verb-tenses.s1": {
+    "choices": [
+      "have worked",
+      "worked",
+      "am working"
+    ],
+    "accepted": [
+      "I have been working with Python for five years.",
+      "I've been working with Python for five years."
+    ],
+    "why": "Como começou há cinco anos e continua, use have worked ou have been working."
+  },
+  "verb-tenses.s2": {
+    "choices": [
+      "built",
+      "builded",
+      "have built"
+    ],
+    "accepted": [],
+    "why": "Two years ago indica um período terminado; build é irregular e vira built no passado."
+  },
+  "verb-tenses.s3": {
+    "choices": [
+      "deployed",
+      "deploys",
+      "have deployed"
+    ],
+    "accepted": [],
+    "why": "Yesterday indica passado simples: deploy vira deployed."
+  },
+  "verb-tenses.s4": {
+    "choices": [
+      "",
+      "for",
+      "at"
+    ],
+    "accepted": [],
+    "why": "Depois de will, use o verbo sem to. Going to também é possível, mas exige remover will."
+  },
+  "verb-tenses.s5": {
+    "choices": [
+      "",
+      "has",
+      "was"
+    ],
+    "accepted": [],
+    "why": "Yesterday pede passado simples; remova have."
+  },
+  "verb-tenses.s6": {
+    "choices": [
+      "debugging",
+      "debugged",
+      "debugs"
+    ],
+    "accepted": [],
+    "why": "Para uma ação em andamento interrompida por outra, use was + verbo com -ing."
+  },
+  "verb-tenses.s7": {
+    "choices": [
+      "have maintained",
+      "maintained",
+      "am maintaining"
+    ],
+    "accepted": [],
+    "why": "Como a manutenção começou em 2020 e continua, use have maintained."
+  },
+  "verb-tenses.s8": {
+    "choices": [
+      "",
+      "has",
+      "had"
+    ],
+    "accepted": [],
+    "why": "In March indica um período passado terminado; remova have e use released."
+  },
+  "verb-tenses.s9": {
+    "choices": [
+      "were",
+      "is",
+      "are"
+    ],
+    "accepted": [],
+    "why": "Com they no passado, o auxiliar correto é were."
+  },
+  "verb-tenses.s10": {
+    "choices": [
+      "are processing",
+      "is processing",
+      "processes"
+    ],
+    "accepted": [],
+    "why": "At the moment indica uma ação em andamento: are + verbo com -ing."
+  },
+  "verb-tenses.s11": {
+    "choices": [
+      "warms",
+      "is warm",
+      "warm"
+    ],
+    "accepted": [],
+    "why": "Usually indica hábito; use o presente simples warms, sem is."
+  },
+  "verb-tenses.s12": {
+    "choices": [
+      "reduce",
+      "reducing",
+      "reduced"
+    ],
+    "accepted": [],
+    "why": "Depois de will, o verbo fica na forma base: reduce."
+  }
+}

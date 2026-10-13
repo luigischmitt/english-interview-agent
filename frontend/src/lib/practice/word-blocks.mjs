@@ -19,19 +19,24 @@ export function toBlocks(sentence) {
 }
 
 /** Apply word edits, normalizing word spacing and retaining punctuation on edited blocks. */
-export function applyEdits(blocks, edits) {
+export function applyEdits(blocks, edits, order = blocks.map(({ id }) => id)) {
   const output = [];
-  for (const block of blocks) {
+  const byId = new Map(blocks.map((block) => [block.id, block]));
+  const finalBlockId = blocks.at(-1)?.id;
+  const terminal = finalBlockId === undefined ? "" : (byId.get(finalBlockId).trailing.match(/\s*([.!?]+\s*)$/u)?.[1] ?? "").trim();
+  for (const id of order) {
+    const block = byId.get(id);
+    if (!block) continue;
     const edited = Object.hasOwn(edits, block.id);
     const value = edited ? edits[block.id].trim() : block.text;
-    const suffix = block.trailing.replace(/^\s+/, "");
+    const suffix = block.trailing.replace(/^\s+/, "").replace(id === finalBlockId ? /([.!?]+)\s*$/u : /$^/u, "");
     if (!value) {
       if (output.length && /[^\p{L}\p{N}'’]/u.test(suffix)) output[output.length - 1] += suffix;
       continue;
     }
     output.push(`${value}${suffix}`);
   }
-  return output.join(" ").replace(/\s+([,.;:!?])/g, "$1").replace(/\s+/g, " ").trim();
+  return `${output.join(" ")}${terminal}`.replace(/\s+([,.;:!?])/g, "$1").replace(/\s+/g, " ").trim();
 }
 
 function differingRegion(source, target) {
@@ -75,6 +80,16 @@ export function mistakeRegion(exercise) {
 
 export function alternativesFor(exercise, lessons, random = Math.random) {
   const region = mistakeRegion(exercise);
+  const normalizeChoice = (value) => value.toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}'’]+/gu, " ").trim();
+  const excluded = new Set([normalizeChoice(region.mistaken)]);
+  if (Array.isArray(exercise.choices) && exercise.choices.length) {
+    const values = [...new Set(exercise.choices.map((value) => String(value).trim()).filter((value) => (value || normalizeChoice(value) === normalizeChoice(region.correct)) && !excluded.has(normalizeChoice(value))))];
+    for (let index = values.length - 1; index > 0; index -= 1) {
+      const target = Math.floor(Math.max(0, Math.min(0.999999999, Number(random()))) * (index + 1));
+      [values[index], values[target]] = [values[target], values[index]];
+    }
+    return values.map((value) => ({ value, label: value || "remover a palavra" }));
+  }
   const allLessons = lessons ?? [];
   const home = allLessons.find((item) => item.exercises?.some(({ id }) => id === exercise.id));
   const ruleExercises = allLessons.flatMap((item) => item.exercises ?? []).filter((item) => item.kind === "choose" && item.ruleId === exercise.ruleId);
@@ -100,7 +115,7 @@ export function alternativesFor(exercise, lessons, random = Math.random) {
     .map((candidate) => capitalize(insertion ? `${candidate} ${anchor}` : candidate));
   const reserved = new Set([normalize(region.correct), normalize(region.mistaken)]);
   const distractors = [...new Map(valid.filter((value) => !reserved.has(normalize(value))).map((value) => [normalize(value), value])).values()];
-  const values = [region.correct, region.mistaken, ...distractors.slice(0, 1)];
+  const values = [region.correct, ...distractors.slice(0, 2)];
   for (let index = values.length - 1; index > 0; index -= 1) {
     const raw = Number(random());
     const target = Math.floor(Math.max(0, Math.min(0.999999999, raw)) * (index + 1));
