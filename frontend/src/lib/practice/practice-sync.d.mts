@@ -1,4 +1,4 @@
-export type PracticeErrorRef = { interview_id: string; sequence_number: number; evidence: string; rephrased: string; created_at?: string; type?: string; suggestion?: string; point?: string; category?: string };
+export type PracticeErrorRef = { interview_id: string; sequence_number: number; evidence: string; rephrased: string; created_at?: string; type?: string; suggestion?: string; point?: string; category?: string; ruleId?: string | null };
 export function errorKey(ref: PracticeErrorRef): string;
 export function extractProgressErrors(records: Array<{ id: string; completedAt?: string | null; createdAt: string; patterns?: Array<{ sequenceNumber: number; evidence: string; rephrasedExample: string; type?: string; suggestion?: string }> }>): PracticeErrorRef[];
 export function findPracticeSyncWork<T extends { id: string; theme_key: string; error_refs?: PracticeErrorRef[] }>(errors: PracticeErrorRef[], themes: T[], limit?: number): PracticeErrorRef[];
@@ -8,3 +8,8 @@ export function recencyWeight(ref: PracticeErrorRef, lastErrorAt?: string | null
 export function weightedFrequency(refs?: PracticeErrorRef[], lastErrorAt?: string | null, now?: number): number;
 export function applyPracticeResult(theme: { correct_streak: number; status: "active" | "mastered" | "hidden" }, correct: number, total: number): { correct_streak: number; status: "active" | "mastered" | "hidden" };
 export function sortPracticeGroups<T extends { theme_key: string; status: string; weighted_frequency: number; last_error_at: string | null; error_refs?: PracticeErrorRef[] }>(groups: T[]): T[];
+export type PracticeClassifyRules = Record<string, Array<{ id: string; rule: string }>>;
+export function buildClassifyRules(keys: string[], rulesForKey: (key: string) => Array<{ id: string; rule: string }> | undefined): PracticeClassifyRules;
+export function resolveRuleId(rules: PracticeClassifyRules, category: string, ruleId: unknown): string | null;
+export function findRuleBackfillWork<T extends { theme_key: string; error_refs?: PracticeErrorRef[] }>(themes: T[], rules: PracticeClassifyRules, limit?: number): Array<{ themeKey: string; ref: PracticeErrorRef }>;
+export function applyRuleBackfill(work: Array<{ themeKey: string; ref: PracticeErrorRef }>, assignments: Array<{ ruleId?: string | null } | null | undefined>, rules: PracticeClassifyRules): Map<string, PracticeErrorRef[]>;

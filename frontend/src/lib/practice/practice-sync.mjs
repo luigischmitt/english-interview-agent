@@ -34,6 +34,45 @@ export function findPracticeSyncWork(errors, themes, limit = 20) {
   return work;
 }
 
+/** Rules payload for the classifier: every category with rules, at most 12 per category, rule text cut to 400 characters. */
+export function buildClassifyRules(keys, rulesForKey) {
+  const rules = {};
+  for (const key of keys) {
+    const list = (rulesForKey(key) ?? [])
+      .filter((item) => item?.id && String(item.rule ?? "").trim())
+      .slice(0, 12)
+      .map((item) => ({ id: item.id, rule: String(item.rule).trim().slice(0, 400) }));
+    if (list.length) rules[key] = list;
+  }
+  return rules;
+}
+
+/** A returned rule id counts only when it belongs to the rules of the given group. */
+export function resolveRuleId(rules, category, ruleId) {
+  return typeof ruleId === "string" && (rules[category] ?? []).some((item) => item.id === ruleId) ? ruleId : null;
+}
+
+/** Stored refs that never went through rule classification (the ruleId key is absent), newest first. Groups without rules are skipped. */
+export function findRuleBackfillWork(themes, rules, limit = 20) {
+  return themes
+    .filter((theme) => practiceCategoryKeys.includes(theme.theme_key) && rules[theme.theme_key]?.length)
+    .flatMap((theme) => (theme.error_refs ?? [])
+      .filter((ref) => !Object.hasOwn(ref, "ruleId"))
+      .map((ref) => ({ themeKey: theme.theme_key, ref })))
+    .sort((a, b) => safeDate(b.ref.created_at) - safeDate(a.ref.created_at))
+    .slice(0, limit);
+}
+
+/** Fills only ruleId on backfilled refs; each ref keeps its current group. Returns refs grouped by theme key. */
+export function applyRuleBackfill(work, assignments, rules) {
+  const byTheme = new Map();
+  work.forEach(({ themeKey, ref }, index) => {
+    const filled = { ...ref, ruleId: resolveRuleId(rules, themeKey, assignments[index]?.ruleId) };
+    byTheme.set(themeKey, [...(byTheme.get(themeKey) ?? []), filled]);
+  });
+  return byTheme;
+}
+
 export function completedLegacyThemeIds(themes) {
   const persisted = new Set(themes
     .filter((theme) => theme.theme_key === "_ignored" || practiceCategoryKeys.includes(theme.theme_key))

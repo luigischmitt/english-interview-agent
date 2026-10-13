@@ -425,7 +425,7 @@ function SettingsView() {
   );
 }
 
-export default function App({ initialView = "home" }: { initialView?: View }) {
+export default function App({ initialView = "home", initialLesson, initialPart }: { initialView?: View; initialLesson?: string; initialPart?: string }) {
   const { locale, t } = useLocale();
   const router = useRouter();
   const [voiceWarmupAttempt, setVoiceWarmupAttempt] = useState(0);
@@ -478,7 +478,7 @@ export default function App({ initialView = "home" }: { initialView?: View }) {
               }}
             />
           )}
-          {view === "train" && <TrainView onInterview={() => navigate("interview-setup")} />}
+          {view === "train" && <TrainView initialLesson={initialLesson} initialPart={initialPart} onInterview={() => navigate("interview-setup")} />}
           {view === "progress" && <ProgressView onStart={() => navigate("interview-setup")} onTrain={() => navigate("train")} />}
           {view === "settings" && <SettingsView />}
         </div>
