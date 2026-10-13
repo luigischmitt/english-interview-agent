@@ -21,6 +21,8 @@ test("applyEdits supports insertion, deletion, replacement, and punctuation", ()
   assert.equal(applyEdits(blocks, { 2: "" }), "I work Google.");
   assert.equal(applyEdits(blocks, { 2: "really work" }), "I work really work Google.");
   assert.equal(applyEdits(toBlocks("Ship, now!"), { 0: "Deploy" }), "Deploy, now!");
+  const reordered = toBlocks("I worked on a project very complex.");
+  assert.equal(applyEdits(reordered, {}, [0, 1, 2, 3, 5, 6, 4]), "I worked on a very complex project.");
 });
 
 test("mistake regions repair spot answers when local grading supports them", async () => {
@@ -51,7 +53,7 @@ test("real lesson round-trip is guarded when lesson data can be imported", async
   }
 });
 
-test("alternatives contain unique correct and mistaken choices, deterministically", () => {
+test("alternatives contain unique correct choices, exclude mistaken text, and are deterministic", () => {
   const exercise = fixture[0].exercises[0];
   const first = alternativesFor(exercise, fixture, seeded(31));
   const second = alternativesFor(exercise, fixture, seeded(31));
@@ -59,7 +61,23 @@ test("alternatives contain unique correct and mistaken choices, deterministicall
   assert.ok(first.length >= 2 && first.length <= 3);
   assert.equal(new Set(first.map(({ value }) => value.toLowerCase())).size, first.length);
   assert.ok(first.some(({ value }) => value === "at"));
-  assert.ok(first.some(({ value }) => value === "in"));
+  assert.ok(!first.some(({ value }) => value === "in"));
+});
+
+test("curated choices exclude mistaken text and stay stable for a seeded attempt", () => {
+  const exercise = { ...fixture[0].exercises[0], choices: ["at", "near", "in"] };
+  const one = alternativesFor(exercise, fixture, seeded(4));
+  const two = alternativesFor(exercise, fixture, seeded(4));
+  assert.deepEqual(one, two);
+  assert.ok(!one.some(({ value }) => value === "in"));
+});
+
+test("reordering alone repairs a word-order spot exercise", () => {
+  const sentence = "I worked on a project very complex.";
+  const blocks = toBlocks(sentence);
+  const repaired = applyEdits(blocks, {}, [0, 1, 2, 3, 5, 6, 4]);
+  assert.equal(repaired, "I worked on a very complex project.");
+  assert.equal(gradeLocally({ kind: "spot", sentence, answer: "I worked on a very complex project." }, repaired).verdict, "correct");
 });
 
 test("real spot alternatives fit each region shape", async () => {
@@ -72,7 +90,8 @@ test("real spot alternatives fit each region shape", async () => {
     const values = options.map(({ value }) => value);
     assert.equal(new Set(values.map((value) => value.toLocaleLowerCase("en-US"))).size, values.length, exercise.id);
     assert.ok(values.some((value) => value.toLocaleLowerCase("en-US") === region.correct.toLocaleLowerCase("en-US")), exercise.id);
-    assert.ok(values.some((value) => value.toLocaleLowerCase("en-US") === region.mistaken.toLocaleLowerCase("en-US")), exercise.id);
+    assert.ok(!values.some((value) => value.toLocaleLowerCase("en-US") === region.mistaken.toLocaleLowerCase("en-US")), exercise.id);
+    if (exercise.choices) continue;
     const correctWords = region.correct.trim() ? region.correct.trim().split(/\s+/u) : [];
     const mistakenWords = region.mistaken.trim() ? region.mistaken.trim().split(/\s+/u) : [];
     let suffix = 0;
@@ -85,5 +104,22 @@ test("real spot alternatives fit each region shape", async () => {
       assert.ok(values.every((value) => value === "" || value.trim().split(/\s+/u).length === 1), `${exercise.id}: ${values}`);
     }
     assert.ok(options.every(({ value, label }) => !value.includes("(") && (value !== "" || label === "remover a palavra")), exercise.id);
+  }
+});
+
+test("curated spot choices use the correct region and every distractor stays incorrect", async () => {
+  const { practiceLessons } = await import("../src/lib/practice/practice-lessons.mjs");
+  const spots = practiceLessons.flatMap(({ exercises = [] }) => exercises.filter(({ kind, choices }) => kind === "spot" && choices));
+  assert.ok(spots.length > 0);
+  for (const exercise of spots) {
+    const region = mistakeRegion(exercise);
+    assert.equal(exercise.choices[0], region.correct, `${exercise.id}: correct choice`);
+    assert.equal(new Set(exercise.choices.map((choice) => choice.toLocaleLowerCase("en-US"))).size, exercise.choices.length, `${exercise.id}: unique choices`);
+    for (const choice of exercise.choices.slice(1)) {
+      assert.notEqual(choice.toLocaleLowerCase("en-US"), region.mistaken.toLocaleLowerCase("en-US"), `${exercise.id}: distractor repeats mistake`);
+      const edits = Object.fromEntries(region.blockIds.map((id, index) => [id, index === 0 ? choice : ""]));
+      const sentence = applyEdits(toBlocks(exercise.sentence), edits);
+      assert.notEqual(gradeLocally(exercise, sentence).verdict, "correct", `${exercise.id}: ${sentence}`);
+    }
   }
 });

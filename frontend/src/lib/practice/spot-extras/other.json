@@ -1,0 +1,98 @@
+{
+  "other.s1": {
+    "choices": [
+      "am 30 years old",
+      "am have 30",
+      "have 30 years old"
+    ],
+    "accepted": []
+  },
+  "other.s2": {
+    "choices": [
+      "that I didn't understand",
+      "that I don't understood",
+      "that I no understood"
+    ],
+    "accepted": []
+  },
+  "other.s3": {
+    "choices": [
+      "As a",
+      "In a",
+      "For a"
+    ],
+    "accepted": []
+  },
+  "other.s4": {
+    "choices": [
+      "haven't",
+      "didn't",
+      "am not"
+    ],
+    "accepted": []
+  },
+  "other.s5": {
+    "choices": [
+      "answer",
+      "answering",
+      "answered"
+    ],
+    "accepted": []
+  },
+  "other.s6": {
+    "choices": [
+      "to me",
+      "for me",
+      "at me"
+    ],
+    "accepted": []
+  },
+  "other.s7": {
+    "choices": [
+      "to organize",
+      "for organize",
+      "organizing"
+    ],
+    "accepted": []
+  },
+  "other.s8": {
+    "choices": [
+      "to collect",
+      "for collect",
+      "collecting"
+    ],
+    "accepted": []
+  },
+  "other.s9": {
+    "choices": [
+      "Then",
+      "Finally",
+      "Because"
+    ],
+    "accepted": []
+  },
+  "other.s10": {
+    "choices": [
+      "with Envoy",
+      "at Envoy",
+      "on Envoy"
+    ],
+    "accepted": []
+  },
+  "other.s11": {
+    "choices": [
+      "answers",
+      "answer",
+      "is answering"
+    ],
+    "accepted": []
+  },
+  "other.s12": {
+    "choices": [
+      "am 28 years old",
+      "am have 28",
+      "have 28 years old"
+    ],
+    "accepted": []
+  }
+}

@@ -1,0 +1,128 @@
+{
+  "prepositions.s1": {
+    "choices": [
+      "to",
+      "at",
+      "in"
+    ],
+    "accepted": [],
+    "why": "AWS é o destino da mudança, então usamos to."
+  },
+  "prepositions.s2": {
+    "choices": [
+      "at",
+      "on",
+      "to"
+    ],
+    "accepted": [],
+    "why": "Para dizer em qual empresa alguém trabalha, usamos work at."
+  },
+  "prepositions.s3": {
+    "choices": [
+      "in",
+      "at",
+      "for"
+    ],
+    "accepted": [],
+    "why": "O par fixo é interested in; a forma contraída e a forma completa estão corretas."
+  },
+  "prepositions.s4": {
+    "choices": [
+      "in",
+      "at",
+      "for"
+    ],
+    "accepted": [],
+    "why": "Para dizer em qual linguagem um serviço foi escrito, usamos in."
+  },
+  "prepositions.s5": {
+    "choices": [
+      "by",
+      "since",
+      "for"
+    ],
+    "accepted": [],
+    "why": "By Monday indica o prazo final. Até esse prazo, também podemos dizer no later than Monday."
+  },
+  "prepositions.s6": {
+    "choices": [
+      "at",
+      "on",
+      "from"
+    ],
+    "accepted": [],
+    "why": "Horários exatos usam at."
+  },
+  "prepositions.s7": {
+    "choices": [
+      "on",
+      "at",
+      "to"
+    ],
+    "accepted": [],
+    "why": "Colaborar em uma iniciativa ou projeto é collaborate on."
+  },
+  "prepositions.s8": {
+    "choices": [
+      "on",
+      "at",
+      "to"
+    ],
+    "accepted": [],
+    "why": "Para dizer que alguém faz parte de um time, usamos on the team ou on the squad."
+  },
+  "prepositions.s9": {
+    "choices": [
+      "in",
+      "from",
+      "on"
+    ],
+    "accepted": [],
+    "why": "Para dizer que algo aconteceu dentro de um escritório, usamos in an office."
+  },
+  "prepositions.s10": {
+    "choices": [
+      "for",
+      "during",
+      "by"
+    ],
+    "accepted": [],
+    "why": "Uma duração usa for: for six months. Since acompanha o momento em que algo começou."
+  },
+  "prepositions.s11": {
+    "choices": [
+      "to",
+      "by",
+      "with"
+    ],
+    "accepted": [],
+    "why": "Para indicar o objetivo de um script, usamos to + verbo."
+  },
+  "prepositions.s12": {
+    "choices": [
+      "to",
+      "from",
+      "in"
+    ],
+    "accepted": [],
+    "why": "O serviço de identidade é o destino para onde a solicitação foi encaminhada: routed to."
+  },
+  "prepositions.s13": {
+    "choices": [
+      "to",
+      "as",
+      "from"
+    ],
+    "accepted": [],
+    "why": "O par fixo é similar to."
+  },
+  "prepositions.s14": {
+    "choices": [
+      "by",
+      "during",
+      "for"
+    ],
+    "accepted": [],
+    "why": "Due by Thursday indica que o relatório vence até quinta-feira."
+  }
+}

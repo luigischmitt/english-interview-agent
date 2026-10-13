@@ -1,0 +1,129 @@
+{
+  "sentence-structure.s1": {
+    "choices": [
+      "It is",
+      "Is it",
+      "This is"
+    ],
+    "accepted": [
+      "It's very important to write tests."
+    ],
+    "why": "A afirmação precisa de um sujeito explícito: it is. A contração it's também está correta."
+  },
+  "sentence-structure.s2": {
+    "choices": [
+      "We deployed",
+      "Deployed we",
+      "Deployed they"
+    ],
+    "accepted": [
+      "I deployed the new version yesterday."
+    ],
+    "why": "A frase precisa indicar quem fez a ação. I ou we funcionam conforme quem realizou o deploy."
+  },
+  "sentence-structure.s3": {
+    "choices": [
+      "very complex project",
+      "very project complex",
+      "complex project very"
+    ],
+    "accepted": [
+      "I worked on a project that was very complex.",
+      "I worked on a very complicated project."
+    ],
+    "why": "Em inglês, o adjetivo vem antes do substantivo: a very complex project. Também é natural usar complicated ou uma oração com that was."
+  },
+  "sentence-structure.s4": {
+    "choices": [
+      "did you choose",
+      "you did choose",
+      "did you chose"
+    ],
+    "accepted": [
+      "Why did you decide to use Go for this service?"
+    ],
+    "why": "Perguntas no passado usam did antes do sujeito e o verbo na forma base: did you choose."
+  },
+  "sentence-structure.s5": {
+    "choices": [
+      "don't",
+      "doesn't",
+      "does not"
+    ],
+    "accepted": [
+      "I do not have experience with Kotlin.",
+      "I have no experience with Kotlin."
+    ],
+    "why": "Para negar com have, use don't antes do verbo. I have no experience também é uma forma correta."
+  },
+  "sentence-structure.s6": {
+    "choices": [
+      "five workers run",
+      "five workers runs",
+      "runs workers five"
+    ],
+    "accepted": [
+      "In production, five workers are running by default.",
+      "In production, the service runs five workers by default."
+    ],
+    "why": "O sujeito da frase é five workers, no plural, então o verbo fica run. Também podemos reformular com the service como sujeito."
+  },
+  "sentence-structure.s7": {
+    "choices": [
+      "does the queue handle",
+      "do the queue handle",
+      "does the queue handles"
+    ],
+    "accepted": [
+      "How does our queue handle duplicate messages?"
+    ],
+    "why": "Perguntas no presente usam does antes do sujeito singular; depois de does, o verbo fica na forma base: handle."
+  },
+  "sentence-structure.s8": {
+    "choices": [
+      "does not",
+      "do not",
+      "not does"
+    ],
+    "accepted": [
+      "The client doesn't support HTTP/2 yet."
+    ],
+    "why": "Com o sujeito singular the client, use does not ou a contração doesn't antes do verbo na forma base."
+  },
+  "sentence-structure.s9": {
+    "choices": [
+      "",
+      "because",
+      "although"
+    ],
+    "accepted": [
+      "I checked the logs and found the timeout, then restarted the service.",
+      "I checked the logs. I found the timeout. I restarted the service."
+    ],
+    "why": "Remova o and depois de timeout para evitar uma corrente longa de ações; também pode separar as ações em frases curtas."
+  },
+  "sentence-structure.s10": {
+    "choices": [
+      "Then the",
+      "After the",
+      "Because the"
+    ],
+    "accepted": [
+      "The token expired. The client then retried the request. The gateway returned an authorization error.",
+      "The token expired. Next, the client retried the request. The gateway returned an authorization error."
+    ],
+    "why": "Separe as orações completas em frases. Then ou next podem marcar a sequência entre as etapas."
+  },
+  "sentence-structure.s11": {
+    "choices": [
+      "so we",
+      "because we",
+      "although we"
+    ],
+    "accepted": [
+      "The queue was full, and we paused the producer.",
+      "The queue was full; we paused the producer."
+    ],
+    "why": "So liga a causa à consequência: a fila estava cheia, então pausamos o produtor. And ou ponto e vírgula também conectam as duas ideias corretamente."
+  }
+}

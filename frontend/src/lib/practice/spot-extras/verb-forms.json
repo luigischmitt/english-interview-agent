@@ -1,0 +1,128 @@
+{
+  "verb-forms.s1": {
+    "choices": [
+      "to",
+      "with",
+      "at"
+    ],
+    "accepted": [],
+    "why": "Para indicar finalidade, use to + verbo: to automate."
+  },
+  "verb-forms.s2": {
+    "choices": [
+      "leads",
+      "leads to",
+      "leading"
+    ],
+    "accepted": [],
+    "why": "No presente simples, she pede a forma leads."
+  },
+  "verb-forms.s3": {
+    "choices": [
+      "deploying",
+      "deployed",
+      "to deploy"
+    ],
+    "accepted": [],
+    "why": "Quando before é preposição e vem antes de uma ação, use o verbo com -ing."
+  },
+  "verb-forms.s4": {
+    "choices": [
+      "",
+      "for",
+      "at"
+    ],
+    "accepted": [],
+    "why": "Depois de can, use o verbo na forma base, sem to."
+  },
+  "verb-forms.s5": {
+    "choices": [
+      "written",
+      "writing",
+      "writed"
+    ],
+    "accepted": [],
+    "why": "Depois de have, use o particípio: write → written."
+  },
+  "verb-forms.s6": {
+    "choices": [
+      "working",
+      "worked",
+      "to work"
+    ],
+    "accepted": [],
+    "why": "Em look forward to, to é preposição e vem seguido de verbo com -ing."
+  },
+  "verb-forms.s7": {
+    "choices": [
+      "to",
+      "postpone",
+      "at"
+    ],
+    "accepted": [],
+    "why": "Depois de decide, use to + verbo: decided to postpone."
+  },
+  "verb-forms.s8": {
+    "choices": [
+      "reducing",
+      "reduced",
+      "to reduce"
+    ],
+    "accepted": [],
+    "why": "Depois da preposição in, use o verbo com -ing: reducing."
+  },
+  "verb-forms.s9": {
+    "choices": [
+      "",
+      "for",
+      "at"
+    ],
+    "accepted": [],
+    "why": "Depois de should, use o verbo na forma base, sem to."
+  },
+  "verb-forms.s10": {
+    "choices": [
+      "supports",
+      "supporting",
+      "is support"
+    ],
+    "accepted": [],
+    "why": "This library é singular; no presente simples, use supports."
+  },
+  "verb-forms.s11": {
+    "choices": [
+      "written",
+      "writing",
+      "writed"
+    ],
+    "accepted": [],
+    "why": "Depois de have, use o particípio irregular written."
+  },
+  "verb-forms.s12": {
+    "choices": [
+      "chosen",
+      "choose",
+      "choosed"
+    ],
+    "accepted": [],
+    "why": "Depois de has, use o particípio irregular chosen."
+  },
+  "verb-forms.s13": {
+    "choices": [
+      "rotated",
+      "rotating",
+      "rotates"
+    ],
+    "accepted": [],
+    "why": "Na voz passiva, were pede o particípio passado: rotated."
+  },
+  "verb-forms.s14": {
+    "choices": [
+      "working",
+      "worked",
+      "to work"
+    ],
+    "accepted": [],
+    "why": "Em accustomed to, to é preposição e vem seguido de verbo com -ing."
+  }
+}

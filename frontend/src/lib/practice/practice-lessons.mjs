@@ -15,6 +15,7 @@ import wordChoiceContext from "./context/word-choice.json" with { type: "json" }
 import sentenceStructureContext from "./context/sentence-structure.json" with { type: "json" };
 import pluralAgreementContext from "./context/plural-agreement.json" with { type: "json" };
 import otherContext from "./context/other.json" with { type: "json" };
+import { spotExtrasByLesson } from "./spot-extras/index.mjs";
 
 const ex = (en, pt) => ({ en, pt });
 const trap = (wrong, right, note) => ({ wrong, right, note });
@@ -1213,7 +1214,17 @@ const contextByLesson = {
 };
 for (const lesson of practiceLessons) {
   const byId = contextByLesson[lesson.key];
-  for (const exercise of lesson.exercises) Object.assign(exercise, byId[exercise.id]);
+  for (const exercise of lesson.exercises) {
+    Object.assign(exercise, byId[exercise.id]);
+    if (exercise.kind === "spot") {
+      const extra = spotExtrasByLesson[lesson.key]?.[exercise.id];
+      if (extra) {
+        exercise.accepted = [...new Set([...(exercise.accepted ?? []), ...(extra.accepted ?? [])])];
+        if (extra.choices) exercise.choices = extra.choices;
+        if (extra.why) exercise.why = extra.why;
+      }
+    }
+  }
 }
 
 export const practiceLessonByKey = Object.fromEntries(practiceLessons.map((lesson) => [lesson.key, lesson]));
@@ -1238,6 +1249,7 @@ const normalize = (value) => String(value ?? "").toLocaleLowerCase("en-US").repl
 export function checkFixedAnswer(exercise, answer) {
   const given = normalize(answer);
   if (!given) return false;
+  if (exercise.sentence && String(answer).trim().toLocaleLowerCase("en-US").replace(/[’‘]/gu, "'") === String(exercise.sentence).trim().toLocaleLowerCase("en-US").replace(/[’‘]/gu, "'")) return false;
   return [exercise.answer, ...(exercise.accepted ?? [])].some((candidate) => normalize(candidate) === given);
 }
 

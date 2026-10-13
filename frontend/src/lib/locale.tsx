@@ -30,6 +30,10 @@ function subscribe(onChange: () => void) {
 const englishCopy: Record<string, string> = {
   "Reabrir palavra: {word}": "Reopen word: {word}",
   "Desfazer: {word}": "Undo: {word}",
+  "Desfazer tudo": "Undo all",
+  "Mover palavra": "Move word",
+  "Mover {word} para a esquerda": "Move {word} left",
+  "Mover {word} para a direita": "Move {word} right",
   "Início": "Home",
   "Entrevista": "Interview",
   "Progresso": "Progress",

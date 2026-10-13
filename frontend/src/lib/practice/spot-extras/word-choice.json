@@ -1,0 +1,167 @@
+{
+  "word-choice.s1": {
+    "choices": [
+      "plan",
+      "plans",
+      "planning"
+    ],
+    "accepted": [
+      "I intend to study for a cloud certification.",
+      "I'd like to study for a cloud certification.",
+      "I would like to study for a cloud certification."
+    ],
+    "why": "Pretend é fingir. Para falar de intenção, use plan to ou intend to; as duas opções são naturais."
+  },
+  "word-choice.s2": {
+    "choices": [
+      "carried out",
+      "made up",
+      "carried on"
+    ],
+    "accepted": [
+      "We did a migration of the whole database.",
+      "We ran a migration of the whole database."
+    ],
+    "why": "Realize é perceber. Para dizer que executamos uma migração, use carry out, do ou run."
+  },
+  "word-choice.s3": {
+    "choices": [
+      "did",
+      "formed",
+      "built"
+    ],
+    "accepted": [
+      "We conducted a code review before merging."
+    ],
+    "why": "A combinação mais natural é do a code review. Em contextos mais formais, também se diz conduct a code review."
+  },
+  "word-choice.s4": {
+    "choices": [
+      "attended",
+      "attend",
+      "attending"
+    ],
+    "accepted": [
+      "I went to a conference about security last month."
+    ],
+    "why": "Attend é comparecer a um evento; assist é ajudar alguém. Também podemos dizer go to a conference."
+  },
+  "word-choice.s5": {
+    "choices": [
+      "asked",
+      "did",
+      "questioned"
+    ],
+    "accepted": [
+      "I had a question about the architecture.",
+      "I raised a question about the architecture."
+    ],
+    "why": "Para formular uma pergunta, use ask a question. Had a question e raised a question também são naturais aqui."
+  },
+  "word-choice.s6": {
+    "choices": [
+      "attended",
+      "attend",
+      "attending"
+    ],
+    "accepted": [
+      "I was at the security review meeting yesterday.",
+      "I joined the security review meeting yesterday."
+    ],
+    "why": "Attend é comparecer a uma reunião; assist é ajudar alguém. Was at e joined também funcionam neste contexto."
+  },
+  "word-choice.s7": {
+    "choices": [
+      "Currently",
+      "Actual",
+      "Eventually"
+    ],
+    "accepted": [
+      "At present, our team has six developers; last year it had three.",
+      "Right now, our team has six developers; last year it had three."
+    ],
+    "why": "Aqui há uma comparação com o tamanho atual do time. Actually significa “na verdade”; currently, at present e right now significam “atualmente”."
+  },
+  "word-choice.s8": {
+    "choices": [
+      "planned",
+      "plans",
+      "planning"
+    ],
+    "accepted": [
+      "The analyst intended to add tracing next sprint.",
+      "The analyst meant to add tracing next sprint."
+    ],
+    "why": "Pretend é fingir. Para indicar intenção, use plan to, intend to ou mean to."
+  },
+  "word-choice.s9": {
+    "choices": [
+      "ran",
+      "run",
+      "running"
+    ],
+    "accepted": [
+      "I did the nightly benchmark before release.",
+      "I executed the nightly benchmark before release."
+    ],
+    "why": "Para dizer que executou um benchmark, use run, do ou execute."
+  },
+  "word-choice.s10": {
+    "choices": [
+      "occasionally",
+      "occasional",
+      "eventual"
+    ],
+    "accepted": [
+      "Our team sometimes reviews dependency updates every few months.",
+      "Our team periodically reviews dependency updates every few months."
+    ],
+    "why": "Occasionally, sometimes e periodically descrevem algo que acontece de vez em quando. Eventually significa que algo acontece depois de um tempo."
+  },
+  "word-choice.s11": {
+    "choices": [
+      "occasionally",
+      "occasional",
+      "eventual"
+    ],
+    "accepted": [
+      "Our team sometimes reviews dependency updates as part of its regular maintenance work.",
+      "Our team periodically reviews dependency updates as part of its regular maintenance work."
+    ],
+    "why": "Occasionally, sometimes e periodically descrevem algo que acontece de vez em quando. Eventually indica que algo acontece depois de um tempo."
+  },
+  "word-choice.s12": {
+    "choices": [
+      "did",
+      "do",
+      "doing"
+    ],
+    "accepted": [
+      "We conducted research before selecting the vector database."
+    ],
+    "why": "Para falar de fazer pesquisa, use do research. Em um registro mais formal, conducted research também é natural."
+  },
+  "word-choice.s13": {
+    "choices": [
+      "attended",
+      "attend",
+      "attending"
+    ],
+    "accepted": [
+      "The presenter went to the security conference last month."
+    ],
+    "why": "Comparecer a um evento é attend ou go to; assist significa ajudar alguém."
+  },
+  "word-choice.s14": {
+    "choices": [
+      "told",
+      "spoke",
+      "speaking"
+    ],
+    "accepted": [
+      "The lead informed the developers that the review was postponed.",
+      "The lead told the developers that the review was postponed."
+    ],
+    "why": "Com a pessoa logo depois do verbo, use tell. Inform também funciona, geralmente com that antes da notícia."
+  }
+}

@@ -31,7 +31,9 @@ export function gradeLocally(exercise, answer) {
 
   const source = tokens(exercise.sentence);
   const submitted = tokens(answer);
-  if (sameTokens(source, submitted)) {
+  const exactSource = String(answer).trim().toLocaleLowerCase("en-US").replace(/[’‘]/gu, "'");
+  const exactOriginal = String(exercise.sentence).trim().toLocaleLowerCase("en-US").replace(/[’‘]/gu, "'");
+  if (exactSource === exactOriginal) {
     return { verdict: "incorrect", corrected, feedback: "incorrect" };
   }
 
@@ -39,6 +41,7 @@ export function gradeLocally(exercise, answer) {
   if (accepted.some((candidate) => normalize(candidate) === normalize(answer))) {
     return { verdict: "correct", corrected, feedback: "correct" };
   }
+  if (sameTokens(source, submitted)) return { verdict: "incorrect", corrected, feedback: "incorrect" };
 
   const target = tokens(exercise.answer);
   let start = 0;
