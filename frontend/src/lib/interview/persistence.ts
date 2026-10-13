@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getLocalSessionUserId } from "@/lib/auth/browser-session";
+import { invalidateDashboardCache, writeDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import type { ProgressRecord } from "./progress-insights.mjs";
 import type { AzureMetricSummary } from "./report-metrics.mjs";
 import type { JobDirection } from "./job-direction.mjs";
@@ -94,10 +96,9 @@ const failure = (error: { message?: string; code?: string }): PersistenceResult<
 async function authenticatedClient(): Promise<PersistenceResult<{ client: SupabaseClient; userId: string }>> {
   try {
     const client = getSupabaseBrowserClient();
-    const { data, error } = await client.auth.getUser();
-    if (error) return failure(error);
-    if (!data.user) return failure({ message: "Sua sessão terminou. Entre novamente para salvar esta entrevista." });
-    return { ok: true, value: { client, userId: data.user.id } };
+    const userId = await getLocalSessionUserId(client);
+    if (!userId) return failure({ message: "Sua sessão terminou. Entre novamente para salvar esta entrevista." });
+    return { ok: true, value: { client, userId } };
   } catch (error) {
     return failure({ message: error instanceof Error ? error.message : undefined });
   }
@@ -113,6 +114,7 @@ export async function createInterviewSession(config: InterviewConfig): Promise<P
     .select(sessionColumns)
     .single();
   if (error) return failure(error);
+  invalidateDashboardCache("progress");
   return { ok: true, value: toSession(data as InterviewRow) };
 }
 
@@ -130,6 +132,7 @@ export async function appendInterviewTurn(input: InterviewTurnInput): Promise<Pe
     .select(turnColumns)
     .single();
   if (error) return failure(error);
+  invalidateDashboardCache("progress");
   return { ok: true, value: toTurn(data as TurnRow) };
 }
 
@@ -146,6 +149,7 @@ export async function updateInterviewStatus(
     .select(sessionColumns)
     .single();
   if (error) return failure(error);
+  invalidateDashboardCache("progress");
   return { ok: true, value: toSession(data as InterviewRow) };
 }
 
@@ -177,23 +181,25 @@ export async function loadProgressRecords(): Promise<PersistenceResult<ProgressR
   const rows = data as unknown as ProgressInterviewRow[];
 
   const answerCounts = new Map<string, number>();
-  for (let index = 0; index < rows.length; index += progressTurnChunk) {
-    const ids = rows.slice(index, index + progressTurnChunk).map((row) => row.id);
-    const { data: turns, error: turnsError } = await client
+  const answerCountChunks = await Promise.all(Array.from({ length: Math.ceil(rows.length / progressTurnChunk) }, (_, chunk) => {
+    const ids = rows.slice(chunk * progressTurnChunk, (chunk + 1) * progressTurnChunk).map((row) => row.id);
+    return client
       .from("interview_turns")
-      .select("interview_id,content")
+      .select("interview_id")
       .in("interview_id", ids)
       .eq("speaker", "candidate")
+      // Keep the server-side count equivalent to content?.trim() without downloading answer text.
+      .filter("content", "match", "\\S")
       .limit(1000);
+  }));
+  for (const { data: turns, error: turnsError } of answerCountChunks) {
     if (turnsError) return failure(turnsError);
-    for (const turn of turns as Array<{ interview_id: string; content: string | null }>) {
-      if (turn.content?.trim()) answerCounts.set(turn.interview_id, (answerCounts.get(turn.interview_id) ?? 0) + 1);
+    for (const turn of turns as Array<{ interview_id: string }>) {
+      answerCounts.set(turn.interview_id, (answerCounts.get(turn.interview_id) ?? 0) + 1);
     }
   }
 
-  return {
-    ok: true,
-    value: rows.map((row) => {
+  const value = rows.map((row) => {
       const embedded = Array.isArray(row.interview_feedback) ? row.interview_feedback[0] ?? null : row.interview_feedback;
       const session = toSession(row);
       return {
@@ -207,6 +213,7 @@ export async function loadProgressRecords(): Promise<PersistenceResult<ProgressR
         answerCount: answerCounts.get(session.id) ?? 0,
         feedback: embedded ? { status: embedded.status, azureSummary: embedded.azure_summary, analysis: embedded.analysis } : null,
       };
-    }),
-  };
+    });
+  writeDashboardCache("progress", value);
+  return { ok: true, value };
 }

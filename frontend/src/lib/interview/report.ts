@@ -1,5 +1,6 @@
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { invalidateDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import type { InterviewConfig, PersistenceResult } from "./types";
 import { buildInterviewReportRequest } from "./report-request.mjs";
 import type { JobDirection } from "./job-direction.mjs";
@@ -154,6 +155,7 @@ export async function createPendingInterviewFeedback(interviewId: string, assess
       analysis_version: "v2",
     }, { onConflict: "interview_id" }).select(columns).single();
     if (error) return { ok: false, message: failureMessage, code: error.code };
+    invalidateDashboardCache("progress");
     return { ok: true, value: toFeedback(data as FeedbackRow) };
   } catch {
     return { ok: false, message: failureMessage };
@@ -179,6 +181,7 @@ export async function saveInterviewFeedback(interviewId: string, azureSummary: A
       generated_at: new Date().toISOString(),
     }, { onConflict: "interview_id" }).select(columns).single();
     if (error) return { ok: false, message: failureMessage, code: error.code };
+    invalidateDashboardCache("progress");
     return { ok: true, value: toFeedback(data as FeedbackRow) };
   } catch {
     return { ok: false, message: failureMessage };
@@ -197,6 +200,7 @@ export async function markInterviewFeedbackUnavailable(interviewId: string, azur
       generated_at: null,
     }, { onConflict: "interview_id" }).select(columns).single();
     if (error) return { ok: false, message: failureMessage, code: error.code };
+    invalidateDashboardCache("progress");
     return { ok: true, value: toFeedback(data as FeedbackRow) };
   } catch {
     return { ok: false, message: failureMessage };
