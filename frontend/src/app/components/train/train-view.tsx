@@ -508,7 +508,6 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
         onBack={backToList}
         onBegin={() => begin()}
         onFocused={(size, ruleId) => begin(selected, { mode: "focused", size, ruleId })}
-        activeRuleId={startRule >= 0 ? practiceLessonByKey[selected.theme_key]?.rules[startRule]?.id : undefined}
         onPlay={(phrase) => void playPhrase(phrase)}
       />
     );
@@ -619,7 +618,7 @@ function LessonErrorCard({ item, lesson, theme, index, onOpen, onPractice }: { i
   return <li style={{ "--i": index } as CSSProperties} className="tr-part-card">
     <strong>{t(lesson.title)}</strong>
     <p>{t("{count} erros em {interviews} entrevistas", { count: item.count, interviews: item.interviews })}</p>
-    {(item.latest.evidence || item.latest.rephrased) && <p lang="en"><s>{item.latest.evidence}</s> → {item.latest.rephrased}</p>}
+    {(item.latest.evidence || item.latest.rephrased) && <CorrectionPair wrong={item.latest.evidence} right={item.latest.rephrased} />}
     <div className="tr-card-actions">
       <button type="button" className="ds-btn ds-btn-soft" onClick={() => onOpen(theme)}>{t("Rever a aula")}</button>
       <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => onPractice(theme)}>{t("Treino rápido")}</button>
@@ -651,7 +650,7 @@ function PartCard({ part, lesson, theme, index, partIndex, onOpen, onPractice }:
   return (
     <li style={{ "--i": index } as CSSProperties} className="tr-part-card">
       <strong>{t(lesson.title)} · {t(part.label)} · {part.count}×</strong>
-      <p lang="en"><s>{part.latest.evidence}</s> → {part.latest.rephrased}</p>
+      <CorrectionPair wrong={part.latest.evidence} right={part.latest.rephrased} />
       <div className="tr-card-actions">
         <button type="button" className="ds-btn ds-btn-soft" onClick={() => onOpen(theme, partIndex)}>
           {t("Rever a parte")}
@@ -662,6 +661,14 @@ function PartCard({ part, lesson, theme, index, partIndex, onOpen, onPractice }:
       </div>
     </li>
   );
+}
+
+function CorrectionPair({ wrong, right }: { wrong?: string; right?: string }) {
+  return <p className="tr-correction-pair" lang="en">
+    {wrong && <span className="tr-correction-wrong"><span aria-hidden="true">✕</span><span className="sr-only">{t("Evite:")} </span><span aria-hidden="true">{t("Evite")}</span><span>{wrong}</span></span>}
+    <span aria-hidden="true">→</span>
+    {right && <span className="tr-correction-right"><span aria-hidden="true">✓</span><span className="sr-only">{t("Prefira:")} </span><span aria-hidden="true">{t("Prefira")}</span><span>{right}</span></span>}
+  </p>;
 }
 
 // A fixed table of contents: every lesson, in order, with the person's own mistakes attached when there are any.
@@ -788,7 +795,6 @@ function ThemeDetail({
   onBack,
   onBegin,
   onFocused,
-  activeRuleId,
   onPlay,
 }: {
   theme: PracticeGroup;
@@ -799,7 +805,6 @@ function ThemeDetail({
   onBack: () => void;
   onBegin: () => void;
   onFocused: (size: number, ruleId?: string) => void;
-  activeRuleId?: string;
   onPlay: (phrase: string) => void;
 }) {
   const lesson = practiceLessonByKey[theme.theme_key];
@@ -875,6 +880,7 @@ function ThemeDetail({
           <p className="ds-body mt-3">{t(lesson?.intro ?? theme.why)}</p>
         </div>
       </header>
+      {onOverview && lesson && <LessonPracticeBand lesson={lesson} focusedOpen={focusedOpen} setFocusedOpen={setFocusedOpen} onBegin={onBegin} onFocused={onFocused} />}
       {lesson && (
         <div className="tr-lesson-layout" ref={ruleTopRef}>
           <nav className="tr-rule-nav" aria-label={t("Conteúdo da aula")}>
@@ -1030,10 +1036,10 @@ function ThemeDetail({
                       {ownHere.slice(0, 2).map((ref) => (
                         <li key={`${ref.interview_id}-${ref.sequence_number}-${ref.evidence}`}>
                           <p className="tr-own-said">
-                            <span>{t("Você disse")}</span> <q lang="en">{ref.evidence}</q>
+                            <span>{t("Evite")}</span> <q lang="en">{ref.evidence}</q>
                           </p>
                           <p className="tr-own-better">
-                            <span>{t("Soa melhor")}</span> <q lang="en">{ref.rephrased}</q>
+                            <span>{t("Prefira")}</span> <q lang="en">{ref.rephrased}</q>
                           </p>
                         </li>
                       ))}
@@ -1086,13 +1092,13 @@ function ThemeDetail({
                         <li className="tr-trap" key={`${item.wrong}|${item.right}`}>
                           <p className="tr-trap-wrong" lang="en">
                             <XCircle className="size-4 shrink-0" aria-hidden="true" />
-                            <span className="sr-only">{t("Evite:")} </span>
-                            <s>{item.wrong}</s>
+                            <span aria-hidden="true">✕</span><span className="sr-only">{t("Evite:")} </span><span aria-hidden="true">{t("Evite")}</span>
+                            <span className="tr-wrong-example">{item.wrong}</span>
                           </p>
                           <div className="tr-trap-right">
                             <p lang="en">
                               <Check className="size-4 shrink-0" aria-hidden="true" />
-                              <span className="sr-only">{t("Prefira:")} </span>
+                              <span aria-hidden="true">✓</span><span className="sr-only">{t("Prefira:")} </span><span aria-hidden="true">{t("Prefira")}</span>
                               <span>{item.right}</span>
                             </p>
                             <SpeakButton phrase={item.right} onPlay={onPlay} />
@@ -1114,6 +1120,12 @@ function ThemeDetail({
                     {t("O áudio não está disponível agora. Você pode continuar sem ele.")}
                   </p>
                 )}
+                <div className="tr-part-practice">
+                  <div><strong>{t("Praticar esta parte")}</strong><span>{t(activeRule.label)}</span><small>{t("{count} exercícios · só esta parte", { count: lesson.exercises.filter((exercise) => exercise.ruleId === activeRule.id).length })}</small></div>
+                  <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => onFocused(Math.max(4, lesson.exercises.filter((exercise) => exercise.ruleId === activeRule.id).length), activeRule.id)}>
+                    {t("Praticar esta parte")}<ArrowRight className="size-4" />
+                  </button>
+                </div>
                 <div className="tr-rule-controls">
                   <button type="button" className="ds-btn ds-btn-quiet" onClick={() => selectRule(activeIndex - 1)}>
                     <ArrowLeft className="size-4" />
@@ -1200,55 +1212,35 @@ function ThemeDetail({
           )}
         </div>
       )}
-      <div className="tr-practice-cta">
-        <div className="tr-practice-cta-copy">
-          <span className="tr-practice-cta-icon" aria-hidden="true">
-            <Dumbbell className="size-5" />
-          </span>
-          <div>
-            <strong>{t("Pronto para praticar?")}</strong>
-            <span>{t("5 exercícios · cerca de 2 minutos")}</span>
-          </div>
-        </div>
-        <div className="tr-mode-actions">
-          <button className="ds-btn ds-btn-cta-green" onClick={onBegin}>
-            {t("Treino rápido")}
-            <ArrowRight className="size-4" />
-          </button>
-          <button className="ds-btn ds-btn-soft" aria-expanded={focusedOpen} onClick={() => setFocusedOpen((open) => !open)}>
-            {t("Treino focado")}
-          </button>
-        </div>
-      </div>
-      <div className="tr-focused-disclosure" data-open={focusedOpen} aria-hidden={!focusedOpen} inert={!focusedOpen}>
-        <FocusedPicker lesson={lesson} activeRuleId={activeRuleId} onStart={onFocused} />
-      </div>
+      {!onOverview && lesson && <LessonPracticeBand lesson={lesson} focusedOpen={focusedOpen} setFocusedOpen={setFocusedOpen} onBegin={onBegin} onFocused={onFocused} />}
     </section>
   );
 }
 
-function FocusedPicker({ lesson, activeRuleId, onStart }: {
-  lesson?: PracticeLesson;
-  activeRuleId?: string;
+function FocusedPicker({ onStart }: {
   onStart: (size: number, ruleId?: string) => void;
 }) {
   const [size, setSize] = useState(10);
-  const [onlyPart, setOnlyPart] = useState(false);
-  const activeRule = lesson?.rules.find((rule) => rule.id === activeRuleId);
   return (
     <div className="tr-focused-picker">
       <span className="tr-mini-label">{t("Quantos exercícios?")}</span>
       <SlidingSegmented name="focused-round-size" ariaLabel={t("Tamanho do treino")} className="tr-size-options" itemClassName="tr-size-option" options={[10, 15, 20].map((option) => ({ value: String(option), label: String(option) }))} value={String(size)} onChange={(value) => setSize(Number(value))} />
-      {lesson?.rules.length && activeRule ? (
-        <button type="button" className="tr-part-toggle" aria-pressed={onlyPart} onClick={() => setOnlyPart((enabled) => !enabled)}>
-          {t("Só esta parte: {label}", { label: t(activeRule.label) })}
-        </button>
-      ) : null}
-      <button type="button" className="ds-btn ds-btn-cta-green tr-focused-start" onClick={() => onStart(size, onlyPart ? activeRuleId : undefined)}>
+      <button type="button" className="ds-btn ds-btn-cta-green tr-focused-start" onClick={() => onStart(size)}>
         {t("Começar · {count} exercícios", { count: size })}
       </button>
     </div>
   );
+}
+
+function LessonPracticeBand({ lesson, focusedOpen, setFocusedOpen, onBegin, onFocused }: { lesson: PracticeLesson; focusedOpen: boolean; setFocusedOpen: (update: (open: boolean) => boolean) => void; onBegin: () => void; onFocused: (size: number, ruleId?: string) => void }) {
+  return <section className="tr-practice-band" aria-labelledby="lesson-practice-title">
+    <div className="tr-practice-band-copy"><p className="tr-mini-label">{t("Treinar a aula inteira")}</p><h2 id="lesson-practice-title">{t(lesson.title)}</h2><p>{t("todas as {count} partes", { count: lesson.rules.length })}</p></div>
+    <div className="tr-mode-actions">
+      <button className="ds-btn ds-btn-cta-green" onClick={onBegin}>{t("Treino rápido · 5")}<ArrowRight className="size-4" /></button>
+      <button className="ds-btn ds-btn-soft" aria-expanded={focusedOpen} onClick={() => setFocusedOpen((open) => !open)}>{t("Treino focado")}</button>
+    </div>
+    <div className="tr-focused-disclosure" data-open={focusedOpen} aria-hidden={!focusedOpen} inert={!focusedOpen}><FocusedPicker onStart={onFocused} /></div>
+  </section>;
 }
 
 // A one-tap check inside each lesson part: the person picks the correct sentence before seeing the answer.
@@ -1361,7 +1353,11 @@ function PracticeSession({
   const choose = exercise?.kind === "choose";
   const spot = exercise?.kind === "spot";
   const lessonTitle = t(practiceLessonByKey[theme.theme_key]?.title ?? theme.title);
-  const sessionTitle = mode === "mine" ? t("Seus erros · todas as aulas") : lessonTitle;
+  const ruleIds = [...new Set(exercises.map((item) => item.ruleId).filter((id): id is string => Boolean(id)))];
+  const partRule = mode !== "mine" && ruleIds.length === 1 && exercises.every((item) => item.ruleId === ruleIds[0]) ? practiceRuleById[ruleIds[0]] : undefined;
+  const sessionTitle = mode === "mine" ? t("Seus erros · todas as aulas") : partRule
+    ? t("Parte: {label}", { label: t(partRule.label) })
+    : t("Aula inteira: {lesson}", { lesson: lessonTitle });
   const practiceRef = useRef<HTMLElement | null>(null);
   const lastStep = useRef(step);
   const [hintOpen, setHintOpen] = useState(false);
