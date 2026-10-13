@@ -20,7 +20,6 @@ import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
 import { resolveInterviewerVoice } from "@/lib/interview/voices.mjs";
 import { interviewerVoiceStorageKey } from "@/lib/interview/voice-picker.mjs";
-import practiceAudioManifest from "@/lib/practice/practice-audio-manifest.json";
 import { staticPracticeAudioUrl } from "@/lib/practice/practice-audio.mjs";
 import { gradePracticeAnswer } from "@/lib/practice/practice-requests";
 import {
@@ -44,6 +43,8 @@ import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { getCurrentLocale, t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
 import "./train.css";
+
+let practiceAudioManifestPromise: Promise<typeof import("@/lib/practice/practice-audio-manifest.json")> | null = null;
 
 type Grade = { verdict: "correct" | "almost" | "incorrect"; feedback: string; corrected: string; why?: string | null };
 type RoundExercise = PracticeFixedExercise;
@@ -157,6 +158,9 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     try {
       // Fixed lesson phrases are pre-generated files in one fixed lesson voice (not the candidate's chosen interviewer
       // voice) and never reach the speech API. Only dynamic text (the person's own sentences) is synthesized.
+      practiceAudioManifestPromise ??= import("@/lib/practice/practice-audio-manifest.json");
+      const practiceAudioManifest = await practiceAudioManifestPromise;
+      if (requestId !== speechRequestRef.current) return;
       let url = staticPracticeAudioUrl(phrase, practiceAudioManifest.files);
       if (!url) {
         let voice = resolveInterviewerVoice(null);

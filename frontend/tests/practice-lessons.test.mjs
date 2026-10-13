@@ -161,22 +161,51 @@ test("ids already stored in users' data still exist", () => {
   for (const id of storedExerciseIds) assert.ok(exerciseIds.has(id), id);
 });
 
-test("exercises belong to a rule of their own lesson and every rule has at least two choose and one spot", () => {
+test("exercises belong to a rule and every part has four varied exercises", () => {
   const all = new Set();
+  const sentences = new Set();
   for (const lesson of practiceLessons) {
     const ruleIds = new Set(lesson.rules.map((rule) => rule.id));
     for (const exercise of lesson.exercises) {
       assert.ok(ruleIds.has(exercise.ruleId), `${exercise.id} points to a rule of ${lesson.key}`);
       assert.ok(!all.has(exercise.id), `${exercise.id} is unique across lessons`);
       all.add(exercise.id);
-      if (exercise.kind === "choose") assert.equal(exercise.sentence.split("___").length, 2, `${exercise.id} has exactly one blank`);
+      assert.ok(!sentences.has(exercise.sentence), `${exercise.id} sentence is unique`);
+      sentences.add(exercise.sentence);
+      if (exercise.kind === "choose") {
+        assert.equal(exercise.sentence.split("___").length, 2, `${exercise.id} has exactly one blank`);
+        assert.equal(exercise.options.length, 3, `${exercise.id} has three options`);
+        assert.equal(new Set(exercise.options).size, 3, `${exercise.id} options are unique`);
+        assert.ok(exercise.options.includes(exercise.answer), `${exercise.id} includes its answer`);
+      } else {
+        assert.notEqual(exercise.sentence, exercise.answer, `${exercise.id} changes the sentence`);
+        for (const accepted of exercise.accepted ?? []) {
+          assert.notEqual(exercise.sentence, accepted, `${exercise.id} accepted answer fixes the sentence`);
+          assert.notEqual(exercise.answer, accepted, `${exercise.id} accepted answer is a distinct variant`);
+        }
+      }
     }
     for (const rule of lesson.rules) {
       const own = lesson.exercises.filter((exercise) => exercise.ruleId === rule.id);
-      if (storedRuleIds.includes(rule.id)) continue;
-      assert.ok(own.filter((exercise) => exercise.kind === "choose").length >= 2, `${rule.id} needs two choose`);
+      assert.ok(own.length >= 4, `${rule.id} needs four exercises`);
+      assert.ok(own.some((exercise) => exercise.kind === "choose"), `${rule.id} needs a choose`);
       assert.ok(own.filter((exercise) => exercise.kind === "spot").length >= 1, `${rule.id} needs a spot`);
     }
+  }
+});
+
+test("spot exercises never use known correct rejected originals as their source", () => {
+  const knownCorrect = [
+    "Would you explain the last part again?",
+    "To summarize, the new index reduced query time.",
+    "Actually, the worker retries the job every minute.",
+    "I led platform migrations for six years.",
+    "We opened a ticket. The ticket included a stack trace.",
+    "We ___ the root cause during the review.",
+  ];
+  const known = new Set(knownCorrect.map(normalizeExerciseText));
+  for (const exercise of practiceLessons.flatMap((lesson) => lesson.exercises)) {
+    if (exercise.kind === "spot") assert.ok(!known.has(normalizeExerciseText(exercise.sentence)), `${exercise.id} uses a known-correct original`);
   }
 });
 
@@ -195,6 +224,74 @@ test("every lesson still fills a round of five with three choose", () => {
       const round = pickPracticeRound({ key: lesson.key, random });
       assert.equal(round.length, 5, lesson.key);
       assert.equal(new Set(round.map((exercise) => exercise.id)).size, 5, lesson.key);
+    }
+  }
+});
+
+const rewrittenExerciseIds = new Set([
+  "prepositions.c9", "prepositions.s6", "prepositions.s7", "prepositions.s8", "prepositions.c10", "prepositions.s9", "prepositions.s10", "prepositions.c11", "prepositions.s11", "prepositions.c12", "prepositions.c13", "prepositions.s12", "prepositions.c14", "prepositions.s13", "prepositions.s14",
+  "articles.s5", "articles.c8", "articles.s6", "articles.c9", "articles.s7", "articles.s8", "articles.c10", "articles.s9",
+  "verb-tenses.c10", "verb-tenses.s7", "verb-tenses.s8", "verb-tenses.s9", "verb-tenses.s10", "verb-tenses.c11", "verb-tenses.s11", "verb-tenses.c12", "verb-tenses.s12",
+  "verb-forms.s7", "verb-forms.s8", "verb-forms.s9", "verb-forms.c13", "verb-forms.s10", "verb-forms.s11", "verb-forms.c14", "verb-forms.s12", "verb-forms.s13", "verb-forms.s14",
+  "word-choice.s6", "word-choice.c15", "word-choice.c11", "word-choice.s7", "word-choice.c12", "word-choice.s8", "word-choice.c13", "word-choice.s9", "word-choice.s10", "word-choice.c14", "word-choice.s11", "word-choice.s12", "word-choice.s13", "word-choice.s14",
+  "sentence-structure.c9", "sentence-structure.c10", "sentence-structure.c11", "sentence-structure.s6", "sentence-structure.s7", "sentence-structure.s8", "sentence-structure.c12", "sentence-structure.s9", "sentence-structure.c13", "sentence-structure.s10", "sentence-structure.s11",
+  "plural-agreement.c11", "plural-agreement.s7", "plural-agreement.s8", "plural-agreement.s9", "plural-agreement.c12", "plural-agreement.s10", "plural-agreement.s11", "plural-agreement.s12",
+  "other.c10", "other.s6", "other.s7", "other.c11", "other.s8", "other.s9", "other.s10", "other.s11", "other.c12", "other.s12",
+]);
+
+const normalizeExerciseText = (text) => text.toLowerCase().replace(/\s+/gu, " ").trim();
+const spokenSentence = (exercise) => exercise.kind === "choose"
+  ? exercise.sentence.replace("___", exercise.answer)
+  : exercise.answer;
+const exerciseWords = (text) => text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+
+ test("rewritten exercises use original wording nowhere and meet local grading constraints", () => {
+  const allExercises = practiceLessons.flatMap((lesson) => lesson.exercises);
+  const rewritten = allExercises.filter((exercise) => rewrittenExerciseIds.has(exercise.id));
+  assert.equal(rewritten.length, rewrittenExerciseIds.size, "all rewritten IDs still exist");
+
+  const sourcePhrases = new Set();
+  for (const lesson of practiceLessons) for (const rule of lesson.rules) {
+    for (const phrase of [rule.wrong, rule.right, ...rule.examples.flatMap((example) => [example.en]), ...rule.traps.flatMap((trap) => [trap.wrong, trap.right])]) {
+      sourcePhrases.add(normalizeExerciseText(phrase));
+    }
+  }
+  const allExercisePhrases = new Map();
+  for (const exercise of allExercises) {
+    for (const phrase of [exercise.sentence, spokenSentence(exercise)]) {
+      const normalized = normalizeExerciseText(phrase);
+      const prior = allExercisePhrases.get(normalized);
+      if (rewrittenExerciseIds.has(exercise.id)) {
+        assert.ok(!sourcePhrases.has(normalized), `${exercise.id} copies a rule phrase: ${phrase}`);
+        assert.ok(!prior, `${exercise.id} duplicates ${prior}: ${phrase}`);
+      }
+      if (!prior) allExercisePhrases.set(normalized, exercise.id);
+    }
+  }
+
+  for (const exercise of rewritten) {
+    for (const value of [exercise.sentence, spokenSentence(exercise), exercise.why, ...(exercise.options ?? []), ...(exercise.accepted ?? [])]) {
+      assert.equal(value.trim(), value, `${exercise.id} has surrounding whitespace`);
+    }
+    if (exercise.kind === "choose") {
+      assert.equal((exercise.sentence.match(/___/gu) ?? []).length, 1, `${exercise.id} has one blank`);
+      assert.ok(exerciseWords(exercise.sentence.replace("___", "")).length >= 3, `${exercise.id} has enough context`);
+      assert.equal(new Set(exercise.options.map((option) => option.toLowerCase())).size, exercise.options.length, `${exercise.id} options are case-insensitively unique`);
+    } else {
+      const before = exerciseWords(exercise.sentence);
+      const after = exerciseWords(exercise.answer);
+      let start = 0;
+      while (start < before.length && start < after.length && before[start] === after[start]) start += 1;
+      let end = 0;
+      while (end < before.length - start && end < after.length - start && before[before.length - 1 - end] === after[after.length - 1 - end]) end += 1;
+      assert.ok(before.length - start - end <= 4, `${exercise.id} changes too many source tokens`);
+      assert.ok(after.length - start - end <= 4, `${exercise.id} changes too many answer tokens`);
+    }
+    const contractionPairs = [["I'm", "I am"], ["don't", "do not"], ["doesn't", "does not"], ["I've", "I have"], ["it's", "it is"], ["we're", "we are"], ["didn't", "did not"], ["haven't", "have not"]];
+    for (const [contracted, expanded] of contractionPairs) {
+      if (exercise.kind !== "spot" || !new RegExp(`\\b(?:${contracted}|${expanded})\\b`, "iu").test(exercise.answer)) continue;
+      const alternative = exercise.answer.replace(new RegExp(`\\b${contracted}\\b`, "iu"), expanded).replace(new RegExp(`\\b${expanded}\\b`, "iu"), contracted);
+      assert.ok((exercise.accepted ?? []).some((answer) => normalizeExerciseText(answer) === normalizeExerciseText(alternative)), `${exercise.id} needs accepted variant ${alternative}`);
     }
   }
 });
