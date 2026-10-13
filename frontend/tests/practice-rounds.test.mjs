@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildRound, gradeLocally, requeueMissed } from "../src/lib/practice/practice-rounds.mjs";
 import { lessonStats, topParts } from "../src/lib/practice/practice-insights.mjs";
+import { practiceLessons } from "../src/lib/practice/practice-lessons.mjs";
 
 const exercises = [
   ...Array.from({ length: 12 }, (_, i) => ({ id: `a${i}`, ruleId: i % 2 ? "r2" : "r1", kind: i % 3 ? "choose" : "spot", sentence: "I work in Google.", answer: i % 3 ? "at" : "I work at Google.", options: ["at", "in"], accepted: ["I am interested in machine learning."], why: null })),
@@ -53,8 +54,28 @@ test("local grading handles exact, contractions, punctuation, partial and unrela
   assert.equal(gradeLocally(spot, "i work at google").verdict, "correct");
   assert.equal(gradeLocally({ ...spot, sentence: "I'm interested on ML.", answer: "I'm interested in ML." }, "I am interested in ML!").verdict, "correct");
   for (const [source, expected] of [["I don't", "I do not"], ["It's ready", "It is ready"], ["I've shipped it", "I have shipped it"], ["We're ready", "We are ready"], ["I didn't ship", "I did not ship"], ["It doesn't work", "It does not work"], ["I haven't shipped", "I have not shipped"], ["I can't ship", "I cannot ship"], ["I won't ship", "I will not ship"]]) {
-    assert.equal(gradeLocally({ kind: "spot", sentence: source, answer: source }, expected).verdict, "correct");
+    assert.equal(gradeLocally({ kind: "spot", sentence: `Yesterday ${source}`, answer: `Yesterday ${expected}` }, `Yesterday ${source}`).verdict, "incorrect");
+    assert.equal(gradeLocally({ kind: "spot", sentence: `Earlier ${source}`, answer: `Yesterday ${expected}` }, `Yesterday ${source}`).verdict, "correct");
   }
-  assert.equal(gradeLocally(spot, "I worked at Google.").verdict, "almost");
+  assert.equal(gradeLocally(spot, "I work at Google today.").verdict, "almost");
   assert.equal(gradeLocally(spot, "The weather is nice today.").verdict, "incorrect");
+});
+
+test("every real spot exercise accepts its answers and rejects its unchanged source", () => {
+  const spots = practiceLessons.flatMap((lesson) => lesson.exercises).filter((exercise) => exercise.kind === "spot");
+  assert.ok(spots.length > 0);
+  for (const exercise of spots) {
+    for (const answer of [exercise.answer, ...(exercise.accepted ?? [])]) {
+      assert.equal(gradeLocally(exercise, answer).verdict, "correct", `${exercise.id}: ${answer}`);
+    }
+    assert.equal(gradeLocally(exercise, exercise.sentence).verdict, "incorrect", `${exercise.id}: unchanged source`);
+  }
+});
+
+test("partial correction requires the changed region in context", () => {
+  const grade = (sentence, answer, submission) => gradeLocally({ kind: "spot", sentence, answer }, submission).verdict;
+  assert.equal(grade("I worked on project today.", "I worked on a project today.", "I worked on a project yesterday."), "almost");
+  assert.equal(grade("I deployed patch today.", "I deployed today.", "Yesterday, I deployed today."), "almost");
+  assert.equal(grade("I work in cloud today.", "I work on cloud today.", "I work on cloud today, thankfully."), "almost");
+  assert.equal(grade("I worked on project for a bank.", "I worked on a project for a bank.", "I worked on project for a bank."), "incorrect");
 });

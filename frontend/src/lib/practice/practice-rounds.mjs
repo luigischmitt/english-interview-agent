@@ -29,34 +29,61 @@ export function gradeLocally(exercise, answer) {
     return { verdict: correct ? "correct" : "incorrect", corrected, feedback: correct ? "correct" : "incorrect" };
   }
 
+  const source = tokens(exercise.sentence);
+  const submitted = tokens(answer);
+  if (sameTokens(source, submitted)) {
+    return { verdict: "incorrect", corrected, feedback: "incorrect" };
+  }
+
   const accepted = [exercise.answer, ...(exercise.accepted ?? [])];
   if (accepted.some((candidate) => normalize(candidate) === normalize(answer))) {
     return { verdict: "correct", corrected, feedback: "correct" };
   }
 
-  const source = tokens(exercise.sentence);
   const target = tokens(exercise.answer);
   let start = 0;
   while (start < source.length && start < target.length && source[start] === target[start]) start += 1;
   const region = diffRegion(source, target, start);
+  const sourceRegion = source.slice(start, region.endSource + 1);
   const fixed = target.slice(start, region.endTarget + 1);
-  const submitted = tokens(answer);
-  let matches = false;
-  for (let index = 0; index <= submitted.length - fixed.length; index += 1) {
-    if (fixed.length && fixed.every((word, offset) => submitted[index + offset] === word)) matches = true;
-  }
-  const verdict = matches ? "almost" : "incorrect";
+  const leftAnchor = start > 0 ? target[start - 1] : null;
+  const rightAnchor = region.endTarget + 1 < target.length ? target[region.endTarget + 1] : null;
+  const correctedInContext = hasRegionWithAnchors(submitted, fixed, leftAnchor, rightAnchor);
+  const mistakenInContext = hasRegionWithAnchors(submitted, sourceRegion, leftAnchor, rightAnchor);
+  const verdict = correctedInContext && !mistakenInContext ? "almost" : "incorrect";
   return { verdict, corrected, feedback: verdict };
 }
 
 function diffRegion(source, target, start) {
   let endTarget = target.length - 1;
-  let sourceIndex = source.length - 1;
-  while (sourceIndex >= start && endTarget >= start && source[sourceIndex] === target[endTarget]) {
-    sourceIndex -= 1;
+  let endSource = source.length - 1;
+  while (endSource >= start && endTarget >= start && source[endSource] === target[endTarget]) {
+    endSource -= 1;
     endTarget -= 1;
   }
-  return { endTarget };
+  return { endSource, endTarget };
+}
+
+function sameTokens(left, right) {
+  return left.length === right.length && left.every((word, index) => word === right[index]);
+}
+
+function hasRegionWithAnchors(sentence, region, leftAnchor, rightAnchor) {
+  if (!leftAnchor && !rightAnchor) return region.length > 0 && containsTokens(sentence, region);
+  if (!region.length && leftAnchor && rightAnchor) return containsTokens(sentence, [leftAnchor, rightAnchor]);
+  const pattern = [
+    ...(leftAnchor ? [leftAnchor] : []),
+    ...region,
+    ...(rightAnchor ? [rightAnchor] : []),
+  ];
+  return containsTokens(sentence, pattern);
+}
+
+function containsTokens(sentence, pattern) {
+  for (let start = 0; start <= sentence.length - pattern.length; start += 1) {
+    if (pattern.every((word, offset) => sentence[start + offset] === word)) return true;
+  }
+  return false;
 }
 
 function weightedOrder(items, weights, random) {
