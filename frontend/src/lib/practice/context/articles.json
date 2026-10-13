@@ -1,0 +1,78 @@
+{
+  "articles.c1": {
+    "context": "Você explica que criou uma API para sincronizar os pedidos.",
+    "meaning": "Criei uma API para sincronizar os pedidos."
+  },
+  "articles.c2": {
+    "context": "Ela se apresenta e conta sua função no Itaú.",
+    "meaning": "Ela é engenheira de software no Itaú."
+  },
+  "articles.c3": {
+    "context": "Você relata que encontraram um erro e onde ele estava.",
+    "meaning": "Encontramos um erro. O erro estava no fluxo de login."
+  },
+  "articles.c4": {
+    "context": "Você comenta o que usuários esperam dos sistemas em geral.",
+    "meaning": "Em geral, usuários esperam respostas rápidas."
+  },
+  "articles.c5": {
+    "context": "Você conta quanto tempo levou para corrigir o problema.",
+    "meaning": "Levou uma hora para corrigir."
+  },
+  "articles.s1": {
+    "context": "Você explica que ferramenta sua equipe usa em produção.",
+    "meaning": "É uma ferramenta que usamos em produção."
+  },
+  "articles.s2": {
+    "context": "Você descreve um projeto que fez para um banco.",
+    "meaning": "Trabalhei em um projeto para um banco."
+  },
+  "articles.s3": {
+    "context": "Você explica do que precisa para obter dados sobre o usuário.",
+    "meaning": "Precisamos de informações sobre o usuário."
+  },
+  "articles.c6": {
+    "context": "Você justifica a escolha do Redis para aquele cenário.",
+    "meaning": "Redis foi a melhor opção para o nosso caso."
+  },
+  "articles.c7": {
+    "context": "Você conta que adotou uma abordagem igual nos dois serviços.",
+    "meaning": "Usamos a mesma abordagem nos dois serviços."
+  },
+  "articles.s4": {
+    "context": "Você descreve para onde levou toda a infraestrutura.",
+    "meaning": "Levamos toda a infraestrutura para a nuvem."
+  },
+  "articles.s5": {
+    "context": "Você relata que abriram um chamado e o que ele continha.",
+    "meaning": "Abrimos um chamado. O chamado incluía o rastreamento da pilha de execução."
+  },
+  "articles.c8": {
+    "context": "Você diz que escreveu uma atualização para o canal do incidente.",
+    "meaning": "Escrevi uma atualização para o canal do incidente."
+  },
+  "articles.s6": {
+    "context": "Você conta que enviou uma candidatura para a vaga.",
+    "meaning": "Enviei uma candidatura para a vaga."
+  },
+  "articles.c10": {
+    "context": "Você explica que um erro de tempo esgotado afetou todas as regiões.",
+    "meaning": "Encontramos um erro de tempo esgotado. O erro afetou todas as regiões."
+  },
+  "articles.s9": {
+    "context": "Você relata que implantou uma correção para o problema de login.",
+    "meaning": "Implantei uma correção. A correção resolveu o problema de login."
+  },
+  "articles.c9": {
+    "context": "Você comenta o que ajuda a aumentar a confiabilidade entre regiões.",
+    "meaning": "O monitoramento melhora a confiabilidade entre regiões."
+  },
+  "articles.s7": {
+    "context": "Você comenta o uso do Kubernetes para orquestração.",
+    "meaning": "Kubernetes é amplamente usado para orquestração."
+  },
+  "articles.s8": {
+    "context": "Você relata que escolheram a opção de armazenamento mais barata.",
+    "meaning": "Eles selecionaram a opção de armazenamento mais barata."
+  }
+}

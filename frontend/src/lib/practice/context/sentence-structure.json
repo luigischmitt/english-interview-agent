@@ -1,0 +1,98 @@
+{
+  "sentence-structure.c1": {
+    "context": "Explico o que fizemos quando uma consulta ficou lenta.",
+    "meaning": "A consulta estava lenta, então adicionamos um índice."
+  },
+  "sentence-structure.c2": {
+    "context": "Explico por que alteramos o cache.",
+    "meaning": "Alteramos o cache porque estava usando memória demais."
+  },
+  "sentence-structure.c3": {
+    "context": "Resumo dois aspectos opostos de uma solução.",
+    "meaning": "Era rápido, mas era caro."
+  },
+  "sentence-structure.c4": {
+    "context": "Descrevo uma API que criamos.",
+    "meaning": "Criamos uma API rápida."
+  },
+  "sentence-structure.s1": {
+    "context": "Explico por que testes são importantes.",
+    "meaning": "É muito importante escrever testes."
+  },
+  "sentence-structure.s2": {
+    "context": "Conto uma entrega feita no dia anterior.",
+    "meaning": "Fizemos o deploy da nova versão ontem."
+  },
+  "sentence-structure.s3": {
+    "context": "Descrevo um projeto complexo em que trabalhei.",
+    "meaning": "Trabalhei em um projeto muito complexo."
+  },
+  "sentence-structure.c5": {
+    "context": "Pergunto sobre a escolha de tecnologia feita no passado.",
+    "meaning": "Por que você escolheu Go para aquele projeto no ano passado?"
+  },
+  "sentence-structure.c6": {
+    "context": "Pergunto como funciona um cache.",
+    "meaning": "Como o cache funciona?"
+  },
+  "sentence-structure.c7": {
+    "context": "Explico uma decisão passada sobre o banco de dados.",
+    "meaning": "No ano passado, não usamos Redis naquele projeto."
+  },
+  "sentence-structure.c8": {
+    "context": "Descrevo o conhecimento dela sobre código antigo.",
+    "meaning": "Ela não conhece o código legado."
+  },
+  "sentence-structure.s4": {
+    "context": "Pergunto sobre a escolha de tecnologia para um serviço.",
+    "meaning": "Por que você escolheu Go para este serviço?"
+  },
+  "sentence-structure.s5": {
+    "context": "Explico minha experiência com Kotlin.",
+    "meaning": "Não tenho experiência com Kotlin."
+  },
+  "sentence-structure.c9": {
+    "context": "Recomendo registrar os passos para reverter uma mudança.",
+    "meaning": "É útil documentar os passos para fazer rollback da mudança."
+  },
+  "sentence-structure.c10": {
+    "context": "Relato uma ação feita após um aumento no tráfego.",
+    "meaning": "Aumentamos o pool de workers após o pico de tráfego."
+  },
+  "sentence-structure.c11": {
+    "context": "Descrevo o tipo de banco de dados para o qual migramos.",
+    "meaning": "Migramos para um cluster gerenciado de bancos de dados."
+  },
+  "sentence-structure.s6": {
+    "context": "Explico quantos workers são executados por padrão.",
+    "meaning": "Em produção, cinco workers são executados por padrão."
+  },
+  "sentence-structure.s7": {
+    "context": "Pergunto como a fila lida com mensagens repetidas.",
+    "meaning": "Como a fila lida com mensagens duplicadas?"
+  },
+  "sentence-structure.s8": {
+    "context": "Descrevo uma limitação atual do cliente de rede.",
+    "meaning": "O cliente ainda não oferece suporte à versão dois do protocolo HTTP."
+  },
+  "sentence-structure.c12": {
+    "context": "Organizo em poucas frases os passos de investigação e reinício.",
+    "meaning": "Quero resumir a consulta aos logs e a reinicialização do serviço."
+  },
+  "sentence-structure.s9": {
+    "context": "Relato como investiguei e resolvi um timeout.",
+    "meaning": "Consultei os logs, encontrei o timeout e reiniciei o serviço."
+  },
+  "sentence-structure.c13": {
+    "context": "Organizo em poucas frases a investigação de um alerta.",
+    "meaning": "Quero resumir a análise do alerta e o rastreamento da solicitação."
+  },
+  "sentence-structure.s10": {
+    "context": "Explico a sequência que levou a um erro de autorização.",
+    "meaning": "O token expirou. Depois, o cliente tentou de novo. O gateway retornou um erro de autorização."
+  },
+  "sentence-structure.s11": {
+    "context": "Explico por que interrompemos a produção de mensagens.",
+    "meaning": "A fila estava cheia, então pausamos o produtor."
+  }
+}

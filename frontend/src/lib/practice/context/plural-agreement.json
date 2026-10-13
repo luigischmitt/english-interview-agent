@@ -1,0 +1,98 @@
+{
+  "plural-agreement.c1": {
+    "context": "Na entrevista, você explica quantos pontos de acesso um serviço oferece.",
+    "meaning": "O serviço tem três pontos de acesso."
+  },
+  "plural-agreement.c2": {
+    "context": "Você comenta como os testes automatizados se comportam a cada alteração.",
+    "meaning": "Os testes passam a cada envio de código."
+  },
+  "plural-agreement.c3": {
+    "context": "Você descreve quais dados ficam guardados sobre os pedidos.",
+    "meaning": "Guardamos muitos dados sobre os pedidos."
+  },
+  "plural-agreement.c4": {
+    "context": "Você conta quantos serviços estão ativos no ambiente de produção.",
+    "meaning": "Temos cinco serviços em produção."
+  },
+  "plural-agreement.s1": {
+    "context": "Você conta em quais regiões estão os clientes da empresa.",
+    "meaning": "Temos muitos clientes na Europa."
+  },
+  "plural-agreement.s2": {
+    "context": "Você descreve de onde vem a maior parte dos usuários do produto.",
+    "meaning": "A maioria dos nossos usuários está no Brasil."
+  },
+  "plural-agreement.s3": {
+    "context": "Você relata o retorno recebido do cliente depois de uma entrega.",
+    "meaning": "Recebemos muitos comentários úteis do cliente."
+  },
+  "plural-agreement.c5": {
+    "context": "Você explica o que melhorou ao investigar consultas lentas no banco.",
+    "meaning": "Otimizamos três consultas lentas."
+  },
+  "plural-agreement.c6": {
+    "context": "Você conta quantas pessoas entraram no seu time no ano passado.",
+    "meaning": "Cinco pessoas entraram no nosso time no ano passado."
+  },
+  "plural-agreement.c7": {
+    "context": "O entrevistador pergunta sobre o volume diário de dados armazenados.",
+    "meaning": "Quantos dados vocês armazenam por dia?"
+  },
+  "plural-agreement.c8": {
+    "context": "Você descreve quantos serviços estão disponíveis em produção.",
+    "meaning": "Temos alguns serviços em produção."
+  },
+  "plural-agreement.c9": {
+    "context": "Você apresenta uma migração importante que liderou no trabalho.",
+    "meaning": "Liderei um projeto de migração de seis meses."
+  },
+  "plural-agreement.c10": {
+    "context": "Você conta quanto tempo durou uma conversa que marcou com o time.",
+    "meaning": "Marcamos uma conversa de 30 minutos."
+  },
+  "plural-agreement.s4": {
+    "context": "Você explica como os trabalhos são processados em grupos menores.",
+    "meaning": "Processamos os trabalhos em pequenos lotes."
+  },
+  "plural-agreement.s5": {
+    "context": "Você pergunta à equipe qual quantidade de informações é necessária.",
+    "meaning": "De quanta informação precisamos?"
+  },
+  "plural-agreement.s6": {
+    "context": "Você descreve a duração de um contrato que teve.",
+    "meaning": "Era um contrato de dois anos."
+  },
+  "plural-agreement.c11": {
+    "context": "Você explica quantas instâncias cuidam das solicitações de autenticação.",
+    "meaning": "Duas instâncias processam solicitações de autenticação."
+  },
+  "plural-agreement.s7": {
+    "context": "Você conta quem participou de uma chamada durante um incidente.",
+    "meaning": "Vários engenheiros participaram da chamada do incidente."
+  },
+  "plural-agreement.s8": {
+    "context": "Você descreve uma alteração feita em proxies durante a implantação.",
+    "meaning": "Trocamos três proxies durante a implantação."
+  },
+  "plural-agreement.s9": {
+    "context": "Você explica o que o painel de análise apresenta toda semana.",
+    "meaning": "O painel de análise mostra tendências semanais."
+  },
+  "plural-agreement.c12": {
+    "context": "Você comenta o conteúdo útil incluído nas notas de uma versão.",
+    "meaning": "As notas da versão contêm informações úteis."
+  },
+  "plural-agreement.s10": {
+    "context": "Você relata o que a equipe de suporte reuniu durante uma interrupção.",
+    "meaning": "A equipe de suporte reuniu muitas evidências durante a interrupção."
+  },
+  "plural-agreement.s11": {
+    "context": "Você pergunta sobre o tráfego que chega ao gateway nos horários de pico.",
+    "meaning": "Quanto tráfego chega ao gateway nos horários de pico?"
+  },
+  "plural-agreement.s12": {
+    "context": "Você avalia se o prazo de uma sprint basta para uma migração.",
+    "meaning": "Uma sprint de quatro semanas é curta demais para essa migração."
+  }
+}

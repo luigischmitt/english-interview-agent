@@ -1,0 +1,118 @@
+{
+  "word-choice.c1": {
+    "context": "Descrevo minha experiência atual no começo da entrevista.",
+    "meaning": "Trabalho como desenvolvedor backend numa fintech."
+  },
+  "word-choice.c2": {
+    "context": "Comento uma meta de aprendizado para este ano.",
+    "meaning": "Pretendo aprender Kubernetes neste ano."
+  },
+  "word-choice.c3": {
+    "context": "Explico como identifiquei um problema numa consulta.",
+    "meaning": "Percebi que faltava um índice na consulta."
+  },
+  "word-choice.c4": {
+    "context": "Conto por que decidimos refazer um serviço.",
+    "meaning": "Tomamos a decisão de reescrever o serviço."
+  },
+  "word-choice.c5": {
+    "context": "Descrevo a preparação para escolher uma tecnologia.",
+    "meaning": "Fizemos uma pesquisa antes de escolher um framework."
+  },
+  "word-choice.c6": {
+    "context": "Conto o desfecho da investigação de um bug.",
+    "meaning": "Tentamos várias correções e, por fim, encontramos a causa raiz."
+  },
+  "word-choice.s1": {
+    "context": "Falo de um plano de desenvolvimento profissional.",
+    "meaning": "Pretendo estudar para uma certificação de cloud."
+  },
+  "word-choice.s2": {
+    "context": "Descrevo uma migração feita no banco de dados.",
+    "meaning": "Executamos a migração do banco de dados inteiro."
+  },
+  "word-choice.s3": {
+    "context": "Conto uma etapa antes de integrar uma alteração.",
+    "meaning": "Fizemos uma revisão de código antes de integrar a alteração."
+  },
+  "word-choice.c7": {
+    "context": "Explico minha rotina de reuniões recorrentes.",
+    "meaning": "Compareço à reunião de planejamento toda segunda-feira."
+  },
+  "word-choice.c8": {
+    "context": "Comento uma palestra gravada que vi na internet.",
+    "meaning": "Ontem assisti a uma palestra gravada sobre Rust no YouTube."
+  },
+  "word-choice.c9": {
+    "context": "Conto o que o gerente comunicou ao time.",
+    "meaning": "O gerente nos informou a data do release."
+  },
+  "word-choice.c10": {
+    "context": "Relato o que ele comunicou sobre a API.",
+    "meaning": "Ele disse que a API estava lenta demais."
+  },
+  "word-choice.s4": {
+    "context": "Conto de um evento de segurança de que participei.",
+    "meaning": "Compareci a uma conferência de segurança no mês passado."
+  },
+  "word-choice.s5": {
+    "context": "Conto o que perguntei durante uma conversa sobre arquitetura.",
+    "meaning": "Fiz uma pergunta sobre a arquitetura."
+  },
+  "word-choice.s6": {
+    "context": "Relato minha presença numa reunião de revisão de segurança.",
+    "meaning": "Compareci à reunião de revisão de segurança ontem."
+  },
+  "word-choice.c11": {
+    "context": "Descrevo o estado exibido no dashboard neste momento.",
+    "meaning": "O dashboard mostra um estado verde atualmente."
+  },
+  "word-choice.s7": {
+    "context": "Comparo o tamanho atual do time com o do ano passado.",
+    "meaning": "Atualmente, nosso time tem seis desenvolvedores; no ano passado, tinha três."
+  },
+  "word-choice.c15": {
+    "context": "Explico o sentido de uma palavra inglesa em português.",
+    "meaning": "Em português, essa palavra significa “na verdade”."
+  },
+  "word-choice.c12": {
+    "context": "Explico minha intenção de dividir um sistema grande.",
+    "meaning": "Pretendo dividir o monólito em serviços."
+  },
+  "word-choice.s8": {
+    "context": "Descrevo o plano de um analista para a próxima sprint.",
+    "meaning": "O analista planejou adicionar tracing na próxima sprint."
+  },
+  "word-choice.c13": {
+    "context": "Conto o que fizemos para testar o fluxo antes do lançamento.",
+    "meaning": "Antes do lançamento, executamos o teste do checkout sob pico de tráfego."
+  },
+  "word-choice.s9": {
+    "context": "Relato uma verificação de desempenho antes da entrega.",
+    "meaning": "Executei o benchmark noturno antes do release."
+  },
+  "word-choice.s10": {
+    "context": "Descrevo a frequência com que revisamos dependências.",
+    "meaning": "Nosso time revisa atualizações de dependências de vez em quando."
+  },
+  "word-choice.c14": {
+    "context": "Conto o desfecho do processamento após tentativas frustradas.",
+    "meaning": "Após três tentativas frustradas, o worker finalmente processou o evento enfileirado."
+  },
+  "word-choice.s11": {
+    "context": "Descrevo uma tarefa periódica de manutenção.",
+    "meaning": "Nosso time revisa atualizações de dependências de vez em quando como parte da manutenção."
+  },
+  "word-choice.s12": {
+    "context": "Conto o que fizemos antes de escolher um banco vetorial.",
+    "meaning": "Fizemos uma pesquisa antes de escolher o banco de dados vetorial."
+  },
+  "word-choice.s13": {
+    "context": "Relato a participação do apresentador numa conferência.",
+    "meaning": "O apresentador compareceu à conferência de segurança no mês passado."
+  },
+  "word-choice.s14": {
+    "context": "Explico o que a liderança comunicou aos desenvolvedores.",
+    "meaning": "A liderança informou aos desenvolvedores que a revisão foi adiada."
+  }
+}

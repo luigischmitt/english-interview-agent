@@ -39,7 +39,7 @@ test("insights rank lesson errors and expose each part's latest evidence", () =>
 });
 test("weights, missed preference, mine scope and missed requeue", () => {
   assert.ok(buildRound({ mode: "quick", key: "a", lessons, weights: { r2: 100 }, random }).filter((x) => x.ruleId === "r2").length >= 3);
-  assert.equal(buildRound({ mode: "quick", key: "a", lessons, missedIds: ["a0"], random })[0].id, "a0");
+  assert.ok(buildRound({ mode: "quick", key: "a", lessons, missedIds: ["a0"], random }).some((item) => item.id === "a0"));
   assert.ok(buildRound({ mode: "mine", lessons, weights: { r1: 2, r3: 1 }, random }).every((x) => ["r1", "r3"].includes(x.ruleId)));
   const lessonFallback = buildRound({ mode: "mine", lessons, lessonWeights: { a: 9, b: 3 }, random });
   assert.equal(lessonFallback.length, 10);
@@ -47,6 +47,26 @@ test("weights, missed preference, mine scope and missed requeue", () => {
   assert.deepEqual(buildRound({ mode: "mine", lessons, random }), []);
   const round = exercises.slice(0, 3); const queued = requeueMissed(round, [{ verdict: "incorrect" }, { verdict: "correct" }, { verdict: "almost" }]);
   assert.deepEqual(queued.slice(3).map((x) => x.id), [round[0].id, round[2].id]);
+});
+
+test("rounds shuffle selected exercise order and choose options without mutating lesson data", () => {
+  const sourceOptions = exercises.map((exercise) => [...exercise.options]);
+  const seededRandom = (seed) => {
+    let state = seed;
+    return () => {
+      state = (state * 16807) % 2147483647;
+      return (state - 1) / 2147483646;
+    };
+  };
+  const first = buildRound({ mode: "focused", key: "a", size: 10, lessons, random: seededRandom(11) });
+  const second = buildRound({ mode: "focused", key: "a", size: 10, lessons, random: seededRandom(27) });
+  assert.notDeepEqual(first.map((item) => item.id), second.map((item) => item.id));
+
+  const chooseIds = first.filter((item) => item.kind === "choose").map((item) => item.id);
+  const secondById = new Map(second.map((item) => [item.id, item]));
+  assert.ok(chooseIds.some((id) => first.find((item) => item.id === id).options[0] !== secondById.get(id).options[0]));
+  assert.ok(first.every((item) => item.kind !== "choose" || item !== exercises.find((source) => source.id === item.id)));
+  assert.deepEqual(exercises.map((exercise) => exercise.options), sourceOptions);
 });
 test("local grading handles exact, contractions, punctuation, partial and unrelated answers", () => {
   const choose = { kind: "choose", sentence: "I work ___ Google.", answer: "at", options: ["at", "in"] };
