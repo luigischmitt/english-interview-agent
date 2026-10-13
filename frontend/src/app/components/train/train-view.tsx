@@ -41,7 +41,7 @@ import { sortPracticeGroups } from "@/lib/practice/practice-sync.mjs";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { getCurrentLocale, t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
-import { alternativesFor, applyEdits, mistakeRegion, toBlocks } from "@/lib/practice/word-blocks.mjs";
+import { alternativesFor, applyEdits, insertionIndexFromRects, isOrderChanged, mistakeRegion, normalizeEdits, toBlocks } from "@/lib/practice/word-blocks.mjs";
 import "./train.css";
 
 let practiceAudioManifestPromise: Promise<typeof import("@/lib/practice/practice-audio-manifest.json")> | null = null;
@@ -1445,7 +1445,8 @@ function PracticeSession({
   const activeOrder = wordOrder.length ? wordOrder : blocks.map(({ id }) => id);
   const region = spot ? mistakeRegion(exercise) : { blockIds: [], correct: "", mistaken: "" };
   const editedSentence = spot ? applyEdits(blocks, wordEdits, activeOrder) : "";
-  const anythingChanged = Object.keys(wordEdits).length > 0 || (wordOrder.length > 0 && wordOrder.some((id, index) => id !== index));
+  const normalizedWordEdits = normalizeEdits(blocks, wordEdits);
+  const anythingChanged = Object.keys(normalizedWordEdits).length > 0 || isOrderChanged(activeOrder, blocks.map(({ id }) => id));
   const wholeSentenceOptions = Boolean(choose && /___\s*$/u.test(exercise.sentence) && exercise.options?.length && exercise.options.every((option) => /[.!?]\s*$/u.test(option)));
   const topicByLesson: Record<string, string> = {
     prepositions: "preposição", articles: "artigo", "verb-tenses": "tempo verbal", "verb-forms": "forma do verbo",
@@ -1513,8 +1514,8 @@ function PracticeSession({
                   sentence={blocks}
                   edits={wordEdits}
                   order={activeOrder}
-                  onOrderChange={(order) => { setWordOrder(order); if (order.some((id, index) => id !== index)) setHasEditedOnce(true); }}
-                  onEditsChange={(edits) => { setWordEdits(edits); if (Object.keys(edits).length) setHasEditedOnce(true); }}
+                  onOrderChange={(order) => { setWordOrder(isOrderChanged(order, blocks.map(({ id }) => id)) ? order : []); setHasEditedOnce(Object.keys(normalizeEdits(blocks, wordEdits)).length > 0 || isOrderChanged(order, blocks.map(({ id }) => id))); }}
+                  onEditsChange={(edits) => { const normalized = normalizeEdits(blocks, edits); setWordEdits(normalized); setHasEditedOnce(Object.keys(normalized).length > 0 || isOrderChanged(activeOrder, blocks.map(({ id }) => id))); }}
                   disabled={grading}
                   highlightIds={helpOpen ? region.blockIds : []}
                   onAnnounce={(edits, order = activeOrder) => setAnnouncement(applyEdits(blocks, edits, order))}
@@ -1583,12 +1584,13 @@ type SpotSentenceEditorProps = {
 function SpotSentenceEditor({ sentence, edits, order, onOrderChange, onEditsChange, disabled, highlightIds, onAnnounce }: SpotSentenceEditorProps) {
   const [editingBlock, setEditingBlock] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
+  const [drag, setDrag] = useState<{ id: number; x: number; y: number; width: number; height: number; text: string; trailing: string; index: number } | null>(null);
+  const [placeholderIndex, setPlaceholderIndex] = useState<number | null>(null);
+  const suppressClick = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const measureRef = useRef<HTMLSpanElement | null>(null);
   const listRef = useRef<HTMLSpanElement | null>(null);
-  const dragged = useRef<number | null>(null);
-  const pointerStart = useRef<{ id: number; x: number; y: number } | null>(null);
-  const [dropBefore, setDropBefore] = useState<number | null>(null);
+  const dragRef = useRef<typeof drag>(null);
+  const startRef = useRef<{ id: number; x: number; y: number; node: HTMLButtonElement; pointerId: number; timer?: number; capture: boolean } | null>(null);
   const previousRects = useRef(new Map<number, DOMRect>());
   const captureRects = () => {
     const nodes = listRef.current?.querySelectorAll<HTMLElement>("[data-block-id]");
@@ -1604,24 +1606,19 @@ function SpotSentenceEditor({ sentence, edits, order, onOrderChange, onEditsChan
       const dx = old.left - rect.left;
       const dy = old.top - rect.top;
       if (!dx && !dy) return;
-      node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }], { duration: 220, easing: getComputedStyle(node).getPropertyValue("--ease-out").trim() || "ease-out" });
+      node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }], { duration: 150, easing: getComputedStyle(node).getPropertyValue("--ease-out").trim() || "ease-out" });
     });
     previousRects.current.clear();
-  }, [edits, order]);
-  useEffect(() => {
-    if (editingBlock === null) return;
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, [editingBlock]);
+  }, [edits, order, placeholderIndex]);
+  useEffect(() => { if (editingBlock !== null) { inputRef.current?.focus(); inputRef.current?.select(); } }, [editingBlock]);
   const commit = (blockId: number, value: string) => {
-    captureRects();
-    const next = { ...edits, [blockId]: value.trim() };
+    const normalized = normalizeEdits(sentence, { ...edits, [blockId]: value });
+    const next = { ...normalized };
     onEditsChange(next);
     onAnnounce(next);
     setEditingBlock(null);
   };
   const undo = (blockId: number) => {
-    captureRects();
     const next = { ...edits };
     delete next[blockId];
     onEditsChange(next);
@@ -1632,103 +1629,84 @@ function SpotSentenceEditor({ sentence, edits, order, onOrderChange, onEditsChan
     const target = Math.max(0, Math.min(order.length - 1, index + delta));
     if (target === index) return;
     captureRects();
-    const next = [...order];
-    next.splice(index, 1);
-    next.splice(target, 0, id);
-    onOrderChange(next);
-    onAnnounce(edits, next);
+    const next = [...order]; next.splice(index, 1); next.splice(target, 0, id);
+    onOrderChange(next); onAnnounce(edits, next);
   };
-  const dropAt = (id: number, beforeId: number | null) => {
-    const source = dragged.current;
-    dragged.current = null;
-    setDropBefore(null);
-    if (source === null || source === beforeId) return;
-    captureRects();
-    const next = order.filter((value) => value !== source);
-    const at = beforeId === null ? next.length : next.indexOf(beforeId);
-    next.splice(Math.max(0, at), 0, source);
-    onOrderChange(next);
-    onAnnounce(edits, next);
+  const lift = (start: NonNullable<typeof startRef.current>) => {
+    if (dragRef.current || startRef.current !== start) return;
+    const block = sentence.find(({ id }) => id === start.id);
+    if (!block) return;
+    const rect = start.node.getBoundingClientRect();
+    const next = { id: start.id, x: start.x, y: start.y, width: rect.width, height: rect.height, text: edits[start.id] ?? block.text, trailing: block.trailing, index: order.indexOf(start.id) };
+    dragRef.current = next; setDrag(next); setPlaceholderIndex(next.index);
+    suppressClick.current = true;
+    window.setTimeout(() => { suppressClick.current = false; }, 500);
+    try { start.node.setPointerCapture(start.pointerId); start.capture = true; } catch { /* Pointer may have left the element. */ }
+  };
+  const finish = (cancel: boolean) => {
+    const start = startRef.current;
+    const current = dragRef.current;
+    if (start?.timer) window.clearTimeout(start.timer);
+    if (!start) return;
+    let committed = false;
+    if (current && !cancel && listRef.current) {
+      const rect = listRef.current.getBoundingClientRect();
+      if (current.x >= rect.left && current.x <= rect.right && current.y >= rect.top && current.y <= rect.bottom) {
+        const next = order.filter((id) => id !== current.id);
+        next.splice(Math.max(0, Math.min(next.length, placeholderIndex ?? current.index)), 0, current.id);
+        captureRects(); onOrderChange(next); onAnnounce(edits, next); committed = true;
+      }
+    }
+    if (current && !committed && !prefersReducedMotion()) {
+      const source = listRef.current?.querySelector<HTMLElement>(`[data-block-id="${current.id}"]`)?.getBoundingClientRect();
+      if (source) { setDrag({ ...current, x: source.left + source.width / 2, y: source.top + source.height / 2 }); window.setTimeout(() => { dragRef.current = null; setDrag(null); setPlaceholderIndex(null); }, 160); startRef.current = null; return; }
+    }
+    startRef.current = null; dragRef.current = null; setDrag(null); setPlaceholderIndex(null);
   };
   useEffect(() => {
     const onMove = (event: PointerEvent) => {
-      if (!pointerStart.current) return;
-      if (dragged.current === null && Math.hypot(event.clientX - pointerStart.current.x, event.clientY - pointerStart.current.y) > 7) dragged.current = pointerStart.current.id;
-      if (dragged.current === null) return;
-      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-block-id]");
-      setDropBefore(target ? Number(target.dataset.blockId) : -1);
-    };
-    const onUp = (event: PointerEvent) => {
-      if (!pointerStart.current) return;
-      if (dragged.current !== null) {
-        event.preventDefault();
-        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-block-id]");
-        dropAt(pointerStart.current.id, target ? Number(target.dataset.blockId) : null);
+      const start = startRef.current;
+      if (!start || event.pointerId !== start.pointerId) return;
+      if (!dragRef.current && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 4) {
+        if (start.timer) window.clearTimeout(start.timer);
+        lift(start);
       }
-      pointerStart.current = null;
+      const current = dragRef.current;
+      if (!current) return;
+      event.preventDefault();
+      const updated = { ...current, x: event.clientX, y: event.clientY };
+      dragRef.current = updated; setDrag(updated);
+      const nodes = Array.from(listRef.current?.querySelectorAll<HTMLElement>("[data-block-id]") ?? []);
+      const rects = nodes.map((node) => node.getBoundingClientRect());
+      const sourceIndex = nodes.findIndex((node) => Number(node.dataset.blockId) === current.id);
+      const target = insertionIndexFromRects(rects, event.clientX, event.clientY, sourceIndex);
+      if (target !== placeholderIndex) { captureRects(); setPlaceholderIndex(target); }
     };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+    const onUp = (event: PointerEvent) => { if (startRef.current?.pointerId === event.pointerId) finish(false); };
+    const onCancel = (event: PointerEvent) => { if (startRef.current?.pointerId === event.pointerId) finish(true); };
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape" && dragRef.current) { event.preventDefault(); finish(true); } };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp); window.addEventListener("pointercancel", onCancel); window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onCancel); window.removeEventListener("keydown", onKey); };
   });
+  const orderedBlocks = order.map((id) => sentence.find((entry) => entry.id === id)!).filter(Boolean);
   return (
-    <span ref={listRef} className={`tr-word-sentence${dropBefore === -1 ? " is-drop-end" : ""}`}>
-      {order.map((id) => sentence.find((entry) => entry.id === id)!).filter(Boolean).map((block) => {
-        const edited = Object.hasOwn(edits, block.id);
-        const value = edited ? edits[block.id] : block.text;
-        const active = editingBlock === block.id;
-        const highlighted = highlightIds.includes(block.id);
+    <span ref={listRef} className="tr-word-sentence">
+      {orderedBlocks.map((block) => {
+        const placeholder = Boolean(drag && block.id === drag.id);
+        const visualOrder = drag && placeholderIndex !== null ? (() => { const ids = order.filter((id) => id !== drag.id); ids.splice(Math.max(0, Math.min(ids.length, placeholderIndex)), 0, drag.id); return ids.indexOf(block.id); })() : order.indexOf(block.id);
+        const edited = Object.hasOwn(edits, block.id); const value = edited ? edits[block.id] : block.text;
+        const active = editingBlock === block.id; const highlighted = highlightIds.includes(block.id);
         return (
-          <span key={block.id} data-block-id={block.id} className={`tr-word-wrap${edited ? " is-edited" : ""}${!value ? " is-empty" : ""}${highlighted ? " is-helped" : ""}${dropBefore === block.id ? " is-drop-before" : ""}`} onDragOver={(event) => { event.preventDefault(); setDropBefore(block.id); }} onDrop={(event) => { event.preventDefault(); dropAt(block.id, block.id); }}>
-            {active ? (
-              <span className="tr-word-editor-measure-wrap">
-                <span ref={measureRef} className="tr-word-measure" aria-hidden="true">{draft || " "}</span>
-                <input
-                  ref={inputRef}
-                  className="tr-word-editor"
-                  aria-label={t("Editar palavra: {word}", { word: block.text })}
-                  value={draft}
-                  disabled={disabled}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onBlur={() => commit(block.id, draft)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      commit(block.id, draft);
-                    }
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      setEditingBlock(null);
-                    }
-                  }}
-                />
-              </span>
-            ) : (
-              <button
-                type="button"
-                className={`tr-word-block${!value ? " is-placeholder" : ""}`}
-                onPointerDown={(event) => { if (disabled || active) return; pointerStart.current = { id: block.id, x: event.clientX, y: event.clientY }; }}
-                onKeyDown={(event) => { if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) { event.preventDefault(); move(block.id, event.key === "ArrowLeft" ? -1 : 1); } }}
-                aria-label={value ? t("Editar palavra: {word}", { word: value }) : t("Reabrir palavra: {word}", { word: block.text })}
-                disabled={disabled}
-                onClick={() => { setDraft(value); setEditingBlock(block.id); }}
-              >
-                {value || <span aria-hidden="true">&nbsp;</span>}
-              </button>
-            )}
-            <span className="tr-word-move" aria-label={t("Mover palavra") }>
-              <button type="button" aria-label={t("Mover {word} para a esquerda", { word: value || block.text })} disabled={disabled || order.indexOf(block.id) === 0} onClick={() => move(block.id, -1)}>←</button>
-              <button type="button" aria-label={t("Mover {word} para a direita", { word: value || block.text })} disabled={disabled || order.indexOf(block.id) === order.length - 1} onClick={() => move(block.id, 1)}>→</button>
-            </span>
+          <span key={block.id} data-block-id={block.id} className={`tr-word-wrap${edited ? " is-edited" : ""}${!value ? " is-empty" : ""}${highlighted ? " is-helped" : ""}${placeholder ? " is-drag-placeholder" : ""}`} style={drag ? { order: visualOrder } : undefined}>
+            {active ? <span className="tr-word-editor-measure-wrap"><input ref={inputRef} className="tr-word-editor" aria-label={t("Editar palavra: {word}", { word: block.text })} value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)} onBlur={() => commit(block.id, draft)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(block.id, draft); } if (event.key === "Escape") { event.preventDefault(); setEditingBlock(null); } }} /></span> : <button type="button" className={`tr-word-block${!value ? " is-placeholder" : ""}`} onPointerDown={(event) => { if (disabled || active || event.button !== 0) return; const start: NonNullable<typeof startRef.current> = { id: block.id, x: event.clientX, y: event.clientY, node: event.currentTarget, pointerId: event.pointerId, capture: false }; startRef.current = start; if (event.pointerType === "touch") start.timer = window.setTimeout(() => lift(start), 150); }} onKeyDown={(event) => { if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) { event.preventDefault(); move(block.id, event.key === "ArrowLeft" ? -1 : 1); } }} aria-label={value ? t("Editar palavra: {word}", { word: value }) : t("Reabrir palavra: {word}", { word: block.text })} disabled={disabled} onClick={(event) => { if (suppressClick.current) { event.preventDefault(); suppressClick.current = false; return; } setDraft(value); setEditingBlock(block.id); }}>{value || <span aria-hidden="true">&nbsp;</span>}</button>}
+            <span className="tr-word-move" aria-label={t("Mover palavra") }><button type="button" aria-label={t("Mover {word} para a esquerda", { word: value || block.text })} disabled={disabled || order.indexOf(block.id) === 0} onClick={() => move(block.id, -1)}>←</button><button type="button" aria-label={t("Mover {word} para a direita", { word: value || block.text })} disabled={disabled || order.indexOf(block.id) === order.length - 1} onClick={() => move(block.id, 1)}>→</button></span>
             <span className="tr-word-trailing">{block.trailing}</span>
-            {edited && (
-              <button type="button" className="tr-word-undo" aria-label={t("Desfazer: {word}", { word: block.text })} disabled={disabled} onClick={() => undo(block.id)}>
-                <RotateCcw aria-hidden="true" />
-              </button>
-            )}
+            {edited && <button type="button" className="tr-word-undo" aria-label={t("Desfazer: {word}", { word: block.text })} disabled={disabled} onClick={() => undo(block.id)}><RotateCcw aria-hidden="true" /></button>}
           </span>
         );
       })}
+      {drag && <span className="tr-word-ghost" style={{ left: drag.x, top: drag.y, width: drag.width, height: drag.height }} aria-hidden="true">{drag.text}</span>}
     </span>
   );
 }

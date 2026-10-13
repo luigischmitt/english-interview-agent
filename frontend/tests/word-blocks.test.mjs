@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyEdits, alternativesFor, mistakeRegion, toBlocks } from "../src/lib/practice/word-blocks.mjs";
+import { applyEdits, alternativesFor, insertionIndexFromRects, isOrderChanged, mistakeRegion, normalizeEdits, toBlocks } from "../src/lib/practice/word-blocks.mjs";
 import { gradeLocally } from "../src/lib/practice/practice-rounds.mjs";
 
 const fixture = [{ key: "fixture", exercises: [
@@ -13,6 +13,26 @@ test("word blocks round-trip exact sentence text", () => {
   for (const sentence of ["Hello, world!", "I'm ready.", "Keep  spacing?", "No punctuation", "API v2: works."]) {
     assert.equal(toBlocks(sentence).map(({ text, trailing }) => text + trailing).join(""), sentence);
   }
+});
+
+test("normalizeEdits removes trimmed and whitespace-collapsed no-ops", () => {
+  const blocks = toBlocks("keep  spacing and Case.");
+  assert.deepEqual(normalizeEdits(blocks, { 0: " keep ", 1: " spacing ", 2: "case" }), { 2: "case" });
+  assert.deepEqual(normalizeEdits(blocks, { 0: "different" }), { 0: "different" });
+});
+
+test("isOrderChanged treats a restored original order as unchanged", () => {
+  assert.equal(isOrderChanged([0, 2, 1], [0, 1, 2]), true);
+  assert.equal(isOrderChanged([0, 1, 2], [0, 1, 2]), false);
+});
+
+test("insertionIndexFromRects follows the pointer row and excludes the dragged chip", () => {
+  const rects = [
+    { left: 0, top: 0, width: 40, height: 24 }, { left: 48, top: 0, width: 60, height: 24 },
+    { left: 0, top: 32, width: 50, height: 24 }, { left: 58, top: 32, width: 40, height: 24 },
+  ];
+  assert.equal(insertionIndexFromRects(rects, 80, 40, 0), 3);
+  assert.equal(insertionIndexFromRects(rects, 20, 40, 0), 2);
 });
 
 test("applyEdits supports insertion, deletion, replacement, and punctuation", () => {
