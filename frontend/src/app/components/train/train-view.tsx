@@ -1108,7 +1108,7 @@ function PracticeSession({
       <div className="tr-practice-top">
         <button className="ds-btn ds-btn-quiet tr-back" onClick={onBack}>
           <ArrowLeft className="size-4" />
-          {t("Sair")}
+          {t("Voltar aos temas")}
         </button>
         <p className="tr-practice-theme">{lessonTitle}</p>
         {streak >= 2 ? (
