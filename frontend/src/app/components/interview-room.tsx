@@ -26,6 +26,8 @@ import { InterviewReport, type ReportState } from "./interview-report";
 import "./interview-room.css";
 import { createSpeechFeed, toucanStateFor } from "@/components/interview/toucan/toucan-engine.mjs";
 import { CallDock, CandidateTile, InterviewerTile, Toast, useCandidateCamera, useMicLevelMeter } from "./call-stage";
+import { loadPracticeGroups, syncPracticeGroups } from "@/lib/practice/practice-store";
+import { buildReportSuggestions, type ReportSuggestion } from "@/lib/practice/report-suggestions.mjs";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
@@ -99,7 +101,7 @@ function assessmentSamples(entries: Record<string, AssessmentEntry>, excluded: R
     : state.status === "pending" ? { status: "pending" } : { status: "unavailable" });
 }
 
-export function InterviewRoom({ config, onLeave, onTrain }: { config: InterviewConfig; onLeave: () => void; onTrain?: () => void }) {
+export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { config: InterviewConfig; onLeave: () => void; onTrain?: () => void; onOpenPractice?: (href: string) => void }) {
   const { locale } = useLocale();
   useSpeechWarmup();
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
@@ -1367,6 +1369,9 @@ export function InterviewRoom({ config, onLeave, onTrain }: { config: InterviewC
     return () => { current = false; };
   }, [config, locale, phase, sessionId, waitForSessionId]);
 
+  const practiceSuggestionsStartedRef = useRef<string | null>(null);
+  const [practiceSuggestions, setPracticeSuggestions] = useState<{ status: "idle" | "loading" | "ready"; items: ReportSuggestion[] }>({ status: "idle", items: [] });
+
   useEffect(() => {
     if (!sessionId || phase !== "ending" || (reportState.status !== "ready" && reportState.status !== "unavailable")) return;
     const signature = createFeedbackPersistenceSignature({ sessionId, status: reportState.status, result: reportState.result, azureSummary: currentAzureSummary });
@@ -1378,6 +1383,24 @@ export function InterviewRoom({ config, onLeave, onTrain }: { config: InterviewC
     void persistence.then((result) => {
       if (!mountedRef.current || reportPersistenceSignatureRef.current !== signature) return;
       setFeedbackSyncMessage(result.ok ? null : "O relatório está disponível nesta tela, mas não foi possível sincronizá-lo com sua conta.");
+      if (result.ok && reportState.status === "ready" && practiceSuggestionsStartedRef.current !== sessionId) {
+        practiceSuggestionsStartedRef.current = sessionId;
+        setPracticeSuggestions({ status: "loading", items: [] });
+        void (async () => {
+          let items: ReportSuggestion[] = [];
+          try {
+            const loaded = await loadPracticeGroups();
+            if (loaded.ok) {
+              // One call is enough: the newest mistakes (this interview's) are classified first; older backlog waits for Treinar.
+              const synced = await syncPracticeGroups(loaded.value);
+              items = buildReportSuggestions(synced.ok ? synced.value.themes : loaded.value, sessionId);
+            }
+          } catch {
+            console.warn("[interview-report] practice_suggestions_unavailable");
+          }
+          if (mountedRef.current) setPracticeSuggestions({ status: "ready", items });
+        })();
+      }
     });
   }, [currentAzureSummary, locale, phase, reportState, sessionId]);
 
@@ -1518,6 +1541,8 @@ export function InterviewRoom({ config, onLeave, onTrain }: { config: InterviewC
             coverage={coverage}
             onLeave={onLeave}
             onTrain={onTrain}
+            onOpenPractice={onOpenPractice}
+            practiceSuggestions={practiceSuggestions}
           />
         </>
       )}

@@ -36,7 +36,7 @@ export default function InterviewClient() {
   return (
     <div lang={locale === "en" ? "en" : "pt-BR"}>
       <SessionExpiredNotice />
-      <InterviewRoom config={config} onLeave={() => router.replace("/dashboard")} onTrain={() => router.replace("/dashboard?view=train")} />
+      <InterviewRoom config={config} onLeave={() => router.replace("/dashboard")} onTrain={() => router.replace("/dashboard?view=train")} onOpenPractice={(href) => router.replace(href)} />
     </div>
   );
 }
