@@ -1,7 +1,7 @@
 import type { RequestHandler, Response } from "express";
 
 import type { JobDirectionUserLimit } from "../thinking/job-direction-user-limit.js";
-import { practiceLimits, practicePatternTypes, type PracticeError, type PracticeExercise, type PracticeService } from "../thinking/practice-service.js";
+import { practiceCategories, practiceLimits, practicePatternTypes, type PracticeError, type PracticeExercise, type PracticeService } from "../thinking/practice-service.js";
 
 type Body = Record<string, unknown>;
 
@@ -29,10 +29,18 @@ function parseThemesInput(body: unknown): { errors: PracticeError[]; existingThe
   return { errors: parsedErrors, existingThemes: parsedThemes };
 }
 
-function parseClassifyInput(body: unknown): { errors: PracticeError[] } | null {
-  if (!isRecord(body) || !onlyKeys(body, ["errors"])) return null;
+function parseClassifyInput(body: unknown): { errors: PracticeError[]; rules?: Partial<Record<(typeof practiceCategories)[number], Array<{ id: string; rule: string }>>> } | null {
+  if (!isRecord(body) || !onlyKeys(body, ["errors", "rules"])) return null;
   const parsed = parseThemesInput({ errors: body.errors, existingThemes: [] });
-  return parsed ? { errors: parsed.errors } : null;
+  if (!parsed) return null;
+  if (body.rules === undefined) return { errors: parsed.errors };
+  if (!isRecord(body.rules) || !onlyKeys(body.rules, [...practiceCategories])) return null;
+  const rules: Partial<Record<(typeof practiceCategories)[number], Array<{ id: string; rule: string }>>> = {};
+  for (const [category, value] of Object.entries(body.rules)) {
+    if (!Array.isArray(value) || value.length > practiceLimits.rules || !value.every((rule) => isRecord(rule) && onlyKeys(rule, ["id", "rule"]) && typeof rule.id === "string" && /^[a-z0-9.-]{1,60}$/u.test(rule.id) && text(rule.rule, 400))) return null;
+    rules[category as (typeof practiceCategories)[number]] = value.map((rule) => ({ id: rule.id as string, rule: rule.rule as string }));
+  }
+  return { errors: parsed.errors, rules };
 }
 
 function parseExercisesInput(body: unknown) {

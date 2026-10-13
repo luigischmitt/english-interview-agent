@@ -124,20 +124,46 @@ describe("practice classification", () => {
       { index: 9, category: "articles", point: "fora do intervalo" },
     ] }).classify({ errors: [purposeError, purposeError, purposeError] });
     expect(result).toEqual([
-      { category: "verb-forms", point: "Usar 'for' antes do verbo (o certo é 'to')" },
+      { category: "verb-forms", point: "Usar 'for' antes do verbo (o certo é 'to')", ruleId: null },
       null,
-      { category: "prepositions", point: "Use to + verbo base para indicar finalidade: to cache." },
+      { category: "prepositions", point: "Use to + verbo base para indicar finalidade: to cache.", ruleId: null },
     ]);
     const line = String(info.mock.calls[0]?.[0]);
     expect(JSON.parse(line)).toMatchObject({ event: "practice_classify", outcome: "success", errorCount: 3, assigned: 2 });
     expect(line).not.toContain("Redis");
+  });
+
+  it("maps rule ids only from the selected category and adds the optional schema field", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const rules = { "verb-forms": [{ id: "to-purpose", rule: "Use to before a verb for purpose." }], prepositions: [{ id: "on-projects", rule: "Use on with projects." }] };
+    let init: RequestInit | undefined;
+    const fetcher = (async (_url: string, options: RequestInit) => { init = options; return chat({ assignments: [
+      { index: 0, category: "verb-forms", point: "Usar for antes do verbo", ruleId: "to-purpose" },
+      { index: 1, category: "verb-forms", point: "Usar for antes do verbo", ruleId: "on-projects" },
+      { index: 2, category: "articles", point: "Esquecer a", ruleId: "made-up" },
+    ] }); }) as unknown as typeof fetch;
+    const result = await new OpenRouterPracticeService(config, fetcher).classify({ errors: [purposeError, purposeError, purposeError], rules });
+    expect(result?.map((item) => item?.ruleId)).toEqual(["to-purpose", null, null]);
+    const body = JSON.parse(String(init?.body));
+    expect(body.response_format.json_schema.schema.properties.assignments.items.required).toContain("ruleId");
+    expect(body.messages[0].content).toContain("to-purpose: Use to before a verb for purpose.");
+  });
+
+  it("keeps the legacy schema when rules are absent and returns null rule ids", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    let init: RequestInit | undefined;
+    const fetcher = (async (_url: string, options: RequestInit) => { init = options; return chat({ assignments: [{ index: 0, category: "verb-forms", point: "Usar for antes do verbo" }] }); }) as unknown as typeof fetch;
+    const result = await new OpenRouterPracticeService(config, fetcher).classify({ errors: [purposeError] });
+    expect(result?.[0]?.ruleId).toBeNull();
+    const body = JSON.parse(String(init?.body));
+    expect(body.response_format.json_schema.schema.properties.assignments.items.properties).not.toHaveProperty("ruleId");
   });
 });
 
 describe("practice routes", () => {
   const exercise = { kind: "build", instruction: "Faça uma frase dizendo que você usou Redis para guardar sessões.", source: null, target: "I used Redis to store sessions." };
   const fake = (overrides: Partial<PracticeService> = {}): PracticeService => ({
-    classify: vi.fn(async () => [{ category: "verb-forms" as const, point: "Usar 'for' antes do verbo (o certo é 'to')" }]),
+    classify: vi.fn(async () => [{ category: "verb-forms" as const, point: "Usar 'for' antes do verbo (o certo é 'to')", ruleId: null }]),
     groupThemes: vi.fn(async () => ({ assignments: ["purpose-to-verb"], newThemes: [theme] })),
     buildExercises: vi.fn(async () => [exercise as never]),
     grade: vi.fn(async () => ({ verdict: "correct" as const, feedback: "Certo, você usou to para o objetivo.", corrected: "I used Redis to store sessions." })),
@@ -148,8 +174,21 @@ describe("practice routes", () => {
     const app = createApp({ speechConfig, accessTokenVerifier: null, practiceService: fake() });
     const response = await request(app).post("/api/v1/practice/classify").send({ errors: [purposeError] });
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ assignments: [{ category: "verb-forms", point: "Usar 'for' antes do verbo (o certo é 'to')" }] });
+    expect(response.body).toEqual({ assignments: [{ category: "verb-forms", point: "Usar 'for' antes do verbo (o certo é 'to')", ruleId: null }] });
     expect((await request(app).post("/api/v1/practice/classify").send({ errors: [purposeError], existingThemes: [] })).status).toBe(400);
+  });
+
+  it("validates optional classify rules", async () => {
+    const app = createApp({ speechConfig, accessTokenVerifier: null, practiceService: fake() });
+    const base = { errors: [purposeError] };
+    expect((await request(app).post("/api/v1/practice/classify").send({ ...base, rules: { "verb-forms": [{ id: "to-purpose", rule: "Use to before a verb." }], prepositions: [{ id: "prepositions.on", rule: "on: dias e plataformas." }] } })).status).toBe(200);
+    expect((await request(app).post("/api/v1/practice/classify").send({ ...base, rules: { unknown: [] } })).status).toBe(400);
+    expect((await request(app).post("/api/v1/practice/classify").send({ ...base, rules: { articles: [{ id: "Bad id", rule: "Valid rule" }] } })).status).toBe(400);
+    expect((await request(app).post("/api/v1/practice/classify").send({ ...base, rules: { articles: Array.from({ length: 13 }, (_, i) => ({ id: `rule-${i}`, rule: "Valid rule" })) } })).status).toBe(400);
+    expect((await request(app).post("/api/v1/practice/classify").send({ ...base, rules: { articles: [{ id: "a-rule", rule: "Valid rule", extra: true }] } })).status).toBe(400);
+    expect((await request(app).post("/api/v1/practice/classify").send({ ...base, rules: { articles: [{ id: "a-rule", rule: "   " }] } })).status).toBe(400);
+    expect((await request(app).post("/api/v1/practice/classify").send({ ...base, rules: { articles: [{ id: "a-rule", rule: "x".repeat(401) }] } })).status).toBe(400);
+    expect((await request(app).post("/api/v1/practice/classify").send({ ...base, rules: [], extra: true })).status).toBe(400);
   });
 
   it("accepts lesson rules on exercises and rule tags on graded exercises", async () => {
