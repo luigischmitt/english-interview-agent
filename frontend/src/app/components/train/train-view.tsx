@@ -20,6 +20,8 @@ import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
 import { resolveInterviewerVoice } from "@/lib/interview/voices.mjs";
 import { interviewerVoiceStorageKey } from "@/lib/interview/voice-picker.mjs";
+import practiceAudioManifest from "@/lib/practice/practice-audio-manifest.json";
+import { staticPracticeAudioUrl } from "@/lib/practice/practice-audio.mjs";
 import { gradePracticeAnswer } from "@/lib/practice/practice-requests";
 import {
   checkFixedAnswer,
@@ -48,6 +50,7 @@ type Grade = { verdict: "correct" | "almost" | "incorrect"; feedback: string; co
 type RoundExercise = PracticeFixedExercise;
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
+const speechCacheLimit = 30;
 const syncWarning = "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.";
 
 // How many of the person's mistakes belong to each lesson part: practice leans toward the parts they miss most.
@@ -133,32 +136,56 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
   const [speechError, setSpeechError] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const speechRequestRef = useRef(0);
-  const objectUrlRef = useRef<string | null>(null);
+  // Per-session cache of synthesized dynamic phrases (text + voice -> object URL), so replaying one never calls the API twice.
+  const speechCacheRef = useRef(new Map<string, string>());
 
   const releaseAudio = useCallback(() => {
     speechRequestRef.current += 1;
     audioRef.current?.pause();
     audioRef.current = null;
-    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-    objectUrlRef.current = null;
   }, []);
-  useEffect(() => () => releaseAudio(), [releaseAudio]);
+  useEffect(() => {
+    const cache = speechCacheRef.current;
+    return () => {
+      releaseAudio();
+      for (const url of cache.values()) URL.revokeObjectURL(url);
+      cache.clear();
+    };
+  }, [releaseAudio]);
 
   const playPhrase = async (phrase: string) => {
     releaseAudio();
     const requestId = speechRequestRef.current;
     setSpeechError(false);
     try {
-      let voice = resolveInterviewerVoice(null);
-      try {
-        voice = resolveInterviewerVoice(localStorage.getItem(interviewerVoiceStorageKey));
-      } catch {
-        /* Use the default voice. */
+      // Fixed lesson phrases are pre-generated files in one fixed lesson voice (not the candidate's chosen interviewer
+      // voice) and never reach the speech API. Only dynamic text (the person's own sentences) is synthesized.
+      let url = staticPracticeAudioUrl(phrase, practiceAudioManifest.files);
+      if (!url) {
+        let voice = resolveInterviewerVoice(null);
+        try {
+          voice = resolveInterviewerVoice(localStorage.getItem(interviewerVoiceStorageKey));
+        } catch {
+          /* Use the default voice. */
+        }
+        const cache = speechCacheRef.current;
+        const cacheKey = `${voice}\n${phrase}`;
+        url = cache.get(cacheKey) ?? null;
+        if (url) {
+          cache.delete(cacheKey);
+          cache.set(cacheKey, url);
+        } else {
+          const blob = await fetchSpeechBlob(phrase, { endpoint: speechEndpoint, fetcher: authorizedFetch, voice });
+          if (requestId !== speechRequestRef.current) return;
+          url = URL.createObjectURL(blob);
+          cache.set(cacheKey, url);
+          while (cache.size > speechCacheLimit) {
+            const [oldestKey, oldestUrl] = cache.entries().next().value as [string, string];
+            cache.delete(oldestKey);
+            URL.revokeObjectURL(oldestUrl);
+          }
+        }
       }
-      const blob = await fetchSpeechBlob(phrase, { endpoint: speechEndpoint, fetcher: authorizedFetch, voice });
-      if (requestId !== speechRequestRef.current) return;
-      const url = URL.createObjectURL(blob);
-      objectUrlRef.current = url;
       const audio = new Audio(url);
       audioRef.current = audio;
       const cleanup = () => {
