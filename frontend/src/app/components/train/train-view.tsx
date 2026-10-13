@@ -1240,6 +1240,7 @@ function PracticeSession({
   const [assisted, setAssisted] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [hasEditedOnce, setHasEditedOnce] = useState(false);
+  const [submittedSentence, setSubmittedSentence] = useState<string | null>(null);
   const alternatives = useMemo(() => {
     if (!spot || !exercise) return [];
     let seed = Array.from(`${exercise.id}:${step}`).reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619), 2166136261) >>> 0;
@@ -1253,6 +1254,7 @@ function PracticeSession({
     setHasEditedOnce(false);
     setWordEdits({}); setHelpOpen(false); setAssisted(false);
     setWordOrder([]);
+    setSubmittedSentence(null);
     scrollToTopOf(practiceRef.current);
   }, [step]);
   useEffect(() => {
@@ -1316,6 +1318,7 @@ function PracticeSession({
   const editedSentence = spot ? applyEdits(blocks, wordEdits, activeOrder) : "";
   const normalizedWordEdits = normalizeEdits(blocks, wordEdits);
   const anythingChanged = Object.keys(normalizedWordEdits).length > 0 || isOrderChanged(activeOrder, blocks.map(({ id }) => id));
+  const movedIds = new Set(activeOrder.filter((id, index) => id !== blocks[index]?.id));
   const wholeSentenceOptions = Boolean(choose && /___\s*$/u.test(exercise.sentence) && exercise.options?.length && exercise.options.every((option) => /[.!?]\s*$/u.test(option)));
   const topicByLesson: Record<string, string> = {
     prepositions: "preposição", articles: "artigo", "verb-tenses": "tempo verbal", "verb-forms": "forma do verbo",
@@ -1377,7 +1380,20 @@ function PracticeSession({
                   )}
                 </span>
               ))
-            : spot && !result ? (
+            : spot && result && submittedSentence !== null ? (
+              <span className="tr-word-sentence tr-word-sentence-submitted" aria-label={submittedSentence}>
+                {activeOrder.map((id) => {
+                  const block = blocks.find((item) => item.id === id);
+                  if (!block) return null;
+                  const value = normalizedWordEdits[id] ?? block.text;
+                  if (!value) return null;
+                  const changed = Object.hasOwn(normalizedWordEdits, id) || movedIds.has(id);
+                  const suffix = block.trailing.replace(/^\s+/u, "").replace(id === blocks.at(-1)?.id ? /([.!?]+)\s*$/u : /$^/u, "");
+                  return <span key={id} className={`tr-word-wrap tr-word-submitted-chip${changed ? ` is-changed is-${result.verdict === "correct" ? "correct" : "incorrect"}` : ""}`}><span className="tr-word-submitted-text">{value}</span>{suffix}</span>;
+                })}
+                {submittedSentence.match(/[.!?]+$/u)?.[0] ?? ""}
+              </span>
+            ) : spot && !result ? (
               <span className="tr-word-sentence" aria-label={editedSentence}>
                 <SpotSentenceEditor
                   sentence={blocks}
@@ -1395,7 +1411,7 @@ function PracticeSession({
         {spot && !result && <>
           <p className="sr-only" aria-live="polite">{announcement}</p>
           <div className="tr-word-actions">
-            <button className={`ds-btn ${hasEditedOnce ? "ds-btn-cta-green tr-verify-ready" : "ds-btn-soft"}`} disabled={grading || !anythingChanged} onClick={() => onSubmit(editedSentence, assisted)}>{grading ? t("Avaliando…") : t("Verificar")}</button>
+            <button className={`ds-btn ${hasEditedOnce ? "ds-btn-cta-green tr-verify-ready" : "ds-btn-soft"}`} disabled={grading || !anythingChanged} onClick={() => { setSubmittedSentence(editedSentence); onSubmit(editedSentence, assisted); }}>{grading ? t("Avaliando…") : t("Verificar")}</button>
             {anythingChanged && <button type="button" className="tr-text-action" disabled={grading} onClick={() => { setWordEdits({}); setWordOrder([]); setHasEditedOnce(false); setAnnouncement(exercise.sentence); }}>{t("Desfazer tudo")}</button>}
             <button className="tr-text-action" disabled={grading} onClick={() => setHelpOpen((open) => !open)}>{t("Não sei — ver alternativas")}</button>
           </div>

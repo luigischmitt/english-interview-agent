@@ -242,6 +242,10 @@
 .tr-word-sentence { display: inline-flex; flex-wrap: wrap; align-items: baseline; position: relative; }
 .tr-word-wrap { display: inline-flex; align-items: baseline; position: relative; margin: 0 .18rem .28rem 0; border-radius: .35rem; transition: background-color var(--ds-dur-base) var(--ease-out), transform var(--ds-dur-fast) var(--ease-out); }
 .tr-word-wrap.is-edited { background: var(--ds-success-tint); animation: tr-pop var(--ds-dur-fast) var(--ease-out); }
+.tr-word-submitted-chip { border-radius: .35rem; }
+.tr-word-submitted-chip.is-changed.is-correct { background: var(--ds-success-tint); color: var(--ds-success); }
+.tr-word-submitted-chip.is-changed.is-incorrect { background: var(--ds-error-tint); color: var(--ds-error); }
+.tr-word-submitted-text { white-space: pre-wrap; }
 .tr-word-wrap.is-helped { background: var(--ds-warning-tint); box-shadow: 0 0 0 2px var(--ds-warning-tint); }
 .tr-word-wrap.is-drop-before { box-shadow: inset 3px 0 var(--ds-green-deep); }
 .tr-word-wrap.is-drag-placeholder { flex: 0 0 auto; }
