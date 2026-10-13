@@ -3,13 +3,17 @@ import test from "node:test";
 import { checkFixedAnswer, lessonRulesForRequest, pickPracticeRound, practiceLessonByKey, practiceLessons, practiceRuleById, ruleTextForRequest } from "../src/lib/practice/practice-lessons.mjs";
 import { practiceCategoryKeys } from "../src/lib/practice/practice-categories.mjs";
 
-test("every group has a didactic lesson: explanation, contrast and translated examples", () => {
+test("every group is a small chapter: overview, rules with why, traps and translated examples", () => {
   assert.deepEqual(practiceLessons.map((lesson) => lesson.key), practiceCategoryKeys);
   const ids = practiceLessons.flatMap((lesson) => lesson.rules.map((rule) => rule.id));
   assert.equal(new Set(ids).size, ids.length);
   for (const lesson of practiceLessons) {
-    assert.ok(lesson.outcome.length >= 70, `${lesson.key} needs a transferable outcome`);
-    assert.ok(lesson.rules.length >= 3 && lesson.rules.length <= 6, lesson.key);
+    assert.equal("outcome" in lesson, false, `${lesson.key} has no outcome anymore`);
+    const { what, why, model, map } = lesson.overview;
+    for (const [name, text] of Object.entries({ what, why, model })) assert.ok(text.length >= 60, `${lesson.key} overview.${name}`);
+    assert.equal(map.length, lesson.rules.length, `${lesson.key} map has one line per rule`);
+    assert.ok(map.every((line) => line.length >= 15), `${lesson.key} map lines`);
+    assert.ok(lesson.rules.length >= 3 && lesson.rules.length <= 7, lesson.key);
     for (const rule of lesson.rules) {
       assert.ok(rule.id.startsWith(`${lesson.key}.`), rule.id);
       assert.ok(rule.goal.length >= 45, `${rule.id} goal`);
@@ -17,9 +21,16 @@ test("every group has a didactic lesson: explanation, contrast and translated ex
       assert.ok(rule.points.length >= 3 && rule.points.length <= 4, `${rule.id} key points`);
       assert.ok(rule.points.every((point) => point.length >= 20), `${rule.id} key point detail`);
       assert.ok(rule.explain.length >= 80 && rule.explain.length <= 420, `${rule.id} explain length`);
+      assert.ok(rule.why && rule.why.length >= 40, `${rule.id} why`);
+      if (rule.build) assert.ok(rule.build.length >= 2 && rule.build.length <= 4, `${rule.id} build steps`);
       assert.ok(rule.wrong && rule.right && rule.wrong !== rule.right, `${rule.id} contrast`);
-      assert.equal(rule.examples.length, 2, rule.id);
+      assert.ok(rule.examples.length >= 3 && rule.examples.length <= 4, `${rule.id} examples`);
       assert.ok(rule.examples.every((example) => example.en && example.pt), `${rule.id} examples need a translation`);
+      assert.ok(rule.traps.length >= 1 && rule.traps.length <= 4, `${rule.id} traps`);
+      for (const trap of rule.traps) {
+        assert.ok(trap.wrong && trap.right && trap.note, `${rule.id} trap fields`);
+        assert.notEqual(trap.wrong, trap.right, `${rule.id} trap must change something`);
+      }
     }
   }
 });
@@ -91,5 +102,69 @@ test("rule text for grading is compact", () => {
   assert.ok(ruleTextForRequest("prepositions.on").startsWith("on: "));
   assert.ok(ruleTextForRequest("prepositions.on").length <= 240);
   assert.equal(ruleTextForRequest("missing"), null);
-  assert.ok(lessonRulesForRequest("articles").length === 3);
+  assert.ok(lessonRulesForRequest("articles").length === 4);
+});
+
+const storedRuleIds = [
+  "prepositions.at", "prepositions.on", "prepositions.in", "prepositions.for", "prepositions.to", "prepositions.combos", "articles.a-an",
+  "articles.the", "articles.none", "verb-tenses.past", "verb-tenses.perfect", "verb-tenses.present", "verb-tenses.future", "verb-forms.to",
+  "verb-forms.ing", "verb-forms.s", "verb-forms.irregular", "word-choice.actually", "word-choice.pretend", "word-choice.realize",
+  "word-choice.eventually", "word-choice.do-make", "sentence-structure.subject", "sentence-structure.order", "sentence-structure.short",
+  "sentence-structure.connectors", "plural-agreement.plural", "plural-agreement.verb", "plural-agreement.uncountable", "other.clarify", "other.time",
+  "other.natural",
+];
+const storedExerciseIds = [
+  "prepositions.c1", "prepositions.c2", "prepositions.c3", "prepositions.c4", "prepositions.c5", "prepositions.c6", "prepositions.s1",
+  "prepositions.s2", "prepositions.s3", "prepositions.s4", "articles.c1", "articles.c2", "articles.c3", "articles.c4", "articles.c5", "articles.s1",
+  "articles.s2", "articles.s3", "verb-tenses.c1", "verb-tenses.c2", "verb-tenses.c3", "verb-tenses.c4", "verb-tenses.c5", "verb-tenses.s1",
+  "verb-tenses.s2", "verb-tenses.s3", "verb-tenses.s4", "verb-forms.c1", "verb-forms.c2", "verb-forms.c3", "verb-forms.c4", "verb-forms.c5",
+  "verb-forms.c6", "verb-forms.s1", "verb-forms.s2", "verb-forms.s3", "word-choice.c1", "word-choice.c2", "word-choice.c3", "word-choice.c4",
+  "word-choice.c5", "word-choice.c6", "word-choice.s1", "word-choice.s2", "word-choice.s3", "sentence-structure.c1", "sentence-structure.c2",
+  "sentence-structure.c3", "sentence-structure.c4", "sentence-structure.s1", "sentence-structure.s2", "sentence-structure.s3", "plural-agreement.c1",
+  "plural-agreement.c2", "plural-agreement.c3", "plural-agreement.c4", "plural-agreement.s1", "plural-agreement.s2", "plural-agreement.s3",
+  "other.c1", "other.c2", "other.c3", "other.s1", "other.s2",
+];
+
+test("ids already stored in users' data still exist", () => {
+  for (const id of storedRuleIds) assert.ok(practiceRuleById[id], id);
+  const exerciseIds = new Set(practiceLessons.flatMap((lesson) => lesson.exercises.map((exercise) => exercise.id)));
+  for (const id of storedExerciseIds) assert.ok(exerciseIds.has(id), id);
+});
+
+test("exercises belong to a rule of their own lesson and every rule has at least two choose and one spot", () => {
+  const all = new Set();
+  for (const lesson of practiceLessons) {
+    const ruleIds = new Set(lesson.rules.map((rule) => rule.id));
+    for (const exercise of lesson.exercises) {
+      assert.ok(ruleIds.has(exercise.ruleId), `${exercise.id} points to a rule of ${lesson.key}`);
+      assert.ok(!all.has(exercise.id), `${exercise.id} is unique across lessons`);
+      all.add(exercise.id);
+      if (exercise.kind === "choose") assert.equal(exercise.sentence.split("___").length, 2, `${exercise.id} has exactly one blank`);
+    }
+    for (const rule of lesson.rules) {
+      const own = lesson.exercises.filter((exercise) => exercise.ruleId === rule.id);
+      if (storedRuleIds.includes(rule.id)) continue;
+      assert.ok(own.filter((exercise) => exercise.kind === "choose").length >= 2, `${rule.id} needs two choose`);
+      assert.ok(own.filter((exercise) => exercise.kind === "spot").length >= 1, `${rule.id} needs a spot`);
+    }
+  }
+});
+
+test("the team is on the team: no lesson text teaches the wrong preposition", () => {
+  assert.equal(JSON.stringify(practiceLessons).toLowerCase().includes("in the team"), false);
+});
+
+test("the other lesson is the interview phrases chapter", () => {
+  assert.equal(practiceLessonByKey.other.title, "Frases de entrevista");
+  for (const id of ["other.clarify", "other.time", "other.structure", "other.gap", "other.close"]) assert.ok(practiceRuleById[id], id);
+});
+
+test("every lesson still fills a round of five with three choose", () => {
+  for (const lesson of practiceLessons) {
+    for (const random of [() => 0.1, () => 0.5, Math.random]) {
+      const round = pickPracticeRound({ key: lesson.key, random });
+      assert.equal(round.length, 5, lesson.key);
+      assert.equal(new Set(round.map((exercise) => exercise.id)).size, 5, lesson.key);
+    }
+  }
 });
