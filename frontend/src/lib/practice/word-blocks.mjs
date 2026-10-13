@@ -38,22 +38,58 @@ export function isOrderChanged(order, originalOrder = order.map((_, index) => in
 
 /** Return the insertion slot after removing the dragged item, considering only the row under the pointer. */
 export function insertionIndexFromRects(rects, x, y, draggedIndex = -1) {
-  const items = rects.map((rect, index) => ({ rect, index })).filter(({ index }) => index !== draggedIndex);
+  const items = rects.map((rect, index) => ({ rect: { ...rect, bottom: rect.bottom ?? rect.top + rect.height }, index })).filter(({ index }) => index !== draggedIndex);
   if (!items.length) return 0;
   const rows = [];
   for (const item of items) {
-    let row = rows.find(({ top, bottom }) => item.rect.top < bottom && item.rect.bottom > top);
+    let row = rows.find(({ items: rowItems }) => rowItems.some(({ rect }) => item.rect.top < rect.bottom && item.rect.bottom > rect.top));
     if (!row) { row = { top: item.rect.top, bottom: item.rect.bottom, items: [] }; rows.push(row); }
     row.top = Math.min(row.top, item.rect.top);
     row.bottom = Math.max(row.bottom, item.rect.bottom);
     row.items.push(item);
   }
   rows.sort((a, b) => a.top - b.top);
-  const row = rows.find((item) => y >= item.top && y <= item.bottom) ?? (y < rows[0].top ? rows[0] : rows.at(-1));
+  if (y < rows[0].top) return 0;
+  if (y > rows.at(-1).bottom) return items.length;
+  const row = rows.find((item) => y >= item.top && y <= item.bottom)
+    ?? rows.reduce((nearest, item) => {
+      const distance = y < item.top ? item.top - y : y - item.bottom;
+      const nearestDistance = y < nearest.top ? nearest.top - y : y - nearest.bottom;
+      return distance < nearestDistance ? item : nearest;
+    });
   row.items.sort((a, b) => a.rect.left - b.rect.left);
-  const before = row.items.find(({ rect }) => x < rect.left + rect.width / 2);
+  // Slots are counted without the dragged chip, so map every rect index into that space.
   const ordered = items.slice().sort((a, b) => a.index - b.index);
-  return before ? ordered.findIndex(({ index }) => index === before.index) : ordered.findIndex(({ index }) => index === row.items.at(-1).index) + 1;
+  const slotOf = (rectIndex) => ordered.findIndex(({ index }) => index === rectIndex);
+  const before = row.items.find(({ rect }) => x < rect.left + rect.width / 2);
+  return before ? slotOf(before.index) : slotOf(row.items.at(-1).index) + 1;
+}
+
+/** Move an item to an insertion slot in the order with the item removed. */
+export function reorder(order, draggedId, targetIndex) {
+  const currentIndex = order.indexOf(draggedId);
+  if (currentIndex < 0) return [...order];
+  const next = order.filter((id) => id !== draggedId);
+  next.splice(Math.max(0, Math.min(next.length, targetIndex)), 0, draggedId);
+  return next;
+}
+
+/** Pure pointer interaction state for word dragging and click suppression. */
+export function dragReducer(state, event) {
+  const current = state ?? { order: [], dragging: null, placeholderIndex: null, openEditorFor: null, suppressClick: false };
+  if (event.type === "pointerdown") return { ...current, openEditorFor: null, dragging: { id: event.id, x: event.x, y: event.y, startX: event.x, startY: event.y }, placeholderIndex: current.order.indexOf(event.id) };
+  if (event.type === "move" && current.dragging) {
+    const moved = current.dragging.moved || Math.hypot(event.x - current.dragging.startX, event.y - current.dragging.startY) > 4;
+    return { ...current, dragging: { ...current.dragging, x: event.x, y: event.y, moved }, placeholderIndex: moved ? event.targetIndex : current.placeholderIndex };
+  }
+  if (event.type === "up" && current.dragging) {
+    if (!current.dragging.moved) return { ...current, dragging: null, placeholderIndex: null, openEditorFor: current.dragging.id, suppressClick: false };
+    const order = current.order.length ? reorder(current.order, current.dragging.id, current.placeholderIndex ?? current.order.indexOf(current.dragging.id)) : current.order;
+    return { ...current, order, dragging: null, placeholderIndex: null, openEditorFor: null, suppressClick: true };
+  }
+  if (event.type === "cancel" && current.dragging) return { ...current, dragging: null, placeholderIndex: null, openEditorFor: null, suppressClick: false };
+  if (event.type === "click") return current.suppressClick ? { ...current, suppressClick: false, openEditorFor: null } : current;
+  return current;
 }
 
 /** Apply word edits, normalizing word spacing and retaining punctuation on edited blocks. */

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyEdits, alternativesFor, insertionIndexFromRects, isOrderChanged, mistakeRegion, normalizeEdits, toBlocks } from "../src/lib/practice/word-blocks.mjs";
+import { applyEdits, alternativesFor, dragReducer, insertionIndexFromRects, isOrderChanged, mistakeRegion, normalizeEdits, reorder, toBlocks } from "../src/lib/practice/word-blocks.mjs";
 import { gradeLocally } from "../src/lib/practice/practice-rounds.mjs";
 
 const fixture = [{ key: "fixture", exercises: [
@@ -32,7 +32,43 @@ test("insertionIndexFromRects follows the pointer row and excludes the dragged c
     { left: 0, top: 32, width: 50, height: 24 }, { left: 58, top: 32, width: 40, height: 24 },
   ];
   assert.equal(insertionIndexFromRects(rects, 80, 40, 0), 3);
-  assert.equal(insertionIndexFromRects(rects, 20, 40, 0), 2);
+  assert.equal(insertionIndexFromRects(rects, 20, 40, 0), 1);
+});
+
+test("insertion slots include both ends and choose the nearest row", () => {
+  const rects = [
+    { left: 0, top: 0, width: 40, height: 24 }, { left: 48, top: 0, width: 60, height: 24 },
+    { left: 0, top: 40, width: 50, height: 24 }, { left: 58, top: 40, width: 40, height: 24 },
+  ];
+  assert.equal(insertionIndexFromRects(rects, 200, 10), 2); // right of first row
+  assert.equal(insertionIndexFromRects(rects, 200, 90), 4); // below last row
+  assert.equal(insertionIndexFromRects(rects, -20, 10), 0);
+  assert.equal(insertionIndexFromRects(rects, -20, -20), 0);
+  assert.equal(insertionIndexFromRects(rects, 200, 32), 2); // equal-distance gap resolves to first row
+  assert.equal(insertionIndexFromRects(rects, 200, 27), 2); // gap is closest to first row
+});
+
+test("reorder moves in either direction by several positions", () => {
+  assert.deepEqual(reorder([0, 1, 2, 3, 4], 1, 4), [0, 2, 3, 4, 1]);
+  assert.deepEqual(reorder([0, 1, 2, 3, 4], 4, 1), [0, 4, 1, 2, 3]);
+});
+
+test("drag reducer opens taps, suppresses drag clicks, and cancels without changing order", () => {
+  const initial = { order: [0, 1, 2, 3], dragging: null, placeholderIndex: null, openEditorFor: null, suppressClick: false };
+  let state = dragReducer(initial, { type: "pointerdown", id: 1, x: 10, y: 10 });
+  state = dragReducer(state, { type: "up" });
+  assert.equal(state.openEditorFor, 1);
+  state = dragReducer(initial, { type: "pointerdown", id: 1, x: 10, y: 10 });
+  state = dragReducer(state, { type: "move", x: 20, y: 10, targetIndex: 3 });
+  state = dragReducer(state, { type: "up" });
+  assert.deepEqual(state.order, [0, 2, 3, 1]);
+  assert.equal(state.openEditorFor, null);
+  assert.equal(dragReducer(state, { type: "click" }).openEditorFor, null);
+  state = dragReducer(initial, { type: "pointerdown", id: 2, x: 0, y: 0 });
+  state = dragReducer(state, { type: "move", x: 12, y: 0, targetIndex: 0 });
+  state = dragReducer(state, { type: "cancel" });
+  assert.deepEqual(state.order, initial.order);
+  assert.equal(state.openEditorFor, null);
 });
 
 test("applyEdits supports insertion, deletion, replacement, and punctuation", () => {
@@ -142,4 +178,16 @@ test("curated spot choices use the correct region and every distractor stays inc
       assert.notEqual(gradeLocally(exercise, sentence).verdict, "correct", `${exercise.id}: ${sentence}`);
     }
   }
+});
+
+test("insertion slots ignore the dragged chip at row starts and both ends", () => {
+  const rect = (left, top) => ({ left, top, width: 40, height: 20, right: left + 40, bottom: top + 20 });
+  const oneRow = [rect(0, 0), rect(50, 0), rect(100, 0), rect(150, 0)];
+  assert.equal(insertionIndexFromRects(oneRow, 500, 10, 0), 3);
+  assert.equal(insertionIndexFromRects(oneRow, -20, 10, 3), 0);
+  assert.equal(insertionIndexFromRects(oneRow, 48, 10, 0), 0);
+  const twoRows = [rect(0, 0), rect(50, 0), rect(100, 0), rect(0, 30), rect(50, 30)];
+  assert.equal(insertionIndexFromRects(twoRows, 10, 200, 1), 4);
+  assert.equal(insertionIndexFromRects(twoRows, -5, 40, 1), 2);
+  assert.equal(insertionIndexFromRects(twoRows, 400, 10, 4), 3);
 });
