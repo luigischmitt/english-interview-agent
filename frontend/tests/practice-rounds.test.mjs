@@ -95,6 +95,16 @@ test("every real spot exercise accepts its answers and rejects its unchanged sou
   }
 });
 
+test("spot grading accepts unambiguous apostrophe-less contractions", () => {
+  const kotlin = practiceLessons.flatMap((lesson) => lesson.exercises).find((exercise) => exercise.id === "sentence-structure.s5");
+  assert.ok(kotlin);
+  assert.equal(gradeLocally(kotlin, "I dont have experience with Kotlin.").verdict, "correct");
+  const age = { kind: "spot", sentence: "I have 30 years old.", answer: "Im 30 years old." };
+  assert.equal(gradeLocally(age, "Im 30 years old").verdict, "correct");
+  assert.equal(gradeLocally({ kind: "spot", sentence: "It are ready.", answer: "It is ready." }, "its ready").verdict, "incorrect");
+  assert.equal(gradeLocally({ kind: "spot", sentence: "We was ready.", answer: "We are ready." }, "We were ready.").verdict, "incorrect");
+});
+
 test("partial correction requires the changed region in context", () => {
   const grade = (sentence, answer, submission) => gradeLocally({ kind: "spot", sentence, answer }, submission).verdict;
   assert.equal(grade("I worked on project today.", "I worked on a project today.", "I worked on a project yesterday."), "almost");
