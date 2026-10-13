@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getLocalSessionUserId } from "@/lib/auth/browser-session";
-import { invalidateDashboardCache, writeDashboardCache } from "@/lib/dashboard-data-cache.mjs";
+import { invalidateDashboardCache, sharedLoad } from "@/lib/dashboard-data-cache.mjs";
 import type { ProgressRecord } from "./progress-insights.mjs";
 import type { AzureMetricSummary } from "./report-metrics.mjs";
 import type { JobDirection } from "./job-direction.mjs";
@@ -167,7 +167,11 @@ const progressTurnChunk = 25;
  * Everything the progress screen needs, read-only and scoped by RLS to the signed-in user: completed interviews with
  * their saved report (interview_feedback) and the count of non-empty candidate answers (interview_turns).
  */
-export async function loadProgressRecords(): Promise<PersistenceResult<ProgressRecord[]>> {
+export function loadProgressRecords(): Promise<PersistenceResult<ProgressRecord[]>> {
+  return sharedLoad("progress", loadProgressRecordsUncached);
+}
+
+async function loadProgressRecordsUncached(): Promise<PersistenceResult<ProgressRecord[]>> {
   const auth = await authenticatedClient();
   if (!auth.ok) return auth;
   const { client } = auth.value;
@@ -214,6 +218,5 @@ export async function loadProgressRecords(): Promise<PersistenceResult<ProgressR
         feedback: embedded ? { status: embedded.status, azureSummary: embedded.azure_summary, analysis: embedded.analysis } : null,
       };
     });
-  writeDashboardCache("progress", value);
   return { ok: true, value };
 }

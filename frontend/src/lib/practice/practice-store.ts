@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getLocalSessionUserId } from "@/lib/auth/browser-session";
-import { invalidateDashboardCache, readDashboardCache, writeDashboardCache } from "@/lib/dashboard-data-cache.mjs";
+import { invalidateDashboardCache, readDashboardCache, sharedLoad, writeDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { validatedPatterns } from "@/lib/interview/progress-insights.mjs";
@@ -58,7 +58,11 @@ function withFrequency(themes: PracticeGroup[]): PracticeGroup[] {
   }));
 }
 
-export async function loadPracticeGroups(): Promise<Result<PracticeGroup[]>> {
+export function loadPracticeGroups(): Promise<Result<PracticeGroup[]>> {
+  return sharedLoad("practice", loadPracticeGroupsUncached);
+}
+
+async function loadPracticeGroupsUncached(): Promise<Result<PracticeGroup[]>> {
   const auth = await authenticatedClient();
   if (!auth.ok) return auth;
   const { data, error } = await auth.value.client
@@ -67,7 +71,6 @@ export async function loadPracticeGroups(): Promise<Result<PracticeGroup[]>> {
     .eq("user_id", auth.value.userId);
   if (error) return failure("Não foi possível carregar seus grupos. Tente novamente.");
   const value = withFrequency((data ?? []) as PracticeGroup[]);
-  writeDashboardCache("practice", value);
   return { ok: true, value };
 }
 
