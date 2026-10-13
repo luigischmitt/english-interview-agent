@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getLocalSessionUserId } from "@/lib/auth/browser-session";
+import { invalidateDashboardCache, readDashboardCache, writeDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { loadProgressRecords } from "@/lib/interview/persistence";
+import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { validatedPatterns } from "@/lib/interview/progress-insights.mjs";
 import { applyPracticeResult, applyRuleBackfill, buildClassifyRules, completedLegacyThemeIds, findRuleBackfillWork, resolveRuleId, extractProgressErrors, findPracticeSyncWork, mergeRefs, weightedFrequency, type PracticeErrorRef } from "@/lib/practice/practice-sync.mjs";
 import { practiceCategoryByKey, practiceCategoryKeys } from "@/lib/practice/practice-categories.mjs";
@@ -40,9 +43,9 @@ function failure<T = never>(message: string): Result<T> {
 async function authenticatedClient(): Promise<Result<{ client: SupabaseClient; userId: string }>> {
   try {
     const client = getSupabaseBrowserClient();
-    const { data, error } = await client.auth.getUser();
-    if (error || !data.user) return failure("Sua sessão terminou. Entre novamente.");
-    return { ok: true, value: { client, userId: data.user.id } };
+    const userId = await getLocalSessionUserId(client);
+    if (!userId) return failure("Sua sessão terminou. Entre novamente.");
+    return { ok: true, value: { client, userId } };
   } catch {
     return failure("Não foi possível acessar sua sessão.");
   }
@@ -60,10 +63,12 @@ export async function loadPracticeGroups(): Promise<Result<PracticeGroup[]>> {
   if (!auth.ok) return auth;
   const { data, error } = await auth.value.client
     .from("practice_themes")
-    .select("*")
+    .select("id,user_id,theme_key,title,explanation,why,examples,error_refs,status,correct_streak,last_error_at,updated_at")
     .eq("user_id", auth.value.userId);
   if (error) return failure("Não foi possível carregar seus grupos. Tente novamente.");
-  return { ok: true, value: withFrequency((data ?? []) as PracticeGroup[]) };
+  const value = withFrequency((data ?? []) as PracticeGroup[]);
+  writeDashboardCache("practice", value);
+  return { ok: true, value };
 }
 
 export const practiceSyncBatchSize = 20;
@@ -75,7 +80,8 @@ const classifyRules = () => buildClassifyRules(practiceCategoryKeys, lessonRules
 export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Result<{ themes: PracticeGroup[]; remaining: boolean }>> {
   const auth = await authenticatedClient();
   if (!auth.ok) return auth;
-  const progress = await loadProgressRecords();
+  const cachedProgress = readDashboardCache<ProgressRecord[]>("progress");
+  const progress = cachedProgress ? { ok: true as const, value: cachedProgress } : await loadProgressRecords();
   if (!progress.ok) return failure(progress.message);
   const records = progress.value.map((record) => ({
     ...record,
@@ -91,9 +97,14 @@ export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Resul
     if (removable.length) {
       const { error } = await auth.value.client.from("practice_themes").delete().in("id", removable).eq("user_id", auth.value.userId);
       if (error) return failure("Não foi possível concluir a atualização dos grupos.");
+      invalidateDashboardCache("practice");
+      writeDashboardCache("practice", withFrequency(themes.filter((theme) => !removable.includes(theme.id))));
     }
     const backfill = findRuleBackfillWork(themes, rules, practiceSyncBatchSize);
-    if (!backfill.length) return { ok: true, value: { themes, remaining: false } };
+    if (!backfill.length) {
+      writeDashboardCache("practice", withFrequency(themes));
+      return { ok: true, value: { themes, remaining: false } };
+    }
     return backfillRuleIds(auth.value, themes, backfill, rules);
   }
 
@@ -129,6 +140,7 @@ export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Resul
       error_refs: mergeRefs(current?.error_refs, ignoredRefs), status: "hidden", correct_streak: 0, last_error_at: ignoredRefs[0].created_at ?? now,
     }, { onConflict: "user_id,theme_key" });
     if (error) return failure("Não foi possível salvar os pontos não praticáveis.");
+    invalidateDashboardCache("practice");
   }
 
   for (const [key, incoming] of incomingByCategory) {
@@ -146,6 +158,7 @@ export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Resul
     };
     const { error } = await client.from("practice_themes").upsert(row, { onConflict: "user_id,theme_key" });
     if (error) return failure("Não foi possível salvar os grupos de treino.");
+    invalidateDashboardCache("practice");
   }
 
   const { data, error } = await client.from("practice_themes").select("*").eq("user_id", auth.value.userId);
@@ -155,11 +168,14 @@ export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Resul
   if (removable.length) {
     const { error: deleteError } = await client.from("practice_themes").delete().in("id", removable).eq("user_id", auth.value.userId);
     if (deleteError) return failure("Não foi possível concluir a atualização dos grupos.");
+    invalidateDashboardCache("practice");
   }
   const finalRows = removable.length ? saved.filter((theme) => !removable.includes(theme.id)) : saved;
   const remaining = findPracticeSyncWork(allErrors, finalRows, Number.POSITIVE_INFINITY).length > 0
     || findRuleBackfillWork(finalRows, rules, 1).length > 0;
-  return { ok: true, value: { themes: withFrequency(finalRows), remaining } };
+  const themesWithFrequency = withFrequency(finalRows);
+  writeDashboardCache("practice", themesWithFrequency);
+  return { ok: true, value: { themes: themesWithFrequency, remaining } };
 }
 
 /** One bounded classify call for stored refs without ruleId. Groups never change; a failed call is retried on a later visit without a warning. */
@@ -188,9 +204,12 @@ async function backfillRuleIds(
     const merged = mergeRefs(next[index].error_refs, refs);
     const { error } = await auth.client.from("practice_themes").update({ error_refs: merged }).eq("id", next[index].id).eq("user_id", auth.userId);
     if (error) return failure("Não foi possível atualizar os grupos.");
+    invalidateDashboardCache("practice");
     next[index] = { ...next[index], error_refs: merged };
   }
-  return { ok: true, value: { themes: withFrequency(next), remaining: findRuleBackfillWork(next, rules, 1).length > 0 } };
+  const themesWithFrequency = withFrequency(next);
+  writeDashboardCache("practice", themesWithFrequency);
+  return { ok: true, value: { themes: themesWithFrequency, remaining: findRuleBackfillWork(next, rules, 1).length > 0 } };
 }
 
 export async function savePracticeAttempt(input: {
@@ -218,6 +237,7 @@ export async function savePracticeAttempt(input: {
     corrected: input.corrected,
   }).select("id,theme_id,created_at,answer,verdict").single();
   if (error) return failure("Não foi possível salvar sua resposta.");
+  invalidateDashboardCache("practice");
   return { ok: true, value: data as PracticeAttempt };
 }
 
@@ -228,6 +248,7 @@ export async function updateGroupProgress(theme: PracticeGroup, correct: number,
   const { data, error } = await auth.value.client.from("practice_themes")
     .update(domain).eq("id", theme.id).eq("user_id", auth.value.userId).select("*").single();
   if (error) return failure("Não foi possível atualizar seu progresso.");
+  invalidateDashboardCache("practice");
   return { ok: true, value: { ...(data as PracticeGroup), weighted_frequency: theme.weighted_frequency } };
 }
 

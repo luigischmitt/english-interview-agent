@@ -5,6 +5,7 @@ import { useLocale, t } from "@/lib/locale";
 import { useEffect, useMemo, useState } from "react";
 import { Play } from "lucide-react";
 import { loadProgressRecords } from "@/lib/interview/persistence";
+import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { buildProgressInsights } from "@/lib/interview/progress-insights.mjs";
 import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { PageIntro } from "./shared";
@@ -12,13 +13,15 @@ import { ProgressContent } from "./progress/progress-content";
 
 export function ProgressView({ onStart, onTrain }: { onStart?: () => void; onTrain?: () => void } = {}) {
   const { locale } = useLocale();
-  const [records, setRecords] = useState<ProgressRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const cachedRecords = readDashboardCache("progress") as ProgressRecord[] | undefined;
+  const [records, setRecords] = useState<ProgressRecord[]>(() => cachedRecords ?? []);
+  const [isLoading, setIsLoading] = useState(!cachedRecords);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
+    const hasCached = !!(readDashboardCache("progress") as ProgressRecord[] | undefined);
     const load = async () => {
       const result = await loadProgressRecords();
       if (!active) return;
@@ -26,8 +29,10 @@ export function ProgressView({ onStart, onTrain }: { onStart?: () => void; onTra
         setRecords(result.value);
         setError(null);
       } else {
-        setRecords([]);
-        setError(result.message);
+        if (!hasCached) {
+          setRecords([]);
+          setError(result.message);
+        }
       }
       setIsLoading(false);
     };

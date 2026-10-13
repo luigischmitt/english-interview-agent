@@ -42,6 +42,8 @@ import {
   type PracticeGroup,
 } from "@/lib/practice/practice-store";
 import { sortPracticeGroups } from "@/lib/practice/practice-sync.mjs";
+import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
+import { loadProgressRecords } from "@/lib/interview/persistence";
 import { getCurrentLocale, t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
 import "./train.css";
@@ -114,8 +116,9 @@ function exploreGroup(lesson: PracticeLesson): PracticeGroup {
 }
 
 export function TrainView({ onInterview, initialLesson, initialPart }: { onInterview: () => void; initialLesson?: string; initialPart?: string }) {
-  const [themes, setThemes] = useState<PracticeGroup[]>([]);
-  const [themeLoading, setThemeLoading] = useState(true);
+  const cachedThemes = readDashboardCache("practice") as PracticeGroup[] | undefined;
+  const [themes, setThemes] = useState<PracticeGroup[]>(() => cachedThemes ? sortPracticeGroups(cachedThemes) : []);
+  const [themeLoading, setThemeLoading] = useState(!cachedThemes);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [syncFailed, setSyncFailed] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -202,30 +205,35 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
   };
 
   const load = useCallback(async () => {
-    setThemeLoading(true);
+    const cached = readDashboardCache("practice") as PracticeGroup[] | undefined;
+    const progressWarmup = loadProgressRecords();
+    if (!cached) setThemeLoading(true);
     setLoadError(null);
     const loaded = await loadPracticeGroups();
     if (!loaded.ok) {
-      setLoadError(loaded.message);
+      if (!cached) setLoadError(loaded.message);
       setThemeLoading(false);
       return;
     }
     setThemes(sortPracticeGroups(loaded.value));
     setThemeLoading(false);
     setSyncing(true);
-    let current = loaded.value;
-    for (let batch = 0; batch < practiceSyncMaxBatches; batch += 1) {
-      const synced = await syncPracticeGroups(current);
-      if (!synced.ok) {
-        setSyncFailed(true);
-        break;
+    void (async () => {
+      await progressWarmup;
+      let current = loaded.value;
+      for (let batch = 0; batch < practiceSyncMaxBatches; batch += 1) {
+        const synced = await syncPracticeGroups(current);
+        if (!synced.ok) {
+          setSyncFailed(true);
+          break;
+        }
+        setSyncFailed(false);
+        current = synced.value.themes;
+        setThemes(sortPracticeGroups(current));
+        if (!synced.value.remaining) break;
       }
-      setSyncFailed(false);
-      current = synced.value.themes;
-      setThemes(sortPracticeGroups(current));
-      if (!synced.value.remaining) break;
-    }
-    setSyncing(false);
+      setSyncing(false);
+    })();
   }, []);
   useEffect(() => {
     const timer = window.setTimeout(() => {
