@@ -77,3 +77,50 @@ test("orders active themes before mastered themes", () => {
   ];
   assert.deepEqual(sortPracticeGroups(themes).map((theme) => theme.theme_key), ["prepositions", "articles"]);
 });
+
+import { applyRuleBackfill, buildClassifyRules, findRuleBackfillWork, resolveRuleId } from "../src/lib/practice/practice-sync.mjs";
+
+const rulesFixture = { articles: [{ id: "articles.a", rule: "a" }, { id: "articles.b", rule: "b" }], prepositions: [{ id: "prep.x", rule: "x" }] };
+
+test("classify rules drop empty categories, cap at 12 and truncate text", () => {
+  const many = Array.from({ length: 15 }, (_, i) => ({ id: `r${i}`, rule: "x".repeat(500) }));
+  const rules = buildClassifyRules(["articles", "other", "verb-forms"], (key) => (key === "articles" ? many : key === "other" ? [] : undefined));
+  assert.deepEqual(Object.keys(rules), ["articles"]);
+  assert.equal(rules.articles.length, 12);
+  assert.equal(rules.articles[0].rule.length, 400);
+});
+
+test("resolveRuleId accepts only ids of the given group", () => {
+  assert.equal(resolveRuleId(rulesFixture, "articles", "articles.b"), "articles.b");
+  assert.equal(resolveRuleId(rulesFixture, "articles", "prep.x"), null);
+  assert.equal(resolveRuleId(rulesFixture, "articles", null), null);
+  assert.equal(resolveRuleId(rulesFixture, "other", "articles.a"), null);
+});
+
+test("backfill work takes refs without a ruleId key, newest first, within the limit", () => {
+  const themes = [
+    { theme_key: "articles", error_refs: [{ ...ref("old"), created_at: "2025-01-01" }, { ...ref("done"), ruleId: null }, { ...ref("new"), created_at: "2025-03-01" }] },
+    { theme_key: "other", error_refs: [ref("norules")] },
+    { theme_key: "_ignored", error_refs: [ref("ign")] },
+  ];
+  assert.deepEqual(findRuleBackfillWork(themes, rulesFixture).map((w) => w.ref.evidence), ["new", "old"]);
+  assert.equal(findRuleBackfillWork(themes, rulesFixture, 1).length, 1);
+  assert.equal(findRuleBackfillWork([{ theme_key: "articles", error_refs: [{ ...ref("a"), ruleId: "articles.a" }] }], rulesFixture).length, 0);
+});
+
+test("applying backfill keeps the group and only fills a valid ruleId", () => {
+  const work = [{ themeKey: "articles", ref: ref("a") }, { themeKey: "articles", ref: ref("b") }, { themeKey: "prepositions", ref: ref("c") }];
+  const applied = applyRuleBackfill(work, [{ category: "prepositions", ruleId: "articles.a" }, { ruleId: "prep.x" }, null], rulesFixture);
+  assert.equal(applied.get("articles")[0].ruleId, "articles.a");
+  assert.equal(applied.get("articles")[1].ruleId, null);
+  assert.equal(applied.get("prepositions")[0].ruleId, null);
+  assert.ok(Object.hasOwn(applied.get("prepositions")[0], "ruleId"));
+  assert.equal(findRuleBackfillWork([{ theme_key: "articles", error_refs: applied.get("articles") }], rulesFixture).length, 0);
+});
+
+test("mergeRefs keeps the 200 cap when ruleIds are filled", () => {
+  const refs = Array.from({ length: 200 }, (_, i) => ({ ...ref(String(i)), created_at: new Date(i * 1000).toISOString() }));
+  const merged = mergeRefs(refs, refs.slice(0, 5).map((r) => ({ ...r, ruleId: null })));
+  assert.equal(merged.length, 200);
+  assert.equal(merged.filter((r) => Object.hasOwn(r, "ruleId")).length, 5);
+});

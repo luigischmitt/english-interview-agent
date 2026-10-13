@@ -68,7 +68,7 @@ function exploreGroup(lesson: PracticeLesson): PracticeGroup {
   };
 }
 
-export function TrainView({ onInterview }: { onInterview: () => void }) {
+export function TrainView({ onInterview, initialLesson, initialPart }: { onInterview: () => void; initialLesson?: string; initialPart?: string }) {
   const [themes, setThemes] = useState<PracticeGroup[]>([]);
   const [themeLoading, setThemeLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -182,6 +182,18 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
     setAttempts(history.ok ? history.value : []);
     setAttemptsLoading(false);
   };
+  // Deep link: open the requested lesson once, after the groups have loaded.
+  const deepLinkOpened = useRef(false);
+  useEffect(() => {
+    if (deepLinkOpened.current || !initialLesson || themeLoading) return;
+    deepLinkOpened.current = true;
+    const lesson = practiceLessonByKey[initialLesson];
+    if (!lesson) return;
+    const ruleIndex = Math.max(0, lesson.rules.findIndex((rule) => rule.id === initialPart));
+    const theme = themes.find((item) => item.theme_key === lesson.key) ?? exploreGroup(lesson);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time open of the lesson requested by the link
+    void selectTheme(theme, ruleIndex);
+  });
   const begin = (theme: PracticeGroup | null = selected) => {
     if (!theme) return;
     setSelected(theme);

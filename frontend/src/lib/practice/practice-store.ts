@@ -2,8 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import { validatedPatterns } from "@/lib/interview/progress-insights.mjs";
-import { applyPracticeResult, completedLegacyThemeIds, extractProgressErrors, findPracticeSyncWork, mergeRefs, weightedFrequency, type PracticeErrorRef } from "@/lib/practice/practice-sync.mjs";
-import { practiceCategoryByKey } from "@/lib/practice/practice-categories.mjs";
+import { applyPracticeResult, applyRuleBackfill, buildClassifyRules, completedLegacyThemeIds, findRuleBackfillWork, resolveRuleId, extractProgressErrors, findPracticeSyncWork, mergeRefs, weightedFrequency, type PracticeErrorRef } from "@/lib/practice/practice-sync.mjs";
+import { practiceCategoryByKey, practiceCategoryKeys } from "@/lib/practice/practice-categories.mjs";
+import { lessonRulesForRequest } from "@/lib/practice/practice-lessons.mjs";
 import { classifyPracticeErrors } from "@/lib/practice/practice-requests";
 
 export type PracticeGroup = {
@@ -68,7 +69,9 @@ export async function loadPracticeGroups(): Promise<Result<PracticeGroup[]>> {
 export const practiceSyncBatchSize = 20;
 export const practiceSyncMaxBatches = 3;
 
-/** Classifies unassigned and legacy errors in one bounded batch. */
+const classifyRules = () => buildClassifyRules(practiceCategoryKeys, lessonRulesForRequest);
+
+/** Classifies unassigned and legacy errors in one bounded batch; with none left, fills ruleId on stored refs that lack it. */
 export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Result<{ themes: PracticeGroup[]; remaining: boolean }>> {
   const auth = await authenticatedClient();
   if (!auth.ok) return auth;
@@ -82,23 +85,27 @@ export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Resul
   }));
   const allErrors = extractProgressErrors(records);
   const missing = findPracticeSyncWork(allErrors, themes, practiceSyncBatchSize);
+  const rules = classifyRules();
   if (!missing.length) {
     const removable = completedLegacyThemeIds(themes);
     if (removable.length) {
       const { error } = await auth.value.client.from("practice_themes").delete().in("id", removable).eq("user_id", auth.value.userId);
       if (error) return failure("Não foi possível concluir a atualização dos grupos.");
     }
-    return { ok: true, value: { themes, remaining: false } };
+    const backfill = findRuleBackfillWork(themes, rules, practiceSyncBatchSize);
+    if (!backfill.length) return { ok: true, value: { themes, remaining: false } };
+    return backfillRuleIds(auth.value, themes, backfill, rules);
   }
 
-  let assignments: Array<{ category: string; point: string } | null>;
+  let assignments: Array<{ category: string; point: string; ruleId: string | null } | null>;
   try {
     const response = await classifyPracticeErrors({
       errors: missing.map((ref) => ({ type: ref.type ?? "GRAMMAR", evidence: ref.evidence, suggestion: ref.suggestion ?? "", rephrasedExample: ref.rephrased })),
+      ...(Object.keys(rules).length ? { rules } : {}),
     });
     if (response.assignments.length !== missing.length) throw new Error("Invalid assignment count");
     assignments = response.assignments.map((assignment) => assignment && practiceCategoryByKey[assignment.category] && assignment.point?.trim()
-      ? { category: assignment.category, point: assignment.point.trim().slice(0, 80) }
+      ? { category: assignment.category, point: assignment.point.trim().slice(0, 80), ruleId: resolveRuleId(rules, assignment.category, assignment.ruleId) }
       : null);
   } catch {
     return failure("Não foi possível analisar seus erros mais recentes.");
@@ -110,7 +117,7 @@ export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Resul
   const ignoredRefs: PracticeErrorRef[] = [];
   for (let index = 0; index < missing.length; index += 1) {
     const assignment = assignments[index];
-    const ref = { ...missing[index], ...(assignment ? { category: assignment.category, point: assignment.point } : {}) };
+    const ref = { ...missing[index], ...(assignment ? { category: assignment.category, point: assignment.point, ruleId: assignment.ruleId } : { ruleId: null }) };
     if (assignment) incomingByCategory.set(assignment.category, [...(incomingByCategory.get(assignment.category) ?? []), ref]);
     else ignoredRefs.push(ref);
   }
@@ -150,8 +157,40 @@ export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Resul
     if (deleteError) return failure("Não foi possível concluir a atualização dos grupos.");
   }
   const finalRows = removable.length ? saved.filter((theme) => !removable.includes(theme.id)) : saved;
-  const remaining = findPracticeSyncWork(allErrors, finalRows, Number.POSITIVE_INFINITY).length > 0;
+  const remaining = findPracticeSyncWork(allErrors, finalRows, Number.POSITIVE_INFINITY).length > 0
+    || findRuleBackfillWork(finalRows, rules, 1).length > 0;
   return { ok: true, value: { themes: withFrequency(finalRows), remaining } };
+}
+
+/** One bounded classify call for stored refs without ruleId. Groups never change; a failed call is retried on a later visit without a warning. */
+async function backfillRuleIds(
+  auth: { client: SupabaseClient; userId: string },
+  themes: PracticeGroup[],
+  work: Array<{ themeKey: string; ref: PracticeErrorRef }>,
+  rules: ReturnType<typeof classifyRules>,
+): Promise<Result<{ themes: PracticeGroup[]; remaining: boolean }>> {
+  let assignments: Array<{ ruleId?: string | null } | null>;
+  try {
+    const response = await classifyPracticeErrors({
+      errors: work.map(({ ref }) => ({ type: ref.type ?? "GRAMMAR", evidence: ref.evidence, suggestion: ref.suggestion ?? "", rephrasedExample: ref.rephrased })),
+      rules,
+    });
+    if (response.assignments.length !== work.length) throw new Error("Invalid assignment count");
+    assignments = response.assignments;
+  } catch {
+    return { ok: true, value: { themes, remaining: false } };
+  }
+  // Only a ref's current group matters: the returned category is ignored and ruleId counts only for that group's rules.
+  const updated = applyRuleBackfill(work, assignments, rules);
+  const next = [...themes];
+  for (const [key, refs] of updated) {
+    const index = next.findIndex((theme) => theme.theme_key === key);
+    const merged = mergeRefs(next[index].error_refs, refs);
+    const { error } = await auth.client.from("practice_themes").update({ error_refs: merged }).eq("id", next[index].id).eq("user_id", auth.userId);
+    if (error) return failure("Não foi possível atualizar os grupos.");
+    next[index] = { ...next[index], error_refs: merged };
+  }
+  return { ok: true, value: { themes: withFrequency(next), remaining: findRuleBackfillWork(next, rules, 1).length > 0 } };
 }
 
 export async function savePracticeAttempt(input: {

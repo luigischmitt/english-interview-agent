@@ -19,7 +19,7 @@ async function request<T>(kind: RequestKind, body: unknown): Promise<T> {
   }
   return response.json() as Promise<T>;
 }
-export type PracticeClassification = { assignments: Array<{ category: string; point: string } | null> };
-export const classifyPracticeErrors = (body: { errors: Array<{ type: string; evidence: string; suggestion: string; rephrasedExample: string }> }) => request<PracticeClassification>("classify", body);
+export type PracticeClassification = { assignments: Array<{ category: string; point: string; ruleId?: string | null } | null> };
+export const classifyPracticeErrors = (body: { errors: Array<{ type: string; evidence: string; suggestion: string; rephrasedExample: string }>; rules?: Record<string, Array<{ id: string; rule: string }>> }) => request<PracticeClassification>("classify", body);
 export type PracticeExercise = { kind: "fix" | "spot" | "build"; instruction: string; source: string | null; target: string; ruleId: string | null; rule?: string };
 export const gradePracticeAnswer = (body: { theme: { title: string; explanation: string }; exercise: PracticeExercise & { rule?: string }; answer: string; mode: "text" | "voice" }) => request<{ verdict: "correct" | "almost" | "incorrect"; feedback: string; corrected: string }>("grade", body);
