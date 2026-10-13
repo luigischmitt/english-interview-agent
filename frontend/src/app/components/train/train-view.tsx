@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -41,6 +41,7 @@ import { sortPracticeGroups } from "@/lib/practice/practice-sync.mjs";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { getCurrentLocale, t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
+import { alternativesFor, applyEdits, mistakeRegion, toBlocks } from "@/lib/practice/word-blocks.mjs";
 import "./train.css";
 
 let practiceAudioManifestPromise: Promise<typeof import("@/lib/practice/practice-audio-manifest.json")> | null = null;
@@ -50,6 +51,7 @@ type Grade = {
   feedback: string;
   corrected: string;
   why?: string | null;
+  assisted?: boolean;
 };
 type RoundExercise = PracticeFixedExercise;
 type PracticeMode = "quick" | "focused" | "mine";
@@ -325,7 +327,7 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     }
   };
 
-  const submit = async (chosen?: string) => {
+  const submit = async (chosen?: string, assisted = false) => {
     const submittedAnswer = chosen ?? answer;
     if (!selected || !exercises[step] || !submittedAnswer.trim() || grading) return;
     setGrading(true);
@@ -349,8 +351,9 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
         ...local,
         feedback,
         why: exercise.why,
+        assisted,
       };
-      updateMissed(exercise.id, grade.verdict === "correct");
+      updateMissed(exercise.id, grade.verdict === "correct" && !assisted);
       if (tracked && attemptTheme?.id) {
         const saved = await savePracticeAttempt({
           themeId: attemptTheme.id,
@@ -485,7 +488,7 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
             setFormError(null);
           }}
           onVoiceError={setFormError}
-          onSubmit={() => void submit()}
+          onSubmit={(value, assisted) => void submit(value, assisted)}
           onChoose={(option) => void submit(option)}
           onNext={next}
           onRestartMissed={restartMissed}
@@ -1347,7 +1350,7 @@ function PracticeSession({
   onAnswer: (text: string) => void;
   onVoiceAnswer: (text: string) => void;
   onVoiceError: (message: string) => void;
-  onSubmit: () => void;
+  onSubmit: (value?: string, assisted?: boolean) => void;
   onChoose: (option: string) => void;
   onNext: () => void;
   onRestartMissed: (missed: RoundExercise[]) => void;
@@ -1360,9 +1363,16 @@ function PracticeSession({
   const sessionTitle = mode === "mine" ? t("Seus erros · todas as aulas") : lessonTitle;
   const practiceRef = useRef<HTMLElement | null>(null);
   const lastStep = useRef(step);
+  const [hintOpen, setHintOpen] = useState(false);
+  const [wordEdits, setWordEdits] = useState<Record<number, string>>({});
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [assisted, setAssisted] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
   useEffect(() => {
     if (lastStep.current === step) return;
     lastStep.current = step;
+    setHintOpen(false);
+    setWordEdits({}); setHelpOpen(false); setAssisted(false);
     scrollToTopOf(practiceRef.current);
   }, [step]);
   useEffect(() => {
@@ -1419,6 +1429,14 @@ function PracticeSession({
   for (let index = results.length - 1; index >= 0 && results[index].verdict === "correct"; index -= 1) streak += 1;
   const kindLabel = choose ? t("Complete a frase") : t("Encontre e corrija o erro");
   const hintRule = exercise.ruleId ? practiceRuleById[exercise.ruleId] : undefined;
+  const blocks = !choose ? toBlocks(exercise.sentence) : [];
+  const region = !choose ? mistakeRegion(exercise) : { blockIds: [], correct: "", mistaken: "" };
+  const editedSentence = !choose ? applyEdits(blocks, wordEdits) : "";
+  const wholeSentenceOptions = Boolean(choose && /___\s*$/u.test(exercise.sentence) && exercise.options?.length && exercise.options.every((option) => /[.!?]\s*$/u.test(option)));
+  const topicByLesson: Record<string, string> = {
+    prepositions: "preposição", articles: "artigo", "verb-tenses": "tempo verbal", "verb-forms": "forma do verbo",
+    "word-choice": "vocabulário", "sentence-structure": "estrutura da frase", "plural-agreement": "plural/concordância", other: "expressão",
+  };
   return (
     <section className="tr-panel tr-practice" ref={practiceRef} aria-labelledby="exercise-title">
       <div className="tr-practice-top">
@@ -1451,10 +1469,13 @@ function PracticeSession({
       <div className="tr-exercise-card" key={exercise.id}>
         <div className="tr-exercise-meta">
           <span className="tr-exercise-kind">{kindLabel}</span>
+          {hintRule && <span className="tr-part-chip">{t("Parte: {label}", { label: t(hintRule.label) })}</span>}
           {mode === "focused" && exercises.slice(0, step).some((item) => item.id === exercise.id) && <span className="tr-review-tag">{t("Revisão")}</span>}
         </div>
+        {exercise.context && <p className="tr-exercise-context"><span>{t("Situação")}</span>{exercise.context}</p>}
+        {exercise.meaning && <p className="tr-exercise-meaning"><span>{t("Você quer dizer")}</span><q lang="pt-BR">{exercise.meaning}</q></p>}
         <h2 id="exercise-title" className="tr-exercise-title">
-          {choose ? t("Qual opção completa a frase?") : t("Esta frase tem um erro. Reescreva-a corrigida.")}
+          {choose ? t(wholeSentenceOptions ? "Qual destas frases você usaria?" : "Qual opção completa a frase?") : t("Esta frase tem 1 erro de {topic}. Reescreva a frase corrigida.", { topic: t(topicByLesson[theme.theme_key] ?? "expressão") })}
         </h2>
         <blockquote className="tr-source" lang="en">
           {choose
@@ -1468,12 +1489,39 @@ function PracticeSession({
                   )}
                 </span>
               ))
-            : exercise.sentence}
+            : result ? exercise.sentence : (
+              <span className="tr-word-sentence" aria-label={editedSentence}>
+                <SpotSentenceEditor
+                  sentence={blocks}
+                  edits={wordEdits}
+                  onEditsChange={setWordEdits}
+                  disabled={grading}
+                  highlightIds={helpOpen ? region.blockIds : []}
+                  onAnnounce={(edits) => setAnnouncement(applyEdits(blocks, edits))}
+                />
+              </span>
+            )}
         </blockquote>
-        {!choose && hintRule && !result && (
-          <details className="tr-hint-toggle" onToggle={revealOnOpen}>
-            <summary>{t("Preciso de uma dica")}</summary>
-            <p>{t("Dica: {label} — {when}", { label: t(hintRule.label), when: t(hintRule.when) })}</p>
+        {!choose && !result && <>
+          <p className="sr-only" aria-live="polite">{announcement}</p>
+          <div className="tr-word-actions">
+            <button className="ds-btn ds-btn-cta-green" disabled={grading} onClick={() => onSubmit(answer.trim() || editedSentence, assisted)}>{grading ? t("Avaliando…") : t("Verificar")}</button>
+            <span className="tr-voice-option"><span>{t("Responder falando")}</span><VoiceAnswerButton onTranscript={onVoiceAnswer} onError={onVoiceError} disabled={grading} /></span>
+            <button className="ds-btn ds-btn-soft" disabled={grading} onClick={() => setHelpOpen((open) => !open)}>{t("Não sei — ver alternativas")}</button>
+          </div>
+          {helpOpen && <div className="tr-alternatives" role="group" aria-label={t("Alternativas para a parte destacada")}>
+            {alternativesFor({ ...exercise, ruleId: exercise.ruleId ?? "" }, practiceLessons.map((lesson) => ({ exercises: lesson.exercises.map((item) => ({ ...item, ruleId: item.ruleId ?? "", kind: item.kind ?? "", options: item.options ?? [] })) }))).map((option) => <button type="button" key={`${option.value}:${option.label}`} className="tr-alternative" onClick={() => { const ids = region.blockIds; const words = option.value.trim().split(/\s+/u); const replacement = ids.map((_, index) => [ids[index], index === ids.length - 1 ? words.slice(index).join(" ") : (words[index] ?? "")]); const edits = Object.fromEntries([...Object.entries(wordEdits), ...replacement]); setWordEdits(edits); setAssisted(true); setAnnouncement(applyEdits(blocks, edits)); }}>{option.label}</button>)}
+          </div>}
+        </>}
+        {hintRule && (
+          <details className="tr-hint-toggle" onToggle={(event) => { const open = event.currentTarget.open; setHintOpen(open); if (open) revealOnOpen(event); }}>
+            <summary aria-expanded={hintOpen}>{t("Dica")}</summary>
+            <div className="tr-hint-content">
+              <p className="tr-mini-label">{t("Fórmula")}</p>
+              <p className="tr-pattern">{t(hintRule.pattern)}</p>
+              <p className="tr-mini-label">{t("Quando usar")}</p>
+              <p>{t(hintRule.when)}</p>
+            </div>
           </details>
         )}
         {choose ? (
@@ -1521,6 +1569,115 @@ function PracticeSession({
         />
       )}
     </section>
+  );
+}
+
+type SpotSentenceEditorProps = {
+  sentence: ReturnType<typeof toBlocks>;
+  edits: Record<number, string>;
+  onEditsChange: (edits: Record<number, string>) => void;
+  disabled: boolean;
+  highlightIds: number[];
+  onAnnounce: (edits: Record<number, string>) => void;
+};
+
+function SpotSentenceEditor({ sentence, edits, onEditsChange, disabled, highlightIds, onAnnounce }: SpotSentenceEditorProps) {
+  const [editingBlock, setEditingBlock] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const measureRef = useRef<HTMLSpanElement | null>(null);
+  const listRef = useRef<HTMLSpanElement | null>(null);
+  const previousRects = useRef(new Map<number, DOMRect>());
+  const captureRects = () => {
+    const nodes = listRef.current?.querySelectorAll<HTMLElement>("[data-block-id]");
+    previousRects.current = new Map(Array.from(nodes ?? [], (node) => [Number(node.dataset.blockId), node.getBoundingClientRect()]));
+  };
+  useLayoutEffect(() => {
+    const nodes = listRef.current?.querySelectorAll<HTMLElement>("[data-block-id]");
+    if (!nodes || prefersReducedMotion()) return;
+    nodes.forEach((node) => {
+      const old = previousRects.current.get(Number(node.dataset.blockId));
+      if (!old) return;
+      const rect = node.getBoundingClientRect();
+      const dx = old.left - rect.left;
+      const dy = old.top - rect.top;
+      if (!dx && !dy) return;
+      node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }], { duration: 220, easing: getComputedStyle(node).getPropertyValue("--ease-out").trim() || "ease-out" });
+    });
+    previousRects.current.clear();
+  }, [edits]);
+  useEffect(() => {
+    if (editingBlock === null) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [editingBlock]);
+  const commit = (blockId: number, value: string) => {
+    captureRects();
+    const next = { ...edits, [blockId]: value.trim() };
+    onEditsChange(next);
+    onAnnounce(next);
+    setEditingBlock(null);
+  };
+  const undo = (blockId: number) => {
+    captureRects();
+    const next = { ...edits };
+    delete next[blockId];
+    onEditsChange(next);
+    onAnnounce(next);
+  };
+  return (
+    <span ref={listRef} className="tr-word-sentence">
+      {sentence.map((block) => {
+        const edited = Object.hasOwn(edits, block.id);
+        const value = edited ? edits[block.id] : block.text;
+        const active = editingBlock === block.id;
+        const highlighted = highlightIds.includes(block.id);
+        return (
+          <span key={block.id} data-block-id={block.id} className={`tr-word-wrap${edited ? " is-edited" : ""}${!value ? " is-empty" : ""}${highlighted ? " is-helped" : ""}`}>
+            {active ? (
+              <span className="tr-word-editor-measure-wrap">
+                <span ref={measureRef} className="tr-word-measure" aria-hidden="true">{draft || " "}</span>
+                <input
+                  ref={inputRef}
+                  className="tr-word-editor"
+                  aria-label={t("Editar palavra: {word}", { word: block.text })}
+                  value={draft}
+                  disabled={disabled}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onBlur={() => commit(block.id, draft)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commit(block.id, draft);
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setEditingBlock(null);
+                    }
+                  }}
+                />
+              </span>
+            ) : (
+              <button
+                type="button"
+                className={`tr-word-block${!value ? " is-placeholder" : ""}`}
+                aria-label={value ? t("Editar palavra: {word}", { word: value }) : t("Reabrir palavra: {word}", { word: block.text })}
+                disabled={disabled}
+                onClick={() => { setDraft(value); setEditingBlock(block.id); }}
+              >
+                {value || <span aria-hidden="true">&nbsp;</span>}
+              </button>
+            )}
+            <span className="tr-word-trailing">{block.trailing}</span>
+            {edited && (
+              <button type="button" className="tr-word-undo" aria-label={t("Desfazer: {word}", { word: block.text })} disabled={disabled} onClick={() => undo(block.id)}>
+                <RotateCcw aria-hidden="true" />
+              </button>
+            )}
+          </span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -1662,7 +1819,7 @@ function AnswerForm({
   disabled: boolean;
   error: string | null;
   onChange: (text: string) => void;
-  onSubmit: () => void;
+  onSubmit: (value?: string, assisted?: boolean) => void;
   onVoiceAnswer: (text: string) => void;
   onVoiceError: (message: string) => void;
 }) {
@@ -1743,6 +1900,7 @@ function PracticeFeedback({
       <div className="tr-feedback-head">
         <Verdict verdict={result.verdict} />
         <p className="ds-body">{result.feedback}</p>
+        {result.assisted && <span className="tr-helped-tag">{t("Com ajuda")}</span>}
       </div>
       {(result.why || exercise.why) && <p className="tr-feedback-why">{t(result.why ?? exercise.why ?? "")}</p>}
       {error && (
@@ -1751,7 +1909,12 @@ function PracticeFeedback({
         </p>
       )}
       <div className="tr-corrected" lang="en">
-        <span>{result.corrected}</span>
+        <span>{(() => {
+          if (exercise.kind !== "spot") return result.corrected;
+          const correctedRegion = mistakeRegion(exercise).correct;
+          const start = correctedRegion ? result.corrected.toLocaleLowerCase().indexOf(correctedRegion.toLocaleLowerCase()) : -1;
+          return start < 0 ? result.corrected : <>{result.corrected.slice(0, start)}<mark className="tr-corrected-region">{result.corrected.slice(start, start + correctedRegion.length)}</mark>{result.corrected.slice(start + correctedRegion.length)}</>;
+        })()}</span>
         <SpeakButton phrase={result.corrected} onPlay={onPlay} />
       </div>
       {rule && result.verdict !== "correct" && (

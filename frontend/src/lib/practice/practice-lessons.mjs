@@ -7,6 +7,15 @@
 // answer is none of them (another valid wording must not be marked wrong). Rule and exercise ids are stored in users'
 // data, so existing ids must never change.
 
+import prepositionsContext from "./context/prepositions.json" with { type: "json" };
+import articlesContext from "./context/articles.json" with { type: "json" };
+import verbTensesContext from "./context/verb-tenses.json" with { type: "json" };
+import verbFormsContext from "./context/verb-forms.json" with { type: "json" };
+import wordChoiceContext from "./context/word-choice.json" with { type: "json" };
+import sentenceStructureContext from "./context/sentence-structure.json" with { type: "json" };
+import pluralAgreementContext from "./context/plural-agreement.json" with { type: "json" };
+import otherContext from "./context/other.json" with { type: "json" };
+
 const ex = (en, pt) => ({ en, pt });
 const trap = (wrong, right, note) => ({ wrong, right, note });
 const choose = (id, ruleId, sentence, options, answer, why) => ({ id, ruleId, kind: "choose", sentence, options, answer, why });
@@ -1191,6 +1200,21 @@ export const practiceLessons = [
     ],
   },
 ];
+
+const contextByLesson = {
+  prepositions: prepositionsContext,
+  articles: articlesContext,
+  "verb-tenses": verbTensesContext,
+  "verb-forms": verbFormsContext,
+  "word-choice": wordChoiceContext,
+  "sentence-structure": sentenceStructureContext,
+  "plural-agreement": pluralAgreementContext,
+  other: otherContext,
+};
+for (const lesson of practiceLessons) {
+  const byId = contextByLesson[lesson.key];
+  for (const exercise of lesson.exercises) Object.assign(exercise, byId[exercise.id]);
+}
 
 export const practiceLessonByKey = Object.fromEntries(practiceLessons.map((lesson) => [lesson.key, lesson]));
 

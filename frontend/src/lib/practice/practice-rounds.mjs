@@ -127,6 +127,21 @@ function pick(pool, size, weights, missed, recent, random, allowReuse = false) {
   return output;
 }
 
+function shuffled(items, random) {
+  const result = [...items];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function prepareRound(exercises, random) {
+  return shuffled(exercises, random).map((exercise) => exercise.kind === "choose"
+    ? { ...exercise, options: shuffled(exercise.options ?? [], random) }
+    : exercise);
+}
+
 /** Build a quick, focused, or mistakes-only practice round. */
 export function buildRound({ mode, lessons, key, ruleId, size, weights = {}, lessonWeights = {}, missedIds = [], recentIds = [], random = Math.random }) {
   const lesson = (lessons ?? []).find((item) => item.key === key);
@@ -146,7 +161,7 @@ export function buildRound({ mode, lessons, key, ruleId, size, weights = {}, les
         const pool = (lessons ?? []).find((item) => item.key === lessonKey)?.exercises ?? [];
         result.push(...pick(pool, Math.min(count, 10 - result.length), {}, missedIds, recentIds, random));
       }
-      return result.slice(0, 10);
+      return prepareRound(result.slice(0, 10), random);
     }
     const topRules = Object.entries(weights)
       .filter(([, count]) => count > 0)
@@ -158,7 +173,7 @@ export function buildRound({ mode, lessons, key, ruleId, size, weights = {}, les
     for (const id of topRules) {
       result.push(...pick(pool.filter((item) => item.ruleId === id), Math.min(3, 10 - result.length), weights, missedIds, recentIds, random));
     }
-    return result.slice(0, 10);
+    return prepareRound(result.slice(0, 10), random);
   }
   if (!lesson) return [];
 
@@ -166,7 +181,7 @@ export function buildRound({ mode, lessons, key, ruleId, size, weights = {}, les
   if (ruleId) pool = pool.filter((item) => item.ruleId === ruleId);
   const target = mode === "quick" ? 5 : Math.max(1, Math.min(size ?? 10, 20));
   const allowReuse = mode === "focused" || (mode === "quick" && Boolean(ruleId));
-  return pick(pool, mode === "focused" && ruleId ? Math.min(target, pool.length) : target, weights, missedIds, recentIds, random, allowReuse);
+  return prepareRound(pick(pool, mode === "focused" && ruleId ? Math.min(target, pool.length) : target, weights, missedIds, recentIds, random, allowReuse), random);
 }
 
 /** Add each missed exercise once to the end of a focused round. */
