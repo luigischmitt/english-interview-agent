@@ -42,7 +42,7 @@ import { sortPracticeGroups } from "@/lib/practice/practice-sync.mjs";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { getCurrentLocale, t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
-import { alternativesFor, applyEdits, dragReducer, insertionIndexFromRects, isOrderChanged, mistakeRegion, normalizeEdits, reorder, toBlocks, type DragState } from "@/lib/practice/word-blocks.mjs";
+import { alternativesFor, applyEdits, dragReducer, gapsFromRects, nearestGap, orderFromGap, isOrderChanged, mistakeRegion, normalizeEdits, reorder, toBlocks, type DragState, type WordGap } from "@/lib/practice/word-blocks.mjs";
 import "./train.css";
 
 let practiceAudioManifestPromise: Promise<typeof import("@/lib/practice/practice-audio-manifest.json")> | null = null;
@@ -1469,137 +1469,112 @@ type SpotSentenceEditorProps = {
 function SpotSentenceEditor({ sentence, edits, order, onOrderChange, onEditsChange, disabled, highlightIds, onAnnounce }: SpotSentenceEditorProps) {
   const [editingBlock, setEditingBlock] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
-  const [drag, setDrag] = useState<{ id: number; x: number; y: number; grabX: number; grabY: number; width: number; height: number; text: string; trailing: string; index: number; font: string; padding: string; border: string; radius: string } | null>(null);
-  const [placeholderIndex, setPlaceholderIndex] = useState<number | null>(null);
+  const [drag, setDrag] = useState<{ id: number; x: number; y: number; grabX: number; grabY: number; width: number; height: number; text: string; trailing: string; font: string; padding: string; border: string; radius: string } | null>(null);
+  const [targetGap, setTargetGap] = useState<WordGap | null>(null);
   const justDragged = useRef(false);
   const interactionRef = useRef<DragState>({ order, dragging: null, placeholderIndex: null, openEditorFor: null, suppressClick: false });
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLSpanElement | null>(null);
   const dragRef = useRef<typeof drag>(null);
   const startRef = useRef<{ id: number; x: number; y: number; node: HTMLButtonElement; pointerId: number; timer?: number; capture: boolean } | null>(null);
+  const gapSnapshotRef = useRef<WordGap[]>([]);
   const previousRects = useRef(new Map<number, DOMRect>());
+  const rafRef = useRef(0);
   const captureRects = () => {
     const nodes = listRef.current?.querySelectorAll<HTMLElement>("[data-block-id]");
     previousRects.current = new Map(Array.from(nodes ?? [], (node) => [Number(node.dataset.blockId), node.getBoundingClientRect()]));
   };
   useLayoutEffect(() => {
+    if (dragRef.current || prefersReducedMotion()) return;
     const nodes = listRef.current?.querySelectorAll<HTMLElement>("[data-block-id]");
-    if (!nodes || prefersReducedMotion()) return;
-    nodes.forEach((node) => {
+    nodes?.forEach((node) => {
       const old = previousRects.current.get(Number(node.dataset.blockId));
       if (!old) return;
       const rect = node.getBoundingClientRect();
       const dx = old.left - rect.left;
       const dy = old.top - rect.top;
-      if (!dx && !dy) return;
-      node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }], { duration: 150, easing: getComputedStyle(node).getPropertyValue("--ease-out").trim() || "ease-out" });
+      if (dx || dy) node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }], { duration: 150, easing: getComputedStyle(node).getPropertyValue("--ease-out").trim() || "ease-out" });
     });
     previousRects.current.clear();
-  }, [edits, order, placeholderIndex]);
+  }, [edits, order]);
   useEffect(() => { if (editingBlock !== null) { inputRef.current?.focus(); inputRef.current?.select(); } }, [editingBlock]);
   const commit = (blockId: number, value: string) => {
     const normalized = normalizeEdits(sentence, { ...edits, [blockId]: value });
     const next = { ...normalized };
-    onEditsChange(next);
-    onAnnounce(next);
-    setEditingBlock(null);
+    onEditsChange(next); onAnnounce(next); setEditingBlock(null);
   };
-  const undo = (blockId: number) => {
-    const next = { ...edits };
-    delete next[blockId];
-    onEditsChange(next);
-    onAnnounce(next);
-  };
+  const undo = (blockId: number) => { const next = { ...edits }; delete next[blockId]; onEditsChange(next); onAnnounce(next); };
   const move = (id: number, delta: number) => {
-    const index = order.indexOf(id);
-    const target = Math.max(0, Math.min(order.length - 1, index + delta));
+    const index = order.indexOf(id); const target = Math.max(0, Math.min(order.length - 1, index + delta));
     if (target === index) return;
-    captureRects();
-    const next = reorder(order, id, target);
-    onOrderChange(next); onAnnounce(edits, next);
+    captureRects(); const next = reorder(order, id, target); onOrderChange(next); onAnnounce(edits, next);
   };
   const lift = (start: NonNullable<typeof startRef.current>) => {
     if (dragRef.current || startRef.current !== start) return;
-    const block = sentence.find(({ id }) => id === start.id);
-    if (!block) return;
-    const rect = start.node.getBoundingClientRect();
-    const chip = start.node;
-    const style = getComputedStyle(chip);
-    const next = { id: start.id, x: start.x, y: start.y, grabX: start.x - rect.left, grabY: start.y - rect.top, width: rect.width, height: rect.height, text: edits[start.id] ?? block.text, trailing: block.trailing, index: order.indexOf(start.id), font: style.font, padding: style.padding, border: style.border, radius: style.borderRadius };
-    dragRef.current = next; setDrag(next); setPlaceholderIndex(next.index);
+    const block = sentence.find(({ id }) => id === start.id); const container = listRef.current;
+    if (!block || !container) return;
+    const chipNode = start.node.querySelector<HTMLElement>(".tr-word-block") ?? start.node;
+    const rect = chipNode.getBoundingClientRect(); const style = getComputedStyle(chipNode);
+    // Snapshot each chip's untransformed layout position once, before any drag styling is applied.
+    const nodes = Array.from(container.querySelectorAll<HTMLElement>("[data-block-id]"));
+    gapSnapshotRef.current = gapsFromRects(nodes.map((node) => {
+      const chip = node.querySelector<HTMLElement>(".tr-word-block");
+      return { left: node.offsetLeft + (chip?.offsetLeft ?? 0), top: node.offsetTop + (chip?.offsetTop ?? 0), width: chip?.offsetWidth ?? node.offsetWidth, height: chip?.offsetHeight ?? node.offsetHeight };
+    }));
+    const containerRect = container.getBoundingClientRect();
+    const next = { id: start.id, x: start.x, y: start.y, grabX: start.x - rect.left, grabY: start.y - rect.top, width: rect.width, height: rect.height, text: edits[start.id] ?? block.text, trailing: block.trailing, font: style.font, padding: style.padding, border: style.border, radius: style.borderRadius };
+    const gap = nearestGap(gapSnapshotRef.current, start.x - containerRect.left, start.y - containerRect.top);
+    dragRef.current = next; setDrag(next); setTargetGap(gap);
     try { start.node.setPointerCapture(start.pointerId); start.capture = true; } catch { /* Pointer may have left the element. */ }
   };
   const finish = (cancel: boolean) => {
-    const start = startRef.current;
-    const current = dragRef.current;
+    const start = startRef.current; const current = dragRef.current;
     if (start?.timer) window.clearTimeout(start.timer);
     if (!start) return;
-    let committed = false;
-    if (current && !cancel && listRef.current) {
-      const rect = listRef.current.getBoundingClientRect();
-      if (current.x >= rect.left && current.x <= rect.right && current.y >= rect.top && current.y <= rect.bottom) {
-        const next = reorder(order, current.id, placeholderIndex ?? current.index);
-        captureRects(); onOrderChange(next); onAnnounce(edits, next); committed = true;
-      }
-    }
-    if (current && !committed && !prefersReducedMotion()) {
-      const source = listRef.current?.querySelector<HTMLElement>(`[data-block-id="${current.id}"]`)?.getBoundingClientRect();
-      if (source) { setDrag({ ...current, x: source.left + source.width / 2, y: source.top + source.height / 2 }); window.setTimeout(() => { dragRef.current = null; setDrag(null); setPlaceholderIndex(null); }, 160); startRef.current = null; return; }
-    }
     if (current && !cancel) {
-      justDragged.current = true;
-      window.setTimeout(() => { justDragged.current = false; }, 0);
+      const container = listRef.current; const rect = container?.getBoundingClientRect();
+      if (container && rect && current.x >= rect.left && current.x <= rect.right && current.y >= rect.top && current.y <= rect.bottom && targetGap) {
+        const next = orderFromGap(order, current.id, targetGap.index);
+        if (isOrderChanged(next, order)) { captureRects(); onOrderChange(next); onAnnounce(edits, next); }
+      }
+      justDragged.current = true; window.setTimeout(() => { justDragged.current = false; }, 0);
     }
-    startRef.current = null; dragRef.current = null; setDrag(null); setPlaceholderIndex(null);
+    startRef.current = null; dragRef.current = null; gapSnapshotRef.current = []; setDrag(null); setTargetGap(null);
   };
   useEffect(() => {
     const onMove = (event: PointerEvent) => {
-      const start = startRef.current;
-      if (!start || event.pointerId !== start.pointerId) return;
-      interactionRef.current = dragReducer(interactionRef.current, { type: "move", x: event.clientX, y: event.clientY, targetIndex: placeholderIndex ?? 0 });
-      if (!dragRef.current && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) {
-        if (start.timer) window.clearTimeout(start.timer);
-        lift(start);
-      }
-      const current = dragRef.current;
-      if (!current) return;
-      event.preventDefault();
-      const updated = { ...current, x: event.clientX, y: event.clientY };
-      dragRef.current = updated;
-      if (!rafRef.current) rafRef.current = window.requestAnimationFrame(() => { rafRef.current = 0; setDrag(dragRef.current); });
-      const nodes = Array.from(listRef.current?.querySelectorAll<HTMLElement>("[data-block-id]") ?? []);
-      const rects = nodes.map((node) => node.getBoundingClientRect());
-      const sourceIndex = nodes.findIndex((node) => Number(node.dataset.blockId) === current.id);
-      const target = insertionIndexFromRects(rects, event.clientX, event.clientY, sourceIndex);
-      if (target !== placeholderIndex) { captureRects(); setPlaceholderIndex(target); }
+      const start = startRef.current; if (!start || event.pointerId !== start.pointerId) return;
+      interactionRef.current = dragReducer(interactionRef.current, { type: "move", x: event.clientX, y: event.clientY, targetIndex: targetGap?.index ?? 0 });
+      if (!dragRef.current && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) { if (start.timer) window.clearTimeout(start.timer); lift(start); }
+      const current = dragRef.current; const container = listRef.current; if (!current || !container) return;
+      event.preventDefault(); const updated = { ...current, x: event.clientX, y: event.clientY }; dragRef.current = updated;
+      const rect = container.getBoundingClientRect(); const gap = nearestGap(gapSnapshotRef.current, event.clientX - rect.left, event.clientY - rect.top);
+      if (!rafRef.current) rafRef.current = window.requestAnimationFrame(() => { rafRef.current = 0; setDrag(dragRef.current); setTargetGap(gap); });
     };
     const onUp = (event: PointerEvent) => { if (startRef.current?.pointerId === event.pointerId) { interactionRef.current = dragReducer(interactionRef.current, { type: "up" }); finish(false); } };
     const onCancel = (event: PointerEvent) => { if (startRef.current?.pointerId === event.pointerId) { interactionRef.current = dragReducer(interactionRef.current, { type: "cancel" }); finish(true); } };
     const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape" && dragRef.current) { event.preventDefault(); finish(true); } };
-    window.addEventListener("pointermove", onMove, { passive: false });
-    window.addEventListener("pointerup", onUp); window.addEventListener("pointercancel", onCancel); window.addEventListener("keydown", onKey);
+    window.addEventListener("pointermove", onMove, { passive: false }); window.addEventListener("pointerup", onUp); window.addEventListener("pointercancel", onCancel); window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onCancel); window.removeEventListener("keydown", onKey); };
   });
-  const rafRef = useRef(0);
   useEffect(() => () => { if (rafRef.current) window.cancelAnimationFrame(rafRef.current); }, []);
   const orderedBlocks = order.map((id) => sentence.find((entry) => entry.id === id)!).filter(Boolean);
   return (
     <>
     <span ref={listRef} className="tr-word-sentence" onPointerDownCapture={(event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".tr-word-block"); const id = Number(button?.closest<HTMLElement>("[data-block-id]")?.dataset.blockId); if (button && Number.isFinite(id)) interactionRef.current = dragReducer({ ...interactionRef.current, order }, { type: "pointerdown", id, x: event.clientX, y: event.clientY }); }} onClickCapture={(event) => { if (!justDragged.current) return; event.preventDefault(); event.stopPropagation(); event.nativeEvent.stopImmediatePropagation(); interactionRef.current = dragReducer(interactionRef.current, { type: "click" }); }}>
       {orderedBlocks.map((block) => {
-        const placeholder = Boolean(drag && block.id === drag.id);
-        const visualOrder = drag && placeholderIndex !== null ? (() => { const ids = order.filter((id) => id !== drag.id); ids.splice(Math.max(0, Math.min(ids.length, placeholderIndex)), 0, drag.id); return ids.indexOf(block.id); })() : order.indexOf(block.id);
-        const edited = Object.hasOwn(edits, block.id); const value = edited ? edits[block.id] : block.text;
+        const source = Boolean(drag && block.id === drag.id); const edited = Object.hasOwn(edits, block.id); const value = edited ? edits[block.id] : block.text;
         const active = editingBlock === block.id; const highlighted = highlightIds.includes(block.id);
         return (
-          <span key={block.id} data-block-id={block.id} className={`tr-word-wrap${edited ? " is-edited" : ""}${!value ? " is-empty" : ""}${highlighted ? " is-helped" : ""}${placeholder ? " is-drag-placeholder" : ""}`} style={drag ? { order: visualOrder } : undefined}>
-            {active ? <span className="tr-word-editor-measure-wrap"><input ref={inputRef} className="tr-word-editor" aria-label={t("Editar palavra: {word}", { word: block.text })} value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)} onBlur={() => commit(block.id, draft)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(block.id, draft); } if (event.key === "Escape") { event.preventDefault(); setEditingBlock(null); } }} /></span> : <button type="button" className={`tr-word-block${drag && placeholder ? " is-dragging-source" : ""}${!value ? " is-placeholder" : ""}`} style={drag && placeholder ? { width: drag.width, height: drag.height, boxSizing: "border-box", minHeight: 0 } : undefined} onPointerDown={(event) => { if (disabled || active || event.button !== 0) return; const start: NonNullable<typeof startRef.current> = { id: block.id, x: event.clientX, y: event.clientY, node: event.currentTarget, pointerId: event.pointerId, capture: false }; startRef.current = start; }} onKeyDown={(event) => { if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) { event.preventDefault(); move(block.id, event.key === "ArrowLeft" ? -1 : 1); } }} aria-label={value ? t("Editar palavra: {word}", { word: value }) : t("Reabrir palavra: {word}", { word: block.text })} disabled={disabled} onClick={() => { if (justDragged.current) return; setDraft(value); setEditingBlock(block.id); }}>{value || <span aria-hidden="true">&nbsp;</span>}</button>}
+          <span key={block.id} data-block-id={block.id} className={`tr-word-wrap${edited ? " is-edited" : ""}${!value ? " is-empty" : ""}${highlighted ? " is-helped" : ""}${source ? " is-drag-placeholder" : ""}`}>
+            {active ? <span className="tr-word-editor-measure-wrap"><input ref={inputRef} className="tr-word-editor" aria-label={t("Editar palavra: {word}", { word: block.text })} value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)} onBlur={() => commit(block.id, draft)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(block.id, draft); } if (event.key === "Escape") { event.preventDefault(); setEditingBlock(null); } }} /></span> : <button type="button" className={`tr-word-block${source ? " is-dragging-source" : ""}${!value ? " is-placeholder" : ""}`} onPointerDown={(event) => { if (disabled || active || event.button !== 0) return; const start: NonNullable<typeof startRef.current> = { id: block.id, x: event.clientX, y: event.clientY, node: event.currentTarget, pointerId: event.pointerId, capture: false }; startRef.current = start; }} onKeyDown={(event) => { if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) { event.preventDefault(); move(block.id, event.key === "ArrowLeft" ? -1 : 1); } }} aria-label={value ? t("Editar palavra: {word}", { word: value }) : t("Reabrir palavra: {word}", { word: block.text })} disabled={disabled} onClick={() => { if (justDragged.current) return; setDraft(value); setEditingBlock(block.id); }}>{value || <span aria-hidden="true">&nbsp;</span>}</button>}
             <span className="tr-word-move" aria-label={t("Mover palavra") }><button type="button" aria-label={t("Mover {word} para a esquerda", { word: value || block.text })} disabled={disabled || order.indexOf(block.id) === 0} onClick={() => move(block.id, -1)}>←</button><button type="button" aria-label={t("Mover {word} para a direita", { word: value || block.text })} disabled={disabled || order.indexOf(block.id) === order.length - 1} onClick={() => move(block.id, 1)}>→</button></span>
             <span className="tr-word-trailing">{block.trailing}</span>
             {edited && <button type="button" className="tr-word-undo" aria-label={t("Desfazer: {word}", { word: block.text })} disabled={disabled} onClick={() => undo(block.id)}><RotateCcw aria-hidden="true" /></button>}
           </span>
         );
       })}
+      {drag && targetGap && <span aria-hidden="true" className="tr-word-caret" style={{ left: targetGap.x, top: targetGap.y, height: drag.height }} />}
     </span>
     {drag && typeof document !== "undefined" ? createPortal(<button className="tr-word-block tr-word-ghost" style={{ width: drag.width, height: drag.height, font: drag.font, padding: drag.padding, border: drag.border, borderRadius: drag.radius, transformOrigin: `${drag.grabX}px ${drag.grabY}px`, transform: `translate3d(${drag.x - drag.grabX}px, ${drag.y - drag.grabY}px, 0) scale(1.04)` }} aria-hidden="true" tabIndex={-1}>{drag.text}</button>, document.body) : null}
     </>

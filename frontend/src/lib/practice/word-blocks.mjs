@@ -36,6 +36,55 @@ export function isOrderChanged(order, originalOrder = order.map((_, index) => in
   return order.length !== originalOrder.length || order.some((id, index) => id !== originalOrder[index]);
 }
 
+/** Build row-aware insertion gaps from a static, DOM-order snapshot of chip rectangles. */
+export function gapsFromRects(rects) {
+  if (!rects.length) return [];
+  const items = rects.map((rect, index) => ({ rect: { ...rect, right: rect.right ?? rect.left + rect.width, bottom: rect.bottom ?? rect.top + rect.height }, index }));
+  const rows = [];
+  for (const item of items) {
+    let row = rows.find(({ items: rowItems }) => rowItems.some(({ rect }) => item.rect.top < rect.bottom && item.rect.bottom > rect.top));
+    if (!row) { row = { top: item.rect.top, bottom: item.rect.bottom, items: [] }; rows.push(row); }
+    row.top = Math.min(row.top, item.rect.top);
+    row.bottom = Math.max(row.bottom, item.rect.bottom);
+    row.items.push(item);
+  }
+  rows.sort((a, b) => a.top - b.top);
+  const gaps = [];
+  for (const row of rows) {
+    row.items.sort((a, b) => a.rect.left - b.rect.left);
+    const y = (row.top + row.bottom) / 2;
+    const first = row.items[0];
+    const last = row.items.at(-1);
+    gaps.push({ index: first.index, x: first.rect.left, y });
+    for (let index = 1; index < row.items.length; index += 1) {
+      const previous = row.items[index - 1];
+      const next = row.items[index];
+      gaps.push({ index: next.index, x: (previous.rect.right + next.rect.left) / 2, y });
+    }
+    gaps.push({ index: last.index + 1, x: last.rect.right, y });
+  }
+  return gaps;
+}
+
+/** Find the closest gap, strongly preferring the row nearest the pointer vertically. */
+export function nearestGap(gaps, x, y) {
+  if (!gaps.length) return null;
+  // Pick the row first (closest by vertical distance), then the closest gap inside that row.
+  const rowY = [...new Set(gaps.map((gap) => gap.y))].reduce((best, value) => Math.abs(value - y) < Math.abs(best - y) ? value : best);
+  return gaps.filter((gap) => gap.y === rowY).reduce((best, gap) => Math.abs(gap.x - x) < Math.abs(best.x - x) ? gap : best);
+}
+
+/** Convert a snapshot gap to insertion space after removing the dragged id. */
+export function orderFromGap(order, draggedId, gapIndex) {
+  const sourceIndex = order.indexOf(draggedId);
+  if (sourceIndex < 0) return [...order];
+  if (gapIndex === sourceIndex || gapIndex === sourceIndex + 1) return [...order];
+  const next = order.filter((id) => id !== draggedId);
+  const insertionIndex = order.slice(0, Math.max(0, Math.min(order.length, gapIndex))).filter((id) => id !== draggedId).length;
+  next.splice(insertionIndex, 0, draggedId);
+  return next;
+}
+
 /** Return the insertion slot after removing the dragged item, considering only the row under the pointer. */
 export function insertionIndexFromRects(rects, x, y, draggedIndex = -1) {
   const items = rects.map((rect, index) => ({ rect: { ...rect, bottom: rect.bottom ?? rect.top + rect.height }, index })).filter(({ index }) => index !== draggedIndex);

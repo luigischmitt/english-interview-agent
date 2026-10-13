@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyEdits, alternativesFor, dragReducer, insertionIndexFromRects, isOrderChanged, mistakeRegion, normalizeEdits, reorder, toBlocks } from "../src/lib/practice/word-blocks.mjs";
+import { applyEdits, alternativesFor, dragReducer, gapsFromRects, nearestGap, orderFromGap, insertionIndexFromRects, isOrderChanged, mistakeRegion, normalizeEdits, reorder, toBlocks } from "../src/lib/practice/word-blocks.mjs";
 import { gradeLocally } from "../src/lib/practice/practice-rounds.mjs";
 
 const fixture = [{ key: "fixture", exercises: [
@@ -190,4 +190,45 @@ test("insertion slots ignore the dragged chip at row starts and both ends", () =
   assert.equal(insertionIndexFromRects(twoRows, 10, 200, 1), 4);
   assert.equal(insertionIndexFromRects(twoRows, -5, 40, 1), 2);
   assert.equal(insertionIndexFromRects(twoRows, 400, 10, 4), 3);
+});
+
+test("snapshot gaps map single-row start, middle, and end drops in both directions", () => {
+  const rects = [0, 50, 100, 150].map((left) => ({ left, top: 0, width: 40, height: 20 }));
+  const gaps = gapsFromRects(rects);
+  assert.deepEqual([nearestGap(gaps, -20, 10).index, nearestGap(gaps, 75, 10).index, nearestGap(gaps, 220, 10).index], [0, 2, 4]);
+  assert.deepEqual(orderFromGap([0, 1, 2, 3], 3, nearestGap(gaps, 0, 10).index), [3, 0, 1, 2]);
+  assert.deepEqual(orderFromGap([0, 1, 2, 3], 0, nearestGap(gaps, 190, 10).index), [1, 2, 3, 0]);
+});
+
+test("row-aware snapshot gaps handle row boundaries and vertical extremes", () => {
+  const rects = [
+    { left: 0, top: 0, width: 40, height: 20 }, { left: 50, top: 0, width: 40, height: 20 }, { left: 100, top: 0, width: 40, height: 20 },
+    { left: 0, top: 30, width: 40, height: 20 }, { left: 50, top: 30, width: 40, height: 20 },
+    { left: 0, top: 60, width: 40, height: 20 },
+  ];
+  const gaps = gapsFromRects(rects);
+  assert.equal(nearestGap(gaps, 140, 10).index, 3); // end of row one
+  assert.equal(nearestGap(gaps, 0, 40).index, 3); // start of row two
+  assert.equal(nearestGap(gaps, 999, 100).index, 6); // below last row
+  assert.equal(nearestGap(gaps, -999, -20).index, 0); // above first row
+  assert.equal(nearestGap(gaps, 999, 70).index, 6); // far right of short last row
+});
+
+test("gaps adjacent to the dragged chip preserve the original order", () => {
+  assert.deepEqual(orderFromGap([0, 1, 2], 1, 1), [0, 1, 2]);
+  assert.deepEqual(orderFromGap([0, 1, 2], 1, 2), [0, 1, 2]);
+});
+
+test("nearestGap picks the pointer's row before the horizontal distance", () => {
+  const rect = (left, top) => ({ left, top, width: 40, height: 20, right: left + 40, bottom: top + 20 });
+  const rects = [rect(0, 0), rect(50, 0), rect(100, 0), rect(150, 0), rect(200, 0), rect(0, 30), rect(50, 30)];
+  const order = [0, 1, 2, 3, 4, 5, 6];
+  const gaps = gapsFromRects(rects);
+  const drop = (id, x, y) => orderFromGap(order, id, nearestGap(gaps, x, y).index);
+  assert.deepEqual(drop(0, 400, 40), [1, 2, 3, 4, 5, 6, 0]);
+  assert.deepEqual(drop(0, 400, 300), [1, 2, 3, 4, 5, 6, 0]);
+  assert.deepEqual(drop(6, -10, -40), [6, 0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(drop(1, 260, 10), [0, 2, 3, 4, 1, 5, 6]);
+  assert.deepEqual(drop(5, 145, 10), [0, 1, 2, 5, 3, 4, 6]);
+  assert.deepEqual(drop(2, 98, 10), order);
 });
