@@ -30,8 +30,8 @@ export type PracticeGrade = { verdict: PracticeVerdict; feedback: string; correc
 /** Fixed, broad practice groups: each error is one specific point inside one of them. */
 export const practiceCategories = ["prepositions", "articles", "verb-tenses", "verb-forms", "word-choice", "sentence-structure", "plural-agreement", "other"] as const;
 export type PracticeCategory = (typeof practiceCategories)[number];
-export type PracticeClassification = { category: PracticeCategory; point: string };
-export type PracticeClassifyInput = { errors: PracticeError[]; signal?: AbortSignal };
+export type PracticeClassification = { category: PracticeCategory; point: string; ruleId: string | null };
+export type PracticeClassifyInput = { errors: PracticeError[]; rules?: Partial<Record<PracticeCategory, Array<{ id: string; rule: string }>>>; signal?: AbortSignal };
 
 export interface PracticeService {
   classify(input: PracticeClassifyInput): Promise<Array<PracticeClassification | null> | null>;
@@ -85,6 +85,12 @@ const classifySchema = {
     index: { type: "integer" }, category: { type: "string", enum: [...practiceCategories, "none"] }, point: { type: "string", maxLength: 90 },
   }, required: ["index", "category", "point"] } } },
   required: ["assignments"],
+} as const;
+const classifyWithRulesSchema = {
+  ...classifySchema,
+  properties: { assignments: { type: "array", maxItems: practiceLimits.errors, items: { type: "object", additionalProperties: false, properties: {
+    index: { type: "integer" }, category: { type: "string", enum: [...practiceCategories, "none"] }, point: { type: "string", maxLength: 90 }, ruleId: { type: ["string", "null"], maxLength: 60 },
+  }, required: ["index", "category", "point", "ruleId"] } } },
 } as const;
 
 const plainTitleSystemPrompt = [
@@ -221,24 +227,28 @@ export class OpenRouterPracticeService implements PracticeService {
 
   async classify(input: PracticeClassifyInput): Promise<Array<PracticeClassification | null> | null> {
     let result: Array<PracticeClassification | null> | null = null;
-    await this.call("classify", classifySystemPrompt, {
+    const hasRules = input.rules !== undefined;
+    const ruleIds = new Map(Object.entries(input.rules ?? {}).map(([category, rules]) => [category, new Set(rules.map((rule) => rule.id))]));
+    const system = hasRules ? `${classifySystemPrompt} Also return ruleId: the id of the lesson part (from the chosen group's list) that best explains the mistake; null when none fits. Rules by group:\n${practiceCategories.flatMap((category) => (input.rules?.[category] ?? []).map(({ id, rule }) => `${category}: ${id}: ${rule}`)).join("\n")}` : classifySystemPrompt;
+    await this.call("classify", system, {
       mistakes: input.errors.map((error, index) => ({ index, type: error.type, evidence: error.evidence, suggestion: error.suggestion, rephrasedExample: error.rephrasedExample })),
-    }, classifySchema, 1_000, 25_000, input.signal, (value) => {
+    }, hasRules ? classifyWithRulesSchema : classifySchema, 1_000, 25_000, input.signal, (value) => {
       const raw = value && typeof value === "object" ? (value as { assignments?: unknown }).assignments : undefined;
       if (!Array.isArray(raw)) return { ok: false };
       const assignments: Array<PracticeClassification | null> = input.errors.map(() => null);
       for (const item of raw) {
         if (!item || typeof item !== "object") continue;
-        const { index, category, point } = item as { index?: unknown; category?: unknown; point?: unknown };
+        const { index, category, point, ruleId } = item as { index?: unknown; category?: unknown; point?: unknown; ruleId?: unknown };
         if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= input.errors.length) continue;
         if (!(practiceCategories as readonly string[]).includes(String(category))) continue;
         // A missing or English label falls back to the error's own suggestion type: the error is never lost for a bad label.
         const label = cleanText(point, 70);
         const fallback = cleanText(input.errors[index as number]!.suggestion, 70) ?? "Ponto para praticar";
-        assignments[index as number] = { category: category as PracticeCategory, point: label && portugueseHint.test(label) ? label : fallback };
+        const validRuleId = typeof ruleId === "string" && ruleIds.get(String(category))?.has(ruleId) ? ruleId : null;
+        assignments[index as number] = { category: category as PracticeCategory, point: label && portugueseHint.test(label) ? label : fallback, ruleId: validRuleId };
       }
       result = assignments;
-      return { ok: true, counts: { errorCount: input.errors.length, assigned: assignments.filter((item) => item !== null).length } };
+      return { ok: true, counts: { errorCount: input.errors.length, assigned: assignments.filter((item) => item !== null).length, ...(hasRules ? { rulesProvided: Object.values(input.rules ?? {}).reduce((count, rules) => count + rules.length, 0), ruleIdsAssigned: assignments.filter((item) => item?.ruleId).length } : {}) } };
     });
     return result;
   }
