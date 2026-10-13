@@ -18,6 +18,44 @@ export function toBlocks(sentence) {
   return blocks;
 }
 
+/** Normalize edits and discard values that are equivalent to the source word. */
+export function normalizeEdits(blocks, edits) {
+  const normalized = {};
+  const byId = new Map(blocks.map(({ id, text }) => [id, text]));
+  for (const [rawId, rawValue] of Object.entries(edits)) {
+    const id = Number(rawId);
+    const value = String(rawValue).trim().replace(/\s+/gu, " ");
+    const original = byId.get(id);
+    if (original === undefined || value === original.trim().replace(/\s+/gu, " ")) continue;
+    normalized[id] = value;
+  }
+  return normalized;
+}
+
+export function isOrderChanged(order, originalOrder = order.map((_, index) => index)) {
+  return order.length !== originalOrder.length || order.some((id, index) => id !== originalOrder[index]);
+}
+
+/** Return the insertion slot after removing the dragged item, considering only the row under the pointer. */
+export function insertionIndexFromRects(rects, x, y, draggedIndex = -1) {
+  const items = rects.map((rect, index) => ({ rect, index })).filter(({ index }) => index !== draggedIndex);
+  if (!items.length) return 0;
+  const rows = [];
+  for (const item of items) {
+    let row = rows.find(({ top, bottom }) => item.rect.top < bottom && item.rect.bottom > top);
+    if (!row) { row = { top: item.rect.top, bottom: item.rect.bottom, items: [] }; rows.push(row); }
+    row.top = Math.min(row.top, item.rect.top);
+    row.bottom = Math.max(row.bottom, item.rect.bottom);
+    row.items.push(item);
+  }
+  rows.sort((a, b) => a.top - b.top);
+  const row = rows.find((item) => y >= item.top && y <= item.bottom) ?? (y < rows[0].top ? rows[0] : rows.at(-1));
+  row.items.sort((a, b) => a.rect.left - b.rect.left);
+  const before = row.items.find(({ rect }) => x < rect.left + rect.width / 2);
+  const ordered = items.slice().sort((a, b) => a.index - b.index);
+  return before ? ordered.findIndex(({ index }) => index === before.index) : ordered.findIndex(({ index }) => index === row.items.at(-1).index) + 1;
+}
+
 /** Apply word edits, normalizing word spacing and retaining punctuation on edited blocks. */
 export function applyEdits(blocks, edits, order = blocks.map(({ id }) => id)) {
   const output = [];
