@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -51,6 +51,40 @@ const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
 const syncWarning = "Não conseguimos analisar seus erros mais recentes agora; tentaremos de novo na próxima vez.";
 
 // How many of the person's mistakes belong to each lesson part: practice leans toward the parts they miss most.
+// Scroll helpers: one place for how Treinar moves the page. Smooth for short hops, instant for long jumps, never animated under reduced motion.
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+}
+function scrollBehaviorFor(distance: number): ScrollBehavior {
+  return prefersReducedMotion() || Math.abs(distance) > window.innerHeight * 1.2 ? "auto" : "smooth";
+}
+function scrollPageTo(top: number) {
+  window.scrollTo({ top, behavior: scrollBehaviorFor(top - window.scrollY) });
+}
+// Brings the top of an element just under the sticky topbar (via its CSS scroll-margin-top), only when it is not already near the top.
+function scrollToTopOf(element: HTMLElement | null) {
+  if (!element) return;
+  const margin = Number.parseFloat(getComputedStyle(element).scrollMarginTop);
+  const offset = Number.isFinite(margin) ? margin : 80;
+  const delta = element.getBoundingClientRect().top - offset;
+  if (delta >= -4 && delta <= window.innerHeight * 0.3) return;
+  window.scrollBy({ top: delta, behavior: scrollBehaviorFor(delta) });
+}
+// Gently reveals an element that just grew, only when part of it is off-screen.
+function revealNearest(element: HTMLElement | null) {
+  if (!element) return;
+  const rect = element.getBoundingClientRect();
+  if (rect.top >= 0 && rect.bottom <= window.innerHeight) return;
+  element.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+}
+// Centres the active tab in a horizontally scrolling tab strip without moving the page vertically.
+function centerTabInStrip(tab: HTMLElement | null) {
+  const strip = tab?.parentElement;
+  if (!tab || !strip || strip.scrollWidth <= strip.clientWidth) return;
+  const delta = tab.getBoundingClientRect().left - strip.getBoundingClientRect().left - (strip.clientWidth - tab.offsetWidth) / 2;
+  strip.scrollBy({ left: delta, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+}
+
 function ruleWeights(theme: PracticeGroup): Record<string, number> {
   const weights: Record<string, number> = {};
   for (const ref of theme.error_refs ?? []) if (ref.ruleId) weights[ref.ruleId] = (weights[ref.ruleId] ?? 0) + 1;
@@ -172,10 +206,12 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0 });
-  };
+  // Where the list was scrolled before a lesson opened, so "back" lands on the card that was clicked.
+  const listScrollRef = useRef<number | null>(null);
+  const restoreListRef = useRef(false);
+  const scrollToTop = () => scrollPageTo(0);
   const selectTheme = async (theme: PracticeGroup, ruleIndex = -1) => {
+    if (!selected) listScrollRef.current = window.scrollY;
     setSelected(theme);
     setStartRule(ruleIndex);
     setSessionStarted(false);
@@ -308,11 +344,16 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     setStep((current) => current + 1);
   };
   const sorted = useMemo(() => sortPracticeGroups(themes), [themes]);
+  useEffect(() => {
+    if (selected || !restoreListRef.current) return;
+    restoreListRef.current = false;
+    scrollPageTo(listScrollRef.current ?? 0);
+  }, [selected]);
   const backToList = () => {
+    restoreListRef.current = true;
     setSelected(null);
     setExercises([]);
     setSessionStarted(false);
-    scrollToTop();
   };
 
   return (
@@ -629,20 +670,29 @@ function ThemeDetail({
   const [direction, setDirection] = useState<"next" | "prev">("next");
   const tabRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   const ruleTopRef = useRef<HTMLDivElement | null>(null);
+  const partChanged = useRef(false);
+  const keepTabFocus = useRef(false);
   const onOverview = activeIndex < 0;
   const activeRule = onOverview ? undefined : lesson?.rules[activeIndex];
-  const selectRule = (index: number, focus = false, scroll = false) => {
+  const selectRule = (index: number, focus = false) => {
     if (!lesson) return;
     const span = ruleCount + 1;
     const nextIndex = ((index + 1 + span) % span) - 1;
     setDirection(nextIndex >= activeIndex ? "next" : "prev");
     setActiveIndex(nextIndex);
+    partChanged.current = true;
+    keepTabFocus.current = focus;
     if (focus) requestAnimationFrame(() => tabRefs.current[nextIndex]?.focus());
-    if (scroll) {
-      const top = ruleTopRef.current;
-      if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView({ block: "start", behavior: "smooth" });
-    }
   };
+  // After a part change: show its top under the topbar, keep the tab strip in view and hand focus to the new heading (unless arrow keys are driving the tabs).
+  useEffect(() => {
+    centerTabInStrip(tabRefs.current[activeIndex]);
+    if (!partChanged.current) return;
+    partChanged.current = false;
+    const layout = ruleTopRef.current;
+    scrollToTopOf(layout);
+    if (!keepTabFocus.current) layout?.querySelector<HTMLElement>("#active-lesson-rule h2")?.focus({ preventScroll: true });
+  }, [activeIndex]);
   const handleRuleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
@@ -750,7 +800,7 @@ function ThemeDetail({
             >
               <div className="tr-rule-heading">
                 <p className="tr-rule-progress">{t("Visão geral")}</p>
-                <h2>{t("Antes de começar")}</h2>
+                <h2 tabIndex={-1}>{t("Antes de começar")}</h2>
                 <p className="tr-rule-goal">{t(lesson.overview.what)}</p>
               </div>
               <section className="tr-rule-section" aria-labelledby="overview-why">
@@ -772,7 +822,7 @@ function ThemeDetail({
                 <ol className="tr-map">
                   {lesson.rules.map((rule, index) => (
                     <li key={rule.id}>
-                      <button type="button" className="tr-map-item" onClick={() => selectRule(index, false, true)}>
+                      <button type="button" className="tr-map-item" onClick={() => selectRule(index)}>
                         <span className="tr-rule-num" aria-hidden="true">
                           {index + 1}
                         </span>
@@ -791,7 +841,7 @@ function ThemeDetail({
                   <ArrowLeft className="size-4" />
                   {t("Anterior")}
                 </button>
-                <button type="button" className="ds-btn ds-btn-soft" onClick={() => selectRule(0, false, true)}>
+                <button type="button" className="ds-btn ds-btn-soft" onClick={() => selectRule(0)}>
                   {t("Começar pela parte 1")}
                   <ArrowRight className="size-4" />
                 </button>
@@ -808,7 +858,7 @@ function ThemeDetail({
               >
                 <div className="tr-rule-heading">
                   <p className="tr-rule-progress">{t("Parte {current} de {total}", { current: activeIndex + 1, total: ruleCount })}</p>
-                  <h2>{t(activeRule.label)}</h2>
+                  <h2 tabIndex={-1}>{t(activeRule.label)}</h2>
                   <p className="tr-rule-goal">{t(activeRule.goal)}</p>
                 </div>
                 <div className="tr-formula">
@@ -923,7 +973,7 @@ function ThemeDetail({
                   </p>
                 )}
                 <div className="tr-rule-controls">
-                  <button type="button" className="ds-btn ds-btn-quiet" onClick={() => selectRule(activeIndex - 1, false, true)}>
+                  <button type="button" className="ds-btn ds-btn-quiet" onClick={() => selectRule(activeIndex - 1)}>
                     <ArrowLeft className="size-4" />
                     {t("Anterior")}
                   </button>
@@ -933,7 +983,7 @@ function ThemeDetail({
                       {t("Praticar agora")}
                     </button>
                   ) : (
-                    <button type="button" className="ds-btn ds-btn-soft" onClick={() => selectRule(activeIndex + 1, false, true)}>
+                    <button type="button" className="ds-btn ds-btn-soft" onClick={() => selectRule(activeIndex + 1)}>
                       {t("Próxima parte")}
                       <ArrowRight className="size-4" />
                     </button>
@@ -947,7 +997,7 @@ function ThemeDetail({
       {(!!grouped.length || !!theme.id) && (
         <div className="tr-lesson-extras">
           {!!grouped.length && (
-            <details className="tr-extra-card">
+            <details className="tr-extra-card" onToggle={revealOnOpen}>
               <summary>
                 <span>
                   <strong>{t("Onde você errou")}</strong>
@@ -979,7 +1029,7 @@ function ThemeDetail({
             </details>
           )}
           {!!theme.id && (
-            <details className="tr-extra-card">
+            <details className="tr-extra-card" onToggle={revealOnOpen}>
               <summary>
                 <span>
                   <strong>{t("Últimas tentativas")}</strong>
@@ -1028,12 +1078,21 @@ function ThemeDetail({
 }
 
 // A one-tap check inside each lesson part: the person picks the correct sentence before seeing the answer.
+function revealOnOpen(event: SyntheticEvent<HTMLDetailsElement>) {
+  const details = event.currentTarget;
+  if (details.open) requestAnimationFrame(() => revealNearest(details));
+}
+
 function RuleCheck({ rule, onPlay }: { rule: PracticeLessonRule; onPlay: (phrase: string) => void }) {
   const [picked, setPicked] = useState<"right" | "wrong" | null>(null);
   const rightFirst = [...rule.id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 2 === 0;
   const options: Array<"right" | "wrong"> = rightFirst ? ["right", "wrong"] : ["wrong", "right"];
+  const checkRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (picked) revealNearest(checkRef.current);
+  }, [picked]);
   return (
-    <section className="tr-check" aria-labelledby={`check-${rule.id}`}>
+    <section className="tr-check" ref={checkRef} aria-labelledby={`check-${rule.id}`}>
       <div className="tr-check-head">
         <p id={`check-${rule.id}`} className="tr-mini-label">
           {t("Teste rápido")}
@@ -1119,6 +1178,13 @@ function PracticeSession({
   const exercise = exercises[step] as RoundExercise | undefined;
   const choose = exercise?.kind === "choose";
   const lessonTitle = t(practiceLessonByKey[theme.theme_key]?.title ?? theme.title);
+  const practiceRef = useRef<HTMLElement | null>(null);
+  const lastStep = useRef(step);
+  useEffect(() => {
+    if (lastStep.current === step) return;
+    lastStep.current = step;
+    scrollToTopOf(practiceRef.current);
+  }, [step]);
   useEffect(() => {
     if (!exercise || !choose || result || grading) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -1170,7 +1236,7 @@ function PracticeSession({
   const kindLabel = choose ? t("Complete a frase") : t("Encontre e corrija o erro");
   const hintRule = exercise.ruleId ? practiceRuleById[exercise.ruleId] : undefined;
   return (
-    <section className="tr-panel tr-practice" aria-labelledby="exercise-title">
+    <section className="tr-panel tr-practice" ref={practiceRef} aria-labelledby="exercise-title">
       <div className="tr-practice-top">
         <button className="ds-btn ds-btn-quiet tr-back" onClick={onBack}>
           <ArrowLeft className="size-4" />
@@ -1218,7 +1284,7 @@ function PracticeSession({
             : exercise.sentence}
         </blockquote>
         {!choose && hintRule && !result && (
-          <details className="tr-hint-toggle">
+          <details className="tr-hint-toggle" onToggle={revealOnOpen}>
             <summary>{t("Preciso de uma dica")}</summary>
             <p>{t("Dica: {label} — {when}", { label: t(hintRule.label), when: t(hintRule.when) })}</p>
           </details>
@@ -1291,8 +1357,12 @@ function PracticeResults({
   const correct = results.filter((item) => item.verdict === "correct").length;
   const great = correct / Math.max(1, total) >= 0.8;
   const title = great ? t("Mandou bem!") : t("Rodada concluída");
+  const resultsRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    scrollToTopOf(resultsRef.current);
+  }, []);
   return (
-    <section className="tr-panel tr-results" aria-live="polite">
+    <section className="tr-panel tr-results" ref={resultsRef} aria-live="polite">
       {great && <Confetti />}
       <div className="tr-results-head">
         <ProgressRing value={correct / Math.max(1, total)} size={96}>
@@ -1434,7 +1504,7 @@ function PracticeFeedback({
   const nextRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     nextRef.current?.focus({ preventScroll: true });
-    nextRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    nextRef.current?.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, []);
   return (
     <div className={`tr-feedback is-${result.verdict}`}>

@@ -311,3 +311,6 @@
   .tr-confetti { display: none; }
   .tr-spinner { animation: tr-spin .9s linear infinite !important; }
 }
+
+.tr-practice, .tr-results { scroll-margin-top: calc(4rem + env(safe-area-inset-top, 0px) + 1rem); }
+.tr-rule-heading h2:focus, .tr-rule-heading h2:focus-visible { outline: none; }
