@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lessonStats, relativeErrorDate, topParts } from "../src/lib/practice/practice-insights.mjs";
+import { lessonStats, relativeErrorDate, topLessons, topParts } from "../src/lib/practice/practice-insights.mjs";
 
 const lessons = [
   { key: "a", rules: [{ id: "r1", label: "Articles" }, { id: "r2", label: "Prepositions" }], exercises: [] },
@@ -48,6 +48,14 @@ test("topParts orders across lessons and returns the latest sentence", () => {
   const parts = topParts(groups, lessons, 3);
   assert.deepEqual(parts.map((part) => [part.lessonKey, part.ruleId, part.count]), [["a", "r1", 2], ["b", "r3", 1], ["a", "r2", 1]]);
   assert.deepEqual(parts[0].latest, { evidence: "new", rephrased: "new fix" });
+});
+
+test("topLessons includes unknown-rule mistakes and their latest correction", () => {
+  const groups = [
+    { theme_key: "a", error_refs: [ref("a1", "2026-01-01", undefined, { evidence: "old", rephrased: "old fix" }), ref("a2", "2026-02-01", undefined, { evidence: "latest", rephrased: "fixed" })] },
+    { theme_key: "b", error_refs: [ref("b1", "2026-03-01", undefined)] },
+  ];
+  assert.deepEqual(topLessons(groups, lessons, 1), [{ lessonKey: "a", count: 2, interviews: 2, latest: { evidence: "latest", rephrased: "fixed" } }]);
 });
 
 test("relativeErrorDate uses today, yesterday, days, and month labels", () => {

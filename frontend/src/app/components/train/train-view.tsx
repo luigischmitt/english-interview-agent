@@ -27,7 +27,8 @@ import {
   practiceRuleById,
 } from "@/lib/practice/practice-lessons.mjs";
 import { buildRound, gradeLocally, requeueMissed } from "@/lib/practice/practice-rounds.mjs";
-import { lessonStats, relativeErrorDate, topParts } from "@/lib/practice/practice-insights.mjs";
+import { lessonStats, relativeErrorDate, topLessons, topParts } from "@/lib/practice/practice-insights.mjs";
+import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import type { PracticeFixedExercise, PracticeLesson, PracticeLessonRule } from "@/lib/practice/practice-lessons.mjs";
 import {
   loadPracticeAttempts,
@@ -307,7 +308,8 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     }
     const chosenMode = options.mode ?? "quick";
     const weights = chosenMode === "mine" ? Object.assign({}, ...themes.map(ruleWeights)) : ruleWeights(theme);
-    const round = buildRound({ mode: chosenMode, key: theme.theme_key, lessons: practiceLessons, size: options.size, ruleId: options.ruleId, recentIds, missedIds: readMissedIds(), weights });
+    const lessonWeights = chosenMode === "mine" ? Object.fromEntries(lessonStats(themes, practiceLessons).map((stat) => [stat.lessonKey, stat.errors])) : {};
+    const round = buildRound({ mode: chosenMode, key: theme.theme_key, lessons: practiceLessons, size: options.size, ruleId: options.ruleId, recentIds, missedIds: readMissedIds(), weights, lessonWeights });
     setRoundMode(chosenMode);
     setRoundSize(options.size ?? 10);
     setFocusedRule(options.ruleId);
@@ -559,8 +561,9 @@ function Recommended({
   onPractice: (theme: PracticeGroup, ruleId?: string) => void;
 }) {
   const top = topParts(themes, practiceLessons, 3);
+  const lessons = topLessons(themes, practiceLessons, 3);
   const hasErrors = themes.some((theme) => (theme.error_refs?.length ?? 0) > 0);
-  if (!top.length) {
+  if (!hasErrors) {
     return (
       <p className="tr-reco-hint">
         {t("Faça uma entrevista para descobrirmos o que você precisa treinar")}
@@ -578,7 +581,15 @@ function Recommended({
         {t("Onde você mais erra")}
       </h2>
       <ul className="tr-reco-list">
-        {top.map((part, index) => {
+        {[...top.map((part) => ({ kind: "part" as const, item: part })), ...lessons.filter((lesson) => !top.some((part) => part.lessonKey === lesson.lessonKey)).map((lesson) => ({ kind: "lesson" as const, item: lesson }))]
+          .slice(0, 3).map((entry, index) => {
+          if (entry.kind === "lesson") {
+            const item = entry.item;
+            const lesson = practiceLessonByKey[item.lessonKey];
+            const theme = themes.find((candidate) => candidate.theme_key === item.lessonKey) ?? exploreGroup(lesson);
+            return <LessonErrorCard key={`lesson-${item.lessonKey}`} item={item} lesson={lesson} theme={theme} index={index} onOpen={onOpen} onPractice={onPractice} />;
+          }
+          const part = entry.item;
           const lesson = practiceLessonByKey[part.lessonKey];
           const theme = themes.find((item) => item.theme_key === part.lessonKey) ?? exploreGroup(lesson);
           const partIndex = lesson.rules.findIndex((rule) => rule.id === part.ruleId);
@@ -599,6 +610,18 @@ function Recommended({
     </section>
     </>
   );
+}
+
+function LessonErrorCard({ item, lesson, theme, index, onOpen, onPractice }: { item: ReturnType<typeof topLessons>[number]; lesson: PracticeLesson; theme: PracticeGroup; index: number; onOpen: (theme: PracticeGroup, ruleIndex?: number) => void; onPractice: (theme: PracticeGroup, ruleId?: string) => void }) {
+  return <li style={{ "--i": index } as CSSProperties} className="tr-part-card">
+    <strong>{t(lesson.title)}</strong>
+    <p>{t("{count} erros em {interviews} entrevistas", { count: item.count, interviews: item.interviews })}</p>
+    {(item.latest.evidence || item.latest.rephrased) && <p lang="en"><s>{item.latest.evidence}</s> → {item.latest.rephrased}</p>}
+    <div className="tr-card-actions">
+      <button type="button" className="ds-btn ds-btn-soft" onClick={() => onOpen(theme)}>{t("Rever a aula")}</button>
+      <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => onPractice(theme)}>{t("Treino rápido")}</button>
+    </div>
+  </li>;
 }
 
 function MineCard({ themes, onPractice }: { themes: PracticeGroup[]; onPractice: (theme: PracticeGroup, ruleId?: string) => void }) {
@@ -1194,7 +1217,9 @@ function ThemeDetail({
           </button>
         </div>
       </div>
-      {focusedOpen && <FocusedPicker lesson={lesson} activeRuleId={activeRuleId} onStart={onFocused} />}
+      <div className="tr-focused-disclosure" data-open={focusedOpen} aria-hidden={!focusedOpen} inert={!focusedOpen}>
+        <FocusedPicker lesson={lesson} activeRuleId={activeRuleId} onStart={onFocused} />
+      </div>
     </section>
   );
 }
@@ -1209,32 +1234,15 @@ function FocusedPicker({ lesson, activeRuleId, onStart }: {
   const activeRule = lesson?.rules.find((rule) => rule.id === activeRuleId);
   return (
     <div className="tr-focused-picker">
-      <div className="tr-size-options" role="group" aria-label={t("Tamanho do treino")}>
-        {[10, 15, 20].map((option) => (
-          <button
-            type="button"
-            className={`ds-btn ${size === option ? "ds-btn-cta-green" : "ds-btn-soft"}`}
-            key={option}
-            aria-pressed={size === option}
-            onClick={() => setSize(option)}
-          >
-            {option}
-          </button>
-        ))}
-      </div>
-      {lesson?.rules.length ? (
-        <label>
-          <input
-            type="checkbox"
-            checked={onlyPart}
-            disabled={!activeRule}
-            onChange={(event) => setOnlyPart(event.target.checked)}
-          />
-          {t("Só esta parte: {label}", { label: t(activeRule?.label ?? "") })}
-        </label>
+      <span className="tr-mini-label">{t("Quantos exercícios?")}</span>
+      <SlidingSegmented name="focused-round-size" ariaLabel={t("Tamanho do treino")} className="tr-size-options" itemClassName="tr-size-option" options={[10, 15, 20].map((option) => ({ value: String(option), label: String(option) }))} value={String(size)} onChange={(value) => setSize(Number(value))} />
+      {lesson?.rules.length && activeRule ? (
+        <button type="button" className="tr-part-toggle" aria-pressed={onlyPart} onClick={() => setOnlyPart((enabled) => !enabled)}>
+          {t("Só esta parte: {label}", { label: t(activeRule.label) })}
+        </button>
       ) : null}
-      <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => onStart(size, onlyPart ? activeRuleId : undefined)}>
-        {t("Começar treino focado")}
+      <button type="button" className="ds-btn ds-btn-cta-green tr-focused-start" onClick={() => onStart(size, onlyPart ? activeRuleId : undefined)}>
+        {t("Começar · {count} exercícios", { count: size })}
       </button>
     </div>
   );

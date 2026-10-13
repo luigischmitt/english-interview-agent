@@ -142,6 +142,8 @@ const englishCopy: Record<string, string> = {
   "{rank}º onde você mais erra": "Your #{rank} most frequent lesson",
   "Só esta parte: {label}": "This part only: {label}",
   "Começar treino focado": "Start focused practice",
+  "Quantos exercícios?": "How many exercises?",
+  "Começar · {count} exercícios": "Start · {count} exercises",
   "Tamanho do treino": "Practice length",
   "Revisão": "Review",
   "Rever a parte": "Review this part",

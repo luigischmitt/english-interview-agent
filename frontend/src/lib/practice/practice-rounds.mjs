@@ -128,10 +128,26 @@ function pick(pool, size, weights, missed, recent, random, allowReuse = false) {
 }
 
 /** Build a quick, focused, or mistakes-only practice round. */
-export function buildRound({ mode, lessons, key, ruleId, size, weights = {}, missedIds = [], recentIds = [], random = Math.random }) {
+export function buildRound({ mode, lessons, key, ruleId, size, weights = {}, lessonWeights = {}, missedIds = [], recentIds = [], random = Math.random }) {
   const lesson = (lessons ?? []).find((item) => item.key === key);
   if (mode === "mine") {
-    if (!Object.values(weights).some((count) => count > 0)) return [];
+    if (!Object.values(weights).some((count) => count > 0) && !Object.values(lessonWeights).some((count) => count > 0)) return [];
+    if (!Object.values(weights).some((count) => count > 0)) {
+      const topLessons = Object.entries(lessonWeights).filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      const result = [];
+      const totalWeight = topLessons.reduce((sum, [, count]) => sum + count, 0);
+      const allocations = topLessons.map(([lessonKey, count]) => ({ lessonKey, count: Math.floor(10 * count / totalWeight), remainder: (10 * count) % totalWeight }));
+      let remaining = 10 - allocations.reduce((sum, item) => sum + item.count, 0);
+      for (const item of [...allocations].sort((a, b) => b.remainder - a.remainder)) {
+        if (remaining-- <= 0) break;
+        item.count += 1;
+      }
+      for (const { lessonKey, count } of allocations) {
+        const pool = (lessons ?? []).find((item) => item.key === lessonKey)?.exercises ?? [];
+        result.push(...pick(pool, Math.min(count, 10 - result.length), {}, missedIds, recentIds, random));
+      }
+      return result.slice(0, 10);
+    }
     const topRules = Object.entries(weights)
       .filter(([, count]) => count > 0)
       .sort((a, b) => b[1] - a[1])

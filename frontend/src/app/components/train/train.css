@@ -32,10 +32,17 @@
 .tr-part-card .tr-card-actions { min-width: 0; }
 .tr-part-card .tr-card-actions .ds-btn { min-width: 0; flex: 1 1 9rem; white-space: normal; }
 .tr-mode-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
-.tr-focused-picker { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: .75rem; border-radius: var(--ds-r-lg); background: var(--ds-field); padding: .9rem; }
-.tr-focused-picker label { display: flex; min-width: 0; flex: 1 1 12rem; align-items: center; gap: .45rem; color: var(--ds-text-2); font-size: .88rem; overflow-wrap: anywhere; }
-.tr-size-options { display: flex; flex: 0 0 auto; gap: .35rem; }
-.tr-focused-picker > .ds-btn { flex: 1 1 100%; }
+.tr-focused-disclosure { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows var(--ds-dur-base) var(--ease-out), opacity var(--ds-dur-base) var(--ease-out); }
+.tr-focused-disclosure[data-open="true"] { grid-template-rows: 1fr; opacity: 1; }
+.tr-focused-picker { display: flex; min-height: 0; min-width: 0; flex-wrap: wrap; align-items: center; gap: .75rem; overflow: hidden; border-radius: var(--ds-r-lg); background: var(--ds-field); padding: 0 .9rem; transition: padding var(--ds-dur-base) var(--ease-out); }
+.tr-focused-disclosure[data-open="true"] .tr-focused-picker { margin-top: .75rem; padding: .9rem; }
+.tr-focused-picker > .tr-mini-label { flex: 0 0 100%; }
+.tr-size-options { display: grid; width: min(100%, 17rem); flex: 0 1 17rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tr-size-option { min-height: 2.75rem; }
+.tr-part-toggle { max-width: 100%; min-height: 2.75rem; border: 1px solid var(--ds-line); border-radius: 999px; background: var(--ds-surface); padding: .55rem .85rem; color: var(--ds-text-2); font-size: .85rem; overflow-wrap: anywhere; }
+.tr-part-toggle[aria-pressed="true"] { border-color: var(--ds-green); background: var(--ds-tint); color: var(--ds-green-deep); }
+.tr-part-toggle:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
+.tr-focused-start { width: auto; margin-left: auto; white-space: nowrap; }
 .tr-practice-heading { display: grid; min-width: 0; gap: .1rem; text-align: center; }
 .tr-practice-lesson { overflow: hidden; color: var(--ds-ink); font-size: .82rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .tr-missed-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
@@ -327,6 +334,11 @@
   .tr-panel *, .tr-panel, .tr-card, .tr-reco-list > li, .tr-ring-value, .tr-meter-track span, .tr-confetti { animation: none !important; transition: none !important; }
   .tr-confetti { display: none; }
   .tr-spinner { animation: tr-spin .9s linear infinite !important; }
+}
+@media (max-width: 420px) {
+  .tr-focused-picker { align-items: stretch; }
+  .tr-size-options { width: 100%; flex-basis: 100%; }
+  .tr-focused-start { width: 100%; margin-left: 0; white-space: normal; }
 }
 
 .tr-practice, .tr-results { scroll-margin-top: calc(4rem + env(safe-area-inset-top, 0px) + 1rem); }

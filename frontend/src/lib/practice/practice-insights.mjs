@@ -83,6 +83,18 @@ export function topParts(groups, lessons, n = 3) {
     }));
 }
 
+/** Return lessons with the most mistakes, including the latest sentence for each. */
+export function topLessons(groups, lessons, n = 3) {
+  const byKey = new Map((groups ?? []).map((group) => [group.theme_key, group]));
+  return (lessons ?? []).flatMap((lesson) => {
+    const refs = byKey.get(lesson.key)?.error_refs ?? [];
+    if (!refs.length) return [];
+    const latest = [...refs].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))[0];
+    return [{ lessonKey: lesson.key, count: refs.length, interviews: new Set(refs.map((ref) => ref.interview_id)).size,
+      latest: { evidence: latest.evidence, rephrased: latest.rephrased } }];
+  }).sort((a, b) => b.count - a.count).slice(0, n);
+}
+
 /** Format an error timestamp as a compact Portuguese relative date. */
 export function relativeErrorDate(timestamp, now = new Date()) {
   const errorDate = new Date(timestamp);
