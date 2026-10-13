@@ -26,7 +26,8 @@ import { InterviewReport, type ReportState } from "./interview-report";
 import "./interview-room.css";
 import { createSpeechFeed, toucanStateFor } from "@/components/interview/toucan/toucan-engine.mjs";
 import { CallDock, CandidateTile, InterviewerTile, Toast, useCandidateCamera, useMicLevelMeter } from "./call-stage";
-import { loadPracticeGroups, syncPracticeGroups } from "@/lib/practice/practice-store";
+import { loadPracticeGroups, practiceSyncBackgroundMaxBatches, syncPracticeGroups } from "@/lib/practice/practice-store";
+import { syncPracticeGroupsUntilDone } from "@/lib/practice/practice-sync-loop.mjs";
 import { buildReportSuggestions, type ReportSuggestion } from "@/lib/practice/report-suggestions.mjs";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
@@ -1388,17 +1389,25 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
         setPracticeSuggestions({ status: "loading", items: [] });
         void (async () => {
           let items: ReportSuggestion[] = [];
+          let suggestionsSetFromFirstBatch = false;
           try {
             const loaded = await loadPracticeGroups();
             if (loaded.ok) {
-              // One call is enough: the newest mistakes (this interview's) are classified first; older backlog waits for Treinar.
-              const synced = await syncPracticeGroups(loaded.value);
-              items = buildReportSuggestions(synced.ok ? synced.value.themes : loaded.value, sessionId);
+              await syncPracticeGroupsUntilDone(loaded.value, {
+                maxBatches: practiceSyncBackgroundMaxBatches,
+                sync: syncPracticeGroups,
+                onBatch: (synced, batch) => {
+                  if (batch !== 1) return;
+                  items = buildReportSuggestions(synced.ok ? synced.value.themes : loaded.value, sessionId);
+                  suggestionsSetFromFirstBatch = true;
+                  if (mountedRef.current) setPracticeSuggestions({ status: "ready", items });
+                },
+              });
             }
           } catch {
             console.warn("[interview-report] practice_suggestions_unavailable");
           }
-          if (mountedRef.current) setPracticeSuggestions({ status: "ready", items });
+          if (!suggestionsSetFromFirstBatch && mountedRef.current) setPracticeSuggestions({ status: "ready", items });
         })();
       }
     });

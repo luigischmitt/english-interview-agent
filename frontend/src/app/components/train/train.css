@@ -8,7 +8,6 @@
 
 /* List */
 .tr-hero { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1.25rem; margin-bottom: 2rem; }
-.tr-syncing { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; color: var(--ds-text-2); font-size: .85rem; }
 .tr-grid { display: grid; gap: 1rem; }
 .tr-card { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 1rem; border-radius: var(--ds-r-card); background: var(--ds-surface); padding: 1.25rem; box-shadow: var(--ds-shadow-card); animation: tr-rise var(--ds-dur-slow) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 50ms); transition: transform var(--ds-dur-base) var(--ease-out), box-shadow var(--ds-dur-base) var(--ease-out); }
 .tr-card-title { margin-top: .1rem; color: var(--ds-ink); font-size: 1.2rem; font-weight: 650; line-height: 1.25; }
