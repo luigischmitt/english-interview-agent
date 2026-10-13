@@ -190,7 +190,7 @@ export function TrainView({ onInterview }: { onInterview: () => void }) {
   }, [load]);
 
   const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0 });
   };
   const selectTheme = async (theme: PracticeGroup, ruleIndex = 0) => {
     setSelected(theme);
