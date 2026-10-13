@@ -62,6 +62,8 @@
 .tr-rule-tab:active { transform: scale(.98); }
 .tr-rule-tab:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
 .tr-rule-num { display: grid; width: 1.6rem; height: 1.6rem; flex: 0 0 auto; place-items: center; border: 1px solid var(--ds-line); border-radius: 999px; font-size: .72rem; font-weight: 700; transition: background var(--ds-dur-base) var(--ease-out), color var(--ds-dur-base) var(--ease-out), border-color var(--ds-dur-base) var(--ease-out); }
+.tr-rule-tab-label { min-width: 0; flex: 1 1 auto; }
+.tr-rule-count { margin-left: auto; flex: 0 0 auto; border-radius: 999px; background: var(--ds-warning-tint); padding: .05rem .45rem; color: var(--ds-warning); font-size: .68rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .tr-rule-tab.is-active { background: var(--ds-tint); color: var(--ds-green-deep); font-weight: 650; }
 .tr-rule-tab.is-active .tr-rule-num { border-color: var(--ds-green); background: var(--ds-green-solid); color: var(--ds-on-green); animation: tr-pop var(--ds-dur-slow) var(--ease-out); }
 .tr-rule { display: flex; min-width: 0; flex-direction: column; gap: 1.5rem; border-radius: var(--ds-r-card); background: var(--ds-surface); padding: 1.25rem; box-shadow: var(--ds-shadow-card); }
@@ -69,7 +71,8 @@
 .tr-rule.tr-rule-prev > * { animation-name: tr-slide-prev; }
 .tr-rule > :nth-child(2) { animation-delay: 40ms; }
 .tr-rule > :nth-child(3) { animation-delay: 80ms; }
-.tr-rule > :nth-child(n + 4) { animation-delay: 120ms; }
+.tr-rule > :nth-child(4) { animation-delay: 120ms; }
+.tr-rule > :nth-child(n + 5) { animation-delay: 160ms; }
 .tr-rule-heading { display: grid; gap: .35rem; }
 .tr-rule-progress { color: var(--ds-green-deep); font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .tr-rule h2 { color: var(--ds-ink); font-family: var(--font-display); font-size: 2.2rem; font-weight: 400; line-height: 1.05; letter-spacing: -.01em; }
@@ -83,6 +86,41 @@
 .tr-rule-points { display: grid; gap: .45rem; }
 .tr-rule-points li { position: relative; padding-left: 1.15rem; color: var(--ds-text-2); font-size: .9rem; line-height: 1.55; }
 .tr-rule-points li::before { content: ""; position: absolute; top: .63em; left: .1rem; width: .35rem; height: .35rem; border-radius: 999px; background: var(--ds-green); }
+
+/* Lesson overview, personal fit, build steps and traps. Text stays within a readable measure. */
+.tr-rule-section > p, .tr-model p, .tr-rule-points, .tr-build, .tr-own li, .tr-trap-note { max-width: 68ch; }
+.tr-model { display: grid; gap: .5rem; border-radius: var(--ds-r-lg); background: var(--ds-tint); padding: 1rem 1.1rem; box-shadow: inset 3px 0 var(--ds-green); }
+.tr-model .tr-mini-label { color: var(--ds-green-deep); }
+.tr-model p:not(.tr-mini-label) { color: var(--ds-ink); font-family: var(--font-display); font-size: 1.2rem; line-height: 1.5; }
+.tr-map { display: grid; gap: .35rem; }
+.tr-map-item { display: flex; width: 100%; min-height: 3.25rem; align-items: center; gap: .8rem; border-radius: var(--ds-r-md); padding: .5rem .6rem; text-align: left; transition: background var(--ds-dur-fast) var(--ease-out), transform var(--ds-dur-press) var(--ease-out); }
+.tr-map-item:hover { background: var(--ds-field); }
+.tr-map-item:hover .tr-reco-arrow { opacity: 1; transform: translateX(3px); }
+.tr-map-item:active { transform: scale(.99); }
+.tr-map-item:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
+.tr-map-text { display: grid; min-width: 0; flex: 1; gap: .1rem; }
+.tr-map-text strong { color: var(--ds-ink); font-size: .95rem; font-weight: 650; }
+.tr-map-text small { color: var(--ds-text-2); font-size: .85rem; line-height: 1.45; }
+.tr-own { display: grid; gap: .6rem; border-radius: var(--ds-r-lg); background: var(--ds-warning-tint); padding: 1rem 1.1rem; }
+.tr-own .tr-mini-label { color: var(--ds-warning); }
+.tr-own ul { display: grid; gap: .7rem; }
+.tr-own li { display: grid; gap: .25rem; overflow-wrap: anywhere; }
+.tr-own p { color: var(--ds-ink); font-size: .9rem; line-height: 1.5; }
+.tr-own p > span { display: inline-block; min-width: 5.5rem; color: var(--ds-text-2); font-size: .75rem; font-weight: 600; }
+.tr-own-said q { color: var(--ds-error); }
+.tr-own-better q { color: var(--ds-success); }
+.tr-build { display: grid; gap: .55rem; counter-reset: tr-step; }
+.tr-build li { position: relative; padding-left: 2.1rem; color: var(--ds-ink); font-size: .95rem; line-height: 1.55; counter-increment: tr-step; }
+.tr-build li::before { content: counter(tr-step); position: absolute; top: .1rem; left: 0; display: grid; width: 1.45rem; height: 1.45rem; place-items: center; border-radius: 999px; background: var(--ds-tint); color: var(--ds-green-deep); font-size: .72rem; font-weight: 700; }
+.tr-traps { display: grid; gap: .6rem; }
+.tr-trap { display: grid; gap: .3rem; border-radius: var(--ds-r-md); background: var(--ds-field); padding: .7rem .85rem; }
+.tr-trap p { display: flex; align-items: center; gap: .5rem; font-size: .95rem; line-height: 1.45; overflow-wrap: anywhere; }
+.tr-trap-wrong { color: var(--ds-error); }
+.tr-trap-wrong s { text-decoration-thickness: 1.5px; }
+.tr-trap-right { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.tr-trap-right p { color: var(--ds-success); font-weight: 600; }
+.tr-trap-right .tr-speak { width: 2.25rem; height: 2.25rem; }
+.tr-trap p.tr-trap-note { display: block; color: var(--ds-text-2); font-size: .85rem; }
 
 /* Quick check inside a lesson part */
 .tr-check { display: grid; gap: .75rem; border: 1px dashed color-mix(in srgb, var(--ds-green) 45%, transparent); border-radius: var(--ds-r-lg); padding: 1rem; }

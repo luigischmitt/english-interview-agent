@@ -98,6 +98,36 @@ test("by default a round has only fixed exercises: three choose and two spot", (
   }
 });
 
+function seeded(seed) {
+  let state = seed;
+  return () => (state = (state * 9301 + 49297) % 233280) / 233280;
+}
+
+test("weights bias a round toward the weighted rules, keeping size and no duplicates", () => {
+  const lesson = practiceLessonByKey.prepositions;
+  const target = lesson.rules[lesson.rules.length - 1].id;
+  const countFor = (weights) => {
+    let hits = 0;
+    for (let seed = 1; seed <= 60; seed += 1) {
+      const round = pickPracticeRound({ key: lesson.key, random: seeded(seed), weights });
+      assert.equal(round.length, 5);
+      assert.equal(new Set(round.map((exercise) => exercise.id)).size, 5);
+      hits += round.filter((exercise) => exercise.ruleId === target).length;
+    }
+    return hits;
+  };
+  assert.ok(countFor({ [target]: 20 }) > countFor({}));
+  assert.ok(countFor({ [target]: 20 }) >= 55);
+});
+
+test("empty or absent weights keep the unweighted round", () => {
+  for (const seed of [3, 7, 11]) {
+    const base = pickPracticeRound({ key: "articles", random: seeded(seed) });
+    assert.deepEqual(pickPracticeRound({ key: "articles", random: seeded(seed), weights: {} }), base);
+    assert.deepEqual(pickPracticeRound({ key: "articles", random: seeded(seed), weights: { "articles.the": 0 } }), base);
+  }
+});
+
 test("rule text for grading is compact", () => {
   assert.ok(ruleTextForRequest("prepositions.on").startsWith("on: "));
   assert.ok(ruleTextForRequest("prepositions.on").length <= 240);

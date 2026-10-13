@@ -1134,16 +1134,21 @@ export function checkFixedAnswer(exercise, answer) {
 
 /**
  * Picks a practice round: up to `ownCount` of the person's own sentences first, then fixed exercises not done recently,
- * one per rule where possible and alternating choose and spot. `random` is injectable for tests.
+ * one per rule where possible and alternating choose and spot. `weights` (ruleId -> weight) biases the pick toward
+ * the rules the person misses most. `random` is injectable for tests.
  */
-export function pickPracticeRound({ key, ownErrors = [], recentIds = [], size = 5, ownCount = 0, chooseShare = 0.6, random = Math.random }) {
+export function pickPracticeRound({ key, ownErrors = [], recentIds = [], size = 5, ownCount = 0, chooseShare = 0.6, random = Math.random, weights = {} }) {
   const lesson = practiceLessonByKey[key];
   const own = ownErrors.slice(0, Math.min(ownCount, size)).map((error, index) => ({
     id: `own.${index}`, ruleId: null, kind: "fix", sentence: error.evidence, answer: error.rephrased, accepted: [], why: null,
   }));
   const recent = new Set(recentIds);
+  // With weights (ruleId -> weight) the order is a weighted random shuffle (Efraimidis-Spirakis), so the rules the
+  // person misses most come first; rules without weight keep a small base chance. Without weights it is a plain shuffle.
+  const hasWeights = Object.values(weights ?? {}).some((weight) => weight > 0);
+  const weightOf = (exercise) => 0.15 + Math.max(0, Number(weights?.[exercise.ruleId]) || 0);
   const shuffled = [...(lesson?.exercises ?? [])]
-    .map((exercise) => ({ exercise, order: random() }))
+    .map((exercise) => ({ exercise, order: hasWeights ? -Math.pow(Math.max(random(), 1e-12), 1 / weightOf(exercise)) : random() }))
     .sort((a, b) => a.order - b.order)
     .map(({ exercise }) => exercise);
   const pool = [...shuffled.filter((exercise) => !recent.has(exercise.id)), ...shuffled.filter((exercise) => recent.has(exercise.id))];

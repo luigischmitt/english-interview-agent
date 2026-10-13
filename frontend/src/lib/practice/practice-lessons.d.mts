@@ -10,4 +10,4 @@ export const practiceRuleById: Record<string, PracticeLessonRule>;
 export function ruleTextForRequest(ruleId: string): string | null;
 export function lessonRulesForRequest(key: string): Array<{ id: string; rule: string }>;
 export function checkFixedAnswer(exercise: Pick<PracticeFixedExercise, "answer" | "accepted">, answer: string): boolean;
-export function pickPracticeRound(input: { key: string; ownErrors?: Array<{ evidence: string; rephrased: string }>; recentIds?: string[]; size?: number; ownCount?: number; chooseShare?: number; random?: () => number }): PracticeFixedExercise[];
+export function pickPracticeRound(input: { key: string; ownErrors?: Array<{ evidence: string; rephrased: string }>; recentIds?: string[]; size?: number; ownCount?: number; chooseShare?: number; random?: () => number; weights?: Record<string, number> }): PracticeFixedExercise[];
