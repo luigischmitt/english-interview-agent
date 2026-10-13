@@ -187,7 +187,7 @@ function Navigation({
       <aside
         id="desktop-sidebar"
         aria-label={t("Navegação para desktop")}
-        className={`shl-sidebar sticky top-0 hidden h-dvh max-h-dvh min-h-0 shrink-0 self-start overflow-y-auto px-3.5 py-5 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
+        className={`shl-sidebar fixed inset-y-0 left-0 z-10 hidden h-dvh max-h-dvh min-h-0 shrink-0 overflow-y-auto px-3.5 py-5 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
           sidebarExpanded ? "w-72" : "w-20"
         }`}
       >
@@ -534,6 +534,12 @@ export default function App({ initialView = "home", initialLesson, initialPart }
           }}
           sidebarExpanded={sidebarExpanded}
           onToggleSidebar={() => setSidebarExpanded((expanded) => !expanded)}
+        />
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none hidden shrink-0 transition-[width] duration-200 ease-out lg:block ${
+            sidebarExpanded ? "w-72" : "w-20"
+          }`}
         />
         <div className="min-w-0 flex-1">
           <Topbar view={view} />
