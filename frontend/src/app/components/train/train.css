@@ -249,12 +249,14 @@
 .tr-word-wrap.is-helped { background: var(--ds-warning-tint); box-shadow: 0 0 0 2px var(--ds-warning-tint); }
 .tr-word-wrap.is-drop-before { box-shadow: inset 3px 0 var(--ds-green-deep); }
 .tr-word-wrap.is-drag-placeholder { display: inline-flex; flex: 0 0 auto; align-items: baseline; }
-.tr-word-wrap.is-drag-placeholder > :not(.tr-word-block) { display: none; }
-.tr-word-wrap.is-drag-placeholder .tr-word-block { visibility: visible; box-sizing: border-box; min-height: 0; overflow: hidden; border: 1px dashed var(--ds-text-3); background: color-mix(in srgb, var(--ds-tint) 55%, transparent); color: transparent; }
+.tr-word-sentence { position: relative; }
+.tr-word-wrap.is-drag-placeholder .tr-word-block { opacity: .35; }
 .tr-word-block.is-dragging-source { touch-action: none; }
 .tr-word-sentence:has(.tr-word-ghost) { user-select: none; }
 .tr-word-ghost { position: fixed; z-index: 2147483647; top: 0; left: 0; display: inline-flex; width: max-content; max-width: none; align-items: center; justify-content: center; white-space: nowrap; color: var(--ds-text); pointer-events: none; box-shadow: 0 8px 20px rgb(0 0 0 / .16); }
-.tr-word-sentence.is-drop-end::after { content: ""; display: inline-block; height: 1.4em; margin-left: .1rem; border-left: 3px solid var(--ds-green-deep); vertical-align: middle; }
+.tr-word-caret { position: absolute; z-index: 1; width: 2px; border-radius: 2px; background: var(--ds-green); pointer-events: none; transform: translateX(-1px) scaleY(.92); transform-origin: center; animation: tr-word-caret-grow 140ms var(--ease-out) both; }
+@keyframes tr-word-caret-grow { to { transform: translateX(-1px) scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .tr-word-caret { animation: none; transform: translateX(-1px); } }
 .tr-word-move { display: none; gap: .1rem; align-self: center; }
 .tr-word-move button { border: 0; border-radius: .25rem; background: var(--ds-tint); color: var(--ds-text-2); padding: .05rem .2rem; font: .8rem/1.4 inherit; }
 .tr-word-wrap.is-empty .tr-word-block { width: .55rem; min-width: .55rem; height: 1em; border: 1px dashed var(--ds-text-3); border-radius: .15rem; padding: 0; vertical-align: baseline; }
