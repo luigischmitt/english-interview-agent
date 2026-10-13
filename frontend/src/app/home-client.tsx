@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useState, useSyncExternalStore, type CSSProperties } from "react";
+import { startTransition, useEffect, useState, useSyncExternalStore, type CSSProperties } from "react";
 import {
   ArrowUpRight,
   Home,
@@ -43,15 +44,37 @@ const primaryNavigationItems = [
 const settingsNavigationItem = { id: "settings" as const, label: "Configurações", icon: SlidersHorizontal };
 const navigationItems = [...primaryNavigationItems, settingsNavigationItem];
 
-import { InterviewSetup } from "./components/interview-setup";
 import { prewarmInterviewerUtterance, useSpeechWarmup, useVoiceReadiness } from "./hooks/use-speech-playback";
-import { ProgressView } from "./components/progress-view";
-import { TrainView } from "./components/train/train-view";
 import { PageIntro } from "./components/shared";
 import { VoicePicker } from "./components/voice-picker";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 
 const subscribeNever = () => () => {};
+
+const loadInterviewSetup = () => import("./components/interview-setup").then((module) => module.InterviewSetup);
+const loadTrainView = () => import("./components/train/train-view").then((module) => module.TrainView);
+const loadProgressView = () => import("./components/progress-view").then((module) => module.ProgressView);
+
+const ViewLoading = () => (
+  <main id="main-content" className="mx-auto w-full max-w-6xl px-4 pb-28 pt-7 sm:px-8 sm:pb-12">
+    <div className="skeleton h-10 w-56" />
+    <div className="skeleton mt-5 h-36 w-full !rounded-[var(--ds-r-panel)]" />
+    <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="skeleton h-56 w-full !rounded-[var(--ds-r-card)]" />
+      <div className="skeleton h-56 w-full !rounded-[var(--ds-r-card)]" />
+    </div>
+  </main>
+);
+
+const InterviewSetup = dynamic(loadInterviewSetup, { loading: ViewLoading });
+const TrainView = dynamic(loadTrainView, { loading: ViewLoading });
+const ProgressView = dynamic(loadProgressView, { loading: ViewLoading });
+
+function preloadView(view: View) {
+  if (view === "interview-setup") void loadInterviewSetup();
+  if (view === "train") void loadTrainView();
+  if (view === "progress") void loadProgressView();
+}
 
 function isNavigationItemActive(view: View, item: View) {
   return view === item;
@@ -108,11 +131,13 @@ type NavigationItem = (typeof navigationItems)[number];
 function Navigation({
   view,
   onNavigate,
+  onPrefetch,
   sidebarExpanded,
   onToggleSidebar,
 }: {
   view: View;
   onNavigate: (view: View) => void;
+  onPrefetch: (view: View) => void;
   sidebarExpanded: boolean;
   onToggleSidebar: () => void;
 }) {
@@ -134,9 +159,15 @@ function Navigation({
           aria-label={label}
           aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
           onClick={() => onNavigate(id)}
-          onMouseEnter={(event) => showTooltip(event.currentTarget, label)}
+          onMouseEnter={(event) => {
+            onPrefetch(id);
+            showTooltip(event.currentTarget, label);
+          }}
           onMouseLeave={() => setTooltip(null)}
-          onFocus={(event) => showTooltip(event.currentTarget, label)}
+          onFocus={(event) => {
+            onPrefetch(id);
+            showTooltip(event.currentTarget, label);
+          }}
           onBlur={() => setTooltip(null)}
           className={`shl-nav-item ${sidebarExpanded ? "gap-3 px-3.5" : "justify-center px-0"}`}
         >
@@ -221,6 +252,8 @@ function Navigation({
                 type="button"
                 aria-current={isNavigationItemActive(view, id) ? "page" : undefined}
                 onClick={() => onNavigate(id)}
+                onMouseEnter={() => onPrefetch(id)}
+                onFocus={() => onPrefetch(id)}
                 className="shl-mobile-item"
               >
                 <Icon className="size-[1.125rem]" aria-hidden="true" />
@@ -435,8 +468,27 @@ export default function App({ initialView = "home", initialLesson, initialPart }
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [startError, setStartError] = useState(false);
 
+  useEffect(() => {
+    const idleWindow = window as Window & { requestIdleCallback?: (callback: () => void) => number };
+    const idleId = idleWindow.requestIdleCallback
+      ? idleWindow.requestIdleCallback(() => {
+          preloadView("interview-setup");
+          preloadView("train");
+          preloadView("progress");
+        })
+      : window.setTimeout(() => {
+          preloadView("interview-setup");
+          preloadView("train");
+          preloadView("progress");
+        }, 1200);
+    return () => {
+      if (idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(idleId);
+      else window.clearTimeout(idleId);
+    };
+  }, []);
+
   const navigate = (nextView: View) => {
-    setView(nextView);
+    startTransition(() => setView(nextView));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -447,6 +499,7 @@ export default function App({ initialView = "home", initialLesson, initialPart }
         <Navigation
           view={view}
           onNavigate={navigate}
+          onPrefetch={preloadView}
           sidebarExpanded={sidebarExpanded}
           onToggleSidebar={() => setSidebarExpanded((expanded) => !expanded)}
         />
