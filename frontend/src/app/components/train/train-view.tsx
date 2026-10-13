@@ -27,7 +27,7 @@ import {
   practiceRuleById,
 } from "@/lib/practice/practice-lessons.mjs";
 import { buildRound, gradeLocally, requeueMissed } from "@/lib/practice/practice-rounds.mjs";
-import { lessonStats, relativeErrorDate, topLessons, topParts } from "@/lib/practice/practice-insights.mjs";
+import { lessonStats, topLessons } from "@/lib/practice/practice-insights.mjs";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import type { PracticeFixedExercise, PracticeLesson, PracticeLessonRule } from "@/lib/practice/practice-lessons.mjs";
 import {
@@ -113,17 +113,6 @@ function ruleWeights(theme: PracticeGroup): Record<string, number> {
   const weights: Record<string, number> = {};
   for (const ref of theme.error_refs ?? []) if (ref.ruleId) weights[ref.ruleId] = (weights[ref.ruleId] ?? 0) + 1;
   return weights;
-}
-
-function localizedRelativeErrorDate(timestamp: string, now: Date): string {
-  const relative = relativeErrorDate(timestamp, now);
-  if (relative === "hoje" || relative === "ontem") return t(relative);
-  const days = relative.match(/^há (\d+) dias$/);
-  if (days) return t("há {days} dias", { days: Number(days[1]) });
-  const months = relative.match(/^há (\d+) meses$/);
-  if (months) return t("há {months} meses", { months: Number(months[1]) });
-  if (relative === "há 1 mês") return t("há 1 mês");
-  return relative;
 }
 
 // Lessons with no saved group (nothing from the interviews yet): the person can study and practice, but nothing is stored.
@@ -448,12 +437,11 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
         themes={sorted}
         onOpen={(theme) => void selectTheme(theme)}
         onInterview={onInterview}
-        onPractice={(theme, ruleId) => begin(theme, ruleId ? { mode: "quick", ruleId } : { mode: "mine" })}
+        onPractice={(theme) => begin(theme, { mode: "mine" })}
       />
               <Contents
                 themes={sorted}
                 onOpen={(theme, ruleIndex) => void selectTheme(theme, ruleIndex)}
-                onPractice={(theme) => begin(theme)}
               />
             </>
           )}
@@ -519,7 +507,7 @@ function ListHeader() {
     <header className="tr-hero">
       <div className="min-w-0">
         <h1 className="font-display text-4xl tracking-tight">{t("Treinar")}</h1>
-        <p className="ds-body mt-2">{t("Escolha um tema, estude a parte que quiser e pratique com exercícios curtos.")}</p>
+        <p className="ds-body mt-2">{t("Pratique inglês para entrevistas, no seu ritmo.")}</p>
       </div>
     </header>
   );
@@ -560,9 +548,8 @@ function Recommended({
   themes: PracticeGroup[];
   onOpen: (theme: PracticeGroup, ruleIndex?: number) => void;
   onInterview: () => void;
-  onPractice: (theme: PracticeGroup, ruleId?: string) => void;
+  onPractice: (theme: PracticeGroup) => void;
 }) {
-  const top = topParts(themes, practiceLessons, 3);
   const lessons = topLessons(themes, practiceLessons, 3);
   const hasErrors = themes.some((theme) => (theme.error_refs?.length ?? 0) > 0);
   if (!hasErrors) {
@@ -577,35 +564,22 @@ function Recommended({
   }
   return (
     <>
-    {hasErrors && <MineCard themes={themes} onPractice={onPractice} />}
+    <MineCard themes={themes} onPractice={onPractice} />
     <section className="tr-reco" aria-labelledby="train-reco">
       <h2 id="train-reco" className="tr-mini-label">
         {t("Onde você mais erra")}
       </h2>
       <ul className="tr-reco-list">
-        {[...top.map((part) => ({ kind: "part" as const, item: part })), ...lessons.filter((lesson) => !top.some((part) => part.lessonKey === lesson.lessonKey)).map((lesson) => ({ kind: "lesson" as const, item: lesson }))]
-          .slice(0, 3).map((entry, index) => {
-          if (entry.kind === "lesson") {
-            const item = entry.item;
-            const lesson = practiceLessonByKey[item.lessonKey];
-            const theme = themes.find((candidate) => candidate.theme_key === item.lessonKey) ?? exploreGroup(lesson);
-            return <LessonErrorCard key={`lesson-${item.lessonKey}`} item={item} lesson={lesson} theme={theme} index={index} onOpen={onOpen} onPractice={onPractice} />;
-          }
-          const part = entry.item;
-          const lesson = practiceLessonByKey[part.lessonKey];
-          const theme = themes.find((item) => item.theme_key === part.lessonKey) ?? exploreGroup(lesson);
-          const partIndex = lesson.rules.findIndex((rule) => rule.id === part.ruleId);
+        {lessons.slice(0, 3).map((item, index) => {
+          const lesson = practiceLessonByKey[item.lessonKey];
+          const theme = themes.find((candidate) => candidate.theme_key === item.lessonKey) ?? exploreGroup(lesson);
           return (
-            <PartCard
-              key={part.ruleId}
-              part={part}
-              lesson={lesson}
-              theme={theme}
-              index={index}
-              partIndex={partIndex}
-              onOpen={onOpen}
-              onPractice={onPractice}
-            />
+            <li key={lesson.key} style={{ "--i": index } as CSSProperties}>
+              <button type="button" className="tr-reco-tile" onClick={() => onOpen(theme)}>
+                <span><strong>{t(lesson.title)}</strong><small>{t("{count} erros", { count: item.count })}</small></span>
+                <ArrowRight className="tr-reco-arrow size-4" aria-hidden="true" />
+              </button>
+            </li>
           );
         })}
       </ul>
@@ -614,77 +588,28 @@ function Recommended({
   );
 }
 
-function LessonErrorCard({ item, lesson, theme, index, onOpen, onPractice }: { item: ReturnType<typeof topLessons>[number]; lesson: PracticeLesson; theme: PracticeGroup; index: number; onOpen: (theme: PracticeGroup, ruleIndex?: number) => void; onPractice: (theme: PracticeGroup, ruleId?: string) => void }) {
-  return <li style={{ "--i": index } as CSSProperties} className="tr-part-card">
-    <strong>{t(lesson.title)}</strong>
-    <p>{t("{count} erros em {interviews} entrevistas", { count: item.count, interviews: item.interviews })}</p>
-    {(item.latest.evidence || item.latest.rephrased) && <CorrectionPair wrong={item.latest.evidence} right={item.latest.rephrased} />}
-    <div className="tr-card-actions">
-      <button type="button" className="ds-btn ds-btn-soft" onClick={() => onOpen(theme)}>{t("Rever a aula")}</button>
-      <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => onPractice(theme)}>{t("Treino rápido")}</button>
-    </div>
-  </li>;
-}
-
 function MineCard({ themes, onPractice }: { themes: PracticeGroup[]; onPractice: (theme: PracticeGroup, ruleId?: string) => void }) {
   const theme = themes.find((item) => (item.error_refs?.length ?? 0) > 0);
   if (!theme) return null;
   return (
     <button type="button" className="tr-mine-card" onClick={() => onPractice(theme)}>
-      <strong>{t("Meus erros")}</strong>
-      <span>{t("Treino com os seus erros · 10 exercícios das partes em que você mais erra")}</span>
+      <span className="tr-mine-copy"><strong>{t("Treino com os seus erros")}</strong><small>{t("10 exercícios · cerca de 3 minutos")}</small></span>
       <ArrowRight className="size-4" aria-hidden="true" />
     </button>
   );
-}
-
-function PartCard({ part, lesson, theme, index, partIndex, onOpen, onPractice }: {
-  part: ReturnType<typeof topParts>[number];
-  lesson: PracticeLesson;
-  theme: PracticeGroup;
-  index: number;
-  partIndex: number;
-  onOpen: (theme: PracticeGroup, ruleIndex?: number) => void;
-  onPractice: (theme: PracticeGroup, ruleId?: string) => void;
-}) {
-  return (
-    <li style={{ "--i": index } as CSSProperties} className="tr-part-card">
-      <strong>{t(lesson.title)} · {t(part.label)} · {part.count}×</strong>
-      <CorrectionPair wrong={part.latest.evidence} right={part.latest.rephrased} />
-      <div className="tr-card-actions">
-        <button type="button" className="ds-btn ds-btn-soft" onClick={() => onOpen(theme, partIndex)}>
-          {t("Rever a parte")}
-        </button>
-        <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => onPractice(theme, part.ruleId)}>
-          {t("Treino rápido")}
-        </button>
-      </div>
-    </li>
-  );
-}
-
-function CorrectionPair({ wrong, right }: { wrong?: string; right?: string }) {
-  return <p className="tr-correction-pair" lang="en">
-    {wrong && <span className="tr-correction-wrong"><span aria-hidden="true">✕</span><span className="sr-only">{t("Evite:")} </span><span aria-hidden="true">{t("Evite")}</span><span>{wrong}</span></span>}
-    <span aria-hidden="true">→</span>
-    {right && <span className="tr-correction-right"><span aria-hidden="true">✓</span><span className="sr-only">{t("Prefira:")} </span><span aria-hidden="true">{t("Prefira")}</span><span>{right}</span></span>}
-  </p>;
 }
 
 // A fixed table of contents: every lesson, in order, with the person's own mistakes attached when there are any.
 function Contents({
   themes,
   onOpen,
-  onPractice,
 }: {
   themes: PracticeGroup[];
   onOpen: (theme: PracticeGroup, ruleIndex?: number) => void;
-  onPractice: (theme: PracticeGroup) => void;
 }) {
   const [now] = useState(() => new Date());
   const stats = lessonStats(themes, practiceLessons, now);
-  const ranked = [...stats.filter((item) => item.errors > 0).sort((a, b) => b.errors - a.errors || (b.lastErrorAt ?? "").localeCompare(a.lastErrorAt ?? "")), ...stats.filter((item) => !item.errors)];
-  const maxErrors = Math.max(1, ...stats.map((item) => item.errors));
+  const ranked = [...stats.filter((item) => item.errors > 0).sort((a, b) => b.errors - a.errors || a.chapter - b.chapter), ...stats.filter((item) => !item.errors)];
   return (
     <section aria-labelledby="train-topics">
       <div className="tr-section-head">
@@ -697,17 +622,14 @@ function Contents({
         {ranked.map((stat, index) => {
           const lesson = practiceLessonByKey[stat.lessonKey];
           const group = themes.find((theme) => theme.theme_key === lesson.key);
-          const rank = stat.errors ? ranked.filter((item) => item.errors).findIndex((item) => item.lessonKey === lesson.key) + 1 : null;
           return (
           <LessonCard
             key={lesson.key}
             lesson={lesson}
             group={group}
             index={index}
-            maxErrors={maxErrors}
-            stat={{ ...stat, rank }}
+            chapter={stat.chapter}
             onOpen={onOpen}
-            onPractice={onPractice}
           />
           );
         })}
@@ -719,70 +641,26 @@ function LessonCard({
   lesson,
   group,
   index,
-  maxErrors,
-  stat,
+  chapter,
   onOpen,
-  onPractice,
 }: {
   lesson: PracticeLesson;
   group?: PracticeGroup;
   index: number;
-  maxErrors: number;
-  stat: ReturnType<typeof lessonStats>[number];
+  chapter: number;
   onOpen: (theme: PracticeGroup, ruleIndex?: number) => void;
-  onPractice: (theme: PracticeGroup) => void;
 }) {
-  const [now] = useState(() => new Date());
   const theme = group ?? exploreGroup(lesson);
   const errors = group?.error_refs?.length ?? 0;
-  const interviews = stat.interviews;
   return (
-    <article className="tr-card" style={{ "--i": index } as CSSProperties}>
+    <button type="button" className="tr-card tr-card-link" style={{ "--i": index } as CSSProperties} onClick={() => onOpen(theme, -1)}>
       <div className="min-w-0">
-        <p className="tr-chapter">{stat.rank ? t("{rank}º onde você mais erra", { rank: stat.rank }) : t("Capítulo {number}", { number: stat.chapter })}</p>
+        <p className="tr-chapter">{t("Capítulo {number}", { number: chapter })}</p>
         <h3 className="tr-card-title">{t(lesson.title)}</h3>
         <p className="ds-small">{t(lesson.subtitle)}</p>
       </div>
-      {errors > 0 && (
-        <div className="tr-meter">
-          <p className="tr-personal">{t("{count} erros em {interviews} entrevistas", { count: errors, interviews })}</p>
-          <div className="tr-meter-track" aria-hidden="true">
-            <span style={{ width: `${Math.max(8, (errors / maxErrors) * 100)}%` }} />
-          </div>
-          <p>{stat.rank === 1 ? t("a aula em que você mais erra") : t("comparado à aula com mais erros")}</p>
-          {stat.lastErrorAt && <p>{t("Último erro: {date}", { date: localizedRelativeErrorDate(stat.lastErrorAt, now) })}</p>}
-          {stat.trend === "up" ? <p>{t("Aparece mais nas últimas entrevistas")}</p> : stat.trend === "down" ? <p>{t("Menos que antes")}</p> : null}
-          {stat.topParts.slice(0, 2).map((part) => <span className="tr-insight-chip" key={part.ruleId}>{t(part.label)} · {part.count}×</span>)}
-        </div>
-      )}
-      {lesson.rules.length > 0 && (
-        <div className="tr-chips">
-          <p className="tr-mini-label">{t("Partes da aula")}</p>
-          <ul>
-            {lesson.rules.map((rule, ruleIndex) => (
-              <li key={rule.id}>
-                <button type="button" className="tr-chip" onClick={() => onOpen(theme, ruleIndex)}>
-                  <span className="tr-chip-num" aria-hidden="true">
-                    {ruleIndex + 1}
-                  </span>
-                  {t(rule.label)}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <div className="tr-card-actions">
-        <button className="ds-btn ds-btn-cta-green" onClick={() => onOpen(theme, -1)}>
-          <BookOpen className="size-4" />
-          {t("Estudar")}
-        </button>
-        <button className="ds-btn ds-btn-soft" onClick={() => onPractice(theme)}>
-          <Dumbbell className="size-4" />
-          {t("Praticar")}
-        </button>
-      </div>
-    </article>
+      {errors > 0 && <span className="tr-error-pill">{t("{count} erros", { count: errors })}</span>}
+    </button>
   );
 }
 
@@ -1036,10 +914,10 @@ function ThemeDetail({
                       {ownHere.slice(0, 2).map((ref) => (
                         <li key={`${ref.interview_id}-${ref.sequence_number}-${ref.evidence}`}>
                           <p className="tr-own-said">
-                            <span>{t("Evite")}</span> <q lang="en">{ref.evidence}</q>
+                            <span className="sr-only">{t("Evite:")} </span><q lang="en">{ref.evidence}</q><span aria-hidden="true"> → </span>
                           </p>
                           <p className="tr-own-better">
-                            <span>{t("Prefira")}</span> <q lang="en">{ref.rephrased}</q>
+                            <span className="sr-only">{t("Prefira:")} </span><q lang="en">{ref.rephrased}</q>
                           </p>
                         </li>
                       ))}
@@ -1091,16 +969,10 @@ function ThemeDetail({
                       {traps.map((item) => (
                         <li className="tr-trap" key={`${item.wrong}|${item.right}`}>
                           <p className="tr-trap-wrong" lang="en">
-                            <XCircle className="size-4 shrink-0" aria-hidden="true" />
-                            <span aria-hidden="true">✕</span><span className="sr-only">{t("Evite:")} </span><span aria-hidden="true">{t("Evite")}</span>
-                            <span className="tr-wrong-example">{item.wrong}</span>
+                            <span className="sr-only">{t("Evite:")} </span><span className="tr-wrong-example">{item.wrong}</span>
+                            <span aria-hidden="true">→</span><span className="tr-trap-correct"><span className="sr-only">{t("Prefira:")} </span>{item.right}</span>
                           </p>
                           <div className="tr-trap-right">
-                            <p lang="en">
-                              <Check className="size-4 shrink-0" aria-hidden="true" />
-                              <span aria-hidden="true">✓</span><span className="sr-only">{t("Prefira:")} </span><span aria-hidden="true">{t("Prefira")}</span>
-                              <span>{item.right}</span>
-                            </p>
                             <SpeakButton phrase={item.right} onPlay={onPlay} />
                           </div>
                           <p className="tr-trap-note">{t(item.note)}</p>
