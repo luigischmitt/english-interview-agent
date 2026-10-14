@@ -5,6 +5,9 @@ import { ArrowLeft, Check, CloudOff, LoaderCircle, Mic } from "lucide-react";
 import { inAppMicBody, inAppMicTitle, useInAppBrowser } from "../hooks/use-in-app-browser";
 import { MicrophoneCapture, micDeniedMessage, type FollowUpCandidateStatus, type FollowUpCandidateUpdate, type MicControls, type PlannedQuestionStatus, type PlannedStartContext, type VoiceAssessmentState, type VoiceCaptureState, type VoiceTranscriptionState } from "@/components/interview/microphone-capture";
 import { getFixedInterviewQuestions } from "@/lib/interview/questions";
+import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
+import { buildLearnerQuestionProfile, createTechnicalQuestionSnapshot } from "@/lib/interview/personalization.mjs";
+import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { buildPreviousAnswers, decideNextTurn, isClarificationTurn, type TurnDecision } from "@/lib/interview/orchestration";
 import { pickFixedHandoffTransition, repeatTurnDecision } from "@/lib/interview/orchestration-policy.mjs";
 import { detectClarificationRequest } from "@/lib/interview/clarification-request.mjs";
@@ -12,8 +15,9 @@ import { assessmentContextKey, composeClarificationTurn, planTurnAfterDecision, 
 import { plannedQuestionType, resolveFixedPromptForAudio, resolveMonotonicFixedAction, resolveSpeculativeFixedSelection, selectNextPlannedQuestion, selectNextPlannedQuestions, shouldUseMonotonicFixedFallback } from "@/lib/interview/question-scheduling.mjs";
 import { createNextTurnPreparationRegistry } from "@/lib/interview/next-turn-preparation.mjs";
 import { createFixedHandoffPreparationRegistry, type FixedHandoffEntry } from "@/lib/interview/fixed-handoff-preparation.mjs";
-import { type InterviewTurnInput } from "@/lib/interview/persistence";
-import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
+import { loadProgressRecords, type InterviewTurnInput } from "@/lib/interview/persistence";
+import { warmProgressCacheAfterFeedbackSave } from "@/lib/interview/progress-cache-warmup.mjs";
+import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewStudyPlan, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import { appendInterviewReportPair, type AzureAssessmentSample, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
@@ -107,7 +111,12 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
   useSpeechWarmup();
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
   const { autoCaptureVoice } = resolveCandidateVoicePreferences(config);
-  const questions = useMemo(() => getFixedInterviewQuestions(config), [config]);
+  const progressRecords = useMemo(() => {
+    const cached = readDashboardCache("progress");
+    return Array.isArray(cached) ? cached as ProgressRecord[] : [];
+  }, []);
+  const learnerProfile = useMemo(() => buildLearnerQuestionProfile(progressRecords, config.role), [progressRecords, config.role]);
+  const questions = useMemo(() => getFixedInterviewQuestions(config, learnerProfile), [config, learnerProfile]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [question, setQuestion] = useState<InterviewQuestion>(() => questions[0]);
   const [questionSequenceNumber, setQuestionSequenceNumber] = useState(1);
@@ -1360,7 +1369,17 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
         }).finally(() => { turnAnalysisAbortsRef.current.delete(endAbort); });
         path = outcome.path;
         console.info("[interview-report] ready", { path, turnCount: turns.length, retried: turnAnalysisRetriesRef.current, missingAtEnd: outcome.missingAtEnd, recoveredAtEnd: outcome.recoveredAtEnd, durationMs: Date.now() - lifecycleStartedAt });
-        if (mountedRef.current && current) setReportState({ status: "ready", result: outcome.result });
+        if (mountedRef.current && current) {
+          const technicalQuestionTopics = createTechnicalQuestionSnapshot(questions, turns);
+          const studyPlan = await requestInterviewStudyPlan(config, outcome.result);
+          if (!mountedRef.current || !current) return;
+          const result = {
+            ...outcome.result,
+            ...(studyPlan ? { studyPlan } : {}),
+            ...(technicalQuestionTopics.length ? { technicalQuestionTopics } : {}),
+          };
+          setReportState({ status: "ready", result });
+        }
       } catch {
         console.warn("[interview-report] unavailable", { category: "request_failed_or_timed_out", path, turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
         const message = "A análise detalhada falhou ou excedeu o tempo limite. As respostas registradas continuam disponíveis abaixo.";
@@ -1368,7 +1387,7 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
       }
     })();
     return () => { current = false; };
-  }, [config, locale, phase, sessionId, waitForSessionId]);
+  }, [config, locale, phase, questions, sessionId, waitForSessionId]);
 
   const practiceSuggestionsStartedRef = useRef<string | null>(null);
   const [practiceSuggestions, setPracticeSuggestions] = useState<{ status: "idle" | "loading" | "ready"; items: ReportSuggestion[] }>({ status: "idle", items: [] });
@@ -1382,6 +1401,7 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
       ? saveInterviewFeedback(sessionId, currentAzureSummary, reportState.result)
       : markInterviewFeedbackUnavailable(sessionId, currentAzureSummary);
     void persistence.then((result) => {
+      warmProgressCacheAfterFeedbackSave(result, loadProgressRecords);
       if (!mountedRef.current || reportPersistenceSignatureRef.current !== signature) return;
       setFeedbackSyncMessage(result.ok ? null : "O relatório está disponível nesta tela, mas não foi possível sincronizá-lo com sua conta.");
       if (result.ok && reportState.status === "ready" && practiceSuggestionsStartedRef.current !== sessionId) {
@@ -1544,6 +1564,8 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
             persistenceMessage={persistenceMessage}
             feedbackSyncMessage={feedbackSyncMessage}
             reportState={reportState}
+            progressRecords={progressRecords}
+            currentInterviewId={sessionId ?? undefined}
             reportCaption={reportCaption}
             turns={capturedReportTurns}
             azureSummary={currentAzureSummary}

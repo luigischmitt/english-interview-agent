@@ -2,9 +2,10 @@ import { getQuestionBankForRole } from "./question-bank.mjs";
 import { isValidJobDirection } from "./job-direction.mjs";
 import { roleForSpeech } from "./opening-copy.mjs";
 import { isResumePractice } from "./resume-neutral.mjs";
+import { personalizeTechnicalQuestions } from "./personalization.mjs";
 import type { InterviewConfig, InterviewQuestion } from "./types";
 
-export function getFixedInterviewQuestions(config: InterviewConfig): InterviewQuestion[] {
+export function getFixedInterviewQuestions(config: InterviewConfig, learnerProfile: Array<{ topicId: string; sessionCount: number }> = []): InterviewQuestion[] {
   const role = config.role || "this role";
   // A role typed in Portuguese is never spliced into an English sentence ("strong fit for Analista de Dados").
   // Resume practice has no target job: bank questions never name the inferred role.
@@ -22,9 +23,9 @@ export function getFixedInterviewQuestions(config: InterviewConfig): InterviewQu
         : "Based on the role description you shared, which part of your experience would be most valuable in this position?",
       cue: fromResume ? "Give a concise example from your resume." : "Give a concise example, then connect it to the role.",
     };
-    return applyTailoredQuestions(questions, direction.tailoredQuestions, fromResume ? "resume" : "job");
+    return personalizeTechnicalQuestions(applyTailoredQuestions(questions, direction.tailoredQuestions, fromResume ? "resume" : "job"), learnerProfile, { seniority: config.seniority });
   }
-  return questions;
+  return personalizeTechnicalQuestions(questions, learnerProfile, { seniority: config.seniority });
 }
 
 // Bank order: [introduction, t1, t2, ownership, t3, conflict, t4, ...]. Tailored questions take the first technical slots.
