@@ -25,6 +25,15 @@ function clarityLabel(value: InterviewReportResult["englishCommunication"]["clar
   return t(value === "CLEAR" ? "Clara" : value === "MOSTLY_CLEAR" ? "Na maior parte clara" : "Precisa de mais clareza");
 }
 
+function reportFocusDisclosure(focus: InterviewConfig["focus"]): string {
+  switch (focus) {
+    case "technical-depth": return "A leitura priorizou conteúdo técnico; comunicação em inglês e as demais áreas também foram avaliadas com justiça.";
+    case "communication": return "A leitura priorizou comunicação em inglês; conteúdo técnico também foi avaliado com justiça.";
+    case "behavioral": return "A leitura priorizou exemplos de colaboração, decisões e impacto; comunicação em inglês também foi avaliada com justiça.";
+    default: return "A leitura manteve equilíbrio entre conteúdo técnico, comunicação em inglês e as demais áreas.";
+  }
+}
+
 function patternLabel(value: InterviewReportResult["englishCommunication"]["patterns"][number]["type"]) {
   const labels: Record<typeof value, string> = { GRAMMAR: "Gramática", WORD_CHOICE: "Escolha de palavras", FALSE_COGNATE: "Falso cognato", STRUCTURE: "Estrutura da resposta" };
   return t(labels[value]);
@@ -142,7 +151,7 @@ function PracticeSuggestions({ state, onOpen }: { state: PracticeSuggestionsStat
   );
 }
 
-function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPractice, practiceSuggestions, focus }: { onOpenPractice?: (href: string) => void; practiceSuggestions?: PracticeSuggestionsState; result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onTrain?: () => void; focus: { focus: string; priorSessionCount: number } | null }) {
+function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPractice, practiceSuggestions, focus, focusDisclosure }: { onOpenPractice?: (href: string) => void; practiceSuggestions?: PracticeSuggestionsState; result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onTrain?: () => void; focus: { focus: string; priorSessionCount: number } | null; focusDisclosure: string | null }) {
   const main = deriveMainPoints(result);
   return (
     <div className="rp-stack">
@@ -173,6 +182,7 @@ function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPra
       <section className="rp-priorities ds-mata ds-enter" style={enter(4)} aria-labelledby="priorities-title">
         <p className="rp-eyebrow">{t("Próximos passos")}</p>
         <h2 id="priorities-title" className="rp-priorities-title">{t("Prioridades para praticar")}</h2>
+        {focusDisclosure && <p className="rp-hint mt-2">{focusDisclosure}</p>}
         {main.priorities.length ? (
           <ol className="rp-priority-list">
             {main.priorities.map((priority, index) => (
@@ -262,6 +272,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
 }): ReactNode {
   const reportDirection = reportState.result?.jobDirection ?? config.jobDirection;
   const focus = reportState.result ? reportTechnicalFocus(reportState.result, progressRecords, config.role, currentInterviewId) : null;
+  const focusDisclosure = config.interviewSource === "resume" ? null : reportFocusDisclosure(config.focus);
   return (
     <section className="rp-root mx-auto w-full max-w-4xl" aria-labelledby="interview-complete-title">
       <header className="rp-hero ds-enter">
@@ -303,7 +314,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
             <AzureVoiceReport summary={azureSummary} coverage={coverage} />
           </div>
         ) : reportState.status === "ready" && reportState.result ? (
-          <ReadyReport result={reportState.result} turns={turns} azureSummary={azureSummary} coverage={coverage} onTrain={onTrain} onOpenPractice={onOpenPractice} practiceSuggestions={practiceSuggestions} focus={focus} />
+          <ReadyReport result={reportState.result} turns={turns} azureSummary={azureSummary} coverage={coverage} onTrain={onTrain} onOpenPractice={onOpenPractice} practiceSuggestions={practiceSuggestions} focus={focus} focusDisclosure={focusDisclosure} />
         ) : null}
       </div>
 
