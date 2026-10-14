@@ -12,8 +12,17 @@
 .tr-card { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 1rem; border-radius: var(--ds-r-card); background: var(--ds-surface); padding: 1.25rem; box-shadow: var(--ds-shadow-card); animation: tr-rise var(--ds-dur-slow) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 50ms); transition: transform var(--ds-dur-base) var(--ease-out), box-shadow var(--ds-dur-base) var(--ease-out); }
 .tr-card-link { width: 100%; color: inherit; text-align: left; cursor: pointer; }
 .tr-card-link:focus-visible { outline: var(--ds-focus-outline); outline-offset: 3px; }
-.tr-error-pill { width: fit-content; border-radius: 999px; background: var(--ds-field); padding: .25rem .65rem; color: var(--ds-text-2); font-size: .76rem; }
+.tr-card-personal { background: var(--ds-tint); }
+.tr-card-open { box-shadow: none; }
 .tr-card-title { margin-top: .1rem; color: var(--ds-ink); font-size: 1.2rem; font-weight: 650; line-height: 1.25; }
+.tr-card-personal-copy { display: grid; min-width: 0; gap: .35rem; }
+.tr-card-personal-label, .tr-card-rule { color: var(--ds-text-2); font-size: .78rem; line-height: 1.4; }
+.tr-card-personal-label { font-weight: 650; }
+.tr-card-rule { color: var(--ds-green-deep); font-weight: 650; }
+.tr-card-evidence { display: flex; flex-wrap: wrap; min-width: 0; align-items: baseline; gap: .25rem .45rem; color: var(--ds-ink); font-size: .85rem; line-height: 1.45; overflow-wrap: anywhere; }
+.tr-card-evidence q, .tr-mine-example q { quotes: "“" "”"; }
+.tr-card-action { margin-top: .15rem; color: var(--ds-green-deep); font-size: .85rem; font-weight: 650; }
+.tr-card-action-quiet { color: var(--ds-text-2); }
 .tr-chip { display: inline-flex; min-height: 2.25rem; align-items: center; gap: .3rem; border: 1px solid var(--ds-line); border-radius: 999px; background: var(--ds-surface); padding: .3rem .8rem; color: var(--ds-text-2); font-size: .8rem; font-weight: 550; transition: background var(--ds-dur-fast) var(--ease-out), border-color var(--ds-dur-fast) var(--ease-out), color var(--ds-dur-fast) var(--ease-out), transform var(--ds-dur-press) var(--ease-out); }
 .tr-chip:hover { border-color: var(--ds-green); background: var(--ds-tint); color: var(--ds-green-deep); }
 .tr-chip:active { transform: scale(.96); }
@@ -21,9 +30,11 @@
 .tr-card-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: auto; padding-top: .25rem; }
 .tr-card-actions .ds-btn { min-height: 2.75rem; }
 .tr-mine-card { display: flex; width: 100%; min-width: 0; align-items: center; gap: .8rem; margin-bottom: 2rem; border-radius: var(--ds-r-card); background: var(--ds-tint); padding: 1.15rem 1.25rem; color: var(--ds-green-deep); text-align: left; }
-.tr-mine-copy { display: grid; min-width: 0; flex: 1; gap: .2rem; }
+.tr-mine-copy { display: grid; min-width: 0; flex: 1; gap: .35rem; }
 .tr-mine-card strong { color: var(--ds-ink); font-size: 1rem; }
 .tr-mine-card small { color: var(--ds-text-2); font-size: .82rem; }
+.tr-mine-example { display: flex; flex-wrap: wrap; min-width: 0; align-items: baseline; gap: .2rem .45rem; color: var(--ds-ink); font-size: .78rem; line-height: 1.4; overflow-wrap: anywhere; }
+.tr-mine-rule { color: var(--ds-green-deep); font-weight: 650; }
 .tr-mode-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .tr-focused-disclosure { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows var(--ds-dur-base) var(--ease-out), opacity var(--ds-dur-base) var(--ease-out); }
 .tr-focused-disclosure[data-open="true"] { grid-template-rows: 1fr; opacity: 1; }
@@ -57,10 +68,6 @@
 .tr-reco-hint { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .75rem; margin-bottom: 1.5rem; color: var(--ds-text-2); font-size: .875rem; }
 .tr-reco-link { color: var(--ds-green-deep); font-size: .875rem; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
 .tr-reco-link:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
-.tr-explore { margin-top: 1.25rem; border-top: 1px solid var(--ds-line); }
-.tr-explore > summary { width: fit-content; cursor: pointer; padding: .9rem 0; color: var(--ds-green-deep); font-size: .9rem; font-weight: 650; }
-.tr-explore > summary:focus-visible { outline: var(--ds-focus-outline); outline-offset: 3px; }
-.tr-explore[open] > summary { margin-bottom: .5rem; }
 /* Progress ring */
 .tr-ring { position: relative; display: grid; flex: 0 0 auto; place-items: center; }
 .tr-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }

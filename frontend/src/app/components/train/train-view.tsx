@@ -459,13 +459,10 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
         onInterview={onInterview}
         onPractice={(theme) => begin(theme, { mode: "mine" })}
       />
-              <details className="tr-explore">
-                <summary>{t("Explorar aulas")}</summary>
-                <Contents
-                  themes={sorted}
-                  onOpen={(theme, ruleIndex) => void selectTheme(theme, ruleIndex)}
-                />
-              </details>
+              <Contents
+                themes={sorted}
+                onOpen={(theme, ruleIndex) => void selectTheme(theme, ruleIndex)}
+              />
             </>
           )}
         </>
@@ -582,14 +579,22 @@ function PersonalPractice({
       </p>
     );
   }
-  const topics = topParts(themes, practiceLessons, 3).map((part) => t(part.label));
+  const examples = topParts(themes, practiceLessons, 2).filter((part) => part.latest.evidence?.trim() && part.latest.rephrased?.trim());
   const theme = themes.find((item) => (item.error_refs?.length ?? 0) > 0);
   if (!theme) return null;
   return (
     <button type="button" className="tr-mine-card" onClick={() => onPractice(theme)}>
       <span className="tr-mine-copy">
         <strong>{t("Treinar meus erros")}</strong>
-        <small>{t("10 exercícios das suas entrevistas")}{topics.length ? ` · ${topics.join(", ")}` : ""}</small>
+        <small>{t("Uma rodada para praticar pontos que apareceram nas suas entrevistas.")}</small>
+        {examples.map((part) => (
+          <span key={`${part.lessonKey}-${part.ruleId}`} className="tr-mine-example">
+            <span className="tr-mine-rule">{t(part.label)}</span>
+            <q>{shortEvidence(part.latest.evidence)}</q>
+            <span aria-hidden="true">→</span>
+            <q>{shortEvidence(part.latest.rephrased)}</q>
+          </span>
+        ))}
       </span>
       <ArrowRight className="size-4" aria-hidden="true" />
     </button>
@@ -611,7 +616,7 @@ function Contents({
     <section aria-labelledby="train-topics">
       <div className="tr-section-head">
         <h2 id="train-topics" className="ds-h2">
-          {t("Aulas para explorar")}
+          {t("Todas as aulas")}
         </h2>
         <p className="ds-small">{t("Aulas fixas de inglês para entrevistas.")}</p>
       </div>
@@ -634,6 +639,13 @@ function Contents({
     </section>
   );
 }
+function shortEvidence(value: string, maxLength = 72) {
+  const text = value.trim();
+  if (text.length <= maxLength) return text;
+  const boundary = text.lastIndexOf(" ", maxLength);
+  return `${text.slice(0, boundary > 0 ? boundary : maxLength).trimEnd()}…`;
+}
+
 function LessonCard({
   lesson,
   group,
@@ -648,15 +660,34 @@ function LessonCard({
   onOpen: (theme: PracticeGroup, ruleIndex?: number) => void;
 }) {
   const theme = group ?? exploreGroup(lesson);
-  const errors = group?.error_refs?.length ?? 0;
+  const refs = group?.error_refs ?? [];
+  const errors = refs.length;
+  const latest = [...refs].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))[0];
+  const rule = latest?.ruleId ? practiceRuleById[latest.ruleId] : undefined;
+  const hasEvidence = Boolean(latest?.evidence?.trim() && latest.rephrased?.trim());
   return (
-    <button type="button" className="tr-card tr-card-link" style={{ "--i": index } as CSSProperties} onClick={() => onOpen(theme, -1)}>
+    <button type="button" className={`tr-card tr-card-link ${errors ? "tr-card-personal" : "tr-card-open"}`} style={{ "--i": index } as CSSProperties} onClick={() => onOpen(theme, -1)}>
       <div className="min-w-0">
         <p className="tr-chapter">{t("Capítulo {number}", { number: chapter })}</p>
         <h3 className="tr-card-title">{t(lesson.title)}</h3>
         <p className="ds-small">{t(lesson.subtitle)}</p>
       </div>
-      {errors > 0 && <span className="tr-error-pill">{t("{count} erros", { count: errors })}</span>}
+      {errors > 0 ? (
+        <div className="tr-card-personal-copy">
+          <span className="tr-card-personal-label">{t("Da sua entrevista")}</span>
+          {rule && <span className="tr-card-rule">{t(rule.label)}</span>}
+          {hasEvidence && (
+            <span className="tr-card-evidence">
+              <q>{shortEvidence(latest?.evidence ?? "")}</q>
+              <span aria-hidden="true">→</span>
+              <q>{shortEvidence(latest?.rephrased ?? "")}</q>
+            </span>
+          )}
+          <span className="tr-card-action">{t("Rever este ponto")}</span>
+        </div>
+      ) : (
+        <span className="tr-card-action tr-card-action-quiet">{t("Conhecer esta aula")}</span>
+      )}
     </button>
   );
 }
