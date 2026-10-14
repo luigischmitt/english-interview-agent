@@ -24,6 +24,8 @@ export type InterviewQuestion = {
   id: string;
   prompt: string;
   cue: string;
+  /** Stable fixed-bank topic id retained when a curated alternate prompt is used. */
+  topicId?: string;
   coverage?: "broad-project";
 };
 

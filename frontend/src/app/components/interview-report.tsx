@@ -6,6 +6,8 @@ import { emptyEnglishEvidenceMessage, emptyReportEvidenceMessage, partialEvidenc
 import { clarityHelp, englishPatternsHelp, technicalContentHelp } from "@/lib/interview/report-metric-copy.mjs";
 import type { AzureMetricSummary } from "@/lib/interview/report-metrics.mjs";
 import type { InterviewConfig } from "@/lib/interview/types";
+import { reportTechnicalFocus } from "@/lib/interview/personalization.mjs";
+import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { RESUME_PRACTICE_LABEL } from "@/lib/interview/resume-neutral.mjs";
 import { deriveMainPoints, toSecondPerson } from "@/lib/interview/report-main-points.mjs";
 import type { ReportSuggestion } from "@/lib/practice/report-suggestions.mjs";
@@ -140,7 +142,7 @@ function PracticeSuggestions({ state, onOpen }: { state: PracticeSuggestionsStat
   );
 }
 
-function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPractice, practiceSuggestions }: { onOpenPractice?: (href: string) => void; practiceSuggestions?: PracticeSuggestionsState; result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onTrain?: () => void }) {
+function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPractice, practiceSuggestions, focus }: { onOpenPractice?: (href: string) => void; practiceSuggestions?: PracticeSuggestionsState; result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onTrain?: () => void; focus: { focus: string; priorSessionCount: number } | null }) {
   const main = deriveMainPoints(result);
   return (
     <div className="rp-stack">
@@ -150,19 +152,25 @@ function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPra
         <p className="rp-hint mt-2">{t("Clareza geral em inglês: ")}<span className="rp-clarity-value">{clarityLabel(result.englishCommunication.clarity)}</span></p>
       </section>
 
-      <div className="ds-enter" style={enter(1)}>
+      {focus && <section className="rp-focus ds-enter" style={enter(1)} aria-labelledby="next-focus-title">
+        <h2 id="next-focus-title" className="ds-label">{t("Seu próximo foco")}</h2>
+        <p className="mt-1 text-sm leading-6">{focus.focus}</p>
+        {focus.priorSessionCount > 0 && <p className="rp-hint mt-1">{t("Este foco apareceu em ")}{focus.priorSessionCount}{t(focus.priorSessionCount === 1 ? " entrevista concluída." : " entrevistas concluídas.")}</p>}
+      </section>}
+
+      <div className="ds-enter" style={enter(2)}>
         <AzureVoiceReport summary={azureSummary} coverage={coverage} title={t("Pontuação da fala")} />
       </div>
 
       <div className="rp-leaf" aria-hidden="true"><span /></div>
 
-      <div className="ds-enter" style={enter(2)}>
+      <div className="ds-enter" style={enter(3)}>
         <MainPoints main={main} result={result} turns={turns} />
       </div>
 
       <div className="rp-leaf" aria-hidden="true"><span /></div>
 
-      <section className="rp-priorities ds-mata ds-enter" style={enter(3)} aria-labelledby="priorities-title">
+      <section className="rp-priorities ds-mata ds-enter" style={enter(4)} aria-labelledby="priorities-title">
         <p className="rp-eyebrow">{t("Próximos passos")}</p>
         <h2 id="priorities-title" className="rp-priorities-title">{t("Prioridades para praticar")}</h2>
         {main.priorities.length ? (
@@ -184,7 +192,7 @@ function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPra
         {result.englishCommunication.patterns.length > 0 && onTrain && !(practiceSuggestions?.status === "ready" && practiceSuggestions.items.length > 0 && onOpenPractice) && <button type="button" className="ds-btn ds-btn-cta mt-5" onClick={onTrain}><Dumbbell className="size-4" aria-hidden="true" />{t("Treinar meus erros")}</button>}
       </section>
 
-      <details className="rp-more ds-enter" style={enter(4)}>
+      <details className="rp-more ds-enter" style={enter(5)}>
         <summary>{t("Ver análise completa")}</summary>
         <div className="rp-stack mt-4">
           <section className="ds-card rp-card" aria-labelledby="technical-report-title">
@@ -232,7 +240,7 @@ function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPra
   );
 }
 
-export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave, onTrain, onOpenPractice, practiceSuggestions }: {
+export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave, onTrain, onOpenPractice, practiceSuggestions, progressRecords, currentInterviewId }: {
   config: InterviewConfig;
   elapsed: string;
   totalClock: string;
@@ -241,6 +249,8 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
   persistenceMessage: string | null;
   feedbackSyncMessage: string | null;
   reportState: ReportState;
+  progressRecords: ProgressRecord[];
+  currentInterviewId?: string;
   reportCaption: string;
   turns: Turns;
   azureSummary: AzureMetricSummary;
@@ -251,6 +261,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
   practiceSuggestions?: PracticeSuggestionsState;
 }): ReactNode {
   const reportDirection = reportState.result?.jobDirection ?? config.jobDirection;
+  const focus = reportState.result ? reportTechnicalFocus(reportState.result, progressRecords, config.role, currentInterviewId) : null;
   return (
     <section className="rp-root mx-auto w-full max-w-4xl" aria-labelledby="interview-complete-title">
       <header className="rp-hero ds-enter">
@@ -292,7 +303,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
             <AzureVoiceReport summary={azureSummary} coverage={coverage} />
           </div>
         ) : reportState.status === "ready" && reportState.result ? (
-          <ReadyReport result={reportState.result} turns={turns} azureSummary={azureSummary} coverage={coverage} onTrain={onTrain} onOpenPractice={onOpenPractice} practiceSuggestions={practiceSuggestions} />
+          <ReadyReport result={reportState.result} turns={turns} azureSummary={azureSummary} coverage={coverage} onTrain={onTrain} onOpenPractice={onOpenPractice} practiceSuggestions={practiceSuggestions} focus={focus} />
         ) : null}
       </div>
 

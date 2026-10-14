@@ -444,6 +444,46 @@ const juniorQuestionBanks = Object.fromEntries(
 );
 export const genericJuniorQuestionBank = buildBank(genericJuniorTechnical, juniorBehavioral);
 
+// Curated static alternates let a later interview revisit the same competency in fresh words.
+export const technicalQuestionAlternates = {
+  "system-design": { prompt: "How would you build a service that handles a sudden increase in users?", cue: "Clarify constraints, outline the design, and explain the trade-offs." },
+  debugging: { prompt: "Tell me about a difficult bug and how you narrowed it down.", cue: "Walk through the evidence and how it led to the cause." },
+  "trade-off": { prompt: "Describe a technical decision where you had to balance two competing needs.", cue: "Explain the options, constraint, and outcome." },
+  "code-quality": { prompt: "What practices help your team keep software maintainable while delivering quickly?", cue: "Choose concrete practices and connect one to your experience." },
+  quality: { prompt: "What do you check before you consider a piece of work ready to share?", cue: "Give a few practical checks and one example." },
+  "code-review": { prompt: "How do you make a code review useful for quality and collaboration?", cue: "Mention what you check and how you communicate suggestions." },
+  testing: { prompt: "How do you choose which parts of a system deserve the most testing?", cue: "Connect test depth to risk and give an example." },
+  performance: { prompt: "Tell me about a performance problem you investigated and how you verified the fix.", cue: "Describe the signal, change, and measurement afterward." },
+  "technical-debt": { prompt: "How do you make the case for addressing technical debt when feature work is waiting?", cue: "Connect the debt to a practical risk or future cost." },
+  "web-performance": { prompt: "A page is slow to become usable. How would you investigate it?", cue: "Start with measurements, then explain your next steps." },
+  "state-management": { prompt: "How do you decide whether front-end state belongs in a component, shared store, or server cache?", cue: "Compare the options using an example." },
+  accessibility: { prompt: "What steps do you take to find and fix accessibility problems in an interface?", cue: "Mention concrete checks and how you verify them." },
+  "component-design": { prompt: "What makes a shared UI component easy for other teams to adopt?", cue: "Talk about its API, sensible defaults, and limits." },
+  "api-design": { prompt: "What decisions help an API remain clear and compatible as it evolves?", cue: "Cover the contract, errors, and how clients handle change." },
+  "database-design": { prompt: "What information guides your choice of a relational or non-relational database?", cue: "Use access patterns and consistency needs in your comparison." },
+  scaling: { prompt: "A service cannot keep up with demand. How would you identify what needs to scale?", cue: "Measure first, then connect the bottleneck to a possible change." },
+  reliability: { prompt: "How do you keep a service useful when one of its dependencies is unavailable?", cue: "Explain timeouts, recovery behavior, and user impact." },
+  "data-consistency": { prompt: "How would you handle consistency when several services update related data?", cue: "Explain the approach and its trade-off." },
+  "production-incident": { prompt: "Walk me through an incident you helped resolve and what changed afterward.", cue: "Cover detection, mitigation, your contribution, and prevention." },
+  "async-processing": { prompt: "What signals tell you to move work into a queue instead of handling it in the request?", cue: "Give a use case and one operational trade-off." },
+  "backend-security": { prompt: "How do you reduce common security risks in a service that handles user data?", cue: "Mention concrete controls at the request, identity, or data layer." },
+  "feature-end-to-end": { prompt: "How would you take a feature from its data model through to the user experience?", cue: "Follow the flow and call out the main decisions." },
+  "api-contract": { prompt: "How do you keep front-end and back-end teams aligned on an API contract?", cue: "Mention types, error behavior, and how changes are coordinated." },
+  "full-stack-debugging": { prompt: "Describe a defect that crossed application layers and how you located it.", cue: "Explain how you traced the request and isolated the failing part." },
+  "pipeline-design": { prompt: "How would you move data from several sources into a warehouse teams can trust?", cue: "Cover ingestion, transformation, quality checks, and monitoring." },
+  "data-quality": { prompt: "How do you detect incorrect data before it affects users or decisions?", cue: "Mention validation and what happens when a check fails." },
+  "ci-cd": { prompt: "What would you include in a delivery pipeline for a team shipping many times a day?", cue: "Cover checks, rollout, and a safe recovery path." },
+  monitoring: { prompt: "How do you decide which signals should alert an on-call engineer?", cue: "Focus on actionable signals and reducing noise." },
+  "app-architecture": { prompt: "How do you organize a mobile app so new features do not make it harder to change?", cue: "Name an approach and explain how it helps." },
+  "mobile-performance": { prompt: "How would you investigate reports that an app is slow or using too much battery?", cue: "Mention profiling and how you would prioritize causes." },
+  "problem-framing": { prompt: "A team wants to predict which customers may leave. What would you clarify before modeling?", cue: "Start with the decision, available data, and success measure." },
+  "model-evaluation": { prompt: "How do you decide whether a model is reliable enough for a real product?", cue: "Choose evaluation signals that match the intended use." },
+  "analysis-approach": { prompt: "A stakeholder notices a sudden drop in sales. How would you find a credible explanation?", cue: "Clarify the metric, check the data, and describe your investigation." },
+  "sql-experience": { prompt: "Tell me about a SQL analysis that required careful reasoning. How did you validate it?", cue: "Explain the question, query approach, and checks." },
+  "llm-app-design": { prompt: "How would you build a product feature that answers questions with a language model?", cue: "Describe the data flow and checks around the answer." },
+  rag: { prompt: "When does retrieving relevant documents help a language model answer more reliably?", cue: "Explain the approach simply and when it may not help." },
+};
+
 
 // Common variants candidates type instead of the listed role name.
 const roleAliases = {
@@ -504,3 +544,9 @@ export function getQuestionBankForRole(role, seniority) {
 }
 
 export const questionBankRoles = Object.keys(questionBanks);
+export const technicalQuestionTopicIds = new Set([
+  ...genericTechnical,
+  ...genericJuniorTechnical,
+  ...Object.values(technicalByRole).flat(),
+  ...Object.values(juniorTechnicalByRole).flat(),
+].map(({ id }) => id));
