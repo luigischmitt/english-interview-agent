@@ -109,6 +109,8 @@
 @media (min-width: 640px) { .pg-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 1rem 1.5rem; } }
 .pg-row-content, .pg-row-action { display: grid; grid-column: 1 / -1; gap: 0.5rem; width: 100%; min-width: 0; padding: 0; text-align: left; }
 @media (min-width: 640px) { .pg-row-content, .pg-row-action { grid-template-columns: minmax(0, 1fr) auto; align-items: center; } }
+.pg-row-open { display: inline-flex; align-items: center; gap: 0.375rem; width: fit-content; color: var(--ds-green-deep); font-size: 0.8125rem; font-weight: 600; white-space: nowrap; }
+@media (min-width: 640px) { .pg-row-action { grid-template-columns: minmax(0, 1fr) auto auto; } .pg-row-open { justify-self: end; } }
 .pg-row-action { cursor: pointer; }
 .pg-row-action:focus-visible { border-radius: var(--ds-r-sm); outline: var(--ds-focus-outline); outline-offset: 4px; }
 .pg-row-meta { display: flex; flex-wrap: wrap; gap: 0.375rem; }

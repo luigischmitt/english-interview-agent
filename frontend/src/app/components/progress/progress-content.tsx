@@ -468,6 +468,12 @@ export function SessionHistory({ sessions, onOpenReport }: { sessions: ProgressS
               {s.patternCount !== null && <span className="pg-chip">{plural(s.patternCount, "padrão", "padrões")}</span>}
               <span className={`shl-pill ${s.reportStatus === "ready" ? "shl-pill-on" : "shl-pill-off"}`}>{t(reportChip[s.reportStatus])}</span>
             </div>
+            {s.reportStatus === "ready" && onOpenReport && (
+              <span className="pg-row-open" aria-hidden="true">
+                {getCurrentLocale() === "en" ? "Open report" : t("Abrir relatório")}
+                <ArrowRight className="size-4" />
+              </span>
+            )}
           </>;
           return (
             <li key={s.id} className="pg-row">

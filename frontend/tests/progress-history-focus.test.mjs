@@ -15,3 +15,19 @@ test("keeps a saved session focus available to the historical report config", as
   assert.match(persistence, /focus: session\.focus,/);
   assert.match(progressView, /focus: selectedSession\.focus \?\? "mixed",/);
 });
+
+test("makes ready history reports discoverable and returns from the top of historical reports", async () => {
+  const [history, report, progressView] = await Promise.all([
+    readFile(new URL("src/app/components/progress/progress-content.tsx", root), "utf8"),
+    readFile(new URL("src/app/components/interview-report.tsx", root), "utf8"),
+    readFile(new URL("src/app/components/progress-view.tsx", root), "utf8"),
+  ]);
+
+  assert.match(history, /s\.reportStatus === "ready" && onOpenReport && \(\s*<span className="pg-row-open"/);
+  assert.match(history, /onClick=\{\(\) => onOpenReport\(s\.id\)\}/);
+  assert.match(report, /\{historical && \(\s*<button type="button" className="ds-btn ds-btn-quiet mb-3" onClick=\{onLeave\}>/);
+  assert.match(report, /getCurrentLocale\(\) === "en" \? "Back to Progress" : t\("Voltar ao Progresso"\)/);
+  assert.match(report, /\{!historical && <CapturedAnswers turns=\{turns\} \/>\}/);
+  assert.match(progressView, /turns=\{\[\]\}/);
+  assert.match(report, /onClick=\{onLeave\}>\{t\(historical \? "Voltar ao Progresso /);
+});
