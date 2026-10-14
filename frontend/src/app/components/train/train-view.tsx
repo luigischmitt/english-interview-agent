@@ -29,7 +29,7 @@ import {
 } from "@/lib/practice/practice-lessons.mjs";
 import { buildRound, gradeLocally, requeueMissed } from "@/lib/practice/practice-rounds.mjs";
 import { buildPersonalRewriteTargets, composePersonalWordBank, gradePersonalRewrite, shuffledPersonalWordBank } from "@/lib/practice/personal-rewrites.mjs";
-import { lessonStats, topLessons } from "@/lib/practice/practice-insights.mjs";
+import { lessonStats, topParts } from "@/lib/practice/practice-insights.mjs";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import type { PracticeFixedExercise, PracticeLesson, PracticeLessonRule } from "@/lib/practice/practice-lessons.mjs";
 import {
@@ -452,16 +452,18 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
             </div>
           ) : (
             <>
-      <Recommended
+      <PersonalPractice
         themes={sorted}
-        onOpen={(theme) => void selectTheme(theme)}
         onInterview={onInterview}
         onPractice={(theme) => begin(theme, { mode: "mine" })}
       />
-              <Contents
-                themes={sorted}
-                onOpen={(theme, ruleIndex) => void selectTheme(theme, ruleIndex)}
-              />
+              <details className="tr-explore">
+                <summary>{t("Explorar aulas")}</summary>
+                <Contents
+                  themes={sorted}
+                  onOpen={(theme, ruleIndex) => void selectTheme(theme, ruleIndex)}
+                />
+              </details>
             </>
           )}
         </>
@@ -557,19 +559,16 @@ function ProgressRing({ value, size, children }: { value: number; size: number; 
   );
 }
 
-// Up to three of the person's own groups with the most mistakes: a shortcut into the table of contents below.
-function Recommended({
+// A direct start for a practice round built from the person's interview errors.
+function PersonalPractice({
   themes,
-  onOpen,
   onInterview,
   onPractice,
 }: {
   themes: PracticeGroup[];
-  onOpen: (theme: PracticeGroup, ruleIndex?: number) => void;
   onInterview: () => void;
   onPractice: (theme: PracticeGroup) => void;
 }) {
-  const lessons = topLessons(themes, practiceLessons, 3);
   const hasErrors = themes.some((theme) => (theme.error_refs?.length ?? 0) > 0);
   if (!hasErrors) {
     return (
@@ -581,38 +580,15 @@ function Recommended({
       </p>
     );
   }
-  return (
-    <>
-    <MineCard themes={themes} onPractice={onPractice} />
-    <section className="tr-reco" aria-labelledby="train-reco">
-      <h2 id="train-reco" className="tr-mini-label">
-        {t("Onde você mais erra")}
-      </h2>
-      <ul className="tr-reco-list">
-        {lessons.slice(0, 3).map((item, index) => {
-          const lesson = practiceLessonByKey[item.lessonKey];
-          const theme = themes.find((candidate) => candidate.theme_key === item.lessonKey) ?? exploreGroup(lesson);
-          return (
-            <li key={lesson.key} style={{ "--i": index } as CSSProperties}>
-              <button type="button" className="tr-reco-tile" onClick={() => onOpen(theme)}>
-                <span><strong>{t(lesson.title)}</strong><small>{t("{count} erros", { count: item.count })}</small></span>
-                <ArrowRight className="tr-reco-arrow size-4" aria-hidden="true" />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-    </>
-  );
-}
-
-function MineCard({ themes, onPractice }: { themes: PracticeGroup[]; onPractice: (theme: PracticeGroup, ruleId?: string) => void }) {
+  const topics = topParts(themes, practiceLessons, 3).map((part) => t(part.label));
   const theme = themes.find((item) => (item.error_refs?.length ?? 0) > 0);
   if (!theme) return null;
   return (
     <button type="button" className="tr-mine-card" onClick={() => onPractice(theme)}>
-      <span className="tr-mine-copy"><strong>{t("Treino com os seus erros")}</strong><small>{t("10 exercícios · cerca de 3 minutos")}</small></span>
+      <span className="tr-mine-copy">
+        <strong>{t("Treinar meus erros")}</strong>
+        <small>{t("10 exercícios das suas entrevistas")}{topics.length ? ` · ${topics.join(", ")}` : ""}</small>
+      </span>
       <ArrowRight className="size-4" aria-hidden="true" />
     </button>
   );
@@ -633,9 +609,9 @@ function Contents({
     <section aria-labelledby="train-topics">
       <div className="tr-section-head">
         <h2 id="train-topics" className="ds-h2">
-          {t("Conteúdo")}
+          {t("Aulas para explorar")}
         </h2>
-        <p className="ds-small">{t("Estude na ordem ou vá direto ao que precisa. Toque numa parte para ir direto a ela.")}</p>
+        <p className="ds-small">{t("Aulas fixas de inglês para entrevistas.")}</p>
       </div>
       <div className="tr-grid">
         {ranked.map((stat, index) => {
