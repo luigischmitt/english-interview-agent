@@ -17,6 +17,7 @@ import { PageIntro } from "./shared";
 import { inAppMicBody, inAppMicTitle, useCopyPageLink, useInAppBrowser } from "../hooks/use-in-app-browser";
 import { MicrophoneTest, type MicrophoneTestHandle } from "./microphone-test";
 import { readStoredMicrophoneDeviceId, storeMicrophoneDeviceId } from "@/lib/interview/mic-device.mjs";
+import { readStoredInterviewerCharacter, storeInterviewerCharacter } from "@/lib/interview/interviewer-character-preference.mjs";
 import { VoicePicker } from "./voice-picker";
 import { playVoiceSample, readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
 import { RoleCombobox } from "@/components/ui/role-combobox";
@@ -109,6 +110,9 @@ export function InterviewSetup({
   const storedVoice = useSyncExternalStore(subscribeNever, () => readStoredInterviewerVoice(window.localStorage), () => defaultInterviewConfig.voice ?? "");
   const [chosenVoice, setChosenVoice] = useState<string | undefined>(undefined);
   const voice = chosenVoice ?? storedVoice;
+  const storedCharacter = useSyncExternalStore(subscribeNever, () => readStoredInterviewerCharacter(window.localStorage), () => true);
+  const [chosenCharacter, setChosenCharacter] = useState<boolean | undefined>(undefined);
+  const showCharacter = chosenCharacter ?? storedCharacter;
 
   const chooseVoice = useCallback((next: string) => {
     audioTestRef.current?.cancel();
@@ -318,6 +322,10 @@ export function InterviewSetup({
 
   const updateOption = (field: "playInterviewerAudio" | "showInterviewerCharacter" | "showQuestionCaptions" | "candidateCameraEnabled" | "autoCaptureVoice", value: boolean) => {
     setConfig((current) => ({ ...current, [field]: value }));
+    if (field === "showInterviewerCharacter") {
+      setChosenCharacter(value);
+      storeInterviewerCharacter(window.localStorage, value);
+    }
   };
 
   const updateInterviewerAudioMode = (mode: "audio" | "text") => {
@@ -388,6 +396,7 @@ export function InterviewSetup({
       ...config,
       role: config.role.trim(),
       voice,
+      showInterviewerCharacter: showCharacter,
       microphoneDeviceId,
       interviewSource: setupMode === "auto" ? "job" : setupMode,
       ...(jobDirection ? { jobDirection } : {}),
@@ -735,7 +744,7 @@ export function InterviewSetup({
                   </div>
                   <div className="-mx-1 mt-4 grid gap-1 sm:grid-cols-2">
                     <SettingToggle id="show-question-captions" label={t("Legendas das perguntas")} description={t(config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis.")} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel={t("Sempre visível")} onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
-                    <SettingToggle id="show-interviewer-character" label={t("Personagem animado do entrevistador")} description={t("Desative para mostrar somente a marca TUC estática na sala.")} checked={config.showInterviewerCharacter} onChange={(checked) => updateOption("showInterviewerCharacter", checked)} />
+                    <SettingToggle id="show-interviewer-character" label={t("Personagem animado do entrevistador")} description={t("Desative para mostrar somente a marca TUC estática na sala.")} checked={showCharacter} onChange={(checked) => updateOption("showInterviewerCharacter", checked)} />
                     <SettingToggle id="candidate-camera" label={t("Prévia da câmera")} description={t("Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo.")} checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
                     <SettingToggle id="auto-capture-voice" label={t("Iniciar microfone automaticamente")} description={t("Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala.")} checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
                   </div>

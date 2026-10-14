@@ -28,6 +28,7 @@ import { composeContextualOpening } from "@/lib/interview/speech-playback.mjs";
 import { storeRoomHandoff } from "@/lib/interview/room-handoff.mjs";
 import { readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
 import { DEFAULT_INTERVIEWER_VOICE } from "@/lib/interview/voices.mjs";
+import { readStoredInterviewerCharacter, storeInterviewerCharacter } from "@/lib/interview/interviewer-character-preference.mjs";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { useLocale, t } from "@/lib/locale";
 
@@ -388,11 +389,18 @@ function HomeView({
 function SettingsView() {
   const { locale, setLocale, t } = useLocale();
   const storedVoice = useSyncExternalStore(subscribeNever, () => readStoredInterviewerVoice(window.localStorage), () => DEFAULT_INTERVIEWER_VOICE);
+  const storedCharacter = useSyncExternalStore(subscribeNever, () => readStoredInterviewerCharacter(window.localStorage), () => true);
   const [chosenVoice, setChosenVoice] = useState<string | undefined>(undefined);
+  const [chosenCharacter, setChosenCharacter] = useState<boolean | undefined>(undefined);
   const voice = chosenVoice ?? storedVoice;
+  const showCharacter = chosenCharacter ?? storedCharacter;
   const chooseVoice = (next: string) => {
     setChosenVoice(next);
     storeInterviewerVoice(window.localStorage, next);
+  };
+  const chooseCharacter = (next: boolean) => {
+    setChosenCharacter(next);
+    storeInterviewerCharacter(window.localStorage, next);
   };
 
   return (
@@ -450,10 +458,26 @@ function SettingsView() {
           <span className="shl-icon-tile" aria-hidden="true"><Video className="size-5" /></span>
           <div className="min-w-0 flex-1">
             <p className="ds-label">{t("Câmera e avatar do entrevistador")}</p>
-            <p className="ds-small mt-1">{t("Esses recursos ainda não estão disponíveis.")}</p>
+            <p className="ds-small mt-1">{t("Escolha se o entrevistador aparece como personagem animado na sala. Você também pode alterar esta opção antes de iniciar uma entrevista.")}</p>
           </div>
-          <span className="shl-pill shl-pill-off">{t("Indisponível")}</span>
         </div>
+        <label htmlFor="settings-interviewer-character" className="ds-toggle -mx-1 mb-3 sm:ml-[3.25rem] sm:mr-0">
+          <input
+            id="settings-interviewer-character"
+            type="checkbox"
+            role="switch"
+            className="ds-switch"
+            checked={showCharacter}
+            onChange={(event) => chooseCharacter(event.target.checked)}
+          />
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <span className="text-sm font-semibold">{t("Personagem animado do entrevistador")}</span>
+              <span className={`shrink-0 text-xs font-semibold ${showCharacter ? "text-green" : "text-text-3"}`}>{t(showCharacter ? "Ligado" : "Desligado")}</span>
+            </span>
+            <span className="ds-small mt-1 block">{t("Desative para mostrar somente a marca TUC estática na sala.")}</span>
+          </span>
+        </label>
       </section>
     </main>
   );
