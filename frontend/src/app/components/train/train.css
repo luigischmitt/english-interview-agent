@@ -19,8 +19,7 @@
 .tr-card-personal-label, .tr-card-rule { color: var(--ds-text-2); font-size: .78rem; line-height: 1.4; }
 .tr-card-personal-label { font-weight: 650; }
 .tr-card-rule { color: var(--ds-green-deep); font-weight: 650; }
-.tr-card-evidence { display: flex; flex-wrap: wrap; min-width: 0; align-items: baseline; gap: .25rem .45rem; color: var(--ds-ink); font-size: .85rem; line-height: 1.45; overflow-wrap: anywhere; }
-.tr-card-evidence q, .tr-mine-example q { quotes: "“" "”"; }
+.tr-card-evidence { color: var(--ds-ink); font-size: .85rem; line-height: 1.45; }
 .tr-card-action { margin-top: .15rem; color: var(--ds-green-deep); font-size: .85rem; font-weight: 650; }
 .tr-card-action-quiet { color: var(--ds-text-2); }
 .tr-chip { display: inline-flex; min-height: 2.25rem; align-items: center; gap: .3rem; border: 1px solid var(--ds-line); border-radius: 999px; background: var(--ds-surface); padding: .3rem .8rem; color: var(--ds-text-2); font-size: .8rem; font-weight: 550; transition: background var(--ds-dur-fast) var(--ease-out), border-color var(--ds-dur-fast) var(--ease-out), color var(--ds-dur-fast) var(--ease-out), transform var(--ds-dur-press) var(--ease-out); }
@@ -33,8 +32,7 @@
 .tr-mine-copy { display: grid; min-width: 0; flex: 1; gap: .35rem; }
 .tr-mine-card strong { color: var(--ds-ink); font-size: 1rem; }
 .tr-mine-card small { color: var(--ds-text-2); font-size: .82rem; }
-.tr-mine-example { display: flex; flex-wrap: wrap; min-width: 0; align-items: baseline; gap: .2rem .45rem; color: var(--ds-ink); font-size: .78rem; line-height: 1.4; overflow-wrap: anywhere; }
-.tr-mine-rule { color: var(--ds-green-deep); font-weight: 650; }
+.tr-mine-example { color: var(--ds-ink); font-size: .78rem; line-height: 1.4; }
 .tr-mode-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .tr-focused-disclosure { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows var(--ds-dur-base) var(--ease-out), opacity var(--ds-dur-base) var(--ease-out); }
 .tr-focused-disclosure[data-open="true"] { grid-template-rows: 1fr; opacity: 1; }
@@ -153,6 +151,7 @@
 .tr-own { display: grid; gap: .6rem; border-radius: var(--ds-r-lg); background: var(--ds-warning-tint); padding: 1rem 1.1rem; }
 .tr-own .tr-mini-label { color: var(--ds-warning); }
 .tr-own ul { display: grid; gap: .7rem; }
+.tr-own-intro { color: var(--ds-ink); font-size: .88rem; line-height: 1.5; }
 .tr-own li { display: grid; gap: .25rem; overflow-wrap: anywhere; }
 .tr-own p { color: var(--ds-ink); font-size: .9rem; line-height: 1.5; }
 .tr-own p > span { display: inline-block; min-width: 5.5rem; color: var(--ds-text-2); font-size: .75rem; font-weight: 600; }
@@ -207,15 +206,11 @@
 
 .tr-lesson-extras { display: grid; gap: 1rem; margin-top: 1.5rem; }
 .tr-extra-card { min-width: 0; align-self: start; border-radius: var(--ds-r-card); background: var(--ds-surface); box-shadow: var(--ds-shadow-card); }
-.tr-extra-card > summary { display: flex; min-height: 3.5rem; align-items: center; justify-content: space-between; gap: 1rem; cursor: pointer; list-style: none; padding: 1rem 1.25rem; }
-.tr-extra-card > summary::-webkit-details-marker { display: none; }
-.tr-extra-card > summary > span { display: grid; gap: .1rem; }
-.tr-extra-card > summary strong { color: var(--ds-ink); font-size: .95rem; font-weight: 650; }
-.tr-extra-card > summary small { color: var(--ds-text-2); font-size: .8rem; }
-.tr-extra-card > summary svg { color: var(--ds-text-2); transition: transform var(--ds-dur-base) var(--ease-out); }
-.tr-extra-card[open] > summary svg { transform: rotate(180deg); }
-.tr-extra-card > summary:focus-visible { outline: var(--ds-focus-outline); outline-offset: -2px; border-radius: var(--ds-r-card); }
-.tr-extra-body { display: grid; gap: .6rem; padding: 0 1.25rem 1.25rem; animation: tr-rise var(--ds-dur-base) var(--ease-out) both; }
+.tr-extra-card-head { display: flex; min-height: 3.5rem; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; }
+.tr-extra-card-head > span { display: grid; gap: .1rem; }
+.tr-extra-card-head strong { color: var(--ds-ink); font-size: .95rem; font-weight: 650; }
+.tr-extra-card-head small { color: var(--ds-text-2); font-size: .8rem; }
+.tr-extra-body { display: grid; gap: .6rem; padding: 0 1.25rem 1.25rem; }
 .tr-evidence { display: grid; gap: .35rem; border-radius: var(--ds-r-md); background: var(--ds-field); padding: .8rem .9rem; overflow-wrap: anywhere; }
 .tr-evidence h3 { color: var(--ds-ink); font-size: .85rem; font-weight: 650; }
 .tr-evidence p { font-size: .85rem; line-height: 1.45; }

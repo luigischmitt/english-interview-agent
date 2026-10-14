@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect, type CSSProperties, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
   Check,
   CheckCircle2,
-  ChevronDown,
   CircleDot,
   Dumbbell,
   Flame,
@@ -29,7 +28,7 @@ import {
 } from "@/lib/practice/practice-lessons.mjs";
 import { buildRound, gradeLocally, requeueMissed } from "@/lib/practice/practice-rounds.mjs";
 import { buildPersonalRewriteTargets, composePersonalWordBank, gradePersonalRewrite, shuffledPersonalWordBank } from "@/lib/practice/personal-rewrites.mjs";
-import { lessonStats, topParts } from "@/lib/practice/practice-insights.mjs";
+import { lessonStats } from "@/lib/practice/practice-insights.mjs";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import type { PracticeFixedExercise, PracticeLesson, PracticeLessonRule } from "@/lib/practice/practice-lessons.mjs";
 import {
@@ -579,22 +578,15 @@ function PersonalPractice({
       </p>
     );
   }
-  const examples = topParts(themes, practiceLessons, 2).filter((part) => part.latest.evidence?.trim() && part.latest.rephrased?.trim());
+  const errorCount = themes.reduce((total, item) => total + (item.error_refs?.length ?? 0), 0);
   const theme = themes.find((item) => (item.error_refs?.length ?? 0) > 0);
   if (!theme) return null;
   return (
     <button type="button" className="tr-mine-card" onClick={() => onPractice(theme)}>
       <span className="tr-mine-copy">
         <strong>{t("Treinar meus erros")}</strong>
-        <small>{t("Uma rodada para praticar pontos que apareceram nas suas entrevistas.")}</small>
-        {examples.map((part) => (
-          <span key={`${part.lessonKey}-${part.ruleId}`} className="tr-mine-example">
-            <span className="tr-mine-rule">{t(part.label)}</span>
-            <q>{shortEvidence(part.latest.evidence ?? "")}</q>
-            <span aria-hidden="true">→</span>
-            <q>{shortEvidence(part.latest.rephrased ?? "")}</q>
-          </span>
-        ))}
+        <small>{t("Uma rodada curta com os {count} pontos que apareceram nas suas entrevistas.", { count: errorCount })}</small>
+        <span className="tr-mine-example">{t("Nas aulas destacadas, você vê a frase completa e a correção.")}</span>
       </span>
       <ArrowRight className="size-4" aria-hidden="true" />
     </button>
@@ -639,13 +631,6 @@ function Contents({
     </section>
   );
 }
-function shortEvidence(value: string, maxLength = 72) {
-  const text = value.trim();
-  if (text.length <= maxLength) return text;
-  const boundary = text.lastIndexOf(" ", maxLength);
-  return `${text.slice(0, boundary > 0 ? boundary : maxLength).trimEnd()}…`;
-}
-
 function LessonCard({
   lesson,
   group,
@@ -663,10 +648,17 @@ function LessonCard({
   const refs = group?.error_refs ?? [];
   const errors = refs.length;
   const latest = [...refs].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))[0];
-  const rule = latest?.ruleId ? practiceRuleById[latest.ruleId] : undefined;
-  const hasEvidence = Boolean(latest?.evidence?.trim() && latest.rephrased?.trim());
+  const candidateRule = latest?.ruleId ? practiceRuleById[latest.ruleId] : undefined;
+  const candidateRuleIndex = candidateRule ? lesson.rules.findIndex((item) => item.id === candidateRule.id) : -1;
+  const rule = candidateRuleIndex >= 0 ? candidateRule : undefined;
+  const ruleIndex = rule ? candidateRuleIndex : -1;
+  const personalLabel = rule
+    ? t("Ajuste: {rule}", { rule: t(rule.label) })
+    : errors === 1
+      ? t("Um ponto seu para revisar")
+      : t("{count} pontos seus para revisar", { count: errors });
   return (
-    <button type="button" className={`tr-card tr-card-link ${errors ? "tr-card-personal" : "tr-card-open"}`} style={{ "--i": index } as CSSProperties} onClick={() => onOpen(theme, -1)}>
+    <button type="button" className={`tr-card tr-card-link ${errors ? "tr-card-personal" : "tr-card-open"}`} style={{ "--i": index } as CSSProperties} onClick={() => onOpen(theme, ruleIndex)}>
       <div className="min-w-0">
         <p className="tr-chapter">{t("Capítulo {number}", { number: chapter })}</p>
         <h3 className="tr-card-title">{t(lesson.title)}</h3>
@@ -675,15 +667,9 @@ function LessonCard({
       {errors > 0 ? (
         <div className="tr-card-personal-copy">
           <span className="tr-card-personal-label">{t("Da sua entrevista")}</span>
-          {rule && <span className="tr-card-rule">{t(rule.label)}</span>}
-          {hasEvidence && (
-            <span className="tr-card-evidence">
-              <q>{shortEvidence(latest?.evidence ?? "")}</q>
-              <span aria-hidden="true">→</span>
-              <q>{shortEvidence(latest?.rephrased ?? "")}</q>
-            </span>
-          )}
-          <span className="tr-card-action">{t("Rever este ponto")}</span>
+          <span className="tr-card-rule">{personalLabel}</span>
+          <span className="tr-card-evidence">{t("Abra para ver sua frase completa, a correção e praticar este ponto.")}</span>
+          <span className="tr-card-action">{t("Revisar minha frase")}</span>
         </div>
       ) : (
         <span className="tr-card-action tr-card-action-quiet">{t("Conhecer esta aula")}</span>
@@ -870,6 +856,22 @@ function ThemeDetail({
                 <p>{t(lesson.overview.model)}</p>
               </section>
               <LessonVisualDemo lessonKey={lesson.key} />
+              {grouped.length > 0 && (
+                <section className="tr-own" aria-labelledby="overview-own-title">
+                  <p id="overview-own-title" className="tr-mini-label">
+                    {t("Na sua entrevista")}
+                  </p>
+                  <p className="tr-own-intro">{t("Estas frases precisam de revisão antes de você praticar esta aula.")}</p>
+                  <ul>
+                    {looseRefs.slice(0, 2).map((ref) => (
+                      <li key={`${ref.interview_id}-${ref.sequence_number}-${ref.evidence}`}>
+                        <p className="tr-own-said"><q lang="en">{ref.evidence}</q><span aria-hidden="true"> → </span></p>
+                        <p className="tr-own-better"><q lang="en">{ref.rephrased}</q></p>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               <section className="tr-rule-section" aria-labelledby="overview-map">
                 <p id="overview-map" className="tr-mini-label">
                   {t("Mapa da aula")}
@@ -1052,14 +1054,13 @@ function ThemeDetail({
       {(!!grouped.length || !!theme.id) && (
         <div className="tr-lesson-extras">
           {!!grouped.length && (
-            <details className="tr-extra-card" onToggle={revealOnOpen}>
-              <summary>
+            <section className="tr-extra-card" aria-labelledby="all-errors-title">
+              <div className="tr-extra-card-head">
                 <span>
-                  <strong>{t("Onde você errou")}</strong>
+                  <strong id="all-errors-title">{t("Mais frases da sua entrevista")}</strong>
                   <small>{t("{count} trechos das suas entrevistas", { count: looseRefs.length })}</small>
                 </span>
-                <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
-              </summary>
+              </div>
               <div className="tr-extra-body">
                 {grouped.slice(0, showAllErrors ? grouped.length : 3).map(({ point, refs }) => {
                   const ref = refs[0];
@@ -1081,17 +1082,16 @@ function ThemeDetail({
                   </button>
                 )}
               </div>
-            </details>
+            </section>
           )}
           {!!theme.id && (
-            <details className="tr-extra-card" onToggle={revealOnOpen}>
-              <summary>
+            <section className="tr-extra-card" aria-labelledby="attempt-history-title">
+              <div className="tr-extra-card-head">
                 <span>
-                  <strong>{t("Últimas tentativas")}</strong>
+                  <strong id="attempt-history-title">{t("Últimas tentativas")}</strong>
                   <small>{attemptsLoading ? t("Carregando") : t("{count} respostas recentes", { count: attempts.length })}</small>
                 </span>
-                <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
-              </summary>
+              </div>
               <div className="tr-extra-body">
                 {attemptsLoading ? (
                   <Loader2 className="tr-spinner size-5" aria-label={t("Carregando")} />
@@ -1109,7 +1109,7 @@ function ThemeDetail({
                   <p className="ds-small">{t("Suas tentativas aparecerão aqui.")}</p>
                 )}
               </div>
-            </details>
+            </section>
           )}
         </div>
       )}
@@ -1142,12 +1142,6 @@ function LessonPracticeBand({ lesson, focusedOpen, setFocusedOpen, onBegin, onFo
     </div>
     <div className="tr-focused-disclosure" data-open={focusedOpen} aria-hidden={!focusedOpen} inert={!focusedOpen}><FocusedPicker onStart={onFocused} /></div>
   </section>;
-}
-
-// A one-tap check inside each lesson part: the person picks the correct sentence before seeing the answer.
-function revealOnOpen(event: SyntheticEvent<HTMLDetailsElement>) {
-  const details = event.currentTarget;
-  if (details.open) requestAnimationFrame(() => revealNearest(details));
 }
 
 function RuleCheck({ rule, onPlay }: { rule: PracticeLessonRule; onPlay: (phrase: string) => void }) {
