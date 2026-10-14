@@ -6,10 +6,25 @@ import { useEffect, useMemo, useState } from "react";
 import { Play } from "lucide-react";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
-import { buildProgressInsights } from "@/lib/interview/progress-insights.mjs";
+import { buildProgressInsights, sessionDurationMs } from "@/lib/interview/progress-insights.mjs";
+import type { InterviewReportResult } from "@/lib/interview/report";
+import type { InterviewConfig } from "@/lib/interview/types";
+import type { AzureMetricSummary } from "@/lib/interview/report-metrics.mjs";
 import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { PageIntro } from "./shared";
-import { ProgressContent } from "./progress/progress-content";
+import { formatPracticeDuration, ProgressContent } from "./progress/progress-content";
+import { InterviewReport } from "./interview-report";
+
+const emptyAzureSummary: AzureMetricSummary = {
+  accuracy: { mean: null, sampleCount: 0 },
+  fluency: { mean: null, sampleCount: 0 },
+  prosody: { mean: null, sampleCount: 0 },
+};
+
+function formatClock(seconds: number) {
+  const safeSeconds = Math.max(0, seconds);
+  return `${String(Math.floor(safeSeconds / 60)).padStart(2, "0")}:${String(safeSeconds % 60).padStart(2, "0")}`;
+}
 
 export function ProgressView({ onStart, onTrain }: { onStart?: () => void; onTrain?: () => void } = {}) {
   const { locale } = useLocale();
@@ -18,6 +33,7 @@ export function ProgressView({ onStart, onTrain }: { onStart?: () => void; onTra
   const [isLoading, setIsLoading] = useState(!cachedRecords);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -41,6 +57,11 @@ export function ProgressView({ onStart, onTrain }: { onStart?: () => void; onTra
   }, [attempt]);
 
   const insights = useMemo(() => buildProgressInsights(records, { locale }), [records, locale]);
+  const selectedSession = records.find((record) => record.id === selectedSessionId && record.feedback?.status === "ready" && record.feedback.analysis);
+
+  useEffect(() => {
+    if (selectedSession) window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [selectedSession]);
 
   const retry = () => {
     setIsLoading(true);
@@ -52,6 +73,25 @@ export function ProgressView({ onStart, onTrain }: { onStart?: () => void; onTra
     <button type="button" className="ds-btn ds-btn-soft" onClick={onStart}>
       <Play className="size-4 fill-current" aria-hidden="true" /> {t("Nova prática ")}</button>
   );
+
+  const historicalReport = selectedSession?.feedback?.analysis as InterviewReportResult | undefined;
+  const historicalAzureSummary = selectedSession?.feedback?.azureSummary ?? emptyAzureSummary;
+  const historicalDuration = selectedSession ? sessionDurationMs(selectedSession) : null;
+  const historicalAssessmentCount = Math.max(0, ...Object.values(historicalAzureSummary).map((metric) => metric.sampleCount));
+  const historicalConfig: InterviewConfig | null = selectedSession ? {
+    role: selectedSession.targetRole,
+    seniority: selectedSession.seniority ?? "",
+    focus: selectedSession.focus ?? "mixed",
+    duration: "",
+    questionCount: null,
+    playInterviewerAudio: false,
+    showInterviewerCharacter: false,
+    showQuestionCaptions: false,
+    candidateCameraEnabled: false,
+    autoCaptureVoice: false,
+    jobDirection: historicalReport?.jobDirection,
+    interviewSource: "manual",
+  } : null;
 
   return (
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14 lg:pb-16">
@@ -97,7 +137,33 @@ export function ProgressView({ onStart, onTrain }: { onStart?: () => void; onTra
           </div>
         </section>
       ) : (
-        <ProgressContent insights={insights} onTrain={onTrain} />
+        <>
+          <div hidden={!!selectedSession}>
+            <ProgressContent insights={insights} onTrain={onTrain} onOpenReport={setSelectedSessionId} />
+          </div>
+          {selectedSession && historicalReport && historicalConfig && (
+            <div className="mt-8 lg:mt-10">
+              <InterviewReport
+                config={historicalConfig}
+                elapsed={formatPracticeDuration(historicalDuration)}
+                totalClock={historicalDuration === null ? "" : formatClock(Math.round(historicalDuration / 1000))}
+                answerCount={selectedSession.answerCount}
+                persistenceLabel={t("Relatório salvo desta prática.")}
+                persistenceMessage={null}
+                feedbackSyncMessage={null}
+                reportState={{ status: "ready", result: historicalReport }}
+                reportCaption="Relatório salvo"
+                turns={[]}
+                azureSummary={historicalAzureSummary}
+                coverage={{ available: historicalAssessmentCount, pending: 0, total: historicalAssessmentCount }}
+                onLeave={() => setSelectedSessionId(null)}
+                progressRecords={records}
+                currentInterviewId={selectedSession.id}
+                historical
+              />
+            </div>
+          )}
+        </>
       )}
     </main>
   );
