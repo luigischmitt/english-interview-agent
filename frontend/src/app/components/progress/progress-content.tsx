@@ -14,6 +14,7 @@ import type {
   ProgressSessionRow,
   ProgressStudyTopic,
 } from "@/lib/interview/progress-insights.mjs";
+import { progressDimensionKindLabel, visibleProgressDimensions } from "./progress-dimensions.mjs";
 import { SectionHeading } from "../shared";
 import "./progress.css";
 
@@ -102,8 +103,9 @@ function radarEmptyMessage(insights: ProgressInsights) {
 }
 
 export function ProgressHero({ insights }: { insights: ProgressInsights }) {
-  const { dimensions } = insights;
-  const defaultKey = insights.attentionDimension?.key ?? dimensions[0]?.key ?? null;
+  const dimensions = visibleProgressDimensions(insights.dimensions);
+  const attentionDimension = dimensions.find((dimension) => dimension.key === insights.attentionDimension?.key) ?? null;
+  const defaultKey = attentionDimension?.key ?? dimensions[0]?.key ?? null;
   const [picked, setPicked] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const activeKey = hovered ?? picked ?? defaultKey;
@@ -146,8 +148,8 @@ export function ProgressHero({ insights }: { insights: ProgressInsights }) {
           <p className="pg-meta">{t("de prática registrada")}</p>
           <p className="pg-hero-stat">{insights.answerCount}</p>
           <p className="pg-meta">{t(insights.answerCount === 1 ? "resposta dada" : "respostas dadas")}</p>
-          {insights.attentionDimension ? (
-            <p className="pg-meta md:mt-auto">{t("Ponto de atenção: ")}<strong className="font-semibold text-ink">{insights.attentionDimension.fullLabel}</strong></p>
+          {attentionDimension ? (
+            <p className="pg-meta md:mt-auto">{t("Ponto de atenção: ")}<strong className="font-semibold text-ink">{attentionDimension.fullLabel}</strong></p>
           ) : (
             <p className="pg-meta md:mt-auto">{t(insights.analyzedSessions > 0 ? "Nenhum ponto de atenção destacado nas respostas analisadas." : "Os pontos de atenção aparecem com o primeiro relatório.")}</p>
           )}
@@ -168,7 +170,7 @@ export function ProgressHero({ insights }: { insights: ProgressInsights }) {
                 onMouseEnter={() => setHovered(d.key)}
                 onMouseLeave={() => setHovered(null)}
               >
-                <span className="pg-dim-kind">{t(d.kind === "pattern" ? "Sem ocorrência" : "Fala")}</span>
+                <span className="pg-dim-kind">{t(progressDimensionKindLabel(d.kind))}</span>
                 <span className="pg-dim-v">{d.value}{d.kind === "pattern" ? "%" : ""}</span>
                 <span className="pg-dim-l">{d.label}</span>
               </button>
@@ -444,7 +446,7 @@ const reportChip: Record<ProgressSessionRow["reportStatus"], string> = {
 };
 const historyPageSize = 8;
 
-export function SessionHistory({ sessions }: { sessions: ProgressSessionRow[] }) {
+export function SessionHistory({ sessions, onOpenReport }: { sessions: ProgressSessionRow[]; onOpenReport?: (sessionId: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? sessions : sessions.slice(0, historyPageSize);
   return (
@@ -454,8 +456,8 @@ export function SessionHistory({ sessions }: { sessions: ProgressSessionRow[] })
       </div>
       <h2 id="pg-history" className="sr-only">{t("Lista de sessões concluídas")}</h2>
       <ul className="pg-history mt-3">
-        {visible.map((s) => (
-          <li key={s.id} className="pg-row">
+        {visible.map((s) => {
+          const content = <>
             <div className="min-w-0">
               <p className="font-medium text-ink [overflow-wrap:anywhere]">{s.role || t("Prática de entrevista")}{s.seniority ? ` · ${seniorityLabel(s.seniority)}` : ""}</p>
               <p className="ds-small">{formatDate(s.date)}</p>
@@ -466,8 +468,15 @@ export function SessionHistory({ sessions }: { sessions: ProgressSessionRow[] })
               {s.patternCount !== null && <span className="pg-chip">{plural(s.patternCount, "padrão", "padrões")}</span>}
               <span className={`shl-pill ${s.reportStatus === "ready" ? "shl-pill-on" : "shl-pill-off"}`}>{t(reportChip[s.reportStatus])}</span>
             </div>
-          </li>
-        ))}
+          </>;
+          return (
+            <li key={s.id} className="pg-row">
+              {s.reportStatus === "ready" && onOpenReport
+                ? <button type="button" className="pg-row-action" aria-label={`${t("Abrir relatório de ")}${s.role || t("Prática de entrevista")}, ${formatDate(s.date)}`} onClick={() => onOpenReport(s.id)}>{content}</button>
+                : <div className="pg-row-content">{content}</div>}
+            </li>
+          );
+        })}
       </ul>
       {sessions.length > historyPageSize && (
         <div className="px-5 pb-5 sm:px-6">
@@ -482,7 +491,7 @@ export function SessionHistory({ sessions }: { sessions: ProgressSessionRow[] })
 
 /* ------------------------------------------------------------------- Page */
 
-export function ProgressContent({ insights, onTrain }: { insights: ProgressInsights; onTrain?: () => void }) {
+export function ProgressContent({ insights, onTrain, onOpenReport }: { insights: ProgressInsights; onTrain?: () => void; onOpenReport?: (sessionId: string) => void }) {
   return (
     <div className="pg-stack mt-8 gap-10 lg:mt-10">
       <ProgressHero insights={insights} />
@@ -491,7 +500,7 @@ export function ProgressContent({ insights, onTrain }: { insights: ProgressInsig
         <EvolutionChart insights={insights} />
         <WeeklyChart insights={insights} />
       </div>
-      <SessionHistory sessions={insights.sessions} />
+      <SessionHistory sessions={insights.sessions} onOpenReport={onOpenReport} />
     </div>
   );
 }

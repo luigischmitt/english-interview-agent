@@ -210,6 +210,7 @@ async function loadProgressRecordsUncached(): Promise<PersistenceResult<Progress
         id: session.id,
         status: session.status,
         targetRole: session.targetRole,
+        focus: session.focus,
         seniority: session.seniority,
         startedAt: session.startedAt,
         completedAt: session.completedAt,

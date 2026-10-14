@@ -151,7 +151,7 @@ function PracticeSuggestions({ state, onOpen }: { state: PracticeSuggestionsStat
   );
 }
 
-function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPractice, practiceSuggestions, focus, focusDisclosure }: { onOpenPractice?: (href: string) => void; practiceSuggestions?: PracticeSuggestionsState; result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onTrain?: () => void; focus: { focus: string; priorSessionCount: number } | null; focusDisclosure: string | null }) {
+function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPractice, practiceSuggestions, focus, focusDisclosure, historical }: { onOpenPractice?: (href: string) => void; practiceSuggestions?: PracticeSuggestionsState; result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onTrain?: () => void; focus: { focus: string; priorSessionCount: number } | null; focusDisclosure: string | null; historical: boolean }) {
   const main = deriveMainPoints(result);
   return (
     <div className="rp-stack">
@@ -243,14 +243,14 @@ function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPra
             <EvidenceCountNote counts={result.evidenceReview?.englishPatterns} />
           </section>
 
-          <CapturedAnswers turns={turns} />
+          {!historical && <CapturedAnswers turns={turns} />}
         </div>
       </details>
     </div>
   );
 }
 
-export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave, onTrain, onOpenPractice, practiceSuggestions, progressRecords, currentInterviewId }: {
+export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave, onTrain, onOpenPractice, practiceSuggestions, progressRecords, currentInterviewId, historical = false }: {
   config: InterviewConfig;
   elapsed: string;
   totalClock: string;
@@ -261,6 +261,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
   reportState: ReportState;
   progressRecords: ProgressRecord[];
   currentInterviewId?: string;
+  historical?: boolean;
   reportCaption: string;
   turns: Turns;
   azureSummary: AzureMetricSummary;
@@ -283,7 +284,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
           {config.interviewSource === "resume"
             ? <div><dt>{t("Modo")}</dt><dd>{t(RESUME_PRACTICE_LABEL)}</dd></div>
             : <div><dt>{t("Cargo")}</dt><dd>{config.role}</dd></div>}
-          <div><dt>{t("Tempo")}</dt><dd className="tabular-nums">{elapsed} {t("/ ")}{totalClock}</dd></div>
+          <div><dt>{t(historical ? "Tempo registrado" : "Tempo")}</dt><dd className="tabular-nums">{historical ? elapsed : <>{elapsed} {t("/ ")}{totalClock}</>}</dd></div>
           <div><dt>{t("Respostas")}</dt><dd>{answerCount}</dd></div>
         </dl>
         {config.interviewSource === "resume" ? (
@@ -314,7 +315,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
             <AzureVoiceReport summary={azureSummary} coverage={coverage} />
           </div>
         ) : reportState.status === "ready" && reportState.result ? (
-          <ReadyReport result={reportState.result} turns={turns} azureSummary={azureSummary} coverage={coverage} onTrain={onTrain} onOpenPractice={onOpenPractice} practiceSuggestions={practiceSuggestions} focus={focus} focusDisclosure={focusDisclosure} />
+          <ReadyReport result={reportState.result} turns={turns} azureSummary={azureSummary} coverage={coverage} onTrain={onTrain} onOpenPractice={onOpenPractice} practiceSuggestions={practiceSuggestions} focus={focus} focusDisclosure={focusDisclosure} historical={historical} />
         ) : null}
       </div>
 
@@ -322,7 +323,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
         <p className="rp-hint">{persistenceLabel}</p>
         <div className="flex flex-wrap gap-3">
           {reportState.result?.englishCommunication.patterns.length && onTrain ? <button type="button" className="ds-btn ds-btn-soft" onClick={onTrain}><Dumbbell className="size-4" aria-hidden="true" />{t("Treinar meus erros")}</button> : null}
-          <button type="button" className="ds-btn ds-btn-cta-green rp-back" onClick={onLeave}>{t("Voltar ao dashboard ")}<ArrowUpRight className="ds-arrow size-4" aria-hidden="true" /></button>
+          <button type="button" className="ds-btn ds-btn-cta-green rp-back" onClick={onLeave}>{t(historical ? "Voltar ao Progresso " : "Voltar ao dashboard ")}<ArrowUpRight className="ds-arrow size-4" aria-hidden="true" /></button>
         </div>
       </div>
     </section>

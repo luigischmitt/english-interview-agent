@@ -5,6 +5,7 @@ export type ProgressRecord = {
   id: string;
   status: string;
   targetRole: string;
+  focus: string | null;
   seniority: string | null;
   startedAt: string | null;
   completedAt: string | null;
