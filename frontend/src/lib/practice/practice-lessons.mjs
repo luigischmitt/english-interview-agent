@@ -312,7 +312,7 @@ export const practiceLessons = [
     },
     rules: [
       {
-        id: "verb-tenses.past", label: "Já terminou", when: "Projeto antigo, emprego anterior, algo com data.",
+        id: "verb-tenses.past", label: "Passado concluído", when: "Projeto antigo, emprego anterior, algo com data.",
         goal: "Contar ações concluídas em um período já encerrado.",
         pattern: "sujeito + passado simples",
         explain: "Para algo que começou e terminou no passado use o passado simples: em geral verbo + ed (worked, used, deployed) ou a forma irregular (built, led, chose). Palavras como last, ago, yesterday ou um ano no passado são o sinal.",
