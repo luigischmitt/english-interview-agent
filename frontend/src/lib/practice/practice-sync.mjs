@@ -1,11 +1,69 @@
 import { practiceCategoryKeys } from "./practice-categories.mjs";
+import { practiceLessonByKey } from "./practice-lessons.mjs";
 
 export function errorKey(ref) {
   return `${ref.interview_id}|${ref.sequence_number}|${ref.evidence}`;
 }
 
 export function extractProgressErrors(records) {
-  return records.flatMap((record) => (record.patterns ?? []).map((pattern) => ({
+  return records.flatMap((record) => {
+    const analysis = record.feedback?.analysis ?? record.analysis;
+    const hasStudyPlan = analysis && typeof analysis === "object" && Object.hasOwn(analysis, "studyPlan");
+    if (hasStudyPlan) return extractStudyPlanErrors(record, analysis.studyPlan);
+    return (record.patterns ?? []).map((pattern) => ({
+      interview_id: record.id,
+      sequence_number: pattern.sequenceNumber,
+      evidence: pattern.evidence,
+      rephrased: pattern.rephrasedExample,
+      type: pattern.type,
+      suggestion: pattern.suggestion,
+      created_at: record.completedAt ?? record.createdAt,
+    }));
+  });
+}
+
+function extractStudyPlanErrors(record, studyPlan) {
+  const patterns = record.patterns ?? [];
+  const targets = studyPlan && typeof studyPlan === "object" && Array.isArray(studyPlan.targets) ? studyPlan.targets : [];
+  const plannedByEvidence = new Map();
+  for (const target of targets.slice(0, 3)) {
+    if (!target || typeof target !== "object") continue;
+    const lessonKey = target.lessonKey;
+    const ruleId = target.ruleId;
+    const lesson = practiceLessonByKey[lessonKey];
+    const sourceEvidence = typeof target.sourceEvidence === "string" ? target.sourceEvidence.trim() : "";
+    const correctedTarget = typeof target.correctedTarget === "string" ? target.correctedTarget.trim() : "";
+    if (!lesson || !practiceCategoryKeys.includes(lessonKey) || !lesson.rules.some((rule) => rule.id === ruleId)) continue;
+    if (!sourceEvidence || !correctedTarget || sourceEvidence.length > 500 || correctedTarget.length > 500) continue;
+    const acceptedAnswers = Array.isArray(target.acceptedAnswers)
+      ? [...new Set(target.acceptedAnswers.filter((answer) => typeof answer === "string").map((answer) => answer.trim()).filter((answer) => answer && answer.length <= 500))].slice(0, 5)
+      : [];
+    const pattern = patterns.find((item) => normalizedEvidence(item.evidence) === normalizedEvidence(sourceEvidence));
+    if (!pattern) continue;
+    const targetRef = {
+      lessonKey,
+      ruleId,
+      sourceEvidence,
+      correctedTarget,
+      acceptedAnswers,
+      ...(typeof target.context === "string" ? { context: target.context.slice(0, 500) } : {}),
+      ...(typeof target.explanation === "string" ? { explanation: target.explanation.slice(0, 500) } : {}),
+      ...(typeof target.why === "string" ? { why: target.why.slice(0, 500) } : {}),
+    };
+    plannedByEvidence.set(normalizedEvidence(pattern.evidence), {
+      interview_id: record.id,
+      sequence_number: pattern.sequenceNumber,
+      evidence: pattern.evidence,
+      rephrased: correctedTarget,
+      type: pattern.type,
+      suggestion: targetRef.explanation ?? targetRef.why ?? "",
+      created_at: record.completedAt ?? record.createdAt,
+      category: lessonKey,
+      ruleId,
+      studyPlanTarget: targetRef,
+    });
+  }
+  return patterns.map((pattern) => plannedByEvidence.get(normalizedEvidence(pattern.evidence)) ?? ({
     interview_id: record.id,
     sequence_number: pattern.sequenceNumber,
     evidence: pattern.evidence,
@@ -13,25 +71,58 @@ export function extractProgressErrors(records) {
     type: pattern.type,
     suggestion: pattern.suggestion,
     created_at: record.completedAt ?? record.createdAt,
-  })));
+    category: broadCategoryFor(pattern.type),
+    ruleId: null,
+    studyPlanFallback: true,
+  }));
+}
+
+function broadCategoryFor(type) {
+  if (type === "WORD_CHOICE" || type === "FALSE_COGNATE") return "word-choice";
+  if (type === "STRUCTURE") return "sentence-structure";
+  return "other";
+}
+
+function normalizedEvidence(value) {
+  return String(value ?? "").trim().toLocaleLowerCase("en-US").replace(/\s+/gu, " ");
 }
 
 export function findPracticeSyncWork(errors, themes, limit = 20) {
-  const known = new Set(themes
+  const known = new Map(themes
     .filter((theme) => theme.theme_key === "_ignored" || practiceCategoryKeys.includes(theme.theme_key))
-    .flatMap((theme) => (theme.error_refs ?? []).map(errorKey)));
+    .flatMap((theme) => (theme.error_refs ?? []).map((ref) => [errorKey(ref), ref])));
   const legacy = themes.filter((theme) => !practiceCategoryKeys.includes(theme.theme_key) && theme.theme_key !== "_ignored");
   const legacyRefs = legacy.flatMap((theme) => (theme.error_refs ?? []).filter((ref) => !known.has(errorKey(ref))));
-  const missing = errors.filter((error) => !known.has(errorKey(error)));
+  const missing = errors.filter((error) => {
+    const saved = known.get(errorKey(error));
+    return !saved || (error.studyPlanTarget && !saved.studyPlanTarget);
+  });
   const byKey = new Map();
   [...legacyRefs, ...missing].forEach((ref) => {
     const key = errorKey(ref);
-    if (!byKey.has(key)) byKey.set(key, ref);
+    if (!byKey.has(key) || ref.studyPlanTarget) byKey.set(key, ref);
   });
   const work = [...byKey.values()]
     .sort((a, b) => safeDate(b.created_at) - safeDate(a.created_at))
     .slice(0, limit);
   return work;
+}
+
+/** Planned and deterministic fallback refs have a category already; only legacy errors need classification. */
+export function partitionPracticeSyncWork(errors) {
+  const planned = [];
+  const classify = [];
+  for (const ref of errors ?? []) {
+    if (ref.studyPlanTarget && practiceCategoryKeys.includes(ref.studyPlanTarget.lessonKey)
+      && practiceLessonByKey[ref.studyPlanTarget.lessonKey]?.rules.some((rule) => rule.id === ref.studyPlanTarget.ruleId)) {
+      planned.push({ category: ref.studyPlanTarget.lessonKey, ref });
+    } else if (ref.studyPlanFallback && practiceCategoryKeys.includes(ref.category)) {
+      planned.push({ category: ref.category, ref });
+    } else {
+      classify.push(ref);
+    }
+  }
+  return { planned, classify };
 }
 
 /** Rules payload for the classifier: every category with rules, at most 12 per category, rule text cut to 400 characters. */

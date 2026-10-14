@@ -1,7 +1,9 @@
-export type PracticeErrorRef = { interview_id: string; sequence_number: number; evidence: string; rephrased: string; created_at?: string; type?: string; suggestion?: string; point?: string; category?: string; ruleId?: string | null };
+export type PracticeStudyPlanTarget = { lessonKey: string; ruleId: string; sourceEvidence: string; correctedTarget: string; acceptedAnswers: string[]; context?: string; explanation?: string; why?: string };
+export type PracticeErrorRef = { interview_id: string; sequence_number: number; evidence: string; rephrased: string; created_at?: string; type?: string; suggestion?: string; point?: string; category?: string; ruleId?: string | null; studyPlanTarget?: PracticeStudyPlanTarget; studyPlanFallback?: boolean };
 export function errorKey(ref: PracticeErrorRef): string;
-export function extractProgressErrors(records: Array<{ id: string; completedAt?: string | null; createdAt: string; patterns?: Array<{ sequenceNumber: number; evidence: string; rephrasedExample: string; type?: string; suggestion?: string }> }>): PracticeErrorRef[];
+export function extractProgressErrors(records: Array<{ id: string; completedAt?: string | null; createdAt: string; patterns?: Array<{ sequenceNumber: number; evidence: string; rephrasedExample: string; type?: string; suggestion?: string }>; feedback?: { analysis?: unknown } | null; analysis?: unknown }>): PracticeErrorRef[];
 export function findPracticeSyncWork<T extends { id: string; theme_key: string; error_refs?: PracticeErrorRef[] }>(errors: PracticeErrorRef[], themes: T[], limit?: number): PracticeErrorRef[];
+export function partitionPracticeSyncWork(errors: PracticeErrorRef[]): { planned: Array<{ category: string; ref: PracticeErrorRef }>; classify: PracticeErrorRef[] };
 export function completedLegacyThemeIds<T extends { id: string; theme_key: string; error_refs?: PracticeErrorRef[] }>(themes: T[]): string[];
 export function mergeRefs(existing?: PracticeErrorRef[], incoming?: PracticeErrorRef[]): PracticeErrorRef[];
 export function recencyWeight(ref: PracticeErrorRef, lastErrorAt?: string | null, now?: number): number;

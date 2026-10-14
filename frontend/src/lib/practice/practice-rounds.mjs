@@ -182,13 +182,14 @@ function prepareRound(exercises, random) {
 }
 
 /** Build a quick, focused, or mistakes-only practice round. */
-export function buildRound({ mode, lessons, key, ruleId, size, weights = {}, lessonWeights = {}, missedIds = [], recentIds = [], random = Math.random }) {
+export function buildRound({ mode, lessons, key, ruleId, size, weights = {}, lessonWeights = {}, missedIds = [], recentIds = [], personalTargets = [], random = Math.random }) {
   const lesson = (lessons ?? []).find((item) => item.key === key);
   if (mode === "mine") {
-    if (!Object.values(weights).some((count) => count > 0) && !Object.values(lessonWeights).some((count) => count > 0)) return [];
+    const personal = (personalTargets ?? []).slice(0, 3);
+    if (!Object.values(weights).some((count) => count > 0) && !Object.values(lessonWeights).some((count) => count > 0)) return personal;
+    let fixed = [];
     if (!Object.values(weights).some((count) => count > 0)) {
       const topLessons = Object.entries(lessonWeights).filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
-      const result = [];
       const totalWeight = topLessons.reduce((sum, [, count]) => sum + count, 0);
       const allocations = topLessons.map(([lessonKey, count]) => ({ lessonKey, count: Math.floor(10 * count / totalWeight), remainder: (10 * count) % totalWeight }));
       let remaining = 10 - allocations.reduce((sum, item) => sum + item.count, 0);
@@ -198,21 +199,21 @@ export function buildRound({ mode, lessons, key, ruleId, size, weights = {}, les
       }
       for (const { lessonKey, count } of allocations) {
         const pool = (lessons ?? []).find((item) => item.key === lessonKey)?.exercises ?? [];
-        result.push(...pick(pool, Math.min(count, 10 - result.length), {}, missedIds, recentIds, random));
+        fixed.push(...pick(pool, Math.min(count, 10 - fixed.length), {}, missedIds, recentIds, random));
       }
-      return prepareRound(result.slice(0, 10), random);
+    } else {
+      const topRules = Object.entries(weights)
+        .filter(([, count]) => count > 0)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([id]) => id);
+      const pool = (lessons ?? []).flatMap((item) => item.exercises ?? []).filter((item) => topRules.includes(item.ruleId));
+      for (const id of topRules) {
+        fixed.push(...pick(pool.filter((item) => item.ruleId === id), Math.min(3, 10 - fixed.length), weights, missedIds, recentIds, random));
+      }
     }
-    const topRules = Object.entries(weights)
-      .filter(([, count]) => count > 0)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([id]) => id);
-    const pool = (lessons ?? []).flatMap((item) => item.exercises ?? []).filter((item) => topRules.includes(item.ruleId));
-    const result = [];
-    for (const id of topRules) {
-      result.push(...pick(pool.filter((item) => item.ruleId === id), Math.min(3, 10 - result.length), weights, missedIds, recentIds, random));
-    }
-    return prepareRound(result.slice(0, 10), random);
+    fixed = fixed.slice(0, Math.max(0, 10 - personal.length));
+    return [...personal, ...prepareRound(fixed, random)];
   }
   if (!lesson) return [];
 

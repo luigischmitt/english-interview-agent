@@ -5,7 +5,7 @@ import { invalidateDashboardCache, readDashboardCache, sharedLoad, writeDashboar
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { validatedPatterns } from "@/lib/interview/progress-insights.mjs";
-import { applyPracticeResult, applyRuleBackfill, buildClassifyRules, completedLegacyThemeIds, findRuleBackfillWork, resolveRuleId, extractProgressErrors, findPracticeSyncWork, mergeRefs, weightedFrequency, type PracticeErrorRef } from "@/lib/practice/practice-sync.mjs";
+import { applyPracticeResult, applyRuleBackfill, buildClassifyRules, completedLegacyThemeIds, findRuleBackfillWork, resolveRuleId, extractProgressErrors, findPracticeSyncWork, partitionPracticeSyncWork, mergeRefs, weightedFrequency, type PracticeErrorRef } from "@/lib/practice/practice-sync.mjs";
 import { practiceCategoryByKey, practiceCategoryKeys } from "@/lib/practice/practice-categories.mjs";
 import { lessonRulesForRequest } from "@/lib/practice/practice-lessons.mjs";
 import { classifyPracticeErrors } from "@/lib/practice/practice-requests";
@@ -94,6 +94,7 @@ export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Resul
   }));
   const allErrors = extractProgressErrors(records);
   const missing = findPracticeSyncWork(allErrors, themes, practiceSyncBatchSize);
+  const { planned, classify } = partitionPracticeSyncWork(missing);
   const rules = classifyRules();
   if (!missing.length) {
     const removable = completedLegacyThemeIds(themes);
@@ -111,27 +112,32 @@ export async function syncPracticeGroups(themes: PracticeGroup[]): Promise<Resul
     return backfillRuleIds(auth.value, themes, backfill, rules);
   }
 
-  let assignments: Array<{ category: string; point: string; ruleId: string | null } | null>;
-  try {
-    const response = await classifyPracticeErrors({
-      errors: missing.map((ref) => ({ type: ref.type ?? "GRAMMAR", evidence: ref.evidence, suggestion: ref.suggestion ?? "", rephrasedExample: ref.rephrased })),
-      ...(Object.keys(rules).length ? { rules } : {}),
-    });
-    if (response.assignments.length !== missing.length) throw new Error("Invalid assignment count");
-    assignments = response.assignments.map((assignment) => assignment && practiceCategoryByKey[assignment.category] && assignment.point?.trim()
-      ? { category: assignment.category, point: assignment.point.trim().slice(0, 80), ruleId: resolveRuleId(rules, assignment.category, assignment.ruleId) }
-      : null);
-  } catch {
-    return failure("Não foi possível analisar seus erros mais recentes.");
+  let assignments: Array<{ category: string; point: string; ruleId: string | null } | null> = [];
+  if (classify.length) {
+    try {
+      const response = await classifyPracticeErrors({
+        errors: classify.map((ref) => ({ type: ref.type ?? "GRAMMAR", evidence: ref.evidence, suggestion: ref.suggestion ?? "", rephrasedExample: ref.rephrased })),
+        ...(Object.keys(rules).length ? { rules } : {}),
+      });
+      if (response.assignments.length !== classify.length) throw new Error("Invalid assignment count");
+      assignments = response.assignments.map((assignment) => assignment && practiceCategoryByKey[assignment.category] && assignment.point?.trim()
+        ? { category: assignment.category, point: assignment.point.trim().slice(0, 80), ruleId: resolveRuleId(rules, assignment.category, assignment.ruleId) }
+        : null);
+    } catch {
+      return failure("Não foi possível analisar seus erros mais recentes.");
+    }
   }
 
   const client = auth.value.client;
   const now = new Date().toISOString();
   const incomingByCategory = new Map<string, PracticeErrorRef[]>();
   const ignoredRefs: PracticeErrorRef[] = [];
-  for (let index = 0; index < missing.length; index += 1) {
+  for (const { category, ref } of planned) {
+    incomingByCategory.set(category, [...(incomingByCategory.get(category) ?? []), ref]);
+  }
+  for (let index = 0; index < classify.length; index += 1) {
     const assignment = assignments[index];
-    const ref = { ...missing[index], ...(assignment ? { category: assignment.category, point: assignment.point, ruleId: assignment.ruleId } : { ruleId: null }) };
+    const ref = { ...classify[index], ...(assignment ? { category: assignment.category, point: assignment.point, ruleId: assignment.ruleId } : { ruleId: null }) };
     if (assignment) incomingByCategory.set(assignment.category, [...(incomingByCategory.get(assignment.category) ?? []), ref]);
     else ignoredRefs.push(ref);
   }
