@@ -1,6 +1,6 @@
-import { t } from "@/lib/locale";
+import { getCurrentLocale, t } from "@/lib/locale";
 import type { CSSProperties, ReactNode } from "react";
-import { ArrowUpRight, Dumbbell, Quote } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Dumbbell, Quote } from "lucide-react";
 import { answerOrdinalForSequence, type InterviewReportResult, type pairInterviewTurns } from "@/lib/interview/report";
 import { emptyEnglishEvidenceMessage, emptyReportEvidenceMessage, partialEvidenceReviewNote } from "@/lib/interview/report-evidence-copy.mjs";
 import { clarityHelp, englishPatternsHelp, technicalContentHelp } from "@/lib/interview/report-metric-copy.mjs";
@@ -276,6 +276,12 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
   const focusDisclosure = config.interviewSource === "resume" ? null : reportFocusDisclosure(config.focus);
   return (
     <section className="rp-root mx-auto w-full max-w-4xl" aria-labelledby="interview-complete-title">
+      {historical && (
+        <button type="button" className="ds-btn ds-btn-quiet mb-3" onClick={onLeave}>
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          {getCurrentLocale() === "en" ? "Back to Progress" : t("Voltar ao Progresso")}
+        </button>
+      )}
       <header className="rp-hero ds-enter">
         <p className="rp-eyebrow">{t("Prática concluída")}</p>
         <h1 id="interview-complete-title" className="font-display text-balance rp-title">{t("Seu relatório de entrevista")}</h1>
