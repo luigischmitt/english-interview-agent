@@ -6,14 +6,16 @@ import { createOrchestrationController } from "../controllers/orchestration-cont
 import { createInterviewReportConsolidationController, createInterviewReportController, createInterviewReportTurnController } from "../controllers/interview-report-controller.js";
 import { createSpeculativeTurnController, createSpeculativeTurnStatusController } from "../controllers/speculative-turn-controller.js";
 import { createClosingReactionController } from "../controllers/closing-reaction-controller.js";
+import { createStudyPlanController } from "../controllers/study-plan-controller.js";
 import { createResumeDirectionHandlers } from "../controllers/resume-direction-controller.js";
 import type { InterviewerSpeechPrefetcher } from "../speech/interviewer-prefetcher.js";
 import type { JobDirectionUserLimit } from "../thinking/job-direction-user-limit.js";
 import type { InterviewOrchestrationService, InterviewReportService, JobDirectionService, ResumeDirectionService, ThinkingService } from "../thinking/types.js";
 import type { ClosingReactionService } from "../thinking/closing-reaction-service.js";
 import type { SpeculativeTurnAnalysisService } from "../thinking/speculative-turn-analysis-service.js";
+import type { StudyPlanService } from "../thinking/study-plan-service.js";
 
-export function createThinkingRouter(service: ThinkingService | null, orchestrationService: InterviewOrchestrationService, reportService: InterviewReportService | null, jobDirectionService: JobDirectionService | null, resumeDirectionService: ResumeDirectionService | null, jobDirectionUserLimit: JobDirectionUserLimit, speechPrefetcher: InterviewerSpeechPrefetcher | null = null, speculativeService: SpeculativeTurnAnalysisService | null = null, speculativeEnabled = false, closingReactionService: ClosingReactionService | null = null) {
+export function createThinkingRouter(service: ThinkingService | null, orchestrationService: InterviewOrchestrationService, reportService: InterviewReportService | null, jobDirectionService: JobDirectionService | null, resumeDirectionService: ResumeDirectionService | null, jobDirectionUserLimit: JobDirectionUserLimit, speechPrefetcher: InterviewerSpeechPrefetcher | null = null, speculativeService: SpeculativeTurnAnalysisService | null = null, speculativeEnabled = false, closingReactionService: ClosingReactionService | null = null, studyPlanService: StudyPlanService | null = null) {
   const thinkingRouter = Router();
   thinkingRouter.post("/", createThinkingController(service));
   thinkingRouter.post("/job-direction", createJobDirectionController(jobDirectionService, jobDirectionUserLimit));
@@ -25,5 +27,6 @@ export function createThinkingRouter(service: ThinkingService | null, orchestrat
   thinkingRouter.post("/report", createInterviewReportController(reportService));
   thinkingRouter.post("/report/turn", createInterviewReportTurnController(reportService));
   thinkingRouter.post("/report/consolidate", createInterviewReportConsolidationController(reportService));
+  thinkingRouter.post("/study-plan", createStudyPlanController(studyPlanService));
   return thinkingRouter;
 }
