@@ -45,8 +45,10 @@ test("resume reports use the asked questions and answers without vacancy framing
 });
 
 test("job and manual reports keep the role context", () => {
-  const result = buildInterviewReportRequest(config, { turns: [] });
-  assert.deepEqual(result.roleContext, { targetRole: config.role, seniority: config.seniority, focus: config.focus });
+  for (const focus of ["technical-depth", "communication", "behavioral", "mixed"]) {
+    const result = buildInterviewReportRequest({ ...config, focus }, { turns: [] });
+    assert.deepEqual(result.roleContext, { targetRole: config.role, seniority: config.seniority, focus });
+  }
 });
 
 test("English report requests carry the selected locale", () => {
