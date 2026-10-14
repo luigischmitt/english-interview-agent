@@ -316,7 +316,7 @@ export function InterviewSetup({
     });
   };
 
-  const updateOption = (field: "playInterviewerAudio" | "showQuestionCaptions" | "candidateCameraEnabled" | "autoCaptureVoice", value: boolean) => {
+  const updateOption = (field: "playInterviewerAudio" | "showInterviewerCharacter" | "showQuestionCaptions" | "candidateCameraEnabled" | "autoCaptureVoice", value: boolean) => {
     setConfig((current) => ({ ...current, [field]: value }));
   };
 
@@ -735,6 +735,7 @@ export function InterviewSetup({
                   </div>
                   <div className="-mx-1 mt-4 grid gap-1 sm:grid-cols-2">
                     <SettingToggle id="show-question-captions" label={t("Legendas das perguntas")} description={t(config.playInterviewerAudio ? "Mantenha as perguntas escritas à vista. Se desligar, o texto aparece quando o áudio falhar." : "No modo somente texto, as perguntas ficam sempre visíveis.")} checked={config.playInterviewerAudio ? config.showQuestionCaptions : true} disabled={!config.playInterviewerAudio} disabledStatusLabel={t("Sempre visível")} onChange={(checked) => updateOption("showQuestionCaptions", checked)} />
+                    <SettingToggle id="show-interviewer-character" label={t("Personagem animado do entrevistador")} description={t("Desative para mostrar somente a marca TUC estática na sala.")} checked={config.showInterviewerCharacter} onChange={(checked) => updateOption("showInterviewerCharacter", checked)} />
                     <SettingToggle id="candidate-camera" label={t("Prévia da câmera")} description={t("Mostre a câmera somente neste navegador. O vídeo não é enviado nem salvo.")} checked={config.candidateCameraEnabled} onChange={(checked) => updateOption("candidateCameraEnabled", checked)} />
                     <SettingToggle id="auto-capture-voice" label={t("Iniciar microfone automaticamente")} description={t("Peça acesso e comece após cada pergunta. Você também pode iniciar manualmente na sala.")} checked={config.autoCaptureVoice} onChange={(checked) => updateOption("autoCaptureVoice", checked)} />
                   </div>

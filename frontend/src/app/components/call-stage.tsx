@@ -3,6 +3,7 @@
 
 import { t } from "@/lib/locale";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import Image from "next/image";
 import { Captions, CaptionsOff, Info, LoaderCircle, Mic, MicOff, PhoneOff, SkipForward, TriangleAlert, User, Video, VideoOff, X } from "lucide-react";
 
 import { levelToIntensity, smoothIntensity } from "@/lib/interview/mic-level-visual.mjs";
@@ -128,12 +129,14 @@ function SpeakingBars({ active }: { active: boolean }) {
   return <span className="mt-bars" data-active={active ? "true" : undefined} aria-hidden="true"><i /><i /><i /></span>;
 }
 
-export function InterviewerTile({ speaking, advancing, caption, avatarState, speechFeed, candidateLevelRef, children }: {
+export function InterviewerTile({ speaking, advancing, caption, avatarState, showCharacter = true, speechFeed, candidateLevelRef, children }: {
   speaking: boolean;
   advancing: boolean;
   caption: string | null;
   /** What the toucan is doing (see toucanStateFor). */
   avatarState: ToucanState;
+  /** When disabled, show only the static TUC mark and do not mount the animated avatar engine. */
+  showCharacter?: boolean;
   /** Interviewer audio chunks for the beak lip-sync. */
   speechFeed?: SpeechFeed | null;
   /** Smoothed candidate mic level, for the listening nods. */
@@ -141,8 +144,14 @@ export function InterviewerTile({ speaking, advancing, caption, avatarState, spe
   children?: ReactNode;
 }) {
   return (
-    <section className="mt-tile mt-interviewer" data-speaking={speaking ? "true" : undefined} data-advancing={advancing ? "true" : undefined} aria-label={t("Entrevistador")}>
-      <ToucanAvatar state={avatarState} speechFeed={speechFeed} candidateLevelRef={candidateLevelRef} />
+    <section className="mt-tile mt-interviewer" data-avatar={showCharacter ? "animated" : "static"} data-speaking={speaking ? "true" : undefined} data-advancing={advancing ? "true" : undefined} aria-label={t("Entrevistador")}>
+      {showCharacter ? <ToucanAvatar state={avatarState} speechFeed={speechFeed} candidateLevelRef={candidateLevelRef} /> : (
+        <div className="mt-center mt-static-center">
+          <span className="mt-static-badge">
+            <Image src="/landing/tucano-mark.webp" width={64} height={64} alt="" aria-hidden="true" className="mt-static-mark" unoptimized />
+          </span>
+        </div>
+      )}
       {caption !== null && (
         <p key={caption} className="mt-caption" lang="en" aria-live="polite">{caption}</p>
       )}

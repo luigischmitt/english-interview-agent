@@ -5,7 +5,7 @@ import { levelToIntensity, smoothIntensity } from "../src/lib/interview/mic-leve
 
 const config = {
   role: "Backend Engineer", seniority: "mid-level", focus: "technical-depth", duration: "15", questionCount: null,
-  playInterviewerAudio: true, showQuestionCaptions: false, candidateCameraEnabled: false, autoCaptureVoice: true,
+  playInterviewerAudio: true, showInterviewerCharacter: true, showQuestionCaptions: false, candidateCameraEnabled: false, autoCaptureVoice: true,
 };
 const memoryStorage = () => {
   const map = new Map();
@@ -20,6 +20,15 @@ test("the chosen interviewer voice reaches the room; unknown voices are dropped"
   assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, voice: "bf_emma" }, 1), 2).voice, "bf_emma");
   assert.equal("voice" in parseRoomHandoff(serializeRoomHandoff({ ...config, voice: "nope" }, 1), 2), false);
   assert.equal("voice" in parseRoomHandoff(serializeRoomHandoff(config, 1), 2), false);
+});
+
+test("the interviewer character preference reaches the room and must be a boolean", () => {
+  const hiddenCharacter = { ...config, showInterviewerCharacter: false };
+  assert.deepEqual(parseRoomHandoff(serializeRoomHandoff(hiddenCharacter, 1), 2), hiddenCharacter);
+  assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, showInterviewerCharacter: "false" }, 1), 2), null);
+  const oldConfig = { ...config };
+  delete oldConfig.showInterviewerCharacter;
+  assert.deepEqual(parseRoomHandoff(serializeRoomHandoff(oldConfig, 1), 2), config);
 });
 
 test("rejects missing, malformed, stale, future and incomplete payloads", () => {

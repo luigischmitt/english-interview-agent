@@ -29,6 +29,7 @@ export function parseRoomHandoff(raw, now = Date.now()) {
   for (const field of stringFields) if (typeof config[field] !== "string") return null;
   if (config.role.trim() === "") return null;
   for (const field of booleanFields) if (typeof config[field] !== "boolean") return null;
+  if (config.showInterviewerCharacter !== undefined && typeof config.showInterviewerCharacter !== "boolean") return null;
   if (config.questionCount !== null && typeof config.questionCount !== "string") return null;
   const microphoneDeviceId = normalizeDeviceId(config.microphoneDeviceId);
   const jobDirection = isValidJobDirection(config.jobDirection)
@@ -48,6 +49,8 @@ export function parseRoomHandoff(raw, now = Date.now()) {
     duration: config.duration,
     questionCount: config.questionCount,
     playInterviewerAudio: config.playInterviewerAudio,
+    // Older tab-scoped hand-offs predate this preference; retain their animated default.
+    showInterviewerCharacter: config.showInterviewerCharacter ?? true,
     showQuestionCaptions: config.showQuestionCaptions,
     candidateCameraEnabled: config.candidateCameraEnabled,
     autoCaptureVoice: config.autoCaptureVoice,

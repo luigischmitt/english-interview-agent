@@ -14,7 +14,7 @@ const generatedQuestions = Array.from({ length: 8 }, (_, index) => `How would yo
 const generatedDirection = { ...direction, tailoredQuestions: generatedQuestions };
 const config = {
   role: direction.targetRole, seniority: direction.suggestedSeniority, focus: "technical-depth", duration: "15", questionCount: null,
-  playInterviewerAudio: true, showQuestionCaptions: false, candidateCameraEnabled: false, autoCaptureVoice: true, jobDirection: direction,
+  playInterviewerAudio: true, showInterviewerCharacter: true, showQuestionCaptions: false, candidateCameraEnabled: false, autoCaptureVoice: true, jobDirection: direction,
 };
 const description = "We need a backend engineer to build APIs and distributed services, improve reliability, and collaborate with product on a logistics platform. ".repeat(2);
 
