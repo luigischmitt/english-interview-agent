@@ -28,6 +28,7 @@ import {
   practiceRuleById,
 } from "@/lib/practice/practice-lessons.mjs";
 import { buildRound, gradeLocally, requeueMissed } from "@/lib/practice/practice-rounds.mjs";
+import { buildPersonalRewriteTargets, composePersonalWordBank, gradePersonalRewrite, shuffledPersonalWordBank } from "@/lib/practice/personal-rewrites.mjs";
 import { lessonStats, topLessons } from "@/lib/practice/practice-insights.mjs";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import type { PracticeFixedExercise, PracticeLesson, PracticeLessonRule } from "@/lib/practice/practice-lessons.mjs";
@@ -54,7 +55,19 @@ type Grade = {
   why?: string | null;
   assisted?: boolean;
 };
-type RoundExercise = PracticeFixedExercise;
+type PersonalRewriteExercise = {
+  id: string;
+  lessonKey: string;
+  ruleId: string;
+  kind: "personal";
+  sentence: string;
+  answer: string;
+  accepted: string[];
+  context: string;
+  why: string | null;
+  options?: string[];
+};
+type RoundExercise = PracticeFixedExercise | PersonalRewriteExercise;
 type PracticeMode = "quick" | "focused" | "mine";
 const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
@@ -291,17 +304,19 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     setStep(0);
     setResults([]);
     scrollToTop();
+    const chosenMode = options.mode ?? "quick";
+    const recentKey = chosenMode === "mine" ? "practice-recent:mine" : `practice-recent:${theme.theme_key}`;
     let recentIds: string[] = [];
     try {
-      const saved = localStorage.getItem(`practice-recent:${theme.theme_key}`);
+      const saved = localStorage.getItem(recentKey);
       recentIds = saved ? (JSON.parse(saved) as string[]) : [];
     } catch {
       recentIds = [];
     }
-    const chosenMode = options.mode ?? "quick";
     const weights = chosenMode === "mine" ? Object.assign({}, ...themes.map(ruleWeights)) : ruleWeights(theme);
     const lessonWeights = chosenMode === "mine" ? Object.fromEntries(lessonStats(themes, practiceLessons).map((stat) => [stat.lessonKey, stat.errors])) : {};
-    const round = buildRound({ mode: chosenMode, key: theme.theme_key, lessons: practiceLessons, size: options.size, ruleId: options.ruleId, recentIds, missedIds: readMissedIds(), weights, lessonWeights });
+    const personalTargets = chosenMode === "mine" ? buildPersonalRewriteTargets(themes, practiceLessons, recentIds, 3) : [];
+    const round = buildRound({ mode: chosenMode, key: theme.theme_key, lessons: practiceLessons, size: options.size, ruleId: options.ruleId, recentIds, missedIds: readMissedIds(), weights, lessonWeights, personalTargets });
     setRoundMode(chosenMode);
     setRoundSize(options.size ?? 10);
     setFocusedRule(options.ruleId);
@@ -309,8 +324,8 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     setExercises(round);
     try {
       localStorage.setItem(
-        `practice-recent:${theme.theme_key}`,
-        JSON.stringify([...recentIds, ...round.map((exercise) => exercise.id)].slice(-10)),
+        recentKey,
+        JSON.stringify([...recentIds, ...round.map((exercise) => exercise.id)].slice(chosenMode === "mine" ? -30 : -10)),
       );
     } catch {
       // A rodada continua normalmente quando o armazenamento local não está disponível.
@@ -325,11 +340,13 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
     setFormError(null);
     const exercise = exercises[step];
     const cleanAnswer = submittedAnswer.trim();
-    const exerciseLessonKey = practiceLessons.find((lesson) => lesson.exercises.some((item) => item.id === exercise.id))?.key;
+    const exerciseLessonKey = exercise.kind === "personal"
+      ? exercise.lessonKey
+      : practiceLessons.find((lesson) => lesson.exercises.some((item) => item.id === exercise.id))?.key;
     const attemptTheme = themes.find((theme) => theme.theme_key === exerciseLessonKey);
-    const tracked = Boolean(attemptTheme?.id);
+    const tracked = Boolean(attemptTheme?.id) && exercise.kind !== "personal";
     try {
-      const local = gradeLocally(exercise, cleanAnswer);
+      const local = exercise.kind === "personal" ? gradePersonalRewrite(exercise, cleanAnswer) : gradeLocally(exercise, cleanAnswer);
       const feedback = local.verdict === "correct"
         ? t("Resposta correta.")
         : local.verdict === "almost"
@@ -1225,6 +1242,9 @@ function PracticeSession({
   const exercise = exercises[step] as RoundExercise | undefined;
   const choose = exercise?.kind === "choose";
   const spot = exercise?.kind === "spot";
+  const personalExercise = exercise?.kind === "personal" ? exercise : null;
+  const personal = Boolean(personalExercise);
+  const editable = spot;
   const lessonTitle = t(practiceLessonByKey[theme.theme_key]?.title ?? theme.title);
   const ruleIds = [...new Set(exercises.map((item) => item.ruleId).filter((id): id is string => Boolean(id)))];
   const partRule = mode !== "mine" && ruleIds.length === 1 && exercises.every((item) => item.ruleId === ruleIds[0]) ? practiceRuleById[ruleIds[0]] : undefined;
@@ -1309,13 +1329,13 @@ function PracticeSession({
   }
   let streak = 0;
   for (let index = results.length - 1; index >= 0 && results[index].verdict === "correct"; index -= 1) streak += 1;
-  const kindLabel = choose ? t("Complete a frase") : t("Encontre e corrija o erro");
+  const kindLabel = choose ? t("Complete a frase") : personal ? t("Reescrita da sua entrevista") : t("Encontre e corrija o erro");
   const hintRule = exercise.ruleId ? practiceRuleById[exercise.ruleId] : undefined;
   const owningLesson = practiceLessons.find((lesson) => lesson.exercises.some((item) => item.id === exercise.id || (exercise.ruleId && item.ruleId === exercise.ruleId)));
-  const blocks = spot ? toBlocks(exercise.sentence) : [];
+  const blocks = editable ? toBlocks(exercise.sentence) : [];
   const activeOrder = wordOrder.length ? wordOrder : blocks.map(({ id }) => id);
-  const region = spot ? mistakeRegion(exercise) : { blockIds: [], correct: "", mistaken: "" };
-  const editedSentence = spot ? applyEdits(blocks, wordEdits, activeOrder) : "";
+  const region = editable ? mistakeRegion(exercise) : { blockIds: [], correct: "", mistaken: "" };
+  const editedSentence = editable ? applyEdits(blocks, wordEdits, activeOrder) : "";
   const normalizedWordEdits = normalizeEdits(blocks, wordEdits);
   const anythingChanged = Object.keys(normalizedWordEdits).length > 0 || isOrderChanged(activeOrder, blocks.map(({ id }) => id));
   const movedIds = new Set(activeOrder.filter((id, index) => id !== blocks[index]?.id));
@@ -1359,15 +1379,16 @@ function PracticeSession({
           {hintRule && <span className="tr-part-chip">{t("Parte: {label}", { label: t(hintRule.label) })}</span>}
           {mode === "focused" && exercises.slice(0, step).some((item) => item.id === exercise.id) && <span className="tr-review-tag">{t("Revisão")}</span>}
         </div>
-        {(exercise.context || exercise.meaning) && <div className="tr-exercise-prompt">{exercise.context && <p className="tr-exercise-context">{exercise.context}</p>}{exercise.meaning && <p className="tr-exercise-meaning"><q lang="pt-BR">{exercise.meaning}</q></p>}</div>}
+        {(exercise.context || (!personal && "meaning" in exercise && exercise.meaning)) && <div className="tr-exercise-prompt">{exercise.context && <p className="tr-exercise-context">{exercise.context}</p>}{!personal && "meaning" in exercise && exercise.meaning && <p className="tr-exercise-meaning"><q lang="pt-BR">{exercise.meaning}</q></p>}</div>}
         <div className="tr-instruction-row">
           <h2 id="exercise-title" className="tr-exercise-title">
-            {choose ? t(wholeSentenceOptions ? "Qual destas frases você usaria?" : "Qual opção completa a frase?") : spot ? t("Esta frase tem 1 erro de {topic}.", { topic: t(topicByLesson[owningLesson?.key ?? exercise.ruleId?.split(".")[0] ?? "other"] ?? "expressão") }) : t("Reescreva sua frase corretamente")}
+            {choose ? t(wholeSentenceOptions ? "Qual destas frases você usaria?" : "Qual opção completa a frase?") : personal ? t("Remonte sua frase corrigida") : spot ? t("Esta frase tem 1 erro de {topic}.", { topic: t(topicByLesson[owningLesson?.key ?? exercise.ruleId?.split(".")[0] ?? "other"] ?? "expressão") }) : t("Reescreva sua frase corretamente")}
           </h2>
           {hintRule && !result && <button type="button" className="tr-hint-button" aria-expanded={hintOpen} onClick={() => setHintOpen((open) => !open)}>{t("Dica")}</button>}
         </div>
         {hintRule && hintOpen && !result && <div className="tr-hint-content"><p className="tr-mini-label">{t("Fórmula")}</p><p className="tr-pattern">{t(hintRule.pattern)}</p><p className="tr-mini-label">{t("Quando usar")}</p><p>{t(hintRule.when)}</p></div>}
-        {spot && !result && <p className="tr-word-instruction">{t("Toque na palavra errada e corrija só ela")}</p>}
+        {editable && !result && <p className="tr-word-instruction">{t("Toque na palavra errada e corrija só ela")}</p>}
+        {personal && <p className="tr-exercise-context mt-3">{t("Frase que você usou na entrevista")}</p>}
         <blockquote className="tr-source" lang="en">
           {choose
             ? exercise.sentence.split("___").map((part, index, parts) => (
@@ -1380,7 +1401,8 @@ function PracticeSession({
                   )}
                 </span>
               ))
-            : spot && result && submittedSentence !== null ? (
+            : personal ? exercise.sentence
+            : editable && result && submittedSentence !== null ? (
               <span className="tr-word-sentence tr-word-sentence-submitted" aria-label={submittedSentence}>
                 {activeOrder.map((id) => {
                   const block = blocks.find((item) => item.id === id);
@@ -1393,7 +1415,7 @@ function PracticeSession({
                 })}
                 {submittedSentence.match(/[.!?]+$/u)?.[0] ?? ""}
               </span>
-            ) : spot && !result ? (
+            ) : editable && !result ? (
               <span className="tr-word-sentence" aria-label={editedSentence}>
                 <SpotSentenceEditor
                   sentence={blocks}
@@ -1408,12 +1430,19 @@ function PracticeSession({
               </span>
             ) : exercise.sentence}
         </blockquote>
-        {spot && !result && <>
+        {personal && !result && <PersonalWordBank
+          key={`${personalExercise?.id}-${step}`}
+          sentence={personalExercise?.answer ?? ""}
+          seed={`${personalExercise?.id}:${step}`}
+          disabled={grading}
+          onSubmit={(phrase) => { setSubmittedSentence(phrase); onSubmit(phrase); }}
+        />}
+        {editable && !result && <>
           <p className="sr-only" aria-live="polite">{announcement}</p>
           <div className="tr-word-actions">
             <button className={`ds-btn ${hasEditedOnce ? "ds-btn-cta-green tr-verify-ready" : "ds-btn-soft"}`} disabled={grading || !anythingChanged} onClick={() => { setSubmittedSentence(editedSentence); onSubmit(editedSentence, assisted); }}>{grading ? t("Avaliando…") : t("Verificar")}</button>
             {anythingChanged && <button type="button" className="tr-text-action" disabled={grading} onClick={() => { setWordEdits({}); setWordOrder([]); setHasEditedOnce(false); setAnnouncement(exercise.sentence); }}>{t("Desfazer tudo")}</button>}
-            <button className="tr-text-action" disabled={grading} onClick={() => setHelpOpen((open) => !open)}>{t("Não sei — ver alternativas")}</button>
+            {spot && <button className="tr-text-action" disabled={grading} onClick={() => setHelpOpen((open) => !open)}>{t("Não sei — ver alternativas")}</button>}
           </div>
           {helpOpen && <div className="tr-alternatives" role="group" aria-label={t("Alternativas para a parte destacada")}>
             {alternatives.map((option) => <button type="button" key={`${option.value}:${option.label}`} className="tr-alternative" onClick={() => { const ids = region.blockIds; const words = option.value.trim().split(/\s+/u); const replacement = ids.map((_, index) => [ids[index], index === ids.length - 1 ? words.slice(index).join(" ") : (words[index] ?? "")]); const edits = Object.fromEntries([...Object.entries(wordEdits), ...replacement]); setWordEdits(edits); setHasEditedOnce(true); setAssisted(true); setAnnouncement(applyEdits(blocks, edits, activeOrder)); }}>{option.label}</button>)}
@@ -1437,7 +1466,7 @@ function PracticeSession({
               </button>
             ))}
           </div>
-        ) : !spot && !result ? <AnswerForm value={answer} disabled={grading} error={error} onChange={onAnswer} onSubmit={onSubmit} onVoiceAnswer={onVoiceAnswer} onVoiceError={onVoiceError} /> : null}
+        ) : !spot && !personal && !result ? <AnswerForm value={answer} disabled={grading} error={error} onChange={onAnswer} onSubmit={onSubmit} onVoiceAnswer={onVoiceAnswer} onVoiceError={onVoiceError} /> : null}
         {choose && !result && <p className="tr-keys-hint">{t("Atalho: teclas 1 a {count}", { count: exercise.options?.length ?? 0 })}</p>}
       </div>
       {result && (
@@ -1452,6 +1481,48 @@ function PracticeSession({
         />
       )}
     </section>
+  );
+}
+
+function PersonalWordBank({ sentence, seed, disabled, onSubmit }: {
+  sentence: string;
+  seed: string;
+  disabled: boolean;
+  onSubmit: (phrase: string) => void;
+}) {
+  const tokens = useMemo(() => shuffledPersonalWordBank(sentence, seed), [sentence, seed]);
+  const [order, setOrder] = useState<number[]>([]);
+  const placed = new Set(order);
+  const complete = order.length === tokens.length;
+  const answer = complete ? composePersonalWordBank(sentence, order) : "";
+  const labelFor = (token: (typeof tokens)[number]) => `${token.text}${token.trailing.replace(/\s/gu, "")}`;
+  return (
+    <div className="tr-personal-bank">
+      <p className="tr-word-instruction">{t("Toque nas palavras para montar a frase corrigida. A resposta é avaliada neste dispositivo.")}</p>
+      <div className="tr-personal-token-bank" role="group" aria-label={t("Palavras disponíveis") }>
+        {tokens.filter((token) => !placed.has(token.id)).map((token) => (
+          <button className="btn btn-ghost btn-sm tr-personal-token" type="button" key={token.id} disabled={disabled} onClick={() => setOrder((current) => [...current, token.id])}>
+            <span lang="en">{labelFor(token)}</span>
+          </button>
+        ))}
+        {placed.size === tokens.length && <span className="ds-small">{t("Todas as palavras foram usadas")}</span>}
+      </div>
+      <div className="tr-personal-answer" role="group" aria-label={t("Sua frase montada")} aria-live="polite">
+        {order.map((id) => {
+          const token = tokens.find((item) => item.id === id);
+          if (!token) return null;
+          return (
+            <button className="btn btn-soft btn-sm tr-personal-token is-placed" type="button" key={id} disabled={disabled} aria-label={t("Remover palavra {word}", { word: labelFor(token) })} onClick={() => setOrder((current) => current.filter((item) => item !== id))}>
+              <span lang="en">{labelFor(token)}</span>
+            </button>
+          );
+        })}
+        {!order.length && <span className="ds-small">{t("Sua resposta aparece aqui")}</span>}
+      </div>
+      <button className="ds-btn ds-btn-cta-green mt-4" type="button" disabled={disabled || !complete} onClick={() => onSubmit(answer)}>
+        {disabled ? t("Avaliando…") : t("Verificar")}
+      </button>
+    </div>
   );
 }
 
@@ -1815,7 +1886,7 @@ function PracticeFeedback({
           const start = correctedRegion ? result.corrected.toLocaleLowerCase().indexOf(correctedRegion.toLocaleLowerCase()) : -1;
           return start < 0 ? result.corrected : <>{result.corrected.slice(0, start)}<mark className="tr-corrected-region">{result.corrected.slice(start, start + correctedRegion.length)}</mark>{result.corrected.slice(start + correctedRegion.length)}</>;
         })()}</span>
-        <SpeakButton phrase={result.corrected} onPlay={onPlay} />
+        {exercise.kind !== "personal" && <SpeakButton phrase={result.corrected} onPlay={onPlay} />}
       </div>
       {rule && result.verdict !== "correct" && (
         <aside className="tr-rule-mini">
