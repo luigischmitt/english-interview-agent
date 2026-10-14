@@ -12,16 +12,17 @@ import { createSpeechServices } from "../speech/speech-services.js";
 import type { ClosingReactionService } from "../thinking/closing-reaction-service.js";
 import type { PracticeService } from "../thinking/practice-service.js";
 import type { SpeculativeTurnAnalysisService } from "../thinking/speculative-turn-analysis-service.js";
+import type { StudyPlanService } from "../thinking/study-plan-service.js";
 import type { InterviewOrchestrationService, InterviewReportService, JobDirectionService, ResumeDirectionService, ThinkingService } from "../thinking/types.js";
 import type { JobDirectionUserLimit } from "../thinking/job-direction-user-limit.js";
 import type { TranscriptionService } from "../transcription/types.js";
 
-export function createApiRouter(provider: SpeechProvider, config: SpeechConfig, transcriptionService: TranscriptionService, thinkingService: ThinkingService | null, orchestrationService: InterviewOrchestrationService, reportService: InterviewReportService | null, jobDirectionService: JobDirectionService | null, resumeDirectionService: ResumeDirectionService | null, jobDirectionUserLimit: JobDirectionUserLimit, clientEventLogger?: (line: string) => void, speculativeService: SpeculativeTurnAnalysisService | null = null, speculativeEnabled = false, closingReactionService: ClosingReactionService | null = null, practiceService: PracticeService | null = null) {
+export function createApiRouter(provider: SpeechProvider, config: SpeechConfig, transcriptionService: TranscriptionService, thinkingService: ThinkingService | null, orchestrationService: InterviewOrchestrationService, reportService: InterviewReportService | null, jobDirectionService: JobDirectionService | null, resumeDirectionService: ResumeDirectionService | null, jobDirectionUserLimit: JobDirectionUserLimit, clientEventLogger?: (line: string) => void, speculativeService: SpeculativeTurnAnalysisService | null = null, speculativeEnabled = false, closingReactionService: ClosingReactionService | null = null, practiceService: PracticeService | null = null, studyPlanService: StudyPlanService | null = null) {
   const apiRouter = Router();
   const speechServices = createSpeechServices(provider, config);
 
   apiRouter.use("/transcriptions", createTranscriptionRouter(transcriptionService));
-  apiRouter.use("/thinking", createThinkingRouter(thinkingService, orchestrationService, reportService, jobDirectionService, resumeDirectionService, jobDirectionUserLimit, speechServices.prefetcher, speculativeService, speculativeEnabled, closingReactionService));
+  apiRouter.use("/thinking", createThinkingRouter(thinkingService, orchestrationService, reportService, jobDirectionService, resumeDirectionService, jobDirectionUserLimit, speechServices.prefetcher, speculativeService, speculativeEnabled, closingReactionService, studyPlanService));
   apiRouter.use("/practice", createPracticeRouter(practiceService));
   apiRouter.use("/formulations", formulationRouter);
   apiRouter.use("/client-events", createClientEventsRouter(clientEventLogger));
