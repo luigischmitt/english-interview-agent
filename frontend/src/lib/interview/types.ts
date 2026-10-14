@@ -7,6 +7,8 @@ export type InterviewConfig = {
   duration: string;
   questionCount: string | null;
   playInterviewerAudio: boolean;
+  /** Show the animated toucan interviewer in the room; false keeps only the static TUC mark. */
+  showInterviewerCharacter: boolean;
   showQuestionCaptions: boolean;
   candidateCameraEnabled: boolean;
   autoCaptureVoice: boolean;

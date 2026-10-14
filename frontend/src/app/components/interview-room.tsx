@@ -1621,6 +1621,7 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
             advancing={isAdvancing}
             caption={showInterviewerCaption ? interviewerCaption : null}
             avatarState={acknowledgementPlaying ? "speaking" : toucanStateFor({ phase, audioPlaying: config.playInterviewerAudio && !speechMessage })}
+            showCharacter={config.showInterviewerCharacter !== false}
             speechFeed={speechFeed}
             candidateLevelRef={meter.levelRef}
           />

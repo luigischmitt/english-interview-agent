@@ -11,7 +11,7 @@ const memoryStorage = () => {
 };
 const config = {
   role: "Backend Engineer", seniority: "mid-level", focus: "technical-depth", duration: "15", questionCount: null,
-  playInterviewerAudio: true, showQuestionCaptions: false, candidateCameraEnabled: false, autoCaptureVoice: true,
+  playInterviewerAudio: true, showInterviewerCharacter: true, showQuestionCaptions: false, candidateCameraEnabled: false, autoCaptureVoice: true,
 };
 
 test("the chosen device persists, clears and survives broken storage", () => {

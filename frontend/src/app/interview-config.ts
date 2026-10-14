@@ -12,4 +12,5 @@ export const defaultInterviewConfig: InterviewConfig = {
   questionCount: null,
   ...defaultCandidateVoicePreferences,
   ...defaultInterviewRoomPreferences,
+  showInterviewerCharacter: true,
 };

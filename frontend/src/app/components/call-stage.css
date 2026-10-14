@@ -117,6 +117,23 @@
 .mt-avatar::before { content: ""; position: absolute; inset: -10px; border-radius: inherit; background: var(--mt-accent); opacity: 0; transform: scale(0.92); }
 .mt-mark { width: auto; height: 56%; }
 .mt-avatar-you { background: var(--mt-avatar-you); color: var(--mt-text); }
+.mt-static-center { pointer-events: none; }
+.mt-static-badge {
+  display: inline-flex;
+  width: clamp(4.5rem, 18vw, 7rem);
+  aspect-ratio: 1;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--mt-text) 14%, transparent);
+  border-radius: 50%;
+  background: var(--mt-avatar);
+}
+.mt-static-mark {
+  display: block;
+  width: 68%;
+  height: 68%;
+  object-fit: contain;
+}
 
 .mt-name { position: absolute; left: 12px; bottom: 12px; z-index: 4; display: inline-flex; align-items: center; gap: 8px; border-radius: 9999px; background: var(--mt-chip-bg, var(--mt-caption-bg)); color: var(--mt-caption-text); padding: 5px 12px; font-size: 0.8125rem; font-weight: 600; }
 
