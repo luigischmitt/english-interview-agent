@@ -53,6 +53,7 @@ type Grade = {
   verdict: "correct" | "almost" | "incorrect";
   feedback: string;
   corrected: string;
+  submittedAnswer?: string;
   why?: string | null;
   assisted?: boolean;
 };
@@ -358,6 +359,7 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
       const grade: Grade = {
         ...local,
         feedback,
+        submittedAnswer: cleanAnswer,
         why: exercise.why,
         assisted,
       };
@@ -1224,14 +1226,11 @@ function PracticeSession({
   const personal = Boolean(personalExercise);
   const editable = spot;
   const lessonTitle = t(practiceLessonByKey[theme.theme_key]?.title ?? theme.title);
-  const ruleIds = [...new Set(exercises.map((item) => item.ruleId).filter((id): id is string => Boolean(id)))];
-  const partRule = mode !== "mine" && ruleIds.length === 1 && exercises.every((item) => item.ruleId === ruleIds[0]) ? practiceRuleById[ruleIds[0]] : undefined;
-  const sessionTitle = mode === "mine" ? t("Seus erros · todas as aulas") : partRule
-    ? t("Parte: {label}", { label: t(partRule.label) })
+  const sessionTitle = mode === "mine" ? t("Seus erros · todas as aulas") : mode === "focused"
+    ? lessonTitle
     : t("Aula inteira: {lesson}", { lesson: lessonTitle });
   const practiceRef = useRef<HTMLElement | null>(null);
   const lastStep = useRef(step);
-  const [hintOpen, setHintOpen] = useState(false);
   const [wordEdits, setWordEdits] = useState<Record<number, string>>({});
   const [wordOrder, setWordOrder] = useState<number[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -1248,7 +1247,6 @@ function PracticeSession({
   useEffect(() => {
     if (lastStep.current === step) return;
     lastStep.current = step;
-    setHintOpen(false);
     setHasEditedOnce(false);
     setWordEdits({}); setHelpOpen(false); setAssisted(false);
     setWordOrder([]);
@@ -1308,8 +1306,6 @@ function PracticeSession({
   let streak = 0;
   for (let index = results.length - 1; index >= 0 && results[index].verdict === "correct"; index -= 1) streak += 1;
   const kindLabel = choose ? t("Complete a frase") : personal ? t("Reescrita da sua entrevista") : t("Encontre e corrija o erro");
-  const hintRule = exercise.ruleId ? practiceRuleById[exercise.ruleId] : undefined;
-  const owningLesson = practiceLessons.find((lesson) => lesson.exercises.some((item) => item.id === exercise.id || (exercise.ruleId && item.ruleId === exercise.ruleId)));
   const blocks = editable ? toBlocks(exercise.sentence) : [];
   const activeOrder = wordOrder.length ? wordOrder : blocks.map(({ id }) => id);
   const region = editable ? mistakeRegion(exercise) : { blockIds: [], correct: "", mistaken: "" };
@@ -1318,10 +1314,6 @@ function PracticeSession({
   const anythingChanged = Object.keys(normalizedWordEdits).length > 0 || isOrderChanged(activeOrder, blocks.map(({ id }) => id));
   const movedIds = new Set(activeOrder.filter((id, index) => id !== blocks[index]?.id));
   const wholeSentenceOptions = Boolean(choose && /___\s*$/u.test(exercise.sentence) && exercise.options?.length && exercise.options.every((option) => /[.!?]\s*$/u.test(option)));
-  const topicByLesson: Record<string, string> = {
-    prepositions: "preposição", articles: "artigo", "verb-tenses": "tempo verbal", "verb-forms": "forma do verbo",
-    "word-choice": "vocabulário", "sentence-structure": "estrutura da frase", "plural-agreement": "plural/concordância", other: "expressão",
-  };
   return (
     <section className="tr-panel tr-practice" ref={practiceRef} aria-labelledby="exercise-title">
       <div className="tr-practice-top">
@@ -1354,17 +1346,14 @@ function PracticeSession({
       <div className="tr-exercise-card" key={exercise.id}>
         <div className="tr-exercise-meta">
           <span className="tr-exercise-kind">{kindLabel}</span>
-          {hintRule && <span className="tr-part-chip">{t("Parte: {label}", { label: t(hintRule.label) })}</span>}
           {mode === "focused" && exercises.slice(0, step).some((item) => item.id === exercise.id) && <span className="tr-review-tag">{t("Revisão")}</span>}
         </div>
         {(exercise.context || (!personal && "meaning" in exercise && exercise.meaning)) && <div className="tr-exercise-prompt">{exercise.context && <p className="tr-exercise-context">{exercise.context}</p>}{!personal && "meaning" in exercise && exercise.meaning && <p className="tr-exercise-meaning"><q lang="pt-BR">{exercise.meaning}</q></p>}</div>}
         <div className="tr-instruction-row">
           <h2 id="exercise-title" className="tr-exercise-title">
-            {choose ? t(wholeSentenceOptions ? "Qual destas frases você usaria?" : "Qual opção completa a frase?") : personal ? t("Remonte sua frase corrigida") : spot ? t("Esta frase tem 1 erro de {topic}.", { topic: t(topicByLesson[owningLesson?.key ?? exercise.ruleId?.split(".")[0] ?? "other"] ?? "expressão") }) : t("Reescreva sua frase corretamente")}
+            {choose ? t(wholeSentenceOptions ? "Qual destas frases você usaria?" : "Qual opção completa a frase?") : personal ? t("Remonte sua frase corrigida") : spot ? t("Esta frase tem 1 erro.") : t("Reescreva sua frase corretamente")}
           </h2>
-          {hintRule && !result && <button type="button" className="tr-hint-button" aria-expanded={hintOpen} onClick={() => setHintOpen((open) => !open)}>{t("Dica")}</button>}
         </div>
-        {hintRule && hintOpen && !result && <div className="tr-hint-content"><p className="tr-mini-label">{t("Fórmula")}</p><p className="tr-pattern">{t(hintRule.pattern)}</p><p className="tr-mini-label">{t("Quando usar")}</p><p>{t(hintRule.when)}</p></div>}
         {editable && !result && <p className="tr-word-instruction">{t("Toque na palavra errada e corrija só ela")}</p>}
         {personal && <p className="tr-exercise-context mt-3">{t("Frase que você usou na entrevista")}</p>}
         <blockquote className="tr-source" lang="en">
@@ -1839,6 +1828,7 @@ function PracticeFeedback({
   onPlay: (phrase: string) => void;
 }) {
   const rule = exercise.ruleId ? practiceRuleById[exercise.ruleId] : undefined;
+  const rationale = result.why ?? exercise.why ?? rule?.when ?? rule?.tip;
   const nextRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     nextRef.current?.focus({ preventScroll: true });
@@ -1851,7 +1841,17 @@ function PracticeFeedback({
         <p className="ds-body">{result.feedback}</p>
         {result.assisted && <span className="tr-helped-tag">{t("Com ajuda")}</span>}
       </div>
-      {(result.why || exercise.why) && <p className="tr-feedback-why">{t(result.why ?? exercise.why ?? "")}</p>}
+      {rationale && (
+        <p className="tr-feedback-why">
+          {result.verdict === "correct"
+            ? t(rationale)
+            : t("A forma correta é “{corrected}”. {why} Sua resposta (“{submitted}”) não se encaixa nessa regra neste contexto.", {
+                corrected: result.corrected,
+                why: t(rationale),
+                submitted: result.submittedAnswer ?? "",
+              })}
+        </p>
+      )}
       {error && (
         <p className="tr-form-error mt-3" role="status">
           {error}
