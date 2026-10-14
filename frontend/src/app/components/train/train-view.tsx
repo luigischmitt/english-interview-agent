@@ -590,9 +590,9 @@ function PersonalPractice({
         {examples.map((part) => (
           <span key={`${part.lessonKey}-${part.ruleId}`} className="tr-mine-example">
             <span className="tr-mine-rule">{t(part.label)}</span>
-            <q>{shortEvidence(part.latest.evidence)}</q>
+            <q>{shortEvidence(part.latest.evidence ?? "")}</q>
             <span aria-hidden="true">→</span>
-            <q>{shortEvidence(part.latest.rephrased)}</q>
+            <q>{shortEvidence(part.latest.rephrased ?? "")}</q>
           </span>
         ))}
       </span>
