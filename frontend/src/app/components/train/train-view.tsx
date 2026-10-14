@@ -43,6 +43,7 @@ import { sortPracticeGroups } from "@/lib/practice/practice-sync.mjs";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { getCurrentLocale, t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
+import { LessonVisualDemo } from "./lesson-visual-demo";
 import { alternativesFor, applyEdits, dragReducer, gapsFromRects, nearestGap, orderFromGap, isOrderChanged, mistakeRegion, normalizeEdits, reorder, toBlocks, type DragState, type WordGap } from "@/lib/practice/word-blocks.mjs";
 import "./train.css";
 
@@ -859,6 +860,7 @@ function ThemeDetail({
                 </p>
                 <p>{t(lesson.overview.model)}</p>
               </section>
+              <LessonVisualDemo lessonKey={lesson.key} />
               <section className="tr-rule-section" aria-labelledby="overview-map">
                 <p id="overview-map" className="tr-mini-label">
                   {t("Mapa da aula")}
