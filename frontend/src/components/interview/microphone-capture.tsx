@@ -14,6 +14,7 @@ import { finalVoiceTranscription, transcriptionFailureMessage } from "@/lib/inte
 import { nextAutoStartSignal } from "@/lib/interview/session-policy.mjs";
 import { MAX_SPECULATIVE_REVISIONS } from "@/lib/interview/speculative-epoch.mjs";
 import type { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
+import { validateAssessmentDetails, type AssessmentDetails } from "@/lib/interview/assessment-details.mjs";
 
 type RecorderStatus = "idle" | "requesting" | "recording" | "finalizing" | "error";
 export type VoiceCaptureState = "idle" | "requesting" | "listening" | "detected" | "finalizing" | "ready" | "unavailable";
@@ -27,6 +28,9 @@ type StreamMessage = {
   message?: string;
   features?: { pronunciationAssessment?: boolean };
   scores?: { accuracy: number | null; fluency: number | null; prosody: number | null };
+  sentences?: unknown;
+  delivery?: unknown;
+  clips?: unknown;
   durationMs?: number;
   segmented?: boolean;
   reason?: string;
@@ -61,7 +65,7 @@ type HandoffTimingEvent = "finalizing" | "transcription-queued" | "transcription
 export type VoiceAssessmentState =
   | { status: "pending" }
   | { status: "unavailable"; segmented?: boolean; reason?: string; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] }
-  | { status: "available"; segmented: true; durationMs: number; scores: { accuracy: number | null; fluency: number | null; prosody: number | null }; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] };
+  | { status: "available"; segmented: true; durationMs: number; scores: { accuracy: number | null; fluency: number | null; prosody: number | null }; sentences?: AssessmentDetails["sentences"]; delivery?: AssessmentDetails["delivery"]; clips?: AssessmentDetails["clips"]; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] };
 
 type AssessmentContext = { questionLabel: string; sequenceNumber: number; /** Answer window within the question; changes after a clarification request. */ round?: number };
 
@@ -333,8 +337,9 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     if (message.type === "assessment") {
       attempt.awaitingAssessment = false;
       assessmentSockets.finish(attemptId, socket as unknown as WebSocket);
-      const received: VoiceAssessmentState = message.status === "available" && message.scores
-        ? { status: "available", segmented: true, durationMs: message.durationMs ?? 0, scores: message.scores, blockCount: message.blockCount, assessedBlockCount: message.assessedBlockCount, failedBlockCount: message.failedBlockCount, diagnostics: message.diagnostics }
+      const scores = message.scores && [message.scores.accuracy, message.scores.fluency, message.scores.prosody].every((score) => score === null || typeof score === "number" && Number.isFinite(score) && score >= 0 && score <= 100) ? message.scores : null;
+      const received: VoiceAssessmentState = message.status === "available" && scores
+        ? { status: "available", segmented: true, durationMs: typeof message.durationMs === "number" && Number.isFinite(message.durationMs) && message.durationMs >= 0 ? message.durationMs : 0, scores, ...validateAssessmentDetails(message), blockCount: message.blockCount, assessedBlockCount: message.assessedBlockCount, failedBlockCount: message.failedBlockCount, diagnostics: message.diagnostics }
         : { status: "unavailable", segmented: message.segmented === true, reason: message.reason, blockCount: message.blockCount, assessedBlockCount: message.assessedBlockCount, failedBlockCount: message.failedBlockCount, diagnostics: message.diagnostics };
       onAssessmentChangeRef.current?.(attemptId, received, attemptAssessmentContext);
       attempt.stream.release();

@@ -11,8 +11,10 @@ sessions, their ordered turns, and one final-feedback record per interview.
   summaries with sample counts, and structured final analysis.
 - Tables use UUID identifiers and ownership-based Row Level Security.
 - Turns are deleted automatically when their interview is deleted.
-- Feedback is deleted automatically with its interview. It contains no audio or
-  full transcript copy; short excerpts may appear as analysis evidence.
+- Feedback is deleted automatically with its interview. It contains no full
+  transcript copy; short excerpts may appear as analysis evidence. Up to two
+  short WebM clips (the worst sentences, up to 10 seconds per answer) are stored
+  privately per answer and are subject to a 30-day client-side purge.
 
 Authentication, login screens, and session handling are intentionally outside
 this migration and belong to the following authentication issue.

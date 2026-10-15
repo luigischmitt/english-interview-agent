@@ -5,6 +5,7 @@ import { useLocale, t } from "@/lib/locale";
 import { useEffect, useMemo, useState } from "react";
 import { Play } from "lucide-react";
 import { loadProgressRecords } from "@/lib/interview/persistence";
+import { purgeExpiredAnswerClips } from "@/lib/interview/answer-clips";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { buildProgressInsights, sessionDurationMs } from "@/lib/interview/progress-insights.mjs";
 import type { InterviewReportResult } from "@/lib/interview/report";
@@ -34,6 +35,8 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+
+  useEffect(() => { void purgeExpiredAnswerClips(); }, []);
 
   useEffect(() => {
     let active = true;
@@ -77,7 +80,7 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
   const historicalReport = selectedSession?.feedback?.analysis as InterviewReportResult | undefined;
   const historicalAzureSummary = selectedSession?.feedback?.azureSummary ?? emptyAzureSummary;
   const historicalDuration = selectedSession ? sessionDurationMs(selectedSession) : null;
-  const historicalAssessmentCount = Math.max(0, ...Object.values(historicalAzureSummary).map((metric) => metric.sampleCount));
+  const historicalAssessmentCount = Math.max(0, ...[historicalAzureSummary.accuracy, historicalAzureSummary.fluency, historicalAzureSummary.prosody].map((metric) => metric.sampleCount));
   const historicalConfig: InterviewConfig | null = selectedSession ? {
     role: selectedSession.targetRole,
     seniority: selectedSession.seniority ?? "",

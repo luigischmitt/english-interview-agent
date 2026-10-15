@@ -32,6 +32,20 @@ export function summarizeAzureAssessments(assessments) {
   return summary;
 }
 
+/** Persist only bounded per-answer assessment data; audio payloads are replaced with storage paths. */
+export function buildAzureAnswerRecords(entries, clipPaths = {}) {
+  return entries.flatMap((entry) => {
+    const state = entry?.state;
+    if (!Number.isSafeInteger(entry?.sequenceNumber) || entry.sequenceNumber < 1 || state?.status !== "available") return [];
+    return [{ sequenceNumber: entry.sequenceNumber, scores: state.scores, durationMs: state.durationMs,
+      ...(state.delivery ? { delivery: state.delivery } : {}), ...(state.sentences ? { sentences: state.sentences } : {}),
+      ...(state.clips?.length ? { clips: state.clips.flatMap((clip) => {
+        const path = clipPaths[`${entry.sequenceNumber}:${clip.sentenceIndex}`];
+        return path ? [{ sentenceIndex: clip.sentenceIndex, startMs: clip.startMs, endMs: clip.endMs, path }] : [];
+      }) } : {}) }];
+  }).sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+}
+
 /**
  * How much a dimension's mean can be trusted, from the assessed speech behind it.
  * "none": no score. "insufficient": too little audio, hide the number. "limited": show it with a caution.

@@ -30,4 +30,4 @@ export function resolveReportAtEnd<T extends { sequenceNumber: number }, A, R>(o
   signal?: AbortSignal;
   exhausted?: Set<number>;
   onEvent?: (event: string, details: Record<string, number>) => void;
-}): Promise<{ result: R; path: "incremental" | "fallback"; missingAtEnd: number; recoveredAtEnd: number }>;
+}): Promise<{ result: R; path: "incremental" | "fallback"; missingAtEnd: number; recoveredAtEnd: number; turns: A[] }>;
