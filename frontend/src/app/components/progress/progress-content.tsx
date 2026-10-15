@@ -4,7 +4,7 @@
 import { getCurrentLocale, t } from "@/lib/locale";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Dumbbell, Target } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Target } from "lucide-react";
 import { minAnswersForProfile, minSessionsForTrends, voiceDimensionCopy } from "@/lib/interview/progress-insights.mjs";
 import type {
   ProgressCommonError,
@@ -497,11 +497,10 @@ export function SessionHistory({ sessions, onOpenReport }: { sessions: ProgressS
 
 /* ------------------------------------------------------------------- Page */
 
-export function ProgressContent({ insights, onTrain, onOpenReport }: { insights: ProgressInsights; onTrain?: () => void; onOpenReport?: (sessionId: string) => void }) {
+export function ProgressContent({ insights, onOpenReport }: { insights: ProgressInsights; onOpenReport?: (sessionId: string) => void }) {
   return (
     <div className="pg-stack mt-8 gap-10 lg:mt-10">
       <ProgressHero insights={insights} />
-      <section className="ds-card flex flex-col items-start justify-between gap-4 p-5 sm:flex-row sm:items-center sm:p-6"><div><h2 className="ds-h2">{t("Seus grupos de treino ficam em Treinar")}</h2><p className="ds-small mt-1">{t("Abra os grupos para praticar com exercícios curtos.")}</p></div>{onTrain && <button type="button" className="ds-btn ds-btn-soft shrink-0" onClick={onTrain}><Dumbbell className="size-4" aria-hidden="true" />{t("Abrir Treinar")}</button>}</section>
       <div className="pg-stack">
         <EvolutionChart insights={insights} />
         <WeeklyChart insights={insights} />

@@ -26,7 +26,7 @@ function formatClock(seconds: number) {
   return `${String(Math.floor(safeSeconds / 60)).padStart(2, "0")}:${String(safeSeconds % 60).padStart(2, "0")}`;
 }
 
-export function ProgressView({ onStart, onTrain }: { onStart?: () => void; onTrain?: () => void } = {}) {
+export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
   const { locale } = useLocale();
   const cachedRecords = readDashboardCache("progress") as ProgressRecord[] | undefined;
   const [records, setRecords] = useState<ProgressRecord[]>(() => cachedRecords ?? []);
@@ -139,7 +139,7 @@ export function ProgressView({ onStart, onTrain }: { onStart?: () => void; onTra
       ) : (
         <>
           <div hidden={!!selectedSession}>
-            <ProgressContent insights={insights} onTrain={onTrain} onOpenReport={setSelectedSessionId} />
+            <ProgressContent insights={insights} onOpenReport={setSelectedSessionId} />
           </div>
           {selectedSession && historicalReport && historicalConfig && (
             <div className="mt-8 lg:mt-10">

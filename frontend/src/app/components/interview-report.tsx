@@ -10,13 +10,11 @@ import { reportTechnicalFocus } from "@/lib/interview/personalization.mjs";
 import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { RESUME_PRACTICE_LABEL } from "@/lib/interview/resume-neutral.mjs";
 import { deriveMainPoints, toSecondPerson } from "@/lib/interview/report-main-points.mjs";
-import type { ReportSuggestion } from "@/lib/practice/report-suggestions.mjs";
 import { AzureVoiceReport } from "./azure-voice-report";
 import "./interview-report.css";
 
 export type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
 type Turns = ReturnType<typeof pairInterviewTurns>;
-export type PracticeSuggestionsState = { status: "idle" | "loading" | "ready"; items: ReportSuggestion[] };
 type EvidenceCounts = NonNullable<InterviewReportResult["evidenceReview"]>["englishPatterns"];
 
 const enter = (index: number) => ({ "--i": index }) as CSSProperties;
@@ -132,26 +130,7 @@ function MainPoints({ main, result, turns }: { main: ReturnType<typeof deriveMai
   );
 }
 
-function PracticeSuggestions({ state, onOpen }: { state: PracticeSuggestionsState; onOpen: (href: string) => void }) {
-  if (state.status === "loading") return <p className="rp-suggest-loading mt-5" role="status">{t("Separando o que treinar…")}</p>;
-  if (!state.items.length) return null;
-  return (
-    <div className="rp-suggest mt-5">
-      <h3 className="rp-suggest-title">{t("Treine isto agora")}</h3>
-      <ul className="rp-suggest-list">
-        {state.items.map((item, index) => (
-          <li key={`${item.lessonKey}-${item.ruleId ?? ""}`} className="rp-suggest-card" style={enter(index)}>
-            <p className="rp-suggest-where">{t(item.lessonTitle)}{item.partLabel ? <> · {t(item.partLabel)}</> : null}</p>
-            <p className="rp-fix" lang="en"><span className="rp-suggest-from">{item.evidence}</span> <span aria-hidden="true">→</span><span className="sr-only">{t("melhor:")}</span> <span className="rp-suggest-to">{item.rephrased}</span></p>
-            <button type="button" className="ds-btn ds-btn-soft rp-suggest-btn" onClick={() => onOpen(item.href)}><Dumbbell className="size-4" aria-hidden="true" />{t("Estudar esta parte")}</button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPractice, practiceSuggestions, focus, focusDisclosure, historical }: { onOpenPractice?: (href: string) => void; practiceSuggestions?: PracticeSuggestionsState; result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onTrain?: () => void; focus: { focus: string; priorSessionCount: number } | null; focusDisclosure: string | null; historical: boolean }) {
+function ReadyReport({ result, turns, azureSummary, coverage, focus, focusDisclosure, historical }: { result: InterviewReportResult; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; focus: { focus: string; priorSessionCount: number } | null; focusDisclosure: string | null; historical: boolean }) {
   const main = deriveMainPoints(result);
   return (
     <div className="rp-stack">
@@ -198,8 +177,6 @@ function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPra
             ))}
           </ol>
           ) : <p className="rp-priority-empty">{t(emptyReportEvidenceMessage(result.evidenceReview?.priorities))}</p>}
-        {onOpenPractice && practiceSuggestions && <PracticeSuggestions state={practiceSuggestions} onOpen={onOpenPractice} />}
-        {result.englishCommunication.patterns.length > 0 && onTrain && !(practiceSuggestions?.status === "ready" && practiceSuggestions.items.length > 0 && onOpenPractice) && <button type="button" className="ds-btn ds-btn-cta mt-5" onClick={onTrain}><Dumbbell className="size-4" aria-hidden="true" />{t("Treinar meus erros")}</button>}
       </section>
 
       <details className="rp-more ds-enter" style={enter(5)}>
@@ -250,7 +227,7 @@ function ReadyReport({ result, turns, azureSummary, coverage, onTrain, onOpenPra
   );
 }
 
-export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave, onTrain, onOpenPractice, practiceSuggestions, progressRecords, currentInterviewId, historical = false }: {
+export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave, progressRecords, currentInterviewId, historical = false }: {
   config: InterviewConfig;
   elapsed: string;
   totalClock: string;
@@ -267,9 +244,6 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
   azureSummary: AzureMetricSummary;
   coverage: { available: number; pending: number; total: number };
   onLeave: () => void;
-  onTrain?: () => void;
-  onOpenPractice?: (href: string) => void;
-  practiceSuggestions?: PracticeSuggestionsState;
 }): ReactNode {
   const reportDirection = reportState.result?.jobDirection ?? config.jobDirection;
   const focus = reportState.result ? reportTechnicalFocus(reportState.result, progressRecords, config.role, currentInterviewId) : null;
@@ -321,14 +295,13 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
             <AzureVoiceReport summary={azureSummary} coverage={coverage} />
           </div>
         ) : reportState.status === "ready" && reportState.result ? (
-          <ReadyReport result={reportState.result} turns={turns} azureSummary={azureSummary} coverage={coverage} onTrain={onTrain} onOpenPractice={onOpenPractice} practiceSuggestions={practiceSuggestions} focus={focus} focusDisclosure={focusDisclosure} historical={historical} />
+          <ReadyReport result={reportState.result} turns={turns} azureSummary={azureSummary} coverage={coverage} focus={focus} focusDisclosure={focusDisclosure} historical={historical} />
         ) : null}
       </div>
 
       <div className="rp-foot">
         <p className="rp-hint">{persistenceLabel}</p>
         <div className="flex flex-wrap gap-3">
-          {reportState.result?.englishCommunication.patterns.length && onTrain ? <button type="button" className="ds-btn ds-btn-soft" onClick={onTrain}><Dumbbell className="size-4" aria-hidden="true" />{t("Treinar meus erros")}</button> : null}
           <button type="button" className="ds-btn ds-btn-cta-green rp-back" onClick={onLeave}>{t(historical ? "Voltar ao Progresso " : "Voltar ao dashboard ")}<ArrowUpRight className="ds-arrow size-4" aria-hidden="true" /></button>
         </div>
       </div>

@@ -17,7 +17,6 @@ import {
   Target,
   Video,
   Volume2,
-  Dumbbell,
 } from "lucide-react";
 
 import { SessionExpiredNotice } from "@/components/auth/session-expired-notice";
@@ -39,7 +38,6 @@ type View = "home" | "interview-setup" | "train" | "progress" | "settings";
 const primaryNavigationItems = [
   { id: "home" as const, label: "Início", icon: Home },
   { id: "interview-setup" as const, label: "Entrevista", icon: Video },
-  { id: "train" as const, label: "Treinar", icon: Dumbbell },
   { id: "progress" as const, label: "Progresso", icon: LineChart },
 ];
 
@@ -509,9 +507,6 @@ export default function App({ initialView = "home", initialLesson, initialPart }
         if (readDashboardCache("progress") === undefined) {
           tasks.push(import("@/lib/interview/persistence").then(({ loadProgressRecords }) => loadProgressRecords()));
         }
-        if (readDashboardCache("practice") === undefined) {
-          tasks.push(import("@/lib/practice/practice-store").then(({ loadPracticeGroups }) => loadPracticeGroups()));
-        }
         await Promise.all(tasks);
       } catch {
         // Prefetch is best-effort; view loaders own any user-facing errors.
@@ -524,13 +519,11 @@ export default function App({ initialView = "home", initialLesson, initialPart }
     const idleId = idleWindow.requestIdleCallback
       ? idleWindow.requestIdleCallback(() => {
           preloadView("interview-setup");
-          preloadView("train");
           preloadView("progress");
           prefetchDashboardData();
         })
       : window.setTimeout(() => {
           preloadView("interview-setup");
-          preloadView("train");
           preloadView("progress");
           prefetchDashboardData();
         }, 1200);
@@ -554,7 +547,7 @@ export default function App({ initialView = "home", initialLesson, initialPart }
           onNavigate={navigate}
           onPrefetch={(target) => {
             preloadView(target);
-            if (target === "train" || target === "progress") prefetchDashboardData();
+            if (target === "progress") prefetchDashboardData();
           }}
           sidebarExpanded={sidebarExpanded}
           onToggleSidebar={() => setSidebarExpanded((expanded) => !expanded)}
@@ -594,7 +587,7 @@ export default function App({ initialView = "home", initialLesson, initialPart }
             />
           )}
           {view === "train" && <TrainView initialLesson={initialLesson} initialPart={initialPart} onInterview={() => navigate("interview-setup")} />}
-          {view === "progress" && <ProgressView onStart={() => navigate("interview-setup")} onTrain={() => navigate("train")} />}
+          {view === "progress" && <ProgressView onStart={() => navigate("interview-setup")} />}
           {view === "settings" && <SettingsView />}
         </div>
       </div>
