@@ -88,7 +88,7 @@ const flow = (overrides) => {
 test("all analyses ready consolidates directly", async () => {
   const { calls, run } = flow({});
   const out = await run();
-  assert.deepEqual(out, { result: "consolidated", path: "incremental", missingAtEnd: 0, recoveredAtEnd: 0 });
+  assert.deepEqual(out, { result: "consolidated", path: "incremental", missingAtEnd: 0, recoveredAtEnd: 0, turns: [analysis(1), analysis(2)] });
   assert.deepEqual(calls.analyze, []); assert.equal(calls.full, 0);
 });
 

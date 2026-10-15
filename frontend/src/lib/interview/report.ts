@@ -8,6 +8,8 @@ import type { JobDirection } from "./job-direction.mjs";
 import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";
 
 export type InterviewReport = {
+  /** Optional per-answer analyses; absent on legacy reports or fallback-only reports. */
+  turns?: InterviewTurnAnalysis[];
   locale?: "pt-BR" | "en";
   /** Exact bounded setup snapshot used to direct this report; absent on legacy sessions. */
   jobDirection?: JobDirection;

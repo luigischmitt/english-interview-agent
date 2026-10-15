@@ -133,5 +133,5 @@ export async function resolveReportAtEnd({ turns, settled, analyze, consolidate,
     onEvent("incremental_skipped", { missingAtEnd, recoveredAtEnd, stillMissing: stillMissing.length });
   }
   if (!result) result = await fullReport();
-  return { result, path, missingAtEnd, recoveredAtEnd };
+  return { result, path, missingAtEnd, recoveredAtEnd, turns: turns.map((turn) => analyses.get(turn.sequenceNumber)).filter(Boolean) };
 }

@@ -69,8 +69,10 @@ prática da resposta em inglês da análise futura de áudio.
   indisponíveis e valores ausentes. A sala aguarda avaliações pendentes por até
   10 segundos ao preparar o relatório, sem bloquear a entrevista; resultados Azure tardios atualizam as
   médias e a sincronização. A tabela privada `interview_feedback`
-  persiste status, resumo Azure e análise estruturada, sem salvar áudio ou copiar
-  a transcrição completa. Se a sincronização falhar, o relatório continua visível
+  persiste status, resumo Azure e análise estruturada, sem copiar a transcrição
+  completa. Até duas frases com pior pontuação por resposta podem ser armazenadas
+  como clipes WebM de até 10 s em bucket privado, com limpeza após 30 dias iniciada
+  ao abrir Progresso. Se a sincronização falhar, o relatório continua visível
   localmente.
 
 O estado da câmera e do microfone é temporário e os tracks são encerrados ao
@@ -347,8 +349,11 @@ acumulado; não há chamadas por janelas nem texto parcial na tela. Quando a
 transcrição final não está vazia, ela fica em memória no cliente até ser
 submetida automaticamente e pode então compor o turno privado, a próxima
 decisão da entrevista e o relatório. Perguntas puladas não são persistidas. O
-app não grava áudio em disco, não o reproduz e não o salva no Supabase; os buffers temporários são
-descartados ao concluir, falhar, cancelar ou desconectar.
+app não grava a resposta completa em disco nem a reproduz; os buffers temporários
+são descartados ao concluir, falhar, cancelar ou desconectar. A avaliação pode
+enviar ao Supabase até dois clipes WebM das frases com pior pontuação por resposta
+(até 10 s por resposta), em bucket privado; o Progresso tenta removê-los após 30
+dias. Falhas de upload ou limpeza não bloqueiam a entrevista nem o relatório.
 
 Erros estruturados de captura, limite, fila ou provedor são apresentados como
 estados recuperáveis em português, com opções de nova tentativa, pular a

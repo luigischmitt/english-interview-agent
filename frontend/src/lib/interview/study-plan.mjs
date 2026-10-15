@@ -80,6 +80,7 @@ export async function requestInterviewStudyPlan(config, report, fetcher, endpoin
 
 /** Serialize the public report allowlist, including new optional fields without losing legacy compatibility. */
 export function serializeInterviewAnalysis(result) {
+  const turns = Array.isArray(result.turns) ? result.turns.filter((turn) => Number.isSafeInteger(turn?.sequenceNumber) && turn.sequenceNumber > 0 && Array.isArray(turn.technicalStrengths) && Array.isArray(turn.technicalGaps) && Array.isArray(turn.englishPatterns)).map((turn) => ({ sequenceNumber: turn.sequenceNumber, technicalStrengths: turn.technicalStrengths, technicalGaps: turn.technicalGaps, englishPatterns: turn.englishPatterns })) : [];
   const snapshot = Array.isArray(result.technicalQuestionTopics)
     ? result.technicalQuestionTopics.filter((item) => Number.isSafeInteger(item?.sequenceNumber) && item.sequenceNumber > 0 && cleanText(item.topicId, 120))
       .map(({ sequenceNumber, topicId }) => ({ sequenceNumber, topicId: topicId.trim() }))
@@ -90,6 +91,7 @@ export function serializeInterviewAnalysis(result) {
     ...(result.jobDirection ? { jobDirection: result.jobDirection } : {}),
     ...(snapshot.length ? { technicalQuestionTopics: snapshot } : {}),
     ...(studyPlan ? { studyPlan } : {}),
+    ...(turns.length ? { turns } : {}),
     evidenceReview: result.evidenceReview,
     technicalContent: result.technicalContent,
     englishCommunication: result.englishCommunication,

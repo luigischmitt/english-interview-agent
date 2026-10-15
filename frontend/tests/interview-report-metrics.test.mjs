@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { azureMetricReliability, insufficientAzureAudioMs, limitedAzureAudioMs, answerOrdinalForSequence, appendInterviewReportPair, pairInterviewTurns, summarizeAzureAssessments } from "../src/lib/interview/report-metrics.mjs";
+import { azureMetricReliability, insufficientAzureAudioMs, limitedAzureAudioMs, answerOrdinalForSequence, appendInterviewReportPair, buildAzureAnswerRecords, pairInterviewTurns, summarizeAzureAssessments } from "../src/lib/interview/report-metrics.mjs";
 
 test("Azure means ignore unavailable, pending, null, and invalid dimension values while counting valid samples", () => {
   const summary = summarizeAzureAssessments([
@@ -14,6 +14,13 @@ test("Azure means ignore unavailable, pending, null, and invalid dimension value
     fluency: { mean: 60, sampleCount: 1, totalDurationMs: null },
     prosody: { mean: 70, sampleCount: 1, totalDurationMs: null },
   });
+});
+
+test("builds bounded Azure answer records and persists clip paths without base64", () => {
+  const answers = buildAzureAnswerRecords([{ sequenceNumber: 4, state: { status: "available", durationMs: 1200, scores: scoresOf(80), delivery: { pauseCount: 2 }, sentences: [{ sentenceIndex: 0 }], clips: [{ sentenceIndex: 0, startMs: 0, endMs: 100, base64: "secret" }] } }], { "4:0": "user/interview/4-0.webm" });
+  assert.equal(answers[0].sequenceNumber, 4);
+  assert.equal(answers[0].clips[0].path, "user/interview/4-0.webm");
+  assert.equal("base64" in answers[0].clips[0], false);
 });
 
 test("Azure dimensions with no usable score have null means and zero samples", () => {

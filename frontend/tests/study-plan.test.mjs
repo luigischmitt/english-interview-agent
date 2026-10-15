@@ -120,3 +120,9 @@ test("persisted report allowlist retains optional plan and technical-topic snaps
   assert.equal("transcript" in serialized, false);
   assert.equal("model" in serialized, false);
 });
+
+test("persisted report allowlist retains per-answer turns while legacy reports remain valid", () => {
+  const turn = { sequenceNumber: 2, technicalStrengths: [], technicalGaps: [], englishPatterns: [] };
+  assert.deepEqual(serializeInterviewAnalysis({ ...report, turns: [turn] }).turns, [turn]);
+  assert.equal("turns" in serializeInterviewAnalysis(report), false);
+});

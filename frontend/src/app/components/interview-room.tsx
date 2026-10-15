@@ -20,7 +20,9 @@ import { warmProgressCacheAfterFeedbackSave } from "@/lib/interview/progress-cac
 import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
-import { appendInterviewReportPair, type AzureAssessmentSample, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
+import { appendInterviewReportPair, buildAzureAnswerRecords, type AzureAssessmentSample, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
+import { uploadAnswerClip } from "@/lib/interview/answer-clips";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAudioInputs } from "../hooks/use-audio-inputs";
 import { storeMicrophoneDeviceId } from "@/lib/interview/mic-device.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
@@ -133,6 +135,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const [preconnectQuestionId, setPreconnectQuestionId] = useState<string | null>(null);
   const [voiceAssessments, setVoiceAssessments] = useState<Record<string, AssessmentEntry>>({});
   const [reportState, setReportState] = useState<ReportState>({ status: "idle" });
+  const [answerClipPaths, setAnswerClipPaths] = useState<Record<string, string>>({});
   const [feedbackSyncMessage, setFeedbackSyncMessage] = useState<string | null>(null);
   const [assessmentSockets] = useState(() => new AssessmentSocketRegistry());
   const [nextTurnPreparation] = useState(() => createNextTurnPreparationRegistry<PreparedTurn>());
@@ -188,6 +191,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const leftRef = useRef(false);
   const reportStartedRef = useRef(createOnceGate());
   const reportPersistenceSignatureRef = useRef("");
+  const uploadedClipSessionsRef = useRef(new Set<string>());
   const reportTurnsRef = useRef(reportTurns);
   const exhaustedTurnAnalysesRef = useRef(new Set<number>());
   const turnAnalysesRef = useRef(new Map<number, Promise<InterviewTurnAnalysis | null>>());
@@ -396,8 +400,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   }, []);
   const { activeSegment, speechMessage, audioBlocked, setSpeechMessage, cancelPlayback, retrySpeech } = useSpeechPlayback(speechSegments, onInterviewerUtteranceReady, isInterviewerSpeaking && config.playInterviewerAudio, onSpeechTimingEvent, onFinalChunkStarted, spokenTurn?.speed ?? 1, speechFeed.push, waitBeforeInterviewerPlayback, config.voice, onInterChunkGap, onQuestionAudioStarted, onFinalChunkPlaybackStarted);
   const progress = Math.min(100, Math.round((seconds / (durationMinutes * 60)) * 100));
-  const currentAssessmentSamples = assessmentSamples(voiceAssessments, excludedAssessments);
-  const currentAzureSummary = summarizeAzureAssessments(currentAssessmentSamples);
+  const currentAssessmentSamples = useMemo(() => assessmentSamples(voiceAssessments, excludedAssessments), [voiceAssessments, excludedAssessments]);
+  const currentAzureSummary = useMemo(() => ({ ...summarizeAzureAssessments(currentAssessmentSamples), answers: buildAzureAnswerRecords(Object.values(voiceAssessments).filter((entry) => !excludedAssessments.has(assessmentContextKey(entry))), answerClipPaths) }), [answerClipPaths, currentAssessmentSamples, excludedAssessments, voiceAssessments]);
   const coverage = {
     available: currentAssessmentSamples.filter((entry) => entry.status === "available").length,
     pending: currentAssessmentSamples.filter((entry) => entry.status === "pending").length,
@@ -1345,6 +1349,21 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       }
 
       const feedbackSessionId = sessionId ?? await waitForSessionId(2_000);
+      const availableEntries = Object.values(latestEntries).filter((entry) => !excludedAssessmentsRef.current.has(assessmentContextKey(entry)) && entry.state.status === "available" && entry.state.clips?.length);
+      if (feedbackSessionId && !uploadedClipSessionsRef.current.has(feedbackSessionId)) {
+        uploadedClipSessionsRef.current.add(feedbackSessionId);
+        void (async () => {
+          try {
+            const { data: auth } = await getSupabaseBrowserClient().auth.getUser();
+            if (!auth.user) return;
+            const uploaded = await Promise.all(availableEntries.flatMap((entry) => entry.state.status === "available" ? (entry.state.clips ?? []).map(async (clip) => {
+              const timeout = new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 4_000));
+              return { key: `${entry.sequenceNumber}:${clip.sentenceIndex}`, path: await Promise.race([uploadAnswerClip(feedbackSessionId, auth.user!.id, entry.sequenceNumber, clip), timeout]) };
+            }) : []));
+            if (mountedRef.current) setAnswerClipPaths((paths) => ({ ...paths, ...Object.fromEntries(uploaded.flatMap(({ key, path }) => path ? [[key, path]] : [])) }));
+          } catch { /* Clip storage must never block report generation. */ }
+        })();
+      }
       if (feedbackSessionId) await createPendingInterviewFeedback(feedbackSessionId, samples);
 
       let path: "incremental" | "fallback" = "fallback";
@@ -1370,6 +1389,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           const technicalQuestionTopics = createTechnicalQuestionSnapshot(questions, turns);
           const result = {
             ...outcome.result,
+            turns: outcome.turns,
             ...(technicalQuestionTopics.length ? { technicalQuestionTopics } : {}),
           };
           setReportState({ status: "ready", result });
