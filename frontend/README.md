@@ -1,4 +1,4 @@
-# Frontend — English Interview Agent
+# Frontend — Entoa
 
 Aplicação web para praticar entrevistas profissionais em inglês. A interface
 é voltada inicialmente a profissionais brasileiros de tecnologia e separa a

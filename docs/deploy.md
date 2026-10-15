@@ -29,7 +29,7 @@ accepted, mapped to `whisper-incremental` with a startup warning),
 backend refuses to start without it while `BACKEND_AUTH_REQUIRED` is unset or
 `true`), `SUPABASE_PUBLISHABLE_KEY` (public, recommended; same value as
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; enables the remote token check for non-ES256 signing
-keys), `ALLOWED_ORIGIN=https://englishinterview.vercel.app,https://english-interview-agent.vercel.app` (no trailing slash).
+keys), `ALLOWED_ORIGIN=https://entoa.vercel.app,https://englishinterview.vercel.app,https://english-interview-agent.vercel.app` (no trailing slash).
 
 To use the self-hosted Kokoro service below as the primary interviewer voice
 (OpenRouter becomes the hedge), set `SPEECH_PROVIDER=kokoro-openrouter`,
@@ -113,8 +113,9 @@ cannot import it. The frontend is deployed with the Vercel CLI from `frontend/`
 upload).
 
 - Project: `english-interview-agent` (Root Directory `.` because the CLI runs
-  inside `frontend/`). Production domain: `https://englishinterview.vercel.app`
-  (also `https://english-interview-agent.vercel.app`).
+  inside `frontend/`). Production domain: `https://entoa.vercel.app`. The old
+  `https://englishinterview.vercel.app` and `https://english-interview-agent.vercel.app`
+  redirect to it (see `frontend/next.config.ts`).
 - Environment variables (Production): `NEXT_PUBLIC_SUPABASE_URL`,
   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_BACKEND_URL` (the Cloud
   Run service URL, no trailing slash). The frontend converts `https://` to

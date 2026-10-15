@@ -1,5 +1,5 @@
 ---
-name: English Interview Agent
+name: Entoa
 description: Warm, calm, green-on-cream (light) and green-on-graphite (dark) interface for Brazilian developers rehearsing English job interviews.
 colors:
   ink: "#0e2a1f"

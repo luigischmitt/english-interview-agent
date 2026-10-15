@@ -30,7 +30,7 @@ import { readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/intervi
 import { DEFAULT_INTERVIEWER_VOICE } from "@/lib/interview/voices.mjs";
 import { readStoredInterviewerCharacter, storeInterviewerCharacter } from "@/lib/interview/interviewer-character-preference.mjs";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
-import { useLocale, t } from "@/lib/locale";
+import { useLocale } from "@/lib/locale";
 
 import "./components/shell.css";
 
@@ -121,8 +121,8 @@ function Brand({ compact = false }: { compact?: boolean }) {
         priority
       />
       {!compact && (
-        <span className="whitespace-nowrap text-sm font-semibold tracking-[-0.01em] max-[419px]:sr-only">
-          {t("English Interview Agent ")}</span>
+        <span className="whitespace-nowrap text-[1.35rem] leading-none tracking-[-0.01em] max-[419px]:sr-only" style={{ fontFamily: "var(--font-display)" }}>
+          Entoa</span>
       )}
     </div>
   );

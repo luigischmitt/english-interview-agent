@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "English Interview Agent — inglês de entrevista para dev brasileiro",
+  title: "Entoa — treine sua entrevista em inglês",
   description: "Entrevista em inglês para dev brasileiro mirando vaga na gringa. No fim, um relatório do seu inglês sob pressão.",
 };
 

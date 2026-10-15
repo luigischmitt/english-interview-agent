@@ -2,7 +2,7 @@
   "name": "english-interview-agent-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "HTTP API for the English Interview Agent.",
+  "description": "HTTP API for Entoa.",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
