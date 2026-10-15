@@ -2,7 +2,9 @@ import { createAudioToWav, type AudioConverter } from "./audio-to-wav.js";
 import type { AudioFormat } from "./types.js";
 
 export type PronunciationScores = { accuracy: number | null; fluency: number | null; prosody: number | null };
-export type PronunciationAssessment = { provider: "azure"; locale: "en-US"; mode: "scripted"; scores: PronunciationScores };
+export type AzurePhoneme = { phoneme: string; accuracyScore: number };
+export type AzureWordAssessment = { word: string; accuracyScore: number | null; errorType: string | null; startMs: number; endMs: number; phonemes: AzurePhoneme[]; prosodyErrors: string[] };
+export type PronunciationAssessment = { provider: "azure"; locale: "en-US"; mode: "scripted"; scores: PronunciationScores; words?: AzureWordAssessment[] };
 export type AzureAssessmentFailureCategory = "cancelled" | "timeout" | "rate_limited" | "unauthorized" | "provider_rejected" | "provider_unavailable" | "no_match" | "invalid_response" | "conversion_failed" | "unknown";
 const categoryMessages: Record<AzureAssessmentFailureCategory, string> = {
   cancelled: "Azure pronunciation assessment cancelled",
@@ -35,6 +37,7 @@ type AzureCandidate = {
   FluencyScore?: number;
   ProsodyScore?: number;
   PronunciationAssessment?: { AccuracyScore?: number; FluencyScore?: number; ProsodyScore?: number };
+  Words?: unknown;
 };
 type AzureResponse = { RecognitionStatus?: string; NBest?: AzureCandidate[] };
 
@@ -89,7 +92,7 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
       const assessmentHeader = Buffer.from(JSON.stringify({
         ReferenceText: referenceText,
         GradingSystem: "HundredMark",
-        Granularity: "Word",
+        Granularity: "Phoneme",
         Dimension: "Comprehensive",
         EnableProsodyAssessment: "True",
       })).toString("base64");
@@ -131,7 +134,7 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
       const score = (value: number | undefined) => Number.isFinite(value) && value! >= 0 && value! <= 100 ? value! : null;
       const scores = { accuracy: score(raw?.AccuracyScore), fluency: score(raw?.FluencyScore), prosody: score(raw?.ProsodyScore) };
       if (Object.values(scores).every((value) => value === null)) throw new AzureAssessmentError("invalid_response");
-      return { provider: "azure", locale: "en-US", mode: "scripted", scores };
+      return { provider: "azure", locale: "en-US", mode: "scripted", scores, words: parseAzureWords(candidate?.Words) };
     } catch (error) {
       if (signal?.aborted) throw new AzureAssessmentError("cancelled");
       if (error instanceof AzureAssessmentError) throw error;
@@ -144,4 +147,34 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
       wav?.fill(0);
     }
   }
+}
+
+/** Azure offsets and durations are 100 ns ticks relative to the submitted audio block. */
+export function parseAzureWords(value: unknown): AzureWordAssessment[] {
+  if (!Array.isArray(value)) return [];
+  const output: AzureWordAssessment[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as Record<string, unknown>;
+    if (typeof raw.Word !== "string" || !raw.Word.trim() || typeof raw.Offset !== "number" || !Number.isFinite(raw.Offset) || raw.Offset < 0
+      || typeof raw.Duration !== "number" || !Number.isFinite(raw.Duration) || raw.Duration <= 0) continue;
+    const pa = raw.PronunciationAssessment && typeof raw.PronunciationAssessment === "object" ? raw.PronunciationAssessment as Record<string, unknown> : {};
+    const accuracyScore = typeof pa.AccuracyScore === "number" && Number.isFinite(pa.AccuracyScore) && pa.AccuracyScore >= 0 && pa.AccuracyScore <= 100 ? pa.AccuracyScore : null;
+    const phonemes: AzurePhoneme[] = [];
+    if (Array.isArray(raw.Phonemes)) for (const candidate of raw.Phonemes) {
+      if (!candidate || typeof candidate !== "object") continue;
+      const phoneme = candidate as Record<string, unknown>;
+      const phonemePa = phoneme.PronunciationAssessment && typeof phoneme.PronunciationAssessment === "object" ? phoneme.PronunciationAssessment as Record<string, unknown> : {};
+      if (typeof phoneme.Phoneme === "string" && typeof phonemePa.AccuracyScore === "number" && Number.isFinite(phonemePa.AccuracyScore) && phonemePa.AccuracyScore >= 0 && phonemePa.AccuracyScore <= 100) phonemes.push({ phoneme: phoneme.Phoneme, accuracyScore: phonemePa.AccuracyScore });
+    }
+    const feedback = raw.Feedback && typeof raw.Feedback === "object" ? raw.Feedback as Record<string, unknown> : {};
+    const prosody = feedback.Prosody && typeof feedback.Prosody === "object" ? feedback.Prosody as Record<string, unknown> : {};
+    const prosodyErrors: string[] = [];
+    for (const key of ["Break", "Intonation"]) {
+      const entry = prosody[key] && typeof prosody[key] === "object" ? prosody[key] as Record<string, unknown> : {};
+      if (Array.isArray(entry.ErrorTypes)) for (const error of entry.ErrorTypes) if (typeof error === "string") prosodyErrors.push(error);
+    }
+    output.push({ word: raw.Word, accuracyScore, errorType: typeof pa.ErrorType === "string" ? pa.ErrorType : null, startMs: raw.Offset / 10_000, endMs: (raw.Offset + raw.Duration) / 10_000, phonemes, prosodyErrors });
+  }
+  return output;
 }
