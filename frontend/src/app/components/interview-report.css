@@ -1,6 +1,6 @@
 /*
  * Final report (ENG-114): prefix rp-. Builds on ds-* primitives and --ds-* tokens.
- * Order: priorities first, then three separate areas (technical, English, voice).
+ * Ready reports lead with a verdict and priorities, then move through each answer.
  */
 .rp-root { color: var(--ds-ink); }
 .rp-stack { display: flex; flex-direction: column; gap: 1.25rem; }
@@ -23,7 +23,7 @@
 .rp-hint { font-size: 0.8125rem; line-height: 1.5; letter-spacing: 0.005em; color: var(--ds-text-2); max-width: 70ch; }
 .rp-alert { border-radius: var(--ds-r-xl); background: var(--ds-warning-tint); color: var(--ds-warning); padding: 0.875rem 1.125rem; font-size: 0.875rem; line-height: 1.5; }
 
-/* Priorities: the dark panel is the first thing on the page. */
+/* Priorities: a quiet panel keeps the next practice focus easy to find. */
 .rp-priorities {
   --mata-color: #6fc796; --mata-opacity: 0.2; --mata-size: auto 135%; --mata-pos: right -30px bottom -10px;
   --mata-fade: linear-gradient(to left, #000 0%, rgba(0,0,0,0.5) 30%, transparent 58%);
@@ -72,6 +72,7 @@
 .rp-metric[data-limited="true"] .rp-metric-value { color: var(--ds-text-2); }
 .rp-metric-unit { font-size: 0.875rem; font-weight: 500; letter-spacing: 0; color: var(--ds-text-2); }
 .rp-reliability { margin-top: 0.5rem; border-radius: var(--ds-r-sm); background: var(--ds-warning-tint); color: var(--ds-warning); padding: 0.375rem 0.625rem; font-size: 0.8125rem; font-weight: 600; line-height: 1.4; }
+.rp-session-delivery { margin-top: 1rem; color: var(--ds-text-2); font-size: 0.8125rem; line-height: 1.5; }
 
 /* Pending. */
 .rp-bar { position: relative; height: 0.25rem; overflow: hidden; border-radius: var(--ds-r-pill); background: var(--ds-track); }
@@ -102,6 +103,34 @@
 .rp-suggest-from { text-decoration: line-through; text-decoration-thickness: 1px; opacity: 0.7; }
 .rp-suggest-to { font-weight: 600; }
 .rp-suggest-btn { min-height: 2.5rem; padding-block: 0.5rem; font-size: 0.875rem; }
+
+/* Answer-led report. */
+.rp-answer { scroll-margin-top: 1rem; }
+.rp-answer-question { margin-bottom: 0.625rem; color: var(--ds-text-2); font-size: 0.875rem; line-height: 1.45; }
+.rp-answer-text { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; margin-top: 0.5rem; font-size: 0.9375rem; line-height: 1.6; overflow-wrap: anywhere; }
+.rp-answer-text.is-expanded { display: block; }
+.rp-inline-button { min-height: 2.75rem; margin-top: 0.25rem; color: var(--ds-green-deep); font-size: 0.8125rem; font-weight: 600; text-decoration: underline; text-underline-offset: 0.2em; }
+.rp-answer-columns { display: grid; gap: 1rem; margin-top: 1.25rem; }
+@media (min-width: 600px) { .rp-answer-columns { grid-template-columns: 1fr 1fr; gap: 1.5rem; } }
+.rp-answer-columns .rp-subtitle, .rp-answer-english .rp-subtitle, .rp-answer-voice .rp-subtitle { margin-bottom: 0.5rem; }
+.rp-answer-finding { color: var(--ds-ink); font-size: 0.875rem; line-height: 1.55; }
+.rp-answer-finding + .rp-answer-finding { margin-top: 0.5rem; }
+.rp-answer-english, .rp-answer-voice { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--ds-line); }
+.rp-pattern + .rp-pattern { margin-top: 1rem; }
+.rp-pattern .rp-rephrase-text { font-size: 0.9375rem; }
+.rp-delivery-line { font-size: 0.875rem; line-height: 1.5; }
+.rp-sentence-review { margin-top: 0.5rem; }
+.rp-sentence-text { font-size: 0.9375rem; line-height: 1.7; }
+.rp-problem-word { text-decoration: underline; text-decoration-color: var(--ds-warning); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
+.rp-player-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+.rp-player-row .ds-btn { min-height: 2.75rem; }
+.rp-speed { display: inline-flex; min-height: 2.75rem; align-items: center; gap: 0.5rem; color: var(--ds-text-2); font-size: 0.8125rem; }
+.rp-speed input { accent-color: var(--ds-green); width: 1rem; height: 1rem; }
+.rp-transcript { display: grid; gap: 1rem; margin-top: 1rem; }
+.rp-transcript li { padding: 1rem; border-radius: var(--ds-r-xl); background: var(--ds-field); font-size: 0.875rem; line-height: 1.6; overflow-wrap: anywhere; }
+.rp-exercise-disclosure { margin-top: 0.5rem; color: color-mix(in srgb, var(--ds-on-panel) 80%, transparent); font-size: 0.8125rem; }
+.rp-exercise-disclosure summary { min-height: 2.75rem; display: flex; align-items: center; cursor: pointer; text-decoration: underline; text-underline-offset: 0.2em; }
+.rp-exercise-disclosure p { padding-bottom: 0.5rem; line-height: 1.5; }
 
 @media (prefers-reduced-motion: reduce) {
   .rp-suggest-card { animation: ds-fade var(--ds-dur-base) ease backwards; animation-delay: 0ms; }

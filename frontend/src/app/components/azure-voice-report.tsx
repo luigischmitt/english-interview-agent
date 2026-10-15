@@ -23,17 +23,20 @@ function Metric({ dimension, metric }: { dimension: AzureReportDimension; metric
 }
 
 export function AzureVoiceReport({ summary, coverage, step, title = "Sinais vocais" }: { summary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; step?: number; title?: string }) {
+  const deliveryAnswers = summary.answers?.filter((answer) => answer.delivery?.wordsPerMinute !== undefined) ?? [];
+  const averageWpm = deliveryAnswers.length ? Math.round(deliveryAnswers.reduce((sum, answer) => sum + (answer.delivery?.wordsPerMinute ?? 0), 0) / deliveryAnswers.length) : null;
+  const fillerCount = summary.answers?.reduce((sum, answer) => sum + (answer.delivery?.fillerCount ?? 0), 0) ?? 0;
   return (
     <section className="ds-card rp-card" aria-labelledby="voice-report-title">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {step !== undefined && <span className="ds-step" aria-hidden="true">{step}</span>}
         <h2 id="voice-report-title" className="ds-h2">{title}</h2>
-        <span className="rp-badge">{t("Experimental · Azure")}</span>
       </div>
       <p className="rp-hint mt-2">{t(azureReportIntro)}</p>
       <dl className="rp-metrics">
         {dimensions.map((dimension) => <Metric key={dimension} dimension={dimension} metric={summary[dimension]} />)}
       </dl>
+      {summary.answers?.length && (averageWpm !== null || fillerCount > 0) ? <p className="rp-session-delivery">{averageWpm !== null ? <>{t("Na sessão: média de ")}{averageWpm} {t("palavras/min")}</> : t("Na sessão")}{fillerCount > 0 ? <> · {fillerCount} {t("hesitações no total")}</> : null}</p> : null}
       <p className="rp-hint mt-4">{t("Cobertura: ")}{coverage.available} {t("de ")}{coverage.total} {t("respostas com sinais disponíveis.")}{coverage.pending ? ` ${coverage.pending} ${t("avaliação(ões) ainda em processamento; a conclusão da sessão não espera por elas.")}` : ""} {t(coverageHelp)}</p>
     </section>
   );

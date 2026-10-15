@@ -25,9 +25,9 @@ test("makes ready history reports discoverable and returns from the top of histo
 
   assert.match(history, /s\.reportStatus === "ready" && onOpenReport && \(\s*<span className="pg-row-open"/);
   assert.match(history, /onClick=\{\(\) => onOpenReport\(s\.id\)\}/);
-  assert.match(report, /\{historical && \(\s*<button type="button" className="ds-btn ds-btn-quiet mb-3" onClick=\{onLeave\}>/);
+  assert.match(report, /historical && <button type="button" className="ds-btn ds-btn-quiet mb-3" onClick=\{onLeave\}>/);
   assert.match(report, /getCurrentLocale\(\) === "en" \? "Back to Progress" : t\("Voltar ao Progresso"\)/);
-  assert.match(report, /\{!historical && <CapturedAnswers turns=\{turns\} \/>\}/);
+  assert.match(report, /<CapturedAnswers turns=\{loadedTurns\} \/>/);
   assert.match(progressView, /turns=\{\[\]\}/);
   assert.match(report, /onClick=\{onLeave\}>\{t\(historical \? "Voltar ao Progresso /);
 });
