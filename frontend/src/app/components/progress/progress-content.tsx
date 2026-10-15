@@ -501,6 +501,7 @@ export function ProgressContent({ insights, onOpenReport }: { insights: Progress
   return (
     <div className="pg-stack mt-8 gap-10 lg:mt-10">
       <ProgressHero insights={insights} />
+      <CommonErrors insights={insights} />
       <div className="pg-stack">
         <EvolutionChart insights={insights} />
         <WeeklyChart insights={insights} />
