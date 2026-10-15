@@ -51,8 +51,8 @@ export function alignSegmentTimingToTranscript(segments: TranscriptionWord[], tr
   return aligned.length ? aligned : undefined;
 }
 
-function normalizeToken(token: string): string {
-  return token.replace(/[’]/g, "'").toLocaleLowerCase("en-US");
+export function normalizeToken(token: string): string {
+  return token.toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]/gu, "");
 }
 
 /** Groups adjacent, timestamped words deterministically and slices the canonical mono 16 kHz WAV. */

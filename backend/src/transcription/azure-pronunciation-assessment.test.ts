@@ -58,14 +58,14 @@ describe("Azure scripted pronunciation assessment transport", () => {
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       const assessment = JSON.parse(Buffer.from(headers.get("Pronunciation-Assessment")!, "base64").toString());
-      expect(assessment).toEqual({ ReferenceText: referenceText, GradingSystem: "HundredMark", Granularity: "Word", Dimension: "Comprehensive", EnableProsodyAssessment: "True" });
+      expect(assessment).toEqual({ ReferenceText: referenceText, GradingSystem: "HundredMark", Granularity: "Phoneme", Dimension: "Comprehensive", EnableProsodyAssessment: "True" });
       expect(headers.get("Content-Type")).toBe("audio/wav; codecs=audio/pcm; samplerate=16000");
       expect(headers.get("Ocp-Apim-Subscription-Key")).toBe("test-key");
       expect(Buffer.from(init?.body as Uint8Array)).toEqual(Buffer.alloc(64));
       return Response.json({ RecognitionStatus: "Success", NBest: [{ AccuracyScore: 82, FluencyScore: 76, ProsodyScore: 71, PronScore: 78, CompletenessScore: 99 }] });
     }) as typeof fetch;
     const service = createService(fetcher);
-    await expect(service.assess(Buffer.from("final audio"), "webm", referenceText)).resolves.toEqual({ provider: "azure", locale: "en-US", mode: "scripted", scores: { accuracy: 82, fluency: 76, prosody: 71 } });
+    await expect(service.assess(Buffer.from("final audio"), "webm", referenceText)).resolves.toEqual({ provider: "azure", locale: "en-US", mode: "scripted", scores: { accuracy: 82, fluency: 76, prosody: 71 }, words: [] });
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
