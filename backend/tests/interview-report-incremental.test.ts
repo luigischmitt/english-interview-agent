@@ -116,10 +116,29 @@ describe("per-turn analysis service", () => {
     await makeService(fetchImplementation).analyzeTurn({ roleContext, turn: turns[0] });
     const schema = bodies[0].response_format.json_schema.schema.properties;
     expect([schema.technicalStrengths.maxItems, schema.technicalGaps.maxItems, schema.englishPatterns.maxItems]).toEqual([1, 1, 3]);
-    expect(bodies[0].max_tokens).toBeLessThanOrEqual(600);
+    expect(bodies[0].max_tokens).toBeLessThanOrEqual(800);
     expect(bodies[0].max_tokens).toBeGreaterThanOrEqual(450);
     // Static rules first, identical between calls (prompt caching); the answer lives only in the user message.
     expect(bodies[0].messages[0].content).not.toContain(turns[0].answer);
+    const patternSchema = schema.englishPatterns.items as { required: string[]; properties: Record<string, { maxLength?: number }> };
+    expect(patternSchema.required).toContain("why");
+    expect(patternSchema.properties.why.maxLength).toBe(170);
+  });
+
+  it("keeps valid why and drops only invalid why text", async () => {
+    const why = "O português usa passado simples com ontem, o que pode levar você a combinar yesterday com have deployed.";
+    const check = async (candidateWhy: string) => {
+      const { fetchImplementation } = capture({ technicalStrengths: [], technicalGaps: [], englishPatterns: [{ ...pattern2, why: candidateWhy }] });
+      return makeService(fetchImplementation).analyzeTurn({ roleContext, turn: turns[0] });
+    };
+    const valid = await check(why);
+    expect(valid.englishPatterns[0]?.why).toBe(why);
+    const tooLong = await check("A".repeat(171));
+    expect(tooLong.englishPatterns[0]).toBeDefined();
+    expect(tooLong.englishPatterns[0]).not.toHaveProperty("why");
+    const english = await check("The candidate did not clearly explain the phrase in English.");
+    expect(english.englishPatterns[0]).toBeDefined();
+    expect(english.englishPatterns[0]).not.toHaveProperty("why");
   });
 
   it("maps provider failures to standardized thinking errors", async () => {
@@ -180,6 +199,14 @@ describe("consolidation service", () => {
     ],
   };
   const consolidationInput: InterviewReportConsolidationInput = { roleContext, turns, turnAnalyses: analyses };
+
+  it("preserves validated why through consolidation revalidation", async () => {
+    const why = "O português usa passado simples com ontem, então o present perfect pode aparecer por transferência.";
+    const { fetchImplementation } = capture({ summary: "Resumo técnico completo e objetivo.", clarity: "MOSTLY_CLEAR", priorities: [] });
+    const input = { ...consolidationInput, turnAnalyses: [{ ...analyses[0]!, englishPatterns: [{ ...pattern2, why }] }, analyses[1]!] };
+    const result = await makeService(fetchImplementation).consolidate(input);
+    expect(result.englishCommunication.patterns[0]?.why).toBe(why);
+  });
 
   it("returns the exact InterviewReport v2 shape with one small request", async () => {
     const { bodies, fetchImplementation } = capture(consolidationOutput);

@@ -112,6 +112,7 @@ export type InterviewReport = {
       sequenceNumber: number;
       evidence: string;
       suggestion: string;
+      why?: string;
       rephrasedExample: string;
     }>;
   };

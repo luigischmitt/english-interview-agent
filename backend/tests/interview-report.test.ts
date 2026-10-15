@@ -92,9 +92,12 @@ describe("final interview report service", () => {
     expect(body.messages[0].content).toContain("MUST be written in Brazilian Portuguese");
     expect(body.messages[0].content).toContain("The suggestion MUST be written in Brazilian Portuguese; put any corrected English only in rephrasedExample");
     const schema = body.response_format.json_schema.schema.properties;
-    const englishPatternSchema = schema.englishCommunication as { properties: { patterns: { maxItems: number; items: { properties: { suggestion: { description: string }; rephrasedExample: { description: string } } } } } };
+    const englishPatternSchema = schema.englishCommunication as { properties: { patterns: { maxItems: number; items: { required: string[]; properties: { suggestion: { description: string }; why: { description: string; maxLength: number }; rephrasedExample: { description: string } } } } } };
     expect(englishPatternSchema.properties.patterns.maxItems).toBe(4);
     expect(englishPatternSchema.properties.patterns.items.properties.suggestion.description).toContain("MUST be written in Brazilian Portuguese");
+    expect(englishPatternSchema.properties.patterns.items.required).toContain("why");
+    expect(englishPatternSchema.properties.patterns.items.properties.why.maxLength).toBe(170);
+    expect(body.messages[0].content).toContain("fazer uma pergunta maps literally to 'make a question'");
     expect(englishPatternSchema.properties.patterns.items.properties.rephrasedExample.description).toContain("complete English sentence");
     expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.strengths.maxItems).toBe(2);
     expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.gaps.maxItems).toBe(3);
@@ -122,8 +125,9 @@ describe("final interview report service", () => {
     expect(body.messages[0].content).toContain("All user-facing report prose must be in clear English");
     expect(JSON.parse(body.messages[1].content)).toMatchObject({ locale: "en" });
     const schema = body.response_format.json_schema.schema.properties;
-    const englishPatternSchema = schema.englishCommunication as { properties: { patterns: { items: { properties: { suggestion: { description: string } } } } } };
+    const englishPatternSchema = schema.englishCommunication as { properties: { patterns: { items: { properties: { suggestion: { description: string }; why: { description: string } } } } } };
     expect(englishPatternSchema.properties.patterns.items.properties.suggestion.description).toContain("MUST be written in clear English");
+    expect(englishPatternSchema.properties.patterns.items.properties.why.description).toContain("clear English");
   });
 
   it("lets a technical priority repeat any competency linked by a validated finding of the same answer", async () => {
