@@ -91,6 +91,7 @@ export function serializeInterviewAnalysis(result) {
     ...(result.jobDirection ? { jobDirection: result.jobDirection } : {}),
     ...(snapshot.length ? { technicalQuestionTopics: snapshot } : {}),
     ...(studyPlan ? { studyPlan } : {}),
+    ...(isRecord(result.polishedAnswers) ? { polishedAnswers: result.polishedAnswers } : {}),
     ...(turns.length ? { turns } : {}),
     evidenceReview: result.evidenceReview,
     technicalContent: result.technicalContent,
