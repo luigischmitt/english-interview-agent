@@ -130,6 +130,22 @@
 .tr-visual-choice span, .tr-visual-time-choice small { color: var(--ds-text-2); font-size: .78rem; line-height: 1.4; }
 .tr-visual-demo-guidance { margin-top: -.2rem; }
 .tr-visual-demo-example { border-left: 2px solid var(--ds-green); padding: .15rem 0 .15rem .8rem; color: var(--ds-ink); font-family: var(--font-display); font-size: 1.08rem; line-height: 1.5; }
+.tr-preposition-scene { position: relative; display: grid; min-height: 8.5rem; place-items: center; overflow: hidden; border-radius: var(--ds-r-lg); background: var(--ds-field); padding: 1rem; transition: background var(--ds-dur-base) var(--ease-out); }
+.tr-preposition-scene-label { position: absolute; top: .8rem; left: 1rem; color: var(--ds-green-deep); font-size: .8rem; font-weight: 700; letter-spacing: .04em; }
+.tr-preposition-clock { position: relative; display: grid; width: 5.5rem; height: 5.5rem; place-items: center; border: 2px solid var(--ds-green); border-radius: 999px; background: var(--ds-surface); color: var(--ds-ink); font-size: .94rem; font-weight: 700; }
+.tr-preposition-clock::before, .tr-preposition-clock::after { position: absolute; top: 50%; left: 50%; width: .12rem; border-radius: 999px; background: var(--ds-green); content: ""; transform-origin: top; }
+.tr-preposition-clock::before { height: 1.55rem; transform: rotate(150deg); }
+.tr-preposition-clock::after { height: 1.05rem; transform: rotate(45deg); }
+.tr-preposition-clock span { position: relative; z-index: 1; background: var(--ds-surface); padding: .1rem .28rem; }
+.tr-preposition-clock i { position: absolute; width: .55rem; height: .55rem; border-radius: 999px; background: var(--ds-green-solid); }
+.tr-preposition-calendar { display: grid; width: min(100%, 13rem); overflow: hidden; border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); background: var(--ds-surface); text-align: center; }
+.tr-preposition-calendar::before { height: .85rem; background: var(--ds-green-solid); content: ""; }
+.tr-preposition-calendar span { padding: 1.2rem 1rem 1.1rem; color: var(--ds-ink); font-size: 1.1rem; font-weight: 700; }
+.tr-preposition-calendar i { display: block; width: 3.5rem; height: .18rem; margin: 0 auto 1rem; border-radius: 999px; background: var(--ds-green); }
+.tr-preposition-context { display: grid; width: min(100%, 13rem); min-height: 5.25rem; place-items: center; border: 2px solid var(--ds-green); border-radius: var(--ds-r-md); background: var(--ds-tint); padding: .8rem; }
+.tr-preposition-context span { border-radius: var(--ds-r-sm); background: var(--ds-surface); padding: .55rem .9rem; color: var(--ds-green-deep); font-size: 1rem; font-weight: 700; }
+.tr-preposition-caption { color: var(--ds-text-2); font-size: .88rem; line-height: 1.5; }
+.tr-preposition-caption strong { color: var(--ds-green-deep); }
 .tr-visual-timeline { position: relative; padding-top: .25rem; }
 .tr-visual-timeline .tr-visual-demo-choices { position: relative; justify-content: space-between; gap: .25rem; }
 .tr-visual-timeline-line { position: absolute; top: 1rem; right: 12%; left: 12%; height: 1px; background: var(--ds-line); }
