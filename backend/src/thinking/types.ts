@@ -176,6 +176,8 @@ export type InterviewOrchestrationInput = InterviewThinkingInput & {
   previousAnswers?: Array<{ question: string; answer: string }>;
   /** User-approved structured summary only; raw job descriptions must never enter interview orchestration. */
   jobDirection?: ApprovedJobDirection;
+  /** Bounded summaries from prior ready reports, supplied only for focused practice. */
+  focusWeakPoints?: string;
 };
 
 export type InterviewOrchestrationResult = {

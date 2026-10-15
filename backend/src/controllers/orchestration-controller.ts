@@ -11,7 +11,7 @@ function validText(value: unknown, max: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= max;
 }
 
-function parseInput(body: unknown): InterviewOrchestrationInput | null {
+export function parseOrchestrationInput(body: unknown): InterviewOrchestrationInput | null {
   if (!isRecord(body) || !validText(body.currentQuestion, 500) || !validText(body.transcript, 10_000) || !isRecord(body.roleContext)
     || !validText(body.roleContext.targetRole, 120) || typeof body.followUpUsed !== "boolean"
     || !(body.nextFixedQuestion === null || validText(body.nextFixedQuestion, 500))) return null;
@@ -31,6 +31,7 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
   const roleSeniority = typeof roleContext.seniority === "string" ? roleContext.seniority.trim() : undefined;
   const jobDirection = body.jobDirection === undefined ? undefined : parseApprovedJobDirection(body.jobDirection, targetRole.trim(), roleSeniority);
   if (body.jobDirection !== undefined && !jobDirection) return null;
+  if (body.focusWeakPoints !== undefined && !validText(body.focusWeakPoints, 1200)) return null;
   return {
     currentQuestion: body.currentQuestion.trim(), transcript: body.transcript.trim(), nextFixedQuestion: body.nextFixedQuestion === null ? null : body.nextFixedQuestion.trim(), followUpUsed: body.followUpUsed,
     ...(body.clarificationHint ? { clarificationHint: body.clarificationHint as ClarificationHint } : {}),
@@ -39,13 +40,14 @@ function parseInput(body: unknown): InterviewOrchestrationInput | null {
     ...(Array.isArray(body.previousAnswers) ? { previousAnswers: body.previousAnswers.map((pair) => ({ question: (pair.question as string).trim(), answer: (pair.answer as string).trim() })) } : {}),
     ...(Array.isArray(body.recentAcknowledgements) ? { recentAcknowledgements: body.recentAcknowledgements.map((acknowledgement) => (acknowledgement as string).trim()) } : {}),
     ...(jobDirection ? { jobDirection } : {}),
+    ...(typeof body.focusWeakPoints === "string" ? { focusWeakPoints: body.focusWeakPoints.trim() } : {}),
     roleContext: { targetRole: targetRole.trim(), ...(roleSeniority !== undefined ? { seniority: roleSeniority } : {}), ...(typeof roleContext.focus === "string" ? { focus: roleContext.focus.trim() } : {}) },
   };
 }
 
 export function createOrchestrationController(service: InterviewOrchestrationService, speechPrefetcher: InterviewerSpeechPrefetcher | null = null): RequestHandler {
   return async (request, response) => {
-    const input = parseInput(request.body);
+    const input = parseOrchestrationInput(request.body);
     if (!input) {
       response.status(400).json({ error: { code: "INVALID_ORCHESTRATION_REQUEST", message: "currentQuestion, transcript, roleContext.targetRole, nextFixedQuestion, and followUpUsed are required within their length limits." } });
       return;
