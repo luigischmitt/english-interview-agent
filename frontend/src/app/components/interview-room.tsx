@@ -17,7 +17,7 @@ import { createNextTurnPreparationRegistry } from "@/lib/interview/next-turn-pre
 import { createFixedHandoffPreparationRegistry, type FixedHandoffEntry } from "@/lib/interview/fixed-handoff-preparation.mjs";
 import { loadProgressRecords, type InterviewTurnInput } from "@/lib/interview/persistence";
 import { warmProgressCacheAfterFeedbackSave } from "@/lib/interview/progress-cache-warmup.mjs";
-import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewStudyPlan, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
+import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import { appendInterviewReportPair, type AzureAssessmentSample, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
@@ -30,9 +30,6 @@ import { InterviewReport, type ReportState } from "./interview-report";
 import "./interview-room.css";
 import { createSpeechFeed, toucanStateFor } from "@/components/interview/toucan/toucan-engine.mjs";
 import { CallDock, CandidateTile, InterviewerTile, Toast, useCandidateCamera, useMicLevelMeter } from "./call-stage";
-import { loadPracticeGroups, practiceSyncBackgroundMaxBatches, syncPracticeGroups } from "@/lib/practice/practice-store";
-import { syncPracticeGroupsUntilDone } from "@/lib/practice/practice-sync-loop.mjs";
-import { buildReportSuggestions, type ReportSuggestion } from "@/lib/practice/report-suggestions.mjs";
 import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
@@ -106,7 +103,7 @@ function assessmentSamples(entries: Record<string, AssessmentEntry>, excluded: R
     : state.status === "pending" ? { status: "pending" } : { status: "unavailable" });
 }
 
-export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { config: InterviewConfig; onLeave: () => void; onTrain?: () => void; onOpenPractice?: (href: string) => void }) {
+export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; onLeave: () => void }) {
   const { locale } = useLocale();
   useSpeechWarmup();
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
@@ -1371,11 +1368,8 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
         console.info("[interview-report] ready", { path, turnCount: turns.length, retried: turnAnalysisRetriesRef.current, missingAtEnd: outcome.missingAtEnd, recoveredAtEnd: outcome.recoveredAtEnd, durationMs: Date.now() - lifecycleStartedAt });
         if (mountedRef.current && current) {
           const technicalQuestionTopics = createTechnicalQuestionSnapshot(questions, turns);
-          const studyPlan = await requestInterviewStudyPlan(config, outcome.result);
-          if (!mountedRef.current || !current) return;
           const result = {
             ...outcome.result,
-            ...(studyPlan ? { studyPlan } : {}),
             ...(technicalQuestionTopics.length ? { technicalQuestionTopics } : {}),
           };
           setReportState({ status: "ready", result });
@@ -1389,9 +1383,6 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
     return () => { current = false; };
   }, [config, locale, phase, questions, sessionId, waitForSessionId]);
 
-  const practiceSuggestionsStartedRef = useRef<string | null>(null);
-  const [practiceSuggestions, setPracticeSuggestions] = useState<{ status: "idle" | "loading" | "ready"; items: ReportSuggestion[] }>({ status: "idle", items: [] });
-
   useEffect(() => {
     if (!sessionId || phase !== "ending" || (reportState.status !== "ready" && reportState.status !== "unavailable")) return;
     const signature = createFeedbackPersistenceSignature({ sessionId, status: reportState.status, result: reportState.result, azureSummary: currentAzureSummary });
@@ -1404,32 +1395,6 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
       warmProgressCacheAfterFeedbackSave(result, loadProgressRecords);
       if (!mountedRef.current || reportPersistenceSignatureRef.current !== signature) return;
       setFeedbackSyncMessage(result.ok ? null : "O relatório está disponível nesta tela, mas não foi possível sincronizá-lo com sua conta.");
-      if (result.ok && reportState.status === "ready" && practiceSuggestionsStartedRef.current !== sessionId) {
-        practiceSuggestionsStartedRef.current = sessionId;
-        setPracticeSuggestions({ status: "loading", items: [] });
-        void (async () => {
-          let items: ReportSuggestion[] = [];
-          let suggestionsSetFromFirstBatch = false;
-          try {
-            const loaded = await loadPracticeGroups();
-            if (loaded.ok) {
-              await syncPracticeGroupsUntilDone(loaded.value, {
-                maxBatches: practiceSyncBackgroundMaxBatches,
-                sync: syncPracticeGroups,
-                onBatch: (synced, batch) => {
-                  if (batch !== 1) return;
-                  items = buildReportSuggestions(synced.ok ? synced.value.themes : loaded.value, sessionId);
-                  suggestionsSetFromFirstBatch = true;
-                  if (mountedRef.current) setPracticeSuggestions({ status: "ready", items });
-                },
-              });
-            }
-          } catch {
-            console.warn("[interview-report] practice_suggestions_unavailable");
-          }
-          if (!suggestionsSetFromFirstBatch && mountedRef.current) setPracticeSuggestions({ status: "ready", items });
-        })();
-      }
     });
   }, [currentAzureSummary, locale, phase, reportState, sessionId]);
 
@@ -1571,9 +1536,6 @@ export function InterviewRoom({ config, onLeave, onTrain, onOpenPractice }: { co
             azureSummary={currentAzureSummary}
             coverage={coverage}
             onLeave={onLeave}
-            onTrain={onTrain}
-            onOpenPractice={onOpenPractice}
-            practiceSuggestions={practiceSuggestions}
           />
         </>
       )}
