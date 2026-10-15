@@ -727,6 +727,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           previousAnswers: input.previousAnswers,
           recentAcknowledgements: recentAcknowledgementsRef.current,
           roleContext: buildRoleContext(config),
+          ...(config.focusWeakPoints ? { focusWeakPoints: config.focusWeakPoints } : {}),
         }, signal) : { enabled: true, analysis: null };
         if (speculative.enabled) speculativeEnabledRef.current = true;
         // A pause/resume does not stale this analysis: its candidate can still be kept and validated in the final epoch.

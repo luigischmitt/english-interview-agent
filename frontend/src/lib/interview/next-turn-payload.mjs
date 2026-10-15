@@ -13,6 +13,7 @@ export function serializeNextTurnRequest(input) {
     recentAcknowledgements: input.recentAcknowledgements ?? [],
     previousAnswers: (input.previousAnswers ?? []).slice(-8).map((pair) => ({ question: pair.question.slice(0, 500), answer: pair.answer.slice(-300) })),
     ...(input.config.jobDirection && input.config.interviewSource !== "resume" ? { jobDirection: input.config.jobDirection } : {}),
+    ...(input.config.focusWeakPoints ? { focusWeakPoints: input.config.focusWeakPoints } : {}),
     // The server pre-synthesizes the next utterance as soon as it decides; it must use the voice this client will ask for.
     voice: resolveInterviewerVoice(input.config.voice),
     ...(hint ? { clarificationHint: hint } : {}),

@@ -4,7 +4,7 @@ import { INTERVIEWER_VOICES } from "./voices.mjs";
 
 /**
  * Hand-off of the interview configuration from the setup (inside the app shell) to the dedicated interview route.
- * Stored in sessionStorage (tab-scoped, never sent anywhere) and consumed once: a reload or a direct visit finds
+ * Stored in sessionStorage (tab-scoped) and consumed once: a reload or a direct visit finds
  * nothing and goes back to the setup instead of silently restarting an interview.
  */
 export const roomHandoffKey = "eia:interview-room-handoff";
@@ -42,6 +42,9 @@ export function parseRoomHandoff(raw, now = Date.now()) {
     : config.interviewSource === "job" && jobDirection
       ? "job"
       : "manual";
+  const focusWeakPoints = typeof config.focusWeakPoints === "string" && config.focusWeakPoints.trim().length > 0 && config.focusWeakPoints.length <= 1200
+    ? config.focusWeakPoints.trim()
+    : undefined;
   return {
     role: config.role,
     seniority: config.seniority,
@@ -57,6 +60,7 @@ export function parseRoomHandoff(raw, now = Date.now()) {
     // Optional (older hand-offs have none): the input device chosen on the setup.
     ...(microphoneDeviceId === null ? {} : { microphoneDeviceId }),
     ...(jobDirection ? { jobDirection } : {}),
+    ...(focusWeakPoints ? { focusWeakPoints } : {}),
     ...(interviewSource !== "manual" ? { interviewSource } : {}),
     // Optional (older hand-offs have none): only a known interviewer voice is kept; otherwise the room uses the default.
     ...(INTERVIEWER_VOICES.includes(config.voice) ? { voice: config.voice } : {}),

@@ -16,6 +16,12 @@ test("round-trips a valid config", () => {
   assert.deepEqual(parseRoomHandoff(serializeRoomHandoff(config, 1000), 2000), config);
 });
 
+test("keeps a bounded focused weak-point summary in the tab hand-off", () => {
+  const focused = { ...config, focusWeakPoints: "Technical gaps: API migrations" };
+  assert.deepEqual(parseRoomHandoff(serializeRoomHandoff(focused, 1000), 2000), focused);
+  assert.equal("focusWeakPoints" in parseRoomHandoff(serializeRoomHandoff({ ...config, focusWeakPoints: "x".repeat(1201) }, 1000), 2000), false);
+});
+
 test("the chosen interviewer voice reaches the room; unknown voices are dropped", () => {
   assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, voice: "bf_emma" }, 1), 2).voice, "bf_emma");
   assert.equal("voice" in parseRoomHandoff(serializeRoomHandoff({ ...config, voice: "nope" }, 1), 2), false);
