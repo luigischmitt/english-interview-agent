@@ -31,9 +31,9 @@ function DemoChoiceGroup({ label, children }: { label: string; children: ReactNo
 function PrepositionsDemo() {
   const [selected, setSelected] = useState(0);
   const choices = [
-    { word: "at", idea: "horário exato", phrase: "The deployment starts at 9 a.m." },
-    { word: "on", idea: "dia da semana", phrase: "The release is on Friday." },
-    { word: "in", idea: "linguagem de programação", phrase: "We built the service in Go." },
+    { word: "at", idea: "um ponto exato no tempo", phrase: "The deployment starts at 9 a.m.", visual: "9:00", reading: "at aponta para um instante preciso." },
+    { word: "on", idea: "um dia na agenda", phrase: "The release is on Friday.", visual: "Friday", reading: "on fica sobre um dia ou uma data." },
+    { word: "in", idea: "dentro de um contexto", phrase: "We built the service in Go.", visual: "Go", reading: "in coloca algo dentro de um lugar, período ou contexto." },
   ];
   const choice = choices[selected];
 
@@ -46,7 +46,14 @@ function PrepositionsDemo() {
           </button>
         ))}
       </DemoChoiceGroup>
-      <p className="tr-visual-demo-guidance">{t("Escolha pela relação — horário, dia ou linguagem; traduzir “em” ao pé da letra não basta.")}</p>
+      <div className={`tr-preposition-scene is-${choice.word}`} aria-hidden="true">
+        <div className="tr-preposition-scene-label">{choice.word}</div>
+        {choice.word === "at" && <div className="tr-preposition-clock"><span>{choice.visual}</span><i /></div>}
+        {choice.word === "on" && <div className="tr-preposition-calendar"><span>{choice.visual}</span><i /></div>}
+        {choice.word === "in" && <div className="tr-preposition-context"><span>{choice.visual}</span></div>}
+      </div>
+      <p className="tr-preposition-caption" aria-live="polite"><strong>{choice.word}</strong> — {t(choice.reading)}</p>
+      <p className="tr-visual-demo-guidance">{t("Escolha pela relação — horário, dia ou contexto; traduzir “em” ao pé da letra não basta.")}</p>
       <p className="tr-visual-demo-example" aria-live="polite">{choice.phrase}</p>
     </DemoFrame>
   );
