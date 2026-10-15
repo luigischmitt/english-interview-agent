@@ -16,11 +16,11 @@ type RoleContext = InterviewReportInput["roleContext"];
 type ReportTurn = InterviewReportInput["turns"][number];
 type ReportLocale = NonNullable<InterviewReportInput["locale"]>;
 
-function parseLocale(value: unknown): ReportLocale | undefined | null {
+export function parseReportLocale(value: unknown): ReportLocale | undefined | null {
   return value === undefined ? undefined : value === "pt-BR" || value === "en" ? value : null;
 }
 
-function parseRoleContext(value: unknown): RoleContext | null {
+export function parseReportRoleContext(value: unknown): RoleContext | null {
   if (!isRecord(value)) return null;
   const role = value;
   if (Object.keys(role).some((key) => !["targetRole", "seniority", "focus"].includes(key)) || !text(role.targetRole, 120)
@@ -58,8 +58,8 @@ function parseTurns(value: unknown): ReportTurn[] | null {
 
 function parseInput(body: unknown): InterviewReportInput | null {
   if (!isRecord(body) || Object.keys(body).some((key) => !["locale", "roleContext", "turns", "jobDirection"].includes(key))) return null;
-  const locale = parseLocale(body.locale);
-  const roleContext = parseRoleContext(body.roleContext);
+  const locale = parseReportLocale(body.locale);
+  const roleContext = parseReportRoleContext(body.roleContext);
   const turns = parseTurns(body.turns);
   const jobDirection = body.jobDirection === undefined ? undefined : roleContext ? parseApprovedJobDirection(body.jobDirection, roleContext.targetRole, roleContext.seniority) : null;
   if (body.jobDirection !== undefined && !jobDirection) return null;
@@ -68,8 +68,8 @@ function parseInput(body: unknown): InterviewReportInput | null {
 
 function parseTurnInput(body: unknown): InterviewTurnAnalysisInput | null {
   if (!isRecord(body) || Object.keys(body).some((key) => !["locale", "roleContext", "turn", "jobDirection"].includes(key))) return null;
-  const locale = parseLocale(body.locale);
-  const roleContext = parseRoleContext(body.roleContext);
+  const locale = parseReportLocale(body.locale);
+  const roleContext = parseReportRoleContext(body.roleContext);
   const turn = parseTurn(body.turn);
   const jobDirection = body.jobDirection === undefined ? undefined : roleContext ? parseApprovedJobDirection(body.jobDirection, roleContext.targetRole, roleContext.seniority) : null;
   if (body.jobDirection !== undefined && !jobDirection) return null;
@@ -82,8 +82,8 @@ function parseTurnInput(body: unknown): InterviewTurnAnalysisInput | null {
  */
 function parseConsolidationInput(body: unknown): InterviewReportConsolidationInput | null {
   if (!isRecord(body) || Object.keys(body).some((key) => !["locale", "roleContext", "turns", "turnAnalyses", "jobDirection"].includes(key))) return null;
-  const locale = parseLocale(body.locale);
-  const roleContext = parseRoleContext(body.roleContext);
+  const locale = parseReportLocale(body.locale);
+  const roleContext = parseReportRoleContext(body.roleContext);
   const turns = parseTurns(body.turns);
   const jobDirection = body.jobDirection === undefined ? undefined : roleContext ? parseApprovedJobDirection(body.jobDirection, roleContext.targetRole, roleContext.seniority) : null;
   if (body.jobDirection !== undefined && !jobDirection) return null;
