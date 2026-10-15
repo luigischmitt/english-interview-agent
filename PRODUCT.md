@@ -12,7 +12,7 @@ The primary users are Brazilian developers and other technology professionals pr
 
 ## Product Purpose
 
-English Interview Agent provides realistic English interview practice so a candidate's technical competence can be perceived with clarity, confidence, and precision. The current experience presents a fixed interview question sequence. Coherent follow-ups are a confirmed intended product direction, not a current capability. Its intended feedback model is specific, respectful, and practical, evaluating the content of the answer, English communication, and vocal delivery when that capability is implemented.
+Entoa provides realistic English interview practice so a candidate's technical competence can be perceived with clarity, confidence, and precision. The current experience presents a fixed interview question sequence. Coherent follow-ups are a confirmed intended product direction, not a current capability. Its intended feedback model is specific, respectful, and practical, evaluating the content of the answer, English communication, and vocal delivery when that capability is implemented.
 
 Success means helping the candidate sustain and communicate an answer under pressure. The product does not require perfect English or aim to eliminate a Brazilian accent.
 
@@ -36,7 +36,7 @@ Candidates use the product to prepare for professional interviews, initially in 
 
 ## Brand Commitments
 
-- Product name: English Interview Agent.
+- Product name: Entoa (formerly English Interview Agent).
 - The voice is clear, respectful, practical, and confidence-building under pressure.
 - The product speaks about clarity, intelligibility, confidence, and precision; it does not frame a Brazilian accent as a defect or promise native-like English.
 - User-facing English should favor short, familiar language appropriate for B1/B2 readers and interview practice.

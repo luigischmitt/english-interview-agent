@@ -167,7 +167,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
       <section className="au-shell">
         <Link href="/" className="au-brand ds-fade-in">
           <Image src="/landing/tucano.png" alt="" width={30} height={34} priority />
-          <span>English Interview Agent</span>
+          <span style={{ fontFamily: "var(--font-display)", fontSize: "1.35rem", fontWeight: 400 }}>Entoa</span>
         </Link>
         <div className="au-card ds-card ds-enter">
           <div className="au-stack">

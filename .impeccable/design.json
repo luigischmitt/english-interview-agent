@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-09-19T22:56:02-03:00",
-  "title": "Design System: English Interview Agent",
+  "title": "Design System: Entoa",
   "extensions": {
     "colorMeta": {
       "canvas": {
@@ -155,7 +155,7 @@
   ],
   "narrative": {
     "northStar": "The Calm Rehearsal Desk",
-    "overview": "English Interview Agent is an editorial operating surface for a high-pressure human task. The interface gives a candidate one useful next move, using warm bone surfaces, ink-colored type, sparse hairline rules, and a precise blue-green accent. It feels like a prepared desk: quiet, legible, and ready when the question arrives.\n\nThe visual system favors hierarchy over decoration. Public Home makes the audience and promise clear before offering one account action; authenticated Home keeps one practice action in front, with warm-up and Progress as supporting paths. The implementation rejects gradients, heavy shadows, generic bento grids, decorative avatars, and claims the product cannot support.",
+    "overview": "Entoa is an editorial operating surface for a high-pressure human task. The interface gives a candidate one useful next move, using warm bone surfaces, ink-colored type, sparse hairline rules, and a precise blue-green accent. It feels like a prepared desk: quiet, legible, and ready when the question arrives.\n\nThe visual system favors hierarchy over decoration. Public Home makes the audience and promise clear before offering one account action; authenticated Home keeps one practice action in front, with warm-up and Progress as supporting paths. The implementation rejects gradients, heavy shadows, generic bento grids, decorative avatars, and claims the product cannot support.",
     "keyCharacteristics": ["Warm monochrome canvas with a single muted teal action voice.", "Editorial rules, narrow measures, and deliberate whitespace.", "Controls are modestly rounded, tactile, and visibly focusable.", "Content remains useful at 390px, 768px, and 1440px."],
     "rules": [
       {"name": "The One Voice Rule", "body": "Let the accent carry action and current-location meaning; do not spread it across decorative surfaces.", "section": "colors"},
