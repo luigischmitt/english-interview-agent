@@ -121,6 +121,11 @@ test("persisted report allowlist retains optional plan and technical-topic snaps
   assert.equal("model" in serialized, false);
 });
 
+test("persisted report allowlist keeps saved polished answers", () => {
+  const polishedAnswers = { 3: { polishedAnswer: "I led the migration.", keyChanges: [], generatedAt: "2026-01-01T00:00:00.000Z" } };
+  assert.deepEqual(serializeInterviewAnalysis({ ...report, polishedAnswers }).polishedAnswers, polishedAnswers);
+});
+
 test("persisted report allowlist retains per-answer turns while legacy reports remain valid", () => {
   const turn = { sequenceNumber: 2, technicalStrengths: [], technicalGaps: [], englishPatterns: [] };
   assert.deepEqual(serializeInterviewAnalysis({ ...report, turns: [turn] }).turns, [turn]);

@@ -7,6 +7,7 @@ import { startTransition, useCallback, useEffect, useRef, useState, useSyncExter
 import {
   ArrowUpRight,
   Home,
+  BookOpenText,
   Leaf,
   LineChart,
   PanelLeftClose,
@@ -33,12 +34,13 @@ import { useLocale } from "@/lib/locale";
 
 import "./components/shell.css";
 
-type View = "home" | "interview-setup" | "train" | "progress" | "settings";
+type View = "home" | "interview-setup" | "train" | "progress" | "ready-answers" | "settings";
 
 const primaryNavigationItems = [
   { id: "home" as const, label: "Início", icon: Home },
   { id: "interview-setup" as const, label: "Entrevista", icon: Video },
   { id: "progress" as const, label: "Progresso", icon: LineChart },
+  { id: "ready-answers" as const, label: "Respostas prontas", icon: BookOpenText },
 ];
 
 const settingsNavigationItem = { id: "settings" as const, label: "Configurações", icon: SlidersHorizontal };
@@ -54,6 +56,7 @@ const subscribeNever = () => () => {};
 const loadInterviewSetup = () => import("./components/interview-setup").then((module) => module.InterviewSetup);
 const loadTrainView = () => import("./components/train/train-view").then((module) => module.TrainView);
 const loadProgressView = () => import("./components/progress-view").then((module) => module.ProgressView);
+const loadReadyAnswersView = () => import("./components/ready-answers-view").then((module) => module.ReadyAnswersView);
 
 const ViewLoading = () => (
   <main id="main-content" className="mx-auto w-full max-w-6xl px-4 pb-28 pt-7 sm:px-8 sm:pb-12">
@@ -69,11 +72,13 @@ const ViewLoading = () => (
 const InterviewSetup = dynamic(loadInterviewSetup, { loading: ViewLoading });
 const TrainView = dynamic(loadTrainView, { loading: ViewLoading });
 const ProgressView = dynamic(loadProgressView, { loading: ViewLoading });
+const ReadyAnswersView = dynamic(loadReadyAnswersView, { loading: ViewLoading });
 
 function preloadView(view: View) {
   if (view === "interview-setup") void loadInterviewSetup();
   if (view === "train") void loadTrainView();
   if (view === "progress") void loadProgressView();
+  if (view === "ready-answers") void loadReadyAnswersView();
 }
 
 function isNavigationItemActive(view: View, item: View) {
@@ -86,6 +91,7 @@ const viewTrail: Record<View, readonly [string, string?]> = {
   "interview-setup": ["Entrevista", "Preparar entrevista"],
   train: ["Treinar"],
   progress: ["Progresso"],
+  "ready-answers": ["Respostas prontas"],
   settings: ["Configurações"],
 };
 
@@ -588,6 +594,7 @@ export default function App({ initialView = "home", initialLesson, initialPart }
           )}
           {view === "train" && <TrainView initialLesson={initialLesson} initialPart={initialPart} onInterview={() => navigate("interview-setup")} />}
           {view === "progress" && <ProgressView onStart={() => navigate("interview-setup")} />}
+          {view === "ready-answers" && <ReadyAnswersView onStart={() => navigate("interview-setup")} />}
           {view === "settings" && <SettingsView />}
         </div>
       </div>
