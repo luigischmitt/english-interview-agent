@@ -46,8 +46,9 @@ describe("answer voice details", () => {
     const text = "We build reliable systems. Deploy stable software globally every week.";
     const phrases = buildAnswerPhrases(text, makeWords(text.replace(/[.]/g, ""), [90, 90, 45, 90, 90, 90, 40, 90, 90]));
     expect(phrases).toHaveLength(2);
-    expect(phrases[0]).toMatchObject({ text: "We build reliable systems", issue: "pronunciation", score: 78.75, phraseIndex: 0 });
-    expect(phrases[1]!.problemWords[0]).toMatchObject({ word: "software", score: 40, prosodyErrors: [] });
+    // Ranked by the worst problem word: software (40) before reliable (45).
+    expect(phrases[0]!.problemWords[0]).toMatchObject({ word: "software", score: 40, prosodyErrors: [] });
+    expect(phrases[1]).toMatchObject({ text: "We build reliable systems", issue: "pronunciation", score: 78.75, phraseIndex: 1 });
     expect(phrases.every((phrase) => phrase.text.split(" ").length >= 3 && phrase.text.split(" ").length <= 8)).toBe(true);
     expect(phrases[0]!.endMs <= phrases[1]!.startMs || phrases[1]!.endMs <= phrases[0]!.startMs).toBe(true);
   });
@@ -79,6 +80,38 @@ describe("answer voice details", () => {
     expect(buildAnswerPhrases("uh um uhm erm", makeWords("uh um uhm erm", [40, 90, 90, 90]))).toEqual([]);
   });
 
+  it("selects clean breath groups and ignores function words, acronyms, repeats, and transcript mismatches", () => {
+    const cases = [
+      ["I am using a framework today", [95, 40, 90, 90, 90, 90], []],
+      ["I study AWS daily with focus", [90, 90, 40, 90, 90, 90], []],
+      ["we build reliable systems daily", [40, 90, 90, 90, 90], []],
+      ["we build reliable systems daily", [90, 90, 4, 90, 90], []],
+      ["we build reliable systems daily", [90, 90, 25, 90, 90], []],
+    ] as const;
+    for (const [text, scores] of cases) {
+      const phrases = buildAnswerPhrases(text, makeWords(text, [...scores]));
+      expect(phrases.every((phrase) => phrase.problemWords.every((word) => word.score !== null && word.score >= 30))).toBe(true);
+    }
+    const functionWordText = "I am using a framework today";
+    expect(buildAnswerPhrases(functionWordText, makeWords(functionWordText, [95, 40, 90, 90, 90, 90]))).toEqual([]);
+    const acronymText = "we use AWS daily with care";
+    expect(buildAnswerPhrases(acronymText, makeWords(acronymText, [90, 90, 40, 90, 90, 90]))).toEqual([]);
+    const repeatedText = "we see if the if the metric today";
+    expect(buildAnswerPhrases(repeatedText, makeWords(repeatedText, [90, 90, 90, 90, 90, 90, 40, 90]))).toEqual([]);
+    const mismatchText = "we build reliable systems daily";
+    expect(buildAnswerPhrases(mismatchText, makeWords(mismatchText, [90, 90, 4, 90, 90]))).toEqual([]);
+  });
+
+  it("rejects long pauses and implausibly fast phrase timing", () => {
+    const paused = makeWords("we build reliable systems daily", [90, 90, 90, 90, 40]);
+    paused[3]!.startMs = 1_200;
+    paused[3]!.endMs = 1_450;
+    expect(buildAnswerPhrases("we build reliable systems daily", paused)).toEqual([]);
+    const fast = makeWords("we build reliable systems", [90, 90, 40, 90]);
+    fast.forEach((word, index) => { word.startMs = index * 65; word.endMs = index * 65 + 35; });
+    expect(buildAnswerPhrases("we build reliable systems", fast)).toEqual([]);
+  });
+
   it("calculates pace, pauses, start delay, and filler counts", () => {
     const words: TranscriptionWord[] = [
       { text: "Um", start: 0.5, end: 0.8 }, { text: "I", start: 1, end: 1.1 }, { text: "mean", start: 1.1, end: 1.3 },
@@ -96,5 +129,16 @@ describe("answer voice details", () => {
     expect(clips[0]).toMatchObject({ phraseIndex: 2, mimeType: "audio/webm;codecs=opus" });
     expect(Buffer.from(clips[0]!.base64, "base64").subarray(0, 4).toString()).toBe("\u001aEߣ");
     wav.fill(0);
+  });
+});
+
+describe("phrase dedupe", () => {
+  const makeWords = (text: string, scores: number[]) => text.split(" ").map((word, index) => ({ word, accuracyScore: scores[index] ?? 90, errorType: (scores[index] ?? 90) < 70 ? "Mispronunciation" : "None", startMs: index * 300, endMs: index * 300 + 250, phonemes: [], prosodyErrors: [] as string[] }));
+  it("returns one phrase when a breath group has two problem words", () => {
+    const text = "We optimized the database migration quickly.";
+    const words = makeWords(text.replace(".", ""), [90, 50, 90, 45, 90, 90]);
+    const phrases = buildAnswerPhrases(text, words);
+    expect(phrases).toHaveLength(1);
+    expect(phrases[0]!.problemWords.map((word) => word.word)).toEqual(["optimized", "database"]);
   });
 });
