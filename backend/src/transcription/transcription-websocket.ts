@@ -12,8 +12,9 @@ import type { StreamFailureReason, StreamingTurnSession, TurnEndInfo } from "./s
 import { IncrementalWhisperSession, type SessionFailureDetail } from "./incremental-whisper-session.js";
 import { PlannedCoverageError, type PlannedCoverage, type PlannedCoverageService } from "../thinking/planned-coverage-service.js";
 import { AnswerCompletionError, type AnswerCompletionService, type CandidateCompatibility, type FollowUpCandidate } from "../thinking/answer-completion-service.js";
-import { aggregateAzureBlockScores, alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
+import { aggregateAzureBlockScores, alignSegmentTimingToTranscript, createAzureAlignedBlocks, mapAzureBlockReferencesToReviewed, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
 import { buildAnswerPhrases, calculateDeliveryMetrics, createPhraseClips } from "./answer-voice-detail.js";
+import type { TranscriptReviewService } from "./transcript-review-service.js";
 
 type ClientMessage =
   | { type: "start"; accessToken?: unknown; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; captions?: unknown; question?: unknown; plannedQuestion?: unknown; contextAnswers?: unknown; transcriptionEngine?: unknown }
@@ -262,6 +263,10 @@ export type StreamingOptions = {
    * question; its verdict is sent as `planned-question-status`. It never influences the completion verdict. Absent or null disables it.
    */
   plannedCoverage?: PlannedCoverageService | null;
+  /** Optional post-answer multimodal review of the full WAV. */
+  transcriptReview?: TranscriptReviewService | null;
+  /** Whether review was enabled in configuration, including when no OpenRouter key is available. */
+  transcriptReviewEnabled?: boolean;
   /** Upper bound for ending a turn at a pause (`endTurn`). */
   flushTimeoutMs?: number;
 };
@@ -715,20 +720,31 @@ export function attachTranscriptionWebSocket(
       abortController: AbortController;
       release: () => void;
       getTiming: () => Promise<{ result: TranscriptionResult; origin: "incremental" | "full" | "full_fallback" } | null>;
+      draftTranscript: string;
     }) => {
-      const { session, audio, durationMs, transcriptionDurationMs, abortController, release, getTiming } = context;
+      const { session, audio, durationMs, transcriptionDurationMs, abortController, release, getTiming, draftTranscript } = context;
       const service = assessmentService;
-      if (!service) {
-        release();
-        return;
-      }
       void (async () => {
         const assessmentStartedAt = Date.now();
+        let reviewedTranscript = draftTranscript;
         let timingSource = "missing";
         let timingOrigin = "missing";
         let timingRetryOutcome = "not_needed";
         let blocks: AzureAudioBlock[] = [];
         try {
+          const review = streaming?.transcriptReview;
+          if ((streaming?.transcriptReviewEnabled || review) && (draftTranscript.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)?.length ?? 0) >= 3) {
+            try {
+              const result = review ? await review.review(audio, draftTranscript, whisperQuestion, abortController.signal) : null;
+              if (result) {
+                reviewedTranscript = result.transcript;
+                send(socket, { type: "reviewed_transcript", transcript: result.transcript, changed: result.changed });
+              } else send(socket, { type: "reviewed_transcript", status: "unavailable" });
+            } catch {
+              send(socket, { type: "reviewed_transcript", status: "unavailable" });
+            }
+          }
+          if (!service) return;
           const timingInput = await getTiming();
           if (!timingInput) {
             const totalDurationMs = Date.now() - assessmentStartedAt;
@@ -745,7 +761,7 @@ export function attachTranscriptionWebSocket(
           for (const candidate of candidates) {
             if (!candidate.timings?.length) continue;
             const aligned = alignSegmentTimingToTranscript(candidate.timings, timing!.transcript);
-            const candidateBlocks = aligned?.length ? createAzureAlignedBlocks(audio, aligned) : [];
+            const candidateBlocks = aligned?.length ? mapAzureBlockReferencesToReviewed(createAzureAlignedBlocks(audio, aligned), timing!.transcript, reviewedTranscript) : [];
             if (candidateBlocks.length) {
               timingSource = candidate.source;
               blocks = candidateBlocks;
@@ -765,7 +781,7 @@ export function attachTranscriptionWebSocket(
                 const retry = await transcriptionService.retrySegmentTimestamps(audio, timing.provider, "wav", abortController.signal);
                 if (session.cancelled || socket.readyState !== WebSocket.OPEN) return;
                 const retryTiming = retry.segments ? alignSegmentTimingToTranscript(retry.segments, timing.transcript) : undefined;
-                const retryBlocks = retryTiming?.length ? createAzureAlignedBlocks(audio, retryTiming) : [];
+                const retryBlocks = retryTiming?.length ? mapAzureBlockReferencesToReviewed(createAzureAlignedBlocks(audio, retryTiming), timing.transcript, reviewedTranscript) : [];
                 if (retryBlocks.length) {
                   blocks = retryBlocks;
                   timingSource = "segment_retry";
@@ -810,7 +826,7 @@ export function attachTranscriptionWebSocket(
             const blockStartMs = blocks[index]!.startByte / 32;
             return { ...word, startMs: word.startMs + blockStartMs, endMs: word.endMs + blockStartMs };
           }));
-          const phrases = timing ? buildAnswerPhrases(timing.transcript, azureWords, { allowIntonation: scores.prosody !== null && scores.prosody < 70 }) : [];
+          const phrases = timing ? buildAnswerPhrases(reviewedTranscript, azureWords, { allowIntonation: scores.prosody !== null && scores.prosody < 70 }) : [];
           const delivery = calculateDeliveryMetrics(timing?.words ?? []);
           const clips = Object.values(scores).some((score) => score !== null) ? await createPhraseClips(audio, phrases) : [];
           const assessedDurationMs = assessments.reduce((sum, item) => sum + (item.assessment ? item.durationMs : 0), 0);
@@ -910,13 +926,13 @@ export function attachTranscriptionWebSocket(
           send(socket, { type: "complete", status: "complete", provider: "whisper-incremental", durationMs, transcript, speechEpoch, pendingFollowUpCheck: pendingFollowUpCheck() });
           clearTimeout(timer);
 
-          if (!assessmentService) return;
+          if (!assessmentService && !streaming?.transcriptReviewEnabled && !streaming?.transcriptReview) return;
           audio = sessions.toWav(id);
           handedOff = true;
           const assessmentAudio = audio;
           const incrementalTiming = stream.timingResult?.() ?? null;
           startAssessment({
-            session, audio: assessmentAudio, durationMs, transcriptionDurationMs, abortController, release,
+            session, audio: assessmentAudio, durationMs, transcriptionDurationMs, abortController, release, draftTranscript: transcript,
             getTiming: async () => {
               if (incrementalTiming) return { result: incrementalTiming, origin: "incremental" as const };
               const timingSlot = await acquireTimingRecoverySlot(abortController.signal);
@@ -1018,9 +1034,9 @@ export function attachTranscriptionWebSocket(
               });
               clearTimeout(timer);
 
-              if (!assessmentService) return;
+              if (!assessmentService && !streaming?.transcriptReviewEnabled && !streaming?.transcriptReview) return;
               assessmentOwnsAudio = true;
-              startAssessment({ session, audio, durationMs, transcriptionDurationMs, abortController, release, getTiming: async () => ({ result, origin: "full" }) });
+              startAssessment({ session, audio, durationMs, transcriptionDurationMs, abortController, release, draftTranscript: result.transcript, getTiming: async () => ({ result, origin: "full" }) });
             } catch (error) {
               if (!session.cancelled && socket.readyState === WebSocket.OPEN) {
                 fail(safeTranscriptionErrorCode(error), "We couldn't transcribe that answer. Please try again or skip/end the practice.", 1011, { ...safeFailureDetails(error), hedge: activeHedge.outcome });

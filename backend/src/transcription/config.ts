@@ -36,6 +36,9 @@ export type TranscriptionConfig = {
   tailHedgeAfterMs: number;
   /** Send a vocabulary/context `prompt` with every Whisper request. `TRANSCRIPTION_WHISPER_PROMPT=off` disables it. */
   whisperPromptEnabled: boolean;
+  transcriptReviewEnabled: boolean;
+  transcriptReviewModel: string;
+  transcriptReviewTimeoutMs: number;
 };
 
 /** Cloud Run concurrency is 20; per-instance stream memory remains bounded by 20 x 6 MiB PCM plus WAV copies. */
@@ -117,5 +120,8 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     maxSemanticChecks: parseIntegerInRange(environment.TRANSCRIPTION_MAX_SEMANTIC_CHECKS, 2, 0, 5, "Max semantic checks"),
     tailHedgeAfterMs: parseIntegerInRange(environment.TRANSCRIPTION_TAIL_HEDGE_AFTER_MS, 1_500, 0, 30_000, "Tail hedge delay"),
     whisperPromptEnabled: environment.TRANSCRIPTION_WHISPER_PROMPT?.trim().toLowerCase() !== "off",
+    transcriptReviewEnabled: environment.TRANSCRIPT_REVIEW_ENABLED?.trim().toLowerCase() !== "false",
+    transcriptReviewModel: environment.TRANSCRIPT_REVIEW_MODEL?.trim() || "google/gemini-3.8-flash",
+    transcriptReviewTimeoutMs: parsePositiveInteger(environment.TRANSCRIPT_REVIEW_TIMEOUT_MS, 20_000, 60_000),
   };
 }

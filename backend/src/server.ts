@@ -7,6 +7,7 @@ import { loadThinkingConfig } from "./thinking/config.js";
 import { OpenRouterPlannedCoverageService } from "./thinking/planned-coverage-service.js";
 import { OpenRouterAnswerCompletionService } from "./thinking/answer-completion-service.js";
 import { attachTranscriptionWebSocket } from "./transcription/transcription-websocket.js";
+import { OpenRouterTranscriptReviewService } from "./transcription/transcript-review-service.js";
 
 const port = Number(process.env.PORT ?? 3001);
 
@@ -29,6 +30,9 @@ const answerCompletion = defaultTranscriptionConfig.semanticEndEnabled && thinki
 const plannedCoverage = answerCompletion && thinkingConfig.openRouterApiKey
   ? new OpenRouterPlannedCoverageService({ apiKey: thinkingConfig.openRouterApiKey, model: thinkingConfig.model, timeoutMs: defaultTranscriptionConfig.semanticEndTimeoutMs })
   : null;
+const transcriptReview = defaultTranscriptionConfig.transcriptReviewEnabled && defaultTranscriptionConfig.openRouterApiKey
+  ? new OpenRouterTranscriptReviewService({ key: defaultTranscriptionConfig.openRouterApiKey, model: defaultTranscriptionConfig.transcriptReviewModel, timeoutMs: defaultTranscriptionConfig.transcriptReviewTimeoutMs })
+  : null;
 attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunciationAssessmentService, {
   maxDurationMs: defaultTranscriptionConfig.streamMaxDurationMs,
   maxBytes: defaultTranscriptionConfig.streamMaxBytes,
@@ -43,7 +47,7 @@ attachTranscriptionWebSocket(server, defaultTranscriptionService, defaultPronunc
   hedgeAfterMs: defaultTranscriptionConfig.hedgeAfterMs,
   finalizationTimeoutMs: 2 * defaultTranscriptionConfig.openRouterTimeoutMs + defaultTranscriptionConfig.assessmentTimeoutMs + 10_000,
 }, {
-  answerGraceMs: defaultTranscriptionConfig.answerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.incompleteGraceMs, pauseMs: defaultTranscriptionConfig.pauseMs, prepareAfterMs: defaultTranscriptionConfig.prepareAfterMs, maxPrepares: defaultTranscriptionConfig.maxPrepares, semanticCheckAfterMs: defaultTranscriptionConfig.semanticCheckAfterMs, semanticCompleteMinSilenceMs: defaultTranscriptionConfig.semanticCompleteMinSilenceMs, maxSemanticChecks: defaultTranscriptionConfig.maxSemanticChecks, incrementalWhisper: { tailHedgeAfterMs: defaultTranscriptionConfig.tailHedgeAfterMs }, answerCompletion, plannedCoverage }, { verifier: defaultAccessTokenVerifier });
+  answerGraceMs: defaultTranscriptionConfig.answerGraceMs, incompleteGraceMs: defaultTranscriptionConfig.incompleteGraceMs, pauseMs: defaultTranscriptionConfig.pauseMs, prepareAfterMs: defaultTranscriptionConfig.prepareAfterMs, maxPrepares: defaultTranscriptionConfig.maxPrepares, semanticCheckAfterMs: defaultTranscriptionConfig.semanticCheckAfterMs, semanticCompleteMinSilenceMs: defaultTranscriptionConfig.semanticCompleteMinSilenceMs, maxSemanticChecks: defaultTranscriptionConfig.maxSemanticChecks, incrementalWhisper: { tailHedgeAfterMs: defaultTranscriptionConfig.tailHedgeAfterMs }, answerCompletion, plannedCoverage, transcriptReview, transcriptReviewEnabled: defaultTranscriptionConfig.transcriptReviewEnabled }, { verifier: defaultAccessTokenVerifier });
 
 server.listen(port, () => {
   console.info(`Backend listening on port ${port}`);

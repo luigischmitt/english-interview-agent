@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateAzureBlockScores, alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock } from "./azure-aligned-blocks.js";
+import { aggregateAzureBlockScores, alignSegmentTimingToTranscript, createAzureAlignedBlocks, mapAzureBlockReferencesToReviewed, materializeAzureBlock } from "./azure-aligned-blocks.js";
 import { pcmToWav } from "./streaming-transcription.js";
 import { parseWhisperSegments, parseWhisperWords } from "./openrouter-whisper-transcription-service.js";
 
@@ -27,6 +27,13 @@ describe("Whisper segment timestamps", () => {
 });
 
 describe("Azure aligned blocks", () => {
+  it("maps block references to reviewed tokens, retaining reviewed-only words inside a timed span", () => {
+    const draft = "I work hard and build service";
+    const reviewed = "I work very hard and build services";
+    const blocks = [{ startByte: 0, endByte: 100, referenceText: "I work hard", durationMs: 10 }, { startByte: 100, endByte: 200, referenceText: "and build service", durationMs: 10 }];
+    expect(mapAzureBlockReferencesToReviewed(blocks, draft, reviewed).map(({ referenceText }) => referenceText)).toEqual(["I work very hard", "and build services"]);
+  });
+
   it("uses canonical transcript text for partial timing and never bridges an untimed phrase", () => {
     const aligned = alignSegmentTimingToTranscript([
       word("Hello", 0, 0.5),
