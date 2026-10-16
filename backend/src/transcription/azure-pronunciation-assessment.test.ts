@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { createAudioToWav } from "./audio-to-wav.js";
-import { AzurePronunciationAssessmentService } from "./azure-pronunciation-assessment.js";
+import { AzurePronunciationAssessmentService, parseAzureWords } from "./azure-pronunciation-assessment.js";
 
 function fakeSpawn(exitCode = 0) {
   const calls: Array<{ command: string; args: string[]; input: Buffer }> = [];
@@ -25,6 +25,14 @@ const defaultConvert = async () => Buffer.alloc(64);
 const referenceText = "I would clarify the goal and explain the trade-offs.";
 
 describe("Azure scripted pronunciation assessment transport", () => {
+  it("parses the real detailed REST word shape with flat word and phoneme scores", () => {
+    expect(parseAzureWords([{ Word: "I", Offset: 400_000, Duration: 1_300_000, Confidence: 0, AccuracyScore: 100, ErrorType: "None", Syllables: [{ Syllable: "ay", Grapheme: "I", Offset: 400_000, Duration: 1_300_000, AccuracyScore: 100 }], Phonemes: [{ Phoneme: "ay", Offset: 400_000, Duration: 1_300_000, AccuracyScore: 100 }], Feedback: { Prosody: { Break: { ErrorTypes: ["None"], BreakLength: 0 }, Intonation: { ErrorTypes: ["Monotone"], Monotone: { SyllablePitchDelta: 0 } } } } }])).toEqual([{ word: "I", accuracyScore: 100, errorType: "None", startMs: 40, endMs: 170, phonemes: [{ phoneme: "ay", accuracyScore: 100 }], prosodyErrors: ["Monotone"] }]);
+  });
+
+  it("uses nested pronunciation scores when flat word or phoneme scores are absent", () => {
+    expect(parseAzureWords([{ Word: "nested", Offset: 0, Duration: 1_000_000, PronunciationAssessment: { AccuracyScore: 52, ErrorType: "Mispronunciation" }, Phonemes: [{ Phoneme: "n", PronunciationAssessment: { AccuracyScore: 30 } }] }])).toEqual([{ word: "nested", accuracyScore: 52, errorType: "Mispronunciation", startMs: 0, endMs: 100, phonemes: [{ phoneme: "n", accuracyScore: 30 }], prosodyErrors: [] }]);
+  });
+
   it.each(["webm", "mp4"] as const)("converts %s via ffmpeg stdin/stdout without files", async (format) => {
     const fake = fakeSpawn();
     const convert = createAudioToWav({ spawnProcess: fake.implementation });

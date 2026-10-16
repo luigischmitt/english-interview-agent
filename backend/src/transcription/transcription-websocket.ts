@@ -13,7 +13,7 @@ import { IncrementalWhisperSession, type SessionFailureDetail } from "./incremen
 import { PlannedCoverageError, type PlannedCoverage, type PlannedCoverageService } from "../thinking/planned-coverage-service.js";
 import { AnswerCompletionError, type AnswerCompletionService, type CandidateCompatibility, type FollowUpCandidate } from "../thinking/answer-completion-service.js";
 import { aggregateAzureBlockScores, alignSegmentTimingToTranscript, createAzureAlignedBlocks, materializeAzureBlock, type AzureAudioBlock } from "./azure-aligned-blocks.js";
-import { buildAnswerSentences, calculateDeliveryMetrics, createSentenceClips } from "./answer-voice-detail.js";
+import { buildAnswerPhrases, calculateDeliveryMetrics, createPhraseClips } from "./answer-voice-detail.js";
 
 type ClientMessage =
   | { type: "start"; accessToken?: unknown; version: 2; sampleRate: number; channels: 1; encoding: "s16le"; speechThreshold: number; captions?: unknown; question?: unknown; plannedQuestion?: unknown; contextAnswers?: unknown; transcriptionEngine?: unknown }
@@ -810,15 +810,14 @@ export function attachTranscriptionWebSocket(
             const blockStartMs = blocks[index]!.startByte / 32;
             return { ...word, startMs: word.startMs + blockStartMs, endMs: word.endMs + blockStartMs };
           }));
-          const rankedSentences = timing ? buildAnswerSentences(timing.transcript, azureWords) : [];
-          const sentences = rankedSentences.slice(0, 5);
+          const phrases = timing ? buildAnswerPhrases(timing.transcript, azureWords, { allowIntonation: scores.prosody !== null && scores.prosody < 70 }) : [];
           const delivery = calculateDeliveryMetrics(timing?.words ?? []);
-          const clips = Object.values(scores).some((score) => score !== null) ? await createSentenceClips(audio, rankedSentences) : [];
+          const clips = Object.values(scores).some((score) => score !== null) ? await createPhraseClips(audio, phrases) : [];
           const assessedDurationMs = assessments.reduce((sum, item) => sum + (item.assessment ? item.durationMs : 0), 0);
           const diagnostics = { transcriptionDurationMs, azureQueueWaitMs: queueWaitMs, azureServiceDurationMs: serviceDurationMs, totalDurationMs };
           if (Object.values(scores).some((score) => score !== null)) {
-            logAzureAssessment({ status: "available", timingSource, timingOrigin, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, audioDurationMs: Math.round(durationMs), assessedDurationMs, ...diagnostics });
-            send(socket, { type: "assessment", status: "available", provider: "azure", locale: "en-US", mode: "scripted", scores, durationMs: assessedDurationMs, segmented: true, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, diagnostics, ...(sentences.length ? { sentences } : {}), ...(delivery ? { delivery } : {}), ...(clips.length ? { clips } : {}) });
+            logAzureAssessment({ status: "available", timingSource, timingOrigin, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, phraseCount: phrases.length, clipCount: clips.length, audioDurationMs: Math.round(durationMs), assessedDurationMs, ...diagnostics });
+            send(socket, { type: "assessment", status: "available", provider: "azure", locale: "en-US", mode: "scripted", scores, durationMs: assessedDurationMs, segmented: true, blockCount: blocks.length, assessedBlockCount: assessed, failedBlockCount: blocks.length - assessed, diagnostics, ...(phrases.length ? { phrases } : {}), ...(delivery ? { delivery } : {}), ...(clips.length ? { clips } : {}) });
           } else {
             logAzureAssessment({ status: "unavailable", reason: failureCategory, timingSource, timingOrigin, timingRetryOutcome, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, audioDurationMs: Math.round(durationMs), ...diagnostics });
             send(socket, { type: "assessment", status: "unavailable", reason: failureCategory, blockCount: blocks.length, assessedBlockCount: 0, failedBlockCount: blocks.length, durationMs: 0, diagnostics });

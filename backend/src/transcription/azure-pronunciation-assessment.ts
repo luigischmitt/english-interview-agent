@@ -159,22 +159,24 @@ export function parseAzureWords(value: unknown): AzureWordAssessment[] {
     if (typeof raw.Word !== "string" || !raw.Word.trim() || typeof raw.Offset !== "number" || !Number.isFinite(raw.Offset) || raw.Offset < 0
       || typeof raw.Duration !== "number" || !Number.isFinite(raw.Duration) || raw.Duration <= 0) continue;
     const pa = raw.PronunciationAssessment && typeof raw.PronunciationAssessment === "object" ? raw.PronunciationAssessment as Record<string, unknown> : {};
-    const accuracyScore = typeof pa.AccuracyScore === "number" && Number.isFinite(pa.AccuracyScore) && pa.AccuracyScore >= 0 && pa.AccuracyScore <= 100 ? pa.AccuracyScore : null;
+    const validScore = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+    const accuracyScore = validScore(raw.AccuracyScore) ? raw.AccuracyScore : validScore(pa.AccuracyScore) ? pa.AccuracyScore : null;
     const phonemes: AzurePhoneme[] = [];
     if (Array.isArray(raw.Phonemes)) for (const candidate of raw.Phonemes) {
       if (!candidate || typeof candidate !== "object") continue;
       const phoneme = candidate as Record<string, unknown>;
       const phonemePa = phoneme.PronunciationAssessment && typeof phoneme.PronunciationAssessment === "object" ? phoneme.PronunciationAssessment as Record<string, unknown> : {};
-      if (typeof phoneme.Phoneme === "string" && typeof phonemePa.AccuracyScore === "number" && Number.isFinite(phonemePa.AccuracyScore) && phonemePa.AccuracyScore >= 0 && phonemePa.AccuracyScore <= 100) phonemes.push({ phoneme: phoneme.Phoneme, accuracyScore: phonemePa.AccuracyScore });
+      const phonemeAccuracy = validScore(phoneme.AccuracyScore) ? phoneme.AccuracyScore : phonemePa.AccuracyScore;
+      if (typeof phoneme.Phoneme === "string" && validScore(phonemeAccuracy)) phonemes.push({ phoneme: phoneme.Phoneme, accuracyScore: phonemeAccuracy });
     }
     const feedback = raw.Feedback && typeof raw.Feedback === "object" ? raw.Feedback as Record<string, unknown> : {};
     const prosody = feedback.Prosody && typeof feedback.Prosody === "object" ? feedback.Prosody as Record<string, unknown> : {};
     const prosodyErrors: string[] = [];
     for (const key of ["Break", "Intonation"]) {
       const entry = prosody[key] && typeof prosody[key] === "object" ? prosody[key] as Record<string, unknown> : {};
-      if (Array.isArray(entry.ErrorTypes)) for (const error of entry.ErrorTypes) if (typeof error === "string") prosodyErrors.push(error);
+      if (Array.isArray(entry.ErrorTypes)) for (const error of entry.ErrorTypes) if (typeof error === "string" && error !== "None") prosodyErrors.push(error);
     }
-    output.push({ word: raw.Word, accuracyScore, errorType: typeof pa.ErrorType === "string" ? pa.ErrorType : null, startMs: raw.Offset / 10_000, endMs: (raw.Offset + raw.Duration) / 10_000, phonemes, prosodyErrors });
+    output.push({ word: raw.Word, accuracyScore, errorType: typeof raw.ErrorType === "string" ? raw.ErrorType : typeof pa.ErrorType === "string" ? pa.ErrorType : null, startMs: raw.Offset / 10_000, endMs: (raw.Offset + raw.Duration) / 10_000, phonemes, prosodyErrors });
   }
   return output;
 }

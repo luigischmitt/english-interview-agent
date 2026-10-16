@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAnswerSentences, calculateDeliveryMetrics, createSentenceClips, splitAnswerSentences } from "../src/transcription/answer-voice-detail.js";
+import { buildAnswerPhrases, calculateDeliveryMetrics, createPhraseClips } from "../src/transcription/answer-voice-detail.js";
 import { parseAzureWords } from "../src/transcription/azure-pronunciation-assessment.js";
 import type { TranscriptionWord } from "../src/transcription/types.js";
 import { spawnSync } from "node:child_process";
@@ -9,16 +9,27 @@ describe("answer voice details", () => {
     expect(parseAzureWords([
       {
         Word: "clear", Offset: 10_000_000, Duration: 5_000_000,
-        PronunciationAssessment: { AccuracyScore: 42, ErrorType: "Mispronunciation" },
-        Phonemes: [{ Phoneme: "k", PronunciationAssessment: { AccuracyScore: 20 } }],
-        Feedback: { Prosody: { Break: { ErrorTypes: ["UnexpectedBreak"] }, Intonation: { ErrorTypes: ["Monotone"] } } },
+        AccuracyScore: 42, ErrorType: "Mispronunciation",
+        Phonemes: [{ Phoneme: "k", AccuracyScore: 20 }],
+        Feedback: { Prosody: { Break: { ErrorTypes: ["UnexpectedBreak", "None"] }, Intonation: { ErrorTypes: ["Monotone"] } } },
       },
       { Word: "bad", Offset: -1, Duration: 0 },
     ])).toEqual([{ word: "clear", accuracyScore: 42, errorType: "Mispronunciation", startMs: 1_000, endMs: 1_500, phonemes: [{ phoneme: "k", accuracyScore: 20 }], prosodyErrors: ["UnexpectedBreak", "Monotone"] }]);
   });
 
   it("returns Azure word details from NBest and requests phoneme granularity", async () => {
-    const payload = { RecognitionStatus: "Success", NBest: [{ PronunciationAssessment: { AccuracyScore: 80, FluencyScore: 90 }, Words: [{ Word: "clear", Offset: 0, Duration: 5_000_000, PronunciationAssessment: { AccuracyScore: 42, ErrorType: "Mispronunciation" }, Phonemes: [{ Phoneme: "k", PronunciationAssessment: { AccuracyScore: 20 } }] }] }] };
+    const payload = {
+      RecognitionStatus: "Success",
+      NBest: [{
+        PronunciationAssessment: { AccuracyScore: 80, FluencyScore: 90 },
+        Words: [{
+          Word: "I", Offset: 400_000, Duration: 1_300_000, Confidence: 0, AccuracyScore: 100, ErrorType: "None",
+          Syllables: [{ Syllable: "ay", Grapheme: "I", Offset: 400_000, Duration: 1_300_000, AccuracyScore: 100 }],
+          Phonemes: [{ Phoneme: "ay", Offset: 400_000, Duration: 1_300_000, AccuracyScore: 100 }],
+          Feedback: { Prosody: { Break: { ErrorTypes: ["None"], BreakLength: 0 }, Intonation: { ErrorTypes: ["Monotone"], Monotone: { SyllablePitchDelta: 0 } } } },
+        }],
+      }],
+    };
     let header = "";
     const service = new (await import("../src/transcription/azure-pronunciation-assessment.js")).AzurePronunciationAssessmentService({
       key: "test", region: "test", timeoutMs: 1_000, convert: async (audio) => Buffer.from(audio),
@@ -26,34 +37,46 @@ describe("answer voice details", () => {
     });
     const assessment = await service.assess(Buffer.from([1]), "wav", "clear");
     expect(JSON.parse(Buffer.from(header, "base64").toString()).Granularity).toBe("Phoneme");
-    expect(assessment.words?.[0]).toMatchObject({ word: "clear", accuracyScore: 42, errorType: "Mispronunciation", startMs: 0, endMs: 500, phonemes: [{ phoneme: "k", accuracyScore: 20 }] });
+    expect(assessment.words?.[0]).toMatchObject({ word: "I", accuracyScore: 100, errorType: "None", startMs: 40, endMs: 170, phonemes: [{ phoneme: "ay", accuracyScore: 100 }], prosodyErrors: ["Monotone"] });
   });
 
-  it("splits and ranks sentences by matching Azure word text", () => {
-    const text = "We build reliable systems. We test every change carefully.";
-    expect(splitAnswerSentences(text)).toHaveLength(2);
-    const tokens = "We build reliable systems We test every change carefully".split(" ");
-    const azureWords = tokens.map((word, index) => ({ word, accuracyScore: index < 4 ? 90 : 40, errorType: index === 5 ? "Mispronunciation" : "None", startMs: index * 1_000, endMs: index * 1_000 + 500, phonemes: [], prosodyErrors: [] }));
-    expect(buildAnswerSentences(text, azureWords).map((sentence) => sentence.score)).toEqual([40, 90]);
-    expect(buildAnswerSentences(text, azureWords)[0]?.problemWords).toContainEqual({ word: "test", score: 40, errorType: "Mispronunciation", worstPhoneme: null });
+  const makeWords = (text: string, scores: number[], prosody: string[][] = []) => text.split(" ").map((word, index) => ({ word, accuracyScore: scores[index] ?? 90, errorType: (scores[index] ?? 90) < 70 ? "Mispronunciation" : "None", startMs: index * 300, endMs: index * 300 + 250, phonemes: [], prosodyErrors: prosody[index] ?? [] }));
+
+  it("creates short ranked phrase windows around pronunciation problems", () => {
+    const text = "We build reliable systems. Deploy stable software globally every week.";
+    const phrases = buildAnswerPhrases(text, makeWords(text.replace(/[.]/g, ""), [90, 90, 45, 90, 90, 90, 40, 90, 90]));
+    expect(phrases).toHaveLength(2);
+    expect(phrases[0]).toMatchObject({ text: "We build reliable systems", issue: "pronunciation", score: 78.75, phraseIndex: 0 });
+    expect(phrases[1]!.problemWords[0]).toMatchObject({ word: "software", score: 40, prosodyErrors: [] });
+    expect(phrases.every((phrase) => phrase.text.split(" ").length >= 3 && phrase.text.split(" ").length <= 8)).toBe(true);
+    expect(phrases[0]!.endMs <= phrases[1]!.startMs || phrases[1]!.endMs <= phrases[0]!.startMs).toBe(true);
   });
 
-  it("keeps later sentence scores aligned when a middle Azure block is missing", () => {
-    const text = "We build reliable systems. We test every change carefully. We deliver stable software globally.";
-    const tokens = "We build reliable systems We test every change carefully We deliver stable software globally".split(" ");
-    const azureWords = tokens.flatMap((word, index) => index >= 4 && index < 9 ? [] : [{ word, accuracyScore: index < 4 ? 90 : 35, errorType: "None", startMs: index * 1_000, endMs: index * 1_000 + 500, phonemes: [], prosodyErrors: [] }]);
-    const sentences = buildAnswerSentences(text, azureWords);
-    expect(sentences.map((sentence) => sentence.sentenceIndex)).toEqual([2, 0]);
-    expect(sentences.find((sentence) => sentence.sentenceIndex === 2)?.score).toBe(35);
+  it("only reports intonation when allowed, as one phrase without underlined words", () => {
+    const text = "We build reliable systems with care and focus.";
+    const monotone = makeWords(text.replace(".", ""), Array(7).fill(90), [["Monotone"], ["Monotone"], ["Monotone"], ["Monotone"], [], [], []]);
+    expect(buildAnswerPhrases(text, monotone)).toEqual([]);
+    const allowed = buildAnswerPhrases(text, monotone, { allowIntonation: true });
+    expect(allowed).toHaveLength(1);
+    expect(allowed[0]!.issue).toBe("intonation");
+    expect(allowed[0]!.problemWords).toEqual([]);
+    const shortRun = makeWords(text.replace(".", ""), Array(7).fill(90), [["Monotone"], ["Monotone"], ["Monotone"], [], [], [], []]);
+    expect(buildAnswerPhrases(text, shortRun, { allowIntonation: true })).toEqual([]);
+    const breakError = makeWords(text.replace(".", ""), Array(7).fill(90), [[], [], ["UnexpectedBreak"], [], [], [], []]);
+    expect(buildAnswerPhrases(text, breakError)).toEqual([]);
+    expect(buildAnswerPhrases(text, breakError, { allowIntonation: true })[0]!.issue).toBe("intonation");
   });
 
-  it("skips only an unmatched contraction token and continues matching", () => {
-    const text = "We don't build stable systems. We deliver reliable software globally.";
-    const tokens = "We do not build stable systems We deliver reliable software globally".split(" ");
-    const azureWords = tokens.map((word, index) => ({ word, accuracyScore: index < 6 ? 90 : 40, errorType: "None", startMs: index * 1_000, endMs: index * 1_000 + 500, phonemes: [], prosodyErrors: [] }));
-    const sentences = buildAnswerSentences(text, azureWords);
-    expect(sentences.map((sentence) => sentence.sentenceIndex)).toEqual([1, 0]);
-    expect(sentences.find((sentence) => sentence.sentenceIndex === 0)).toMatchObject({ startMs: 0, endMs: 5_500 });
+  it("limits to three non-overlapping phrases and skips transcription artifacts", () => {
+    const text = "Alpha bravo charlie delta echo. Foxtrot golf hotel india juliet. Kilo lima mike november oscar. Papa quebec romeo sierra tango.";
+    const scores = Array(20).fill(90); [2, 7, 12, 17].forEach((index) => { scores[index] = 35; });
+    const phrases = buildAnswerPhrases(text, makeWords(text.replace(/[.]/g, ""), scores));
+    expect(phrases).toHaveLength(3);
+    expect(phrases.every((phrase) => phrase.text.split(" ").length <= 8)).toBe(true);
+    expect(buildAnswerPhrases("I build reliable systems", makeWords("I build reliable systems", [90, 40, 90, 90]))[0]!.problemWords.map((word) => word.word)).toEqual(["build"]);
+    expect(buildAnswerPhrases("I a I a", makeWords("I a I a", [40, 90, 90, 90]))).toEqual([]);
+    expect(buildAnswerPhrases("we we we we", makeWords("we we we we", [40, 90, 90, 90]))).toEqual([]);
+    expect(buildAnswerPhrases("uh um uhm erm", makeWords("uh um uhm erm", [40, 90, 90, 90]))).toEqual([]);
   });
 
   it("calculates pace, pauses, start delay, and filler counts", () => {
@@ -69,8 +92,8 @@ describe("answer voice details", () => {
     if (spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status !== 0) return context.skip();
     const wav = Buffer.alloc(44 + 16_000 * 2);
     wav.write("RIFF", 0); wav.writeUInt32LE(wav.length - 8, 4); wav.write("WAVE", 8); wav.write("fmt ", 12); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(16_000, 24); wav.writeUInt32LE(32_000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(wav.length - 44, 40);
-    const clips = await createSentenceClips(wav, [{ sentenceIndex: 0, text: "A sentence for clipping.", startMs: 100, endMs: 700, score: 50, problemWords: [] }]);
-    expect(clips[0]).toMatchObject({ sentenceIndex: 0, mimeType: "audio/webm;codecs=opus" });
+    const clips = await createPhraseClips(wav, [{ phraseIndex: 2, text: "short phrase clip", startMs: 100, endMs: 700, score: 50, issue: "pronunciation", problemWords: [] }]);
+    expect(clips[0]).toMatchObject({ phraseIndex: 2, mimeType: "audio/webm;codecs=opus" });
     expect(Buffer.from(clips[0]!.base64, "base64").subarray(0, 4).toString()).toBe("\u001aEߣ");
     wav.fill(0);
   });
