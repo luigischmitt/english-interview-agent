@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getCurrentLocale, t } from "@/lib/locale";
-import { ArrowLeft, ArrowUpRight, Play } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ArrowRight, Play } from "lucide-react";
 import { answerOrdinalForSequence, pairInterviewTurns, type InterviewReportResult } from "@/lib/interview/report";
 import type { AzureMetricSummary } from "@/lib/interview/report-metrics.mjs";
 import type { InterviewConfig } from "@/lib/interview/types";
@@ -12,8 +12,9 @@ import { getAnswerClipUrl } from "@/lib/interview/answer-clips";
 import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { findingsForAnswer, phonemeHint } from "@/lib/interview/report-response.mjs";
+import { findingsForAnswer } from "@/lib/interview/report-response.mjs";
 import { deriveOverviewTiles, flattenAndRankPhrases, groupPatternsByType } from "@/lib/interview/report-overview.mjs";
+import { buildReportDeltas, diffReportWords, phonemeTip } from "@/lib/interview/report-presentation.mjs";
 import { AzureVoiceReport } from "./azure-voice-report";
 import "./interview-report.css";
 
@@ -63,12 +64,7 @@ function PhrasePlayer({ phrase, slow }: { phrase: ReturnType<typeof flattenAndRa
     }
   }
   const problemWords = phrase.problemWords ?? [];
-  const hint = phrase.issue === "intonation"
-    ? problemWords.some((word) => word.prosodyErrors?.some((error) => /pause/i.test(error)))
-      ? "Pausa no meio da frase."
-      : "Entonação plana: tente subir ou descer o tom em uma palavra-chave."
-    : problemWords.map((word) => phonemeHint(word.worstPhoneme ?? undefined)).find(Boolean)
-      ?? "Observe os sons destacados e articule-os com clareza.";
+  const hints = problemWords.map((word) => ({ word: word.word, tip: phonemeTip(word.worstPhoneme, word.word) }));
   const words = phrase.text.split(/(\s+)/u);
 
   return (
@@ -83,7 +79,7 @@ function PhrasePlayer({ phrase, slow }: { phrase: ReturnType<typeof flattenAndRa
             : part;
         })}
       </p>
-      <p className="rp-hint mt-2">{t(hint)}</p>
+      {hints.length ? <ul className="rp-word-hints">{hints.map((item, index) => <li key={`${item.word}-${index}`}><strong lang="en">{item.word}</strong><span>{t(item.tip)}</span></li>)}</ul> : phrase.issue === "intonation" && <p className="rp-hint mt-2">{t("Entonação plana: tente subir ou descer o tom em uma palavra-chave.")}</p>}
       <p className="rp-phrase-ref">{t("Resposta ")}{phrase.ordinal}</p>
       <div className="rp-player-row">
         {phrase.clip && (
@@ -190,11 +186,17 @@ function ReadyReport({
   turns,
   azureSummary,
   coverage,
+  progressRecords,
+  currentInterviewId,
+  answerCount,
 }: {
   result: InterviewReportResult;
   turns: Turns;
   azureSummary: AzureMetricSummary;
   coverage: { available: number; pending: number; total: number };
+  progressRecords: ProgressRecord[];
+  currentInterviewId?: string;
+  answerCount: number;
 }) {
   const answers = azureSummary.answers ?? [];
   const tiles = deriveOverviewTiles(result, answers);
@@ -206,9 +208,18 @@ function ReadyReport({
   const allPatterns = patterns.flatMap((group) => group.items);
   const visiblePatterns = showAllPatterns ? allPatterns : allPatterns.slice(0, 4);
   const patternCount = allPatterns.length;
+  const deltas = buildReportDeltas(result, azureSummary, progressRecords, currentInterviewId, answerCount);
 
   return (
     <div className="rp-stack rp-ready">
+      {(result.interviewerTakeaway?.remember?.trim() || result.interviewerTakeaway?.concern?.trim() || result.bestMoment?.evidence?.trim()) && <section className="rp-section" aria-labelledby="perceived-title">
+        <SectionHeading id="perceived-title" title="Como você foi percebido" description="O que pode ficar na memória depois da conversa." />
+        <div className="rp-perception-grid">
+          {result.interviewerTakeaway?.remember?.trim() && <article className="ds-card rp-card rp-perception" data-tone="remember"><h3 className="ds-label">{t("O que o entrevistador vai lembrar")}</h3><p>{result.interviewerTakeaway.remember}</p></article>}
+          {result.interviewerTakeaway?.concern?.trim() && <article className="ds-card rp-card rp-perception" data-tone="concern"><h3 className="ds-label">{t("O que pode pesar contra")}</h3><p>{result.interviewerTakeaway.concern}</p></article>}
+        </div>
+        {result.bestMoment?.evidence?.trim() && <article className="rp-best-moment"><h3 className="rp-subtitle">{t("Seu melhor momento")}</h3><blockquote lang="en">“{result.bestMoment.evidence}”</blockquote>{result.bestMoment.why?.trim() && <p className="rp-hint">{result.bestMoment.why}</p>}<span className="rp-phrase-ref">{t("Resposta ")}{reference(result.bestMoment.sequenceNumber)}</span></article>}
+      </section>}
       <section className="rp-section" aria-labelledby="overview-title">
         <SectionHeading
           id="overview-title"
@@ -229,6 +240,7 @@ function ReadyReport({
             ))}
           </div>
         </div>
+        {deltas.length > 0 && <section className="rp-deltas" aria-label={t("Desde a última entrevista")}><h3 className="rp-subtitle">{t("Desde a última entrevista")}</h3>{deltas.map((delta) => <p key={delta.label} data-change={delta.change}><ArrowRight className="size-4" aria-hidden="true" /><span>{t(delta.label)} ({delta.before} → {delta.after})</span></p>)}</section>}
       </section>
       {phrases.length > 0 && (
         <section className="rp-section" aria-labelledby="phrases-title">
@@ -277,18 +289,18 @@ function ReadyReport({
               className="ds-card rp-card rp-pattern-card"
               key={`${pattern.type}-${pattern.sequenceNumber}-${index}`}
             >
-              <span className="rp-pattern-eyebrow">
+              <span className="rp-pattern-eyebrow" data-type={pattern.type}>
                 {t(patternTypeLabels[pattern.type] ?? pattern.type)}
               </span>
               <p lang="en">
                 <span className="rp-quiet-label">{t("Você disse")}</span>
                 <br />
-                {pattern.evidence}
+                {diffReportWords(pattern.evidence ?? "", pattern.rephrasedExample ?? "").original.map((part, partIndex) => part.changed ? <del className="rp-diff-old" key={partIndex}>{part.text}</del> : <span key={partIndex}>{part.text}</span>)}
               </p>
               <p lang="en" className="rp-rephrase-text">
                 <span className="rp-quiet-label">{t("Mais natural")}</span>
                 <br />
-                {pattern.rephrasedExample}
+                {diffReportWords(pattern.evidence ?? "", pattern.rephrasedExample ?? "").revised.map((part, partIndex) => part.changed ? <mark className="rp-diff-new" key={partIndex}>{part.text}</mark> : <span key={partIndex}>{part.text}</span>)}
               </p>
               <p className="rp-hint mt-2">{pattern.suggestion}</p>
               {pattern.why && (
@@ -342,13 +354,7 @@ function ReadyReport({
         />
         <div className="ds-card rp-card">
           {result.priorities.slice(0, 3).map((item, index) => (
-            <p className="rp-priority-item" key={index}>
-              <strong>{item.focus}</strong>
-              {item.evidence?.trim().split(/\s+/u).length >= 4 && (
-                <span lang="en">{item.evidence}</span>
-              )}
-              <span className="rp-phrase-ref">{t("Resposta ")}{reference(item.sequenceNumber)}</span>
-            </p>
+            <article className="rp-priority-item" data-area={item.area} key={index}><span className="rp-priority-number" aria-hidden="true">{index + 1}</span><div><span className="rp-priority-area">{t(item.area === "TECHNICAL_CONTENT" ? "Técnico" : "Inglês")}</span><strong>{item.focus}</strong>{item.evidence?.trim() && <span lang="en" className="rp-priority-evidence">“{item.evidence}”</span>}<span className="rp-phrase-ref">{t("Resposta ")}{reference(item.sequenceNumber)}</span></div></article>
           ))}
         </div>
       </section>
@@ -384,7 +390,7 @@ function ReadyReport({
   );
 }
 
-export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave, currentInterviewId, historical = false }: {
+export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave, progressRecords, currentInterviewId, historical = false }: {
   config: InterviewConfig; elapsed: string; totalClock: string; answerCount: number; persistenceLabel: string; persistenceMessage: string | null; feedbackSyncMessage: string | null; reportState: ReportState; progressRecords: ProgressRecord[]; currentInterviewId?: string; historical?: boolean; reportCaption: string; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onLeave: () => void;
 }): ReactNode {
   const [loadedTurns, setLoadedTurns] = useState<Turns>(turns);
@@ -471,6 +477,9 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
             turns={loadedTurns}
             azureSummary={azureSummary}
             coverage={coverage}
+            progressRecords={progressRecords}
+            currentInterviewId={currentInterviewId}
+            answerCount={answerCount}
           />
         ) : null}
       </div>
