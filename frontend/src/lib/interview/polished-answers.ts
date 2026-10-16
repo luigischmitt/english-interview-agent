@@ -1,7 +1,7 @@
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { getLocalSessionUserId } from "@/lib/auth/browser-session";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { mergeAnsweredQuestions, mergeSavedPolishedAnswers } from "./polished-answers.mjs";
+import { mergeAnsweredQuestions, mergeSavedPolishedAnswers } from "./polished-answers-data.mjs";
 
 const endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 export type KeyChange = { from: string; to: string; note: string };
