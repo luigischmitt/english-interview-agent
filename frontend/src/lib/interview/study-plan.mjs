@@ -91,7 +91,6 @@ export function serializeInterviewAnalysis(result) {
     ...(result.jobDirection ? { jobDirection: result.jobDirection } : {}),
     ...(snapshot.length ? { technicalQuestionTopics: snapshot } : {}),
     ...(studyPlan ? { studyPlan } : {}),
-    ...(isRecord(result.polishedAnswers) ? { polishedAnswers: result.polishedAnswers } : {}),
     ...(turns.length ? { turns } : {}),
     evidenceReview: result.evidenceReview,
     ...(isRecord(result.overview) && (cleanText(result.overview.technical, 500) || cleanText(result.overview.english, 500)) ? { overview: { ...(cleanText(result.overview.technical, 500) ? { technical: cleanText(result.overview.technical, 500) } : {}), ...(cleanText(result.overview.english, 500) ? { english: cleanText(result.overview.english, 500) } : {}) } } : {}),

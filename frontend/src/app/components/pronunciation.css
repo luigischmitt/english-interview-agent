@@ -1,0 +1,14 @@
+.pr-content { display: grid; gap: 2rem; }
+.pr-families { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+@media (min-width: 640px) { .pr-families { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.pr-family { padding: 1.25rem; }
+@media (min-width: 640px) { .pr-family { padding: 1.5rem; } }
+.pr-family-title { color: var(--ds-ink); font-size: 1rem; font-weight: 600; line-height: 1.35; text-wrap: balance; }
+.pr-phrases { display: grid; gap: .75rem; padding: 0; list-style: none; }
+.pr-phrase { min-width: 0; padding: 1.125rem; }
+@media (min-width: 640px) { .pr-phrase { padding: 1.375rem 1.5rem; } }
+.pr-phrase-text { color: var(--ds-ink); font-size: 1rem; line-height: 1.65; overflow-wrap: anywhere; }
+.pr-word { text-decoration-color: var(--ds-green); text-decoration-thickness: 2px; text-underline-offset: .22em; }
+.pr-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.pr-empty { display: grid; justify-items: start; gap: .875rem; }
+@media (prefers-reduced-motion: reduce) { .pr-family, .pr-phrase { animation: none; } }
