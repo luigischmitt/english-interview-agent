@@ -122,3 +122,31 @@
 @media (max-width: 639px) {
   .rp-section-heading-with-control { flex-direction: column; gap: 0.75rem; }
 }
+
+.rp-perception-grid { display: grid; gap: 0.75rem; }
+@media (min-width: 640px) { .rp-perception-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; } }
+.rp-perception { box-shadow: inset 3px 0 0 var(--ds-green), var(--ds-shadow-card); }
+.rp-perception[data-tone="concern"] { box-shadow: inset 3px 0 0 var(--ds-warning), var(--ds-shadow-card); }
+.rp-perception p { margin-top: 0.5rem; font-size: 0.9375rem; line-height: 1.55; }
+.rp-best-moment { margin-top: 1rem; border-radius: var(--ds-r-xl); background: var(--ds-field); padding: 1rem 1.125rem; }
+.rp-best-moment blockquote { margin-bottom: 0.5rem; font-size: 1.0625rem; line-height: 1.55; font-weight: 500; }
+.rp-deltas { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--ds-line); }
+.rp-deltas > p { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; color: var(--ds-text-2); font-size: 0.8125rem; }
+.rp-deltas > p[data-change="better"] { color: var(--ds-green-deep); }
+.rp-deltas > p[data-change="worse"] { color: var(--ds-warning); }
+.rp-pattern-eyebrow { display: inline-flex; align-items: center; gap: 0.45rem; }
+.rp-pattern-eyebrow::before { content: ""; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--ds-green); }
+.rp-pattern-eyebrow[data-type="GRAMMAR"]::before { background: var(--ds-green); }
+.rp-pattern-eyebrow[data-type="WORD_CHOICE"]::before { background: var(--ds-warning); }
+.rp-pattern-eyebrow[data-type="FALSE_COGNATE"]::before { background: var(--ds-error); }
+.rp-pattern-eyebrow[data-type="STRUCTURE"]::before { background: var(--ds-text-2); }
+.rp-diff-old { color: var(--ds-error); text-decoration: line-through; text-decoration-thickness: 1px; }
+.rp-diff-new { color: var(--ds-green-deep); background: var(--ds-tint); border-radius: 0.2em; padding-inline: 0.08em; }
+.rp-priority-item { display: flex; gap: 0.875rem; align-items: flex-start; }
+.rp-priority-item .rp-priority-number { flex: 0 0 1.75rem; display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--ds-tint); color: var(--ds-green-deep); font-size: 0.8125rem; font-weight: 700; }
+.rp-priority-item[data-area="ENGLISH_COMMUNICATION"] .rp-priority-number { background: var(--ds-warning-tint); color: var(--ds-warning); }
+.rp-priority-area { display: block; width: fit-content; margin-bottom: 0.25rem; color: var(--ds-text-2); font-size: 0.6875rem; }
+.rp-priority-evidence { display: block; margin-top: 0.25rem; color: var(--ds-text-2); font-size: 0.8125rem; }
+.rp-word-hints { display: grid; gap: 0.25rem; margin-top: 0.75rem; color: var(--ds-text-2); font-size: 0.8125rem; line-height: 1.45; }
+.rp-word-hints li { display: flex; gap: 0.45rem; }
+.rp-word-hints strong { color: var(--ds-ink); }
