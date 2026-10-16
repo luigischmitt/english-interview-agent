@@ -1,4 +1,7 @@
 export const turnAnalysisWaitMs: number;
+export const reviewedTranscriptWaitMs: number;
+export function waitForReviewedTranscriptOrTimeout(reviewedTranscript: PromiseLike<string | null> | string | null, draft: string, options?: { timeoutMs?: number }): Promise<string>;
+export function replaceCandidateTurnContent<T extends { sequenceNumber: number; speaker: string; content: string | null }>(turns: T[], sequenceNumber: number, content: string): T[];
 export function collectTurnAnalyses<T extends { sequenceNumber: number }>(
   turns: Array<{ sequenceNumber: number }>,
   pendingBySequence: Map<number, PromiseLike<T | null | undefined> | T | null | undefined>,

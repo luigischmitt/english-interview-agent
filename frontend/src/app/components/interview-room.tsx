@@ -15,7 +15,7 @@ import { assessmentContextKey, composeClarificationTurn, planTurnAfterDecision, 
 import { plannedQuestionType, resolveFixedPromptForAudio, resolveMonotonicFixedAction, resolveSpeculativeFixedSelection, selectNextPlannedQuestion, selectNextPlannedQuestions, shouldUseMonotonicFixedFallback } from "@/lib/interview/question-scheduling.mjs";
 import { createNextTurnPreparationRegistry } from "@/lib/interview/next-turn-preparation.mjs";
 import { createFixedHandoffPreparationRegistry, type FixedHandoffEntry } from "@/lib/interview/fixed-handoff-preparation.mjs";
-import { loadProgressRecords, type InterviewTurnInput } from "@/lib/interview/persistence";
+import { loadProgressRecords, updateCandidateTurnContent, type InterviewTurnInput } from "@/lib/interview/persistence";
 import { warmProgressCacheAfterFeedbackSave } from "@/lib/interview/progress-cache-warmup.mjs";
 import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
@@ -27,7 +27,7 @@ import { useAudioInputs } from "../hooks/use-audio-inputs";
 import { storeMicrophoneDeviceId } from "@/lib/interview/mic-device.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
-import { analyzeTurnWithRetry, resolveReportAtEnd, settleTurnAnalyses, turnAnalysisWaitMs } from "@/lib/interview/report-incremental.mjs";
+import { analyzeTurnWithRetry, replaceCandidateTurnContent, resolveReportAtEnd, settleTurnAnalyses, turnAnalysisWaitMs, waitForReviewedTranscriptOrTimeout } from "@/lib/interview/report-incremental.mjs";
 import { InterviewReport, type ReportState } from "./interview-report";
 import "./interview-room.css";
 import { createSpeechFeed, toucanStateFor } from "@/components/interview/toucan/toucan-engine.mjs";
@@ -199,6 +199,11 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const turnAnalysisAbortsRef = useRef(new Set<AbortController>());
   const recentAcknowledgementsRef = useRef<string[]>([]);
   const voiceAssessmentsRef = useRef(voiceAssessments);
+  const pendingReviewedTranscriptsRef = useRef(new Map<string, { promise: Promise<string | null>; resolve: (transcript: string | null) => void }>());
+  const reviewedTranscriptBySequenceRef = useRef(new Map<string, string | null>());
+  const committedAnswerRoundsRef = useRef(new Map<number, number>());
+  const reviewedTranscriptsRef = useRef<Record<string, string | null>>({});
+  const reviewedTranscriptAttemptsRef = useRef(new Set<string>());
   const phaseRef = useRef(phase);
   const clarificationCountsRef = useRef(new Map<string, number>());
   const excludedAssessmentsRef = useRef<ReadonlySet<string>>(excludedAssessments);
@@ -418,16 +423,16 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   }, []);
 
   /** Analyze a submitted answer in the background, retrying once; a final miss is recovered when the interview ends. */
-  const startTurnAnalysis = (turn: { sequenceNumber: number; question: string; answer: string }) => {
+  const startTurnAnalysis = (turn: { sequenceNumber: number; question: string; answer: string }, reviewed: Promise<string | null>) => {
     const controller = new AbortController();
     turnAnalysisAbortsRef.current.add(controller);
     const startedAt = Date.now();
-    turnAnalysesRef.current.set(turn.sequenceNumber, analyzeTurnWithRetry({
-      turn,
+    turnAnalysesRef.current.set(turn.sequenceNumber, waitForReviewedTranscriptOrTimeout(reviewed, turn.answer).then((answer) => analyzeTurnWithRetry({
+      turn: { ...turn, answer },
       signal: controller.signal,
       analyze: (entry, signal) => requestInterviewTurnAnalysis(config, entry, signal, undefined, locale),
       onRetry: () => { turnAnalysisRetriesRef.current += 1; },
-    })
+    }))
       .then((analysis) => {
         if (analysis) console.info("[interview-report] turn_analysis_ready", { durationMs: Date.now() - startedAt });
         else if (!controller.signal.aborted) { exhaustedTurnAnalysesRef.current.add(turn.sequenceNumber); console.warn("[interview-report] turn_analysis_failed", { durationMs: Date.now() - startedAt, retried: turnAnalysisRetriesRef.current }); }
@@ -863,7 +868,13 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       enqueueTurn({ interviewId: sessionId ?? "", sequenceNumber: candidateSequenceNumber, speaker: "candidate", content: savedAnswer } satisfies InterviewTurnInput);
       reportTurnsRef.current = submittedTurns;
       setReportTurns(submittedTurns);
-      startTurnAnalysis({ sequenceNumber: questionSequenceNumber, question: question.prompt.trim(), answer: savedAnswer.trim() });
+      let resolveReviewed!: (transcript: string | null) => void;
+      const reviewedPromise = new Promise<string | null>((resolve) => { resolveReviewed = resolve; });
+      const reviewedKey = `${questionSequenceNumber}:${clarifyRound}`;
+      committedAnswerRoundsRef.current.set(questionSequenceNumber, clarifyRound);
+      pendingReviewedTranscriptsRef.current.set(reviewedKey, { promise: reviewedPromise, resolve: resolveReviewed });
+      if (reviewedTranscriptBySequenceRef.current.has(reviewedKey)) resolveReviewed(reviewedTranscriptBySequenceRef.current.get(reviewedKey) ?? null);
+      startTurnAnalysis({ sequenceNumber: questionSequenceNumber, question: question.prompt.trim(), answer: savedAnswer.trim() }, reviewedPromise);
     };
     // The recording of a clarification request must not count in the pronunciation scores either.
     const excludeClarificationAssessment = () => {
@@ -1336,10 +1347,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     const lifecycleStartedAt = Date.now();
     console.info("[interview-report] lifecycle_started");
     setReportState({ status: "pending" });
-    // Background turn analyses settle while pending voice assessments finish; both waits share the same clock.
-    const settledAnalyses = settleTurnAnalyses(pairInterviewTurns(reportTurnsRef.current), turnAnalysesRef.current, { timeoutMs: turnAnalysisWaitMs });
+    // Wait for pending voice assessments and transcript reviews before snapshotting the turns and analyses.
     void (async () => {
-      await waitForPendingAssessments(() => Object.values(voiceAssessmentsRef.current).filter((entry) => entry.state.status === "pending" && !excludedAssessmentsRef.current.has(assessmentContextKey(entry))).length);
+      await waitForPendingAssessments(() => Object.values(voiceAssessmentsRef.current).filter((entry) => entry.state.status === "pending" && !excludedAssessmentsRef.current.has(assessmentContextKey(entry))).length + pendingReviewedTranscriptsRef.current.size);
+      const settledAnalyses = settleTurnAnalyses(pairInterviewTurns(reportTurnsRef.current), turnAnalysesRef.current, { timeoutMs: turnAnalysisWaitMs });
       const latestEntries = voiceAssessmentsRef.current;
       const samples = assessmentSamples(latestEntries, excludedAssessmentsRef.current);
       const turns = pairInterviewTurns(reportTurnsRef.current);
@@ -1672,6 +1683,28 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           micEngine={micEngine}
           preconnectSignal={autoCaptureVoice && preconnectQuestionId === micTurnId ? micTurnId : null}
           onAssessmentChange={(attemptId, assessment, context) => setVoiceAssessments((current) => ({ ...current, [attemptId]: { ...context, state: assessment } }))}
+          onReviewedTranscript={(_attemptId, transcript, changed, context) => {
+            reviewedTranscriptsRef.current[_attemptId] = transcript;
+            const reviewedKey = `${context.sequenceNumber}:${context.round}`;
+            reviewedTranscriptBySequenceRef.current.set(reviewedKey, transcript);
+            const pending = pendingReviewedTranscriptsRef.current.get(reviewedKey);
+            if (pending) {
+              pending.resolve(transcript);
+              pendingReviewedTranscriptsRef.current.delete(reviewedKey);
+            }
+            if (reviewedTranscriptAttemptsRef.current.has(_attemptId)) return;
+            reviewedTranscriptAttemptsRef.current.add(_attemptId);
+            if (!transcript || !changed) return;
+            if (committedAnswerRoundsRef.current.get(context.sequenceNumber) !== context.round) return;
+            const candidateSequenceNumber = context.sequenceNumber + 1;
+            const updatedTurns = replaceCandidateTurnContent(reportTurnsRef.current, candidateSequenceNumber, transcript);
+            reportTurnsRef.current = updatedTurns;
+            setReportTurns(updatedTurns);
+            void (async () => {
+              const interviewId = sessionId ?? await waitForSessionId(2_000);
+              if (interviewId) await updateCandidateTurnContent(interviewId, candidateSequenceNumber, transcript);
+            })();
+          }}
         />
 
         <EndCallDialog
