@@ -11,7 +11,7 @@ describe("OpenRouter transcript review", () => {
     await expect(service.review(Buffer.from("wav"), draft, "Tell me about your work")).resolves.toEqual({ transcript: draft, changed: false });
     const init = fetchImplementation.mock.calls[0]![1]!;
     const body = JSON.parse(String(init.body));
-    expect(body).toMatchObject({ model: "google/gemini-3.8-flash", temperature: 0, provider: { data_collection: "deny" } });
+    expect(body).toMatchObject({ model: "google/gemini-3.8-flash", temperature: 0, reasoning: { effort: "minimal" }, provider: { data_collection: "deny" } });
     expect(body.messages[0].content).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "input_audio", input_audio: { data: Buffer.from("wav").toString("base64"), format: "wav" } }),
       expect.objectContaining({ type: "text", text: expect.stringContaining(`Draft transcript: ${draft}`) }),
