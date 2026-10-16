@@ -132,6 +132,29 @@
 .rp-exercise-disclosure summary { min-height: 2.75rem; display: flex; align-items: center; cursor: pointer; text-decoration: underline; text-underline-offset: 0.2em; }
 .rp-exercise-disclosure p { padding-bottom: 0.5rem; line-height: 1.5; }
 
+.rp-redo-action { margin-top: 1rem; }
+.rp-last-redo { margin-top: 1rem; color: var(--ds-text-2); font-size: 0.8125rem; line-height: 1.5; }
+.rp-last-redo span { color: var(--ds-ink); font-weight: 600; }
+.rp-redo-panel { margin-top: 1rem; padding: 1rem; border-radius: var(--ds-r-xl); background: var(--ds-field); }
+.rp-redo-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.rp-redo-question { margin-top: 0.5rem; color: var(--ds-text-2); font-size: 0.875rem; line-height: 1.5; }
+.rp-redo-recorder { margin-top: 1rem; }
+.rp-redo-controls { display: grid; justify-items: start; gap: 0.75rem; }
+.rp-redo-meter { width: 100%; height: 0.375rem; overflow: hidden; border-radius: var(--ds-r-pill); background: var(--ds-track); }
+.rp-redo-meter span { display: block; height: 100%; width: 100%; transform-origin: left; background: var(--ds-green); transition: transform 90ms linear; }
+.rp-redo-result { margin-top: 1rem; }
+.rp-redo-comparison { display: grid; gap: 0.5rem; }
+.rp-redo-comparison li { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.8125rem; line-height: 1.5; }
+.rp-redo-comparison li span { color: var(--ds-text-2); }
+.rp-redo-comparison li strong { min-width: 0; text-align: right; font-weight: 600; overflow-wrap: anywhere; }
+.rp-redo-pattern { display: block; }
+.rp-redo-transcript { margin-top: 0.875rem; }
+.rp-redo-transcript summary { min-height: 2.75rem; display: flex; align-items: center; cursor: pointer; color: var(--ds-green-deep); font-size: 0.8125rem; font-weight: 600; text-decoration: underline; text-underline-offset: 0.2em; }
+.rp-redo-transcript p { padding-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.6; overflow-wrap: anywhere; }
+.rp-redo-sentence { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--ds-line); }
+
+@media (prefers-reduced-motion: reduce) { .rp-redo-meter span { transition: none; } }
+
 @media (prefers-reduced-motion: reduce) {
   .rp-suggest-card { animation: ds-fade var(--ds-dur-base) ease backwards; animation-delay: 0ms; }
   .rp-suggest-loading { animation: none; }

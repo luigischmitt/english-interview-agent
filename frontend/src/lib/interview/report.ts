@@ -5,9 +5,10 @@ import type { InterviewConfig, PersistenceResult } from "./types";
 import { buildInterviewReportRequest } from "./report-request.mjs";
 import { requestInterviewStudyPlan as requestStudyPlanOnce, serializeInterviewAnalysis } from "./study-plan.mjs";
 import type { JobDirection } from "./job-direction.mjs";
-import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";
+import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type AzureReportDimension, type InterviewReportTurn } from "./report-metrics.mjs";
 
 export type InterviewReport = {
+  redos?: Record<string, RedoAttempt[]>;
   /** Optional per-answer analyses; absent on legacy reports or fallback-only reports. */
   turns?: InterviewTurnAnalysis[];
   locale?: "pt-BR" | "en";
@@ -34,6 +35,15 @@ export type InterviewReport = {
     patterns: Array<{ type: "GRAMMAR" | "WORD_CHOICE" | "FALSE_COGNATE" | "STRUCTURE"; sequenceNumber: number; evidence: string; suggestion: string; rephrasedExample: string; why?: string }>;
   };
   priorities: Array<{ area: "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION"; sequenceNumber: number; evidence: string; focus: string; exercise: string; vacancyCompetency?: string }>;
+};
+
+export type RedoAttempt = {
+  createdAt: string;
+  transcript: string;
+  delivery?: { wordsPerMinute?: number; pauseCount?: number; longestPauseMs?: number; startDelayMs?: number; fillerCount?: number; fillers?: string[] | Record<string, number> };
+  scores?: Record<AzureReportDimension, number | null>;
+  worstSentence?: { sentenceIndex: number; text: string; score: number; startMs?: number; endMs?: number; clip?: { base64: string; mimeType: string } };
+  patternCheck?: Array<{ evidence: string; fixed: boolean; note: string }>;
 };
 
 export type InterviewStudyPlanTarget = {
@@ -202,6 +212,24 @@ export async function saveInterviewFeedback(interviewId: string, azureSummary: A
   } catch {
     return { ok: false, message: failureMessage };
   }
+}
+
+/** Append a redo to the owner's feedback row, retaining at most five newest attempts for the answer. */
+export async function saveInterviewRedo(interviewId: string, sequenceNumber: number, attempt: RedoAttempt): Promise<PersistenceResult<RedoAttempt[]>> {
+  try {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase.from("interview_feedback").select("analysis").eq("interview_id", interviewId).single();
+    if (error || !data || !data.analysis || typeof data.analysis !== "object" || Array.isArray(data.analysis)) return { ok: false, message: failureMessage, code: error?.code };
+    const analysis = data.analysis as InterviewReport;
+    const redos = analysis.redos && typeof analysis.redos === "object" ? analysis.redos : {};
+    const key = String(sequenceNumber);
+    const storedAttempt = { ...attempt, ...(attempt.worstSentence ? { worstSentence: { sentenceIndex: attempt.worstSentence.sentenceIndex, text: attempt.worstSentence.text, score: attempt.worstSentence.score, ...(Number.isFinite(attempt.worstSentence.startMs) ? { startMs: attempt.worstSentence.startMs } : {}), ...(Number.isFinite(attempt.worstSentence.endMs) ? { endMs: attempt.worstSentence.endMs } : {}) } } : {}) };
+    const attempts = [...(Array.isArray(redos[key]) ? redos[key] : []), storedAttempt].slice(-5);
+    const { error: updateError } = await supabase.from("interview_feedback").update({ analysis: { ...analysis, redos: { ...redos, [key]: attempts } } }).eq("interview_id", interviewId);
+    if (updateError) return { ok: false, message: failureMessage, code: updateError.code };
+    invalidateDashboardCache("progress");
+    return { ok: true, value: attempts };
+  } catch { return { ok: false, message: failureMessage }; }
 }
 
 export async function markInterviewFeedbackUnavailable(interviewId: string, azureSummary: AzureMetricSummary): Promise<PersistenceResult<InterviewFeedback>> {
