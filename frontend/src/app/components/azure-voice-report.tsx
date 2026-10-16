@@ -26,6 +26,8 @@ export function AzureVoiceReport({ summary, coverage, step, title = "Sinais voca
   const deliveryAnswers = summary.answers?.filter((answer) => answer.delivery?.wordsPerMinute !== undefined) ?? [];
   const averageWpm = deliveryAnswers.length ? Math.round(deliveryAnswers.reduce((sum, answer) => sum + (answer.delivery?.wordsPerMinute ?? 0), 0) / deliveryAnswers.length) : null;
   const fillerCount = summary.answers?.reduce((sum, answer) => sum + (answer.delivery?.fillerCount ?? 0), 0) ?? 0;
+  const averagePauses = deliveryAnswers.length ? Math.round(deliveryAnswers.reduce((sum, answer) => sum + (answer.delivery?.pauseCount ?? 0), 0) / deliveryAnswers.length) : null;
+  const averageLongPause = deliveryAnswers.length ? Math.round(deliveryAnswers.reduce((sum, answer) => sum + (answer.delivery?.longestPauseMs ?? 0), 0) / deliveryAnswers.length / 100) / 10 : null;
   return (
     <section className="ds-card rp-card" aria-labelledby="voice-report-title">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -36,7 +38,7 @@ export function AzureVoiceReport({ summary, coverage, step, title = "Sinais voca
       <dl className="rp-metrics">
         {dimensions.map((dimension) => <Metric key={dimension} dimension={dimension} metric={summary[dimension]} />)}
       </dl>
-      {summary.answers?.length && (averageWpm !== null || fillerCount > 0) ? <p className="rp-session-delivery">{averageWpm !== null ? <>{t("Na sessão: média de ")}{averageWpm} {t("palavras/min")}</> : t("Na sessão")}{fillerCount > 0 ? <> · {fillerCount} {t("hesitações no total")}</> : null}</p> : null}
+      {summary.answers?.length && (averageWpm !== null || fillerCount > 0 || averagePauses !== null) ? <p className="rp-session-delivery">{averageWpm !== null ? <>{t("Médias por resposta: ")}{averageWpm} {t("palavras/min")}</> : t("Médias por resposta")}{averagePauses !== null ? <> · {averagePauses} {t("pausas")}</> : null}{averageLongPause !== null && averageLongPause >= 1 ? <> · {t("pausa mais longa de ")}{averageLongPause} {t("s")}</> : null}{fillerCount > 0 ? <> · {fillerCount} {t("hesitações na sessão")}</> : null}</p> : null}
       <p className="rp-hint mt-4">{t("Cobertura: ")}{coverage.available} {t("de ")}{coverage.total} {t("respostas com sinais disponíveis.")}{coverage.pending ? ` ${coverage.pending} ${t("avaliação(ões) ainda em processamento; a conclusão da sessão não espera por elas.")}` : ""} {t(coverageHelp)}</p>
     </section>
   );

@@ -38,10 +38,10 @@ export function buildAzureAnswerRecords(entries, clipPaths = {}) {
     const state = entry?.state;
     if (!Number.isSafeInteger(entry?.sequenceNumber) || entry.sequenceNumber < 1 || state?.status !== "available") return [];
     return [{ sequenceNumber: entry.sequenceNumber, scores: state.scores, durationMs: state.durationMs,
-      ...(state.delivery ? { delivery: state.delivery } : {}), ...(state.sentences ? { sentences: state.sentences } : {}),
+      ...(state.delivery ? { delivery: state.delivery } : {}), ...(state.phrases ? { phrases: state.phrases } : {}),
       ...(state.clips?.length ? { clips: state.clips.flatMap((clip) => {
-        const path = clipPaths[`${entry.sequenceNumber}:${clip.sentenceIndex}`];
-        return path ? [{ sentenceIndex: clip.sentenceIndex, startMs: clip.startMs, endMs: clip.endMs, path }] : [];
+        const path = clipPaths[`${entry.sequenceNumber}:${clip.phraseIndex}`];
+        return path ? [{ phraseIndex: clip.phraseIndex, startMs: clip.startMs, endMs: clip.endMs, path }] : [];
       }) } : {}) }];
   }).sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 }

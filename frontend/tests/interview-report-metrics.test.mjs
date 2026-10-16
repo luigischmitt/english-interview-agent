@@ -17,9 +17,9 @@ test("Azure means ignore unavailable, pending, null, and invalid dimension value
 });
 
 test("builds bounded Azure answer records and persists clip paths without base64", () => {
-  const answers = buildAzureAnswerRecords([{ sequenceNumber: 4, state: { status: "available", durationMs: 1200, scores: scoresOf(80), delivery: { pauseCount: 2 }, sentences: [{ sentenceIndex: 0 }], clips: [{ sentenceIndex: 0, startMs: 0, endMs: 100, base64: "secret" }] } }], { "4:0": "user/interview/4-0.webm" });
+  const answers = buildAzureAnswerRecords([{ sequenceNumber: 4, state: { status: "available", durationMs: 1200, scores: scoresOf(80), delivery: { pauseCount: 2 }, phrases: [{ phraseIndex: 0, text: "hello", score: 60, issue: "pronunciation" }], clips: [{ phraseIndex: 0, startMs: 0, endMs: 100, base64: "secret" }] } }], { "4:0": "user/interview/4-p0.webm" });
   assert.equal(answers[0].sequenceNumber, 4);
-  assert.equal(answers[0].clips[0].path, "user/interview/4-0.webm");
+  assert.equal(answers[0].clips[0].path, "user/interview/4-p0.webm");
   assert.equal("base64" in answers[0].clips[0], false);
 });
 

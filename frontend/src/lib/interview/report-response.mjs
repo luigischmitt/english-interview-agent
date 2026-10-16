@@ -20,10 +20,6 @@ export function summarizeDelivery(delivery) {
   return { wordsPerMinute: Number.isFinite(delivery.wordsPerMinute) ? Math.round(delivery.wordsPerMinute) : null, pauseCount: pauses, longestPauseMs: delivery.longestPauseMs ?? 0, fillerCount: delivery.fillerCount ?? 0, hint: hints[0] ?? null };
 }
 
-export function worstSentence(answer) {
-  return answer?.sentences?.filter((sentence) => Number.isFinite(sentence.score)).sort((a, b) => a.score - b.score)[0] ?? null;
-}
-
 export function phonemeHint(phoneme) {
   const value = String(phoneme ?? "").toLowerCase();
   if (/θ|ð|th/.test(value)) return "Som de th: língua levemente entre os dentes.";
