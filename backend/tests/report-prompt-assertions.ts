@@ -44,6 +44,7 @@ export function expectRealReportCalibrationRules(prompt: string) {
 }
 
 export function expectSpecificPriorityRules(prompt: string) {
-  expect(prompt).toContain("never a generic focus");
-  expect(prompt).toContain("a concrete practical exercise that names the structure to practice");
+  expect(prompt).toContain("a short exact answer excerpt of at least four words");
+  expect(prompt).toContain("Focus must be one specific actionable sentence");
+  expect(prompt).toContain("never generic homework");
 }
