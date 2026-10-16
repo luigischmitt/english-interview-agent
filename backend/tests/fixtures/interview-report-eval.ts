@@ -85,8 +85,8 @@ export const interviewReportEvalFixtures = [
     expected: validExpected({
       summary: "A resposta relata a inclusão de um índice e a verificação do plano de consulta.",
       strengths: [{ sequenceNumber: 4, evidence: "added an index, then", explanation: "A resposta registra a mudança feita." }],
-      priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "the query plan", focus: "Verificação do plano", exercise: "Descreva em voz alta como você verificou o plano." }],
-      optionalItems: { candidates: 2, accepted: 2, rejected: 0 },
+      priorities: [],
+      optionalItems: { candidates: 2, accepted: 1, rejected: 1 },
     }),
   },
   {

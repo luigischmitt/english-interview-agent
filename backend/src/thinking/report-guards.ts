@@ -263,36 +263,13 @@ export function isUngrammaticalRephrase(rephrased: string): boolean {
   return /\bfor\s+to\s+\p{L}+/iu.test(rephrased);
 }
 
-function editDistance(left: string, right: string): number {
-  const row = Array.from({ length: right.length + 1 }, (_, index) => index);
-  for (let i = 1; i <= left.length; i += 1) {
-    let diagonal = row[0]!;
-    row[0] = i;
-    for (let j = 1; j <= right.length; j += 1) {
-      const above = row[j]!;
-      row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, diagonal + (left[i - 1] === right[j - 1] ? 0 : 1));
-      diagonal = above;
-    }
-  }
-  return row[right.length]!;
-}
-
-/** Reject rephrases that turn transcript uncertainty into a named entity or a phonetic word correction. */
+/** Reject rephrases that turn lowercase transcript words into a named entity ("run show" -> "Run Show"): likely a mis-heard name. */
 export function isLikelyTranscriptionArtifactRephrase(evidence: string, rephrased: string): boolean {
-  const evidenceTokens = [...evidence.matchAll(/[\p{L}\p{N}]+/gu)];
-  const rewrittenTokens = [...rephrased.matchAll(/[\p{L}\p{N}]+/gu)];
-  for (let i = 1; i < rewrittenTokens.length; i += 1) {
-    const token = rewrittenTokens[i]![0];
-    if (!/^\p{Lu}[\p{Ll}]+$/u.test(token)) continue;
-    const previous = rewrittenTokens.slice(Math.max(0, i - 2), i).map((match) => match[0]).join(" ").toLocaleLowerCase("en-US");
-    if (evidence.toLocaleLowerCase("en-US").includes(previous) && evidenceTokens.some((match) => match[0] === token.toLocaleLowerCase("en-US"))) return true;
-  }
-  const before = tokenize(evidence).filter(isContent).map((token) => token.lower);
-  const after = tokenize(rephrased).filter(isContent).map((token) => token.lower);
-  // A mis-heard word shares its first letter but not its stem (ratio -> reason); inflection fixes share a longer prefix (choosed -> chose).
-  const commonPrefix = (left: string, right: string) => { let index = 0; while (index < left.length && index < right.length && left[index] === right[index]) index += 1; return index; };
-  for (const from of before) for (const to of after) {
-    if (from !== to && from[0] === to[0] && from.length >= 5 && to.length >= 5 && commonPrefix(from, to) <= 2 && editDistance(from, to) <= 4) return true;
+  const lowercaseEvidence = new Set([...evidence.matchAll(/[\p{L}\p{N}]+/gu)].map((match) => match[0]).filter((token) => token === token.toLocaleLowerCase("en-US")));
+  for (const match of rephrased.matchAll(/[\p{L}\p{N}]+/gu)) {
+    const token = match[0];
+    const sentenceStart = /(^|[.!?]\s+)$/u.test(rephrased.slice(0, match.index));
+    if (!sentenceStart && /^\p{Lu}\p{Ll}+$/u.test(token) && lowercaseEvidence.has(token.toLocaleLowerCase("en-US"))) return true;
   }
   return false;
 }

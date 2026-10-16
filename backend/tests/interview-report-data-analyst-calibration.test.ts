@@ -52,7 +52,10 @@ describe("data analyst calibration", () => {
         { area: "ENGLISH_COMMUNICATION", sequenceNumber: 2, evidence: "the best day for surf", focus: "Gerúndio após preposição", exercise: "Pratique usar preposições corretas em frases.", vacancyCompetency: null },
       ],
     });
-    expect(generic.report?.priorities).toEqual([]);
+    expect(generic.report?.priorities).toEqual([
+      { area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "substitute that for my mean of my values", focus: "Imputação pela média" },
+      { area: "ENGLISH_COMMUNICATION", sequenceNumber: 2, evidence: "the best day for surf", focus: "Gerúndio após preposição" },
+    ]);
     const concrete = run({
       technicalContent: { summary: "Você descreveu seu uso de Python.", strengths: [item(4, "substitute that for my mean of my values", "Você substituiu valores incorretos pela média da coluna.")], gaps: [] },
       priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "substitute that for my mean of my values", focus: "Imputação pela média", exercise: "Grave uma resposta de 40 segundos explicando por que usou a média e não a mediana, citando outliers.", vacancyCompetency: null }],

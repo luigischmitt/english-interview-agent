@@ -3,7 +3,7 @@ import { ThinkingServiceError } from "./errors.js";
 import { isDegenerateProviderOutput } from "./report-degeneration.js";
 import { parseApprovedJobDirection } from "./job-direction-validation.js";
 import { parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
-import { analyzeEnglishEdit, checkGrammarRuleLabel, isLowContentAnswer, hasBrokenSentenceBoundary, isLikelyTranscriptionArtifactEdit, isLikelyTranscriptionArtifactRephrase, isOffQuestionIntegrationItem, isIdiomaticOnRewritten, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
+import { analyzeEnglishEdit, checkGrammarRuleLabel, isGenericExercise, isLowContentAnswer, hasBrokenSentenceBoundary, isLikelyTranscriptionArtifactEdit, isLikelyTranscriptionArtifactRephrase, isOffQuestionIntegrationItem, isIdiomaticOnRewritten, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
 import {
   communicationClarities,
   communicationObservationTypes,
@@ -486,9 +486,10 @@ function validatePriorities(items: unknown[], answerFor: AnswerLookup, counts: M
     const evidence = answer ? resolveCanonicalEvidence(answer, item.evidence, 120) : undefined;
     if (!answer || !evidence) { counts.rejectionReasons.mismatch += 1; return []; }
     if (likelyTranscriptionArtifact(evidence)) { counts.rejectionReasons.artifact += 1; return []; }
-    const exercise = typeof item.exercise === "string" ? localizedField(normalizeFeedbackSentence(item.exercise, 140, 1), locale) : undefined;
-    const focusText = normalizeFeedbackSentence(item.focus, 160, 3);
-    const focus = focusText ? localizedField(focusText, locale) : undefined;
+    const normalizedExercise = typeof item.exercise === "string" ? localizedField(normalizeFeedbackSentence(item.exercise, 140, 1), locale) : undefined;
+    const exercise = normalizedExercise && !isGenericExercise(normalizedExercise) ? normalizedExercise : undefined;
+    // Focus is a short label ("Processamento da fila"), kept as written.
+    const focus = typeof item.focus === "string" && item.focus.trim() ? localizedField(item.focus.trim(), locale) : undefined;
     const evidenceWordCount = evidence.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)?.length ?? 0;
     if (!["TECHNICAL_CONTENT", "ENGLISH_COMMUNICATION"].includes(item.area as string) || !boundedString(item.focus, 160) || !focus || evidenceWordCount < 4 || likelyTranscriptionArtifact(evidence)) {
       counts.rejectionReasons.invalidFormat += 1; return [];
