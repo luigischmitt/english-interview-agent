@@ -104,6 +104,7 @@ export type InterviewReport = {
     strengths: Array<{ sequenceNumber: number; evidence: string; explanation: string; vacancyCompetency?: string }>;
     gaps: Array<{ sequenceNumber: number; evidence: string; explanation: string; vacancyCompetency?: string }>;
   };
+  overview?: { technical: string; english: string };
   englishCommunication: {
     clarity: CommunicationClarity;
     evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT" | "NO_PATTERN_FOUND" | "CANDIDATES_REJECTED";
@@ -121,7 +122,7 @@ export type InterviewReport = {
     sequenceNumber: number;
     evidence: string;
     focus: string;
-    exercise: string;
+    exercise?: string;
     vacancyCompetency?: string;
   }>;
 };

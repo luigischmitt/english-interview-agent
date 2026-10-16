@@ -9,6 +9,7 @@ import { createInterviewReportService } from "../src/thinking/openrouter-intervi
 import { OpenRouterOrchestrationService } from "../src/thinking/openrouter-orchestration-service.js";
 import type { InterviewReport, InterviewReportInput } from "../src/thinking/types.js";
 import type { SpeechConfig } from "../src/speech/config.js";
+import { isLikelyTranscriptionArtifactRephrase } from "../src/thinking/report-guards.js";
 
 const speechConfig: SpeechConfig = {
   provider: "fake", kokoroBaseUrl: "http://localhost:8888", kokoroTimeoutMs: 1000,
@@ -36,14 +37,16 @@ const validReport: InterviewReport = {
     strengths: [{ sequenceNumber: 2, evidence: "bounded retries", explanation: "Nomeia uma proteção para tentativas repetidas." }],
     gaps: [{ sequenceNumber: 4, evidence: "monitor errors", explanation: "A resposta não explica limites ou alertas." }],
   },
+  overview: { technical: "Você explicou retries limitados, mas detalhou pouco o monitoramento.", english: "Sua mensagem foi compreensível, embora algumas frases possam ficar mais diretas." },
   englishCommunication: {
     clarity: "MOSTLY_CLEAR", evidenceStatus: "LIMITED",
     patterns: [{ type: "GRAMMAR", sequenceNumber: 4, evidence: "We monitor errors", suggestion: "Use o presente simples de forma consistente.", rephrasedExample: "We monitor errors and latency." }],
   },
-  priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "errors and latency", focus: "Limites de alerta", exercise: "Explique em um minuto quais limites acionariam um alerta." }],
+  priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "monitor errors and latency", focus: "Na próxima resposta, defina um limite de alerta observável.", exercise: "Na próxima resposta, diga qual limite de latência acionaria um alerta." }],
 };
 const providerReport = {
   technicalContent: validReport.technicalContent,
+  overview: validReport.overview,
   englishCommunication: { clarity: validReport.englishCommunication.clarity, patterns: validReport.englishCommunication.patterns },
   priorities: validReport.priorities,
 };
@@ -72,6 +75,7 @@ describe("final interview report service", () => {
     expect(body.response_format.json_schema.strict).toBe(true);
     expect(body.response_format.json_schema.schema.properties).not.toHaveProperty("score");
     expect(body.response_format.json_schema.schema.properties).not.toHaveProperty("internal_rationale");
+    expect(body.response_format.json_schema.schema.properties).toHaveProperty("overview");
     expect(body.messages[0].content).toContain("Write the report in Brazilian Portuguese");
     expect(body.messages[0].content).toContain("Cite the matching sequenceNumber and a short exact excerpt from that answer");
     expect(body.messages[0].content).toContain("Review each question and its answer as a separate pair");
@@ -133,7 +137,7 @@ describe("final interview report service", () => {
   it("lets a technical priority repeat any competency linked by a validated finding of the same answer", async () => {
     const strength = { sequenceNumber: 2, evidence: "bounded retries", explanation: "Você conecta retries limitados à resiliência do serviço.", vacancyCompetency: "resilience" };
     const gap = { sequenceNumber: 2, evidence: "timeouts", explanation: "Você não explicou como mediria se os timeouts funcionam em produção.", vacancyCompetency: "observability" };
-    const priority = { area: "TECHNICAL_CONTENT", sequenceNumber: 2, evidence: "timeouts", focus: "Observabilidade dos timeouts", exercise: "Explique em voz alta quais métricas mostrariam se os timeouts estão funcionando em produção.", vacancyCompetency: "observability" };
+    const priority = { area: "TECHNICAL_CONTENT", sequenceNumber: 2, evidence: "add timeouts and bounded retries", focus: "Na próxima resposta, explique como observar os timeouts.", exercise: "Na próxima resposta, diga quais métricas mostrariam se os timeouts funcionam.", vacancyCompetency: "observability" };
     const content = {
       technicalContent: { summary: "Relaciona retries limitados à resiliência do serviço.", strengths: [strength], gaps: [gap] },
       englishCommunication: { clarity: "CLEAR", patterns: [] },
@@ -142,7 +146,7 @@ describe("final interview report service", () => {
     const report = await makeService(async () => providerResponse(JSON.stringify(content))).generate({ ...input, jobDirection });
     expect(report.technicalContent.gaps).toEqual([gap]);
     expect(report.priorities[0]).toEqual(priority);
-    const { vacancyCompetency: _unlinked, ...secondPriority } = { ...priority, focus: "Outro foco técnico", vacancyCompetency: "security" };
+    const { vacancyCompetency: _unlinked, ...secondPriority } = { ...priority, focus: "Outro foco técnico.", vacancyCompetency: "security" };
     expect(report.priorities[1]).toEqual(secondPriority);
   });
 
@@ -243,7 +247,7 @@ describe("final interview report service", () => {
         summary: "O",
         strengths: [
           { ...providerReport.technicalContent.strengths[0], explanation: "Nomeia uma proteção para solu" },
-          { sequenceNumber: 2, evidence: "timeouts", explanation: "A resposta identifica timeouts como proteção." },
+          { sequenceNumber: 2, evidence: "timeouts and bounded retries", explanation: "A resposta identifica timeouts como proteção." },
         ],
       },
       englishCommunication: {
@@ -254,10 +258,11 @@ describe("final interview report service", () => {
     };
     const report = await makeService(async () => providerResponse(JSON.stringify(truncated))).generate(input);
 
-    expect(report.technicalContent.summary).toBe("As respostas foram analisadas quanto ao conteúdo técnico apresentado.");
-    expect(report.technicalContent.strengths).toEqual([{ sequenceNumber: 2, evidence: "timeouts", explanation: "A resposta identifica timeouts como proteção." }]);
+    expect(report.technicalContent.summary).toBe("");
+    expect(report.technicalContent.strengths).toEqual([{ sequenceNumber: 2, evidence: "timeouts and bounded retries", explanation: "A resposta identifica timeouts como proteção." }]);
     expect(report.englishCommunication.patterns).toEqual([]);
-    expect(report.priorities).toEqual([]);
+    expect(report.priorities).toHaveLength(1);
+    expect(report.priorities[0]).not.toHaveProperty("exercise");
     expect(report.englishCommunication.evidenceStatus).toBe("CANDIDATES_REJECTED");
   });
 
@@ -267,6 +272,19 @@ describe("final interview report service", () => {
     expect(report).toMatchObject(validReport);
     expect(report.technicalContent.summary).toBe(validReport.technicalContent.summary);
     expect(report.technicalContent.strengths).toEqual(validReport.technicalContent.strengths);
+  });
+
+  it("accepts a 350-character summary and drops an invalid overview", async () => {
+    const longSummary = `${"Você explicou retries limitados e monitoramento com clareza técnica. ".repeat(5)}Sua prioridade é detalhar os alertas.`;
+    const output = { ...providerReport, technicalContent: { ...providerReport.technicalContent, summary: longSummary }, overview: { technical: "The candidate has clearly explained the technical choices.", english: "Sua comunicação foi clara." } };
+    const report = await makeService(async () => providerResponse(JSON.stringify(output))).generate(input);
+    expect(report.technicalContent.summary).toBe(longSummary);
+    expect(report).not.toHaveProperty("overview");
+  });
+
+  it("rejects rephrases that invent a proper noun or phonetic correction", () => {
+    expect(isLikelyTranscriptionArtifactRephrase("their ratio because run show is a full stack system", "Their reason because Run Show is a full stack system.")).toBe(true);
+    expect(isLikelyTranscriptionArtifactRephrase("we need to improve service reliability", "We need to improve service reliability.")).toBe(false);
   });
 
   it("keeps only the three most impactful distinct English findings", async () => {
@@ -294,8 +312,8 @@ describe("final interview report service", () => {
 
   it("counts valid items beyond category limits without breaking evidence totals", async () => {
     const evidence = [
-      "I build APIs", "I write tests", "I deploy services", "I review code", "I track errors",
-      "I use metrics", "I manage queues", "I tune queries", "I add caching", "I document decisions",
+      "I build reliable APIs", "I write useful tests", "I deploy tested services", "I review submitted code", "I track production errors",
+      "I use service metrics", "I manage background queues", "I tune database queries", "I add response caching", "I document technical decisions",
     ];
     const turns = [{ sequenceNumber: 1, question: "What do you do?", answer: `${evidence.map((item) => `${item}.`).join(" ")} We monitor the service.` }];
     const technical = (items: string[]) => items.map((item) => ({ sequenceNumber: 1, evidence: item, explanation: "A resposta apresenta uma ação técnica concreta." }));
@@ -305,7 +323,7 @@ describe("final interview report service", () => {
       rephrasedExample: `${item.replace("I ", "I also ")}.`,
     }));
     const priorities = evidence.slice(0, 4).map((item, index) => ({
-      area: "TECHNICAL_CONTENT", sequenceNumber: 1, evidence: item, focus: `Ação ${index + 1}`,
+      area: "TECHNICAL_CONTENT", sequenceNumber: 1, evidence: item, focus: `Na próxima resposta, explique esta ação ${index + 1}.`,
       exercise: "Descreva esta ação e explique seu objetivo em uma frase.",
     }));
     const providerOutput = {
@@ -523,5 +541,15 @@ describe("POST /api/v1/thinking/report", () => {
       askedQuestions: ["Q?"], followUpUsed: false, roleContext: input.roleContext,
     }).catch(() => undefined);
     expect(models).toEqual(["vendor/report", "vendor/reason"]);
+  });
+});
+
+describe("transcription artifact rephrase guard", () => {
+  it("rejects phonetic swaps and mis-heard names but keeps inflection fixes", async () => {
+    const { isLikelyTranscriptionArtifactRephrase } = await import("../src/thinking/report-guards.js");
+    expect(isLikelyTranscriptionArtifactRephrase("their ratio is that run show is a system", "the reason is that Run Show is a system")).toBe(true);
+    expect(isLikelyTranscriptionArtifactRephrase("I choosed the queue", "I chose the queue")).toBe(false);
+    expect(isLikelyTranscriptionArtifactRephrase("many informations about it", "much information about it")).toBe(false);
+    expect(isLikelyTranscriptionArtifactRephrase("we was staying late", "we were staying late")).toBe(false);
   });
 });

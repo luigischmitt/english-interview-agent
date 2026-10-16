@@ -194,8 +194,8 @@ describe("consolidation service", () => {
     summary: "Descreve timeouts, retries limitados e monitoramento de erros e latência.",
     clarity: "MOSTLY_CLEAR",
     priorities: [
-      { area: "ENGLISH_COMMUNICATION", sequenceNumber: 2, evidence: "Yesterday I have deployed", focus: "Passado simples", exercise: "Conte um deploy recente usando apenas o passado simples." },
-      { area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "monitor errors", focus: "Limites de alerta", exercise: "Explique em um minuto quais limites acionariam um alerta." },
+      { area: "ENGLISH_COMMUNICATION", sequenceNumber: 2, evidence: "Yesterday I have deployed", focus: "Na próxima resposta, use o passado simples para narrar o deploy.", exercise: "Na próxima resposta, diga quando você fez o deploy." },
+      { area: "TECHNICAL_CONTENT", sequenceNumber: 4, evidence: "monitor errors and latency", focus: "Na próxima resposta, defina um limite de alerta observável.", exercise: "Na próxima resposta, explique qual limite acionaria um alerta." },
     ],
   };
   const consolidationInput: InterviewReportConsolidationInput = { roleContext, turns, turnAnalyses: analyses };
@@ -220,7 +220,7 @@ describe("consolidation service", () => {
     expect(bodies[0].max_tokens).toBeLessThanOrEqual(1_536);
     expectSpecificPriorityRules(bodies[0].messages[0].content);
     expect(bodies[0].messages[0].content).toContain('Address the candidate directly as "você"');
-    expect(Object.keys(bodies[0].response_format.json_schema.schema.properties).sort()).toEqual(["clarity", "coveredGapIndexes", "priorities", "summary"]);
+    expect(Object.keys(bodies[0].response_format.json_schema.schema.properties).sort()).toEqual(["clarity", "coveredGapIndexes", "overview", "priorities", "summary"]);
     // ENG-113: the consolidation (which decides clarity) must carry the transcription-error guard.
     expect(bodies[0].messages[0].content).toContain("a transcription error must never become the candidate's error");
     expect(bodies[0].messages[0].content).toContain("Do not lower clarity because of garbled");
@@ -254,7 +254,7 @@ describe("consolidation service", () => {
     const output = {
       summary: "Relaciona retries limitados à resiliência e descreve métricas de monitoramento.",
       clarity: "MOSTLY_CLEAR",
-      priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 2, evidence: "bounded retries", focus: "Resiliência", exercise: "Explique em voz alta como retries limitados ajudam a manter a resiliência do serviço.", vacancyCompetency: "resilience" }],
+      priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 2, evidence: "timeouts and bounded retries", focus: "Na próxima resposta, relacione retries limitados à resiliência.", exercise: "Na próxima resposta, explique como retries limitados protegem o serviço.", vacancyCompetency: "resilience" }],
     };
     const { bodies, fetchImplementation } = capture(output);
     const result = await makeService(fetchImplementation).consolidate({ roleContext, jobDirection: direction, turns, turnAnalyses: linkedAnalysis });
@@ -302,14 +302,14 @@ describe("consolidation service", () => {
     const { fetchImplementation } = capture({
       ...consolidationOutput,
       priorities: [
-        { ...consolidationOutput.priorities[1], sequenceNumber: 2, evidence: "timeouts" },
+        { ...consolidationOutput.priorities[1], sequenceNumber: 2, evidence: "timeouts and bounded retries" },
         { ...consolidationOutput.priorities[1], evidence: "made up words" },
-        consolidationOutput.priorities[1],
+        { ...consolidationOutput.priorities[1], evidence: "monitor errors and latency" },
       ],
     });
     const result = await makeService(fetchImplementation).consolidate({ roleContext, turns, turnAnalyses: [{ ...analyses[0], englishPatterns: [] }, analyses[1]] });
     // sequenceNumber 2 has a validated technical strength, so the first one is allowed.
-    expect(result.priorities.map(({ sequenceNumber, evidence }) => [sequenceNumber, evidence])).toEqual([[2, "timeouts"], [4, "monitor errors"]]);
+    expect(result.priorities.map(({ sequenceNumber, evidence }) => [sequenceNumber, evidence])).toEqual([[2, "timeouts and bounded retries"], [4, "monitor errors and latency"]]);
     expect(result.evidenceReview?.priorities).toMatchObject({ candidates: 3, accepted: 2, rejected: 1 });
     expect(result.evidenceReview?.priorities.rejectionReasons?.mismatch).toBe(1);
   });
