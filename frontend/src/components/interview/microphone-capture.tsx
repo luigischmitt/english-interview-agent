@@ -15,6 +15,7 @@ import { nextAutoStartSignal } from "@/lib/interview/session-policy.mjs";
 import { MAX_SPECULATIVE_REVISIONS } from "@/lib/interview/speculative-epoch.mjs";
 import type { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 import { validateAssessmentDetails, type AssessmentDetails } from "@/lib/interview/assessment-details.mjs";
+import { parseReviewedTranscript } from "@/lib/interview/reviewed-transcript.mjs";
 
 type RecorderStatus = "idle" | "requesting" | "recording" | "finalizing" | "error";
 export type VoiceCaptureState = "idle" | "requesting" | "listening" | "detected" | "finalizing" | "ready" | "unavailable";
@@ -24,6 +25,7 @@ type StreamMessage = {
   protocol?: number;
   provider?: VoiceTranscription["provider"];
   transcript?: string;
+  changed?: boolean;
   code?: string;
   message?: string;
   features?: { pronunciationAssessment?: boolean };
@@ -107,6 +109,7 @@ type MicrophoneCaptureProps = {
   onLevel?: (level: number) => void;
   onTranscriptionChange: (state: VoiceTranscriptionState) => void;
   onAssessmentChange?: (attemptId: string, state: VoiceAssessmentState, context: AssessmentContext) => void;
+  onReviewedTranscript?: (attemptId: string, transcript: string | null, changed: boolean, context: AssessmentContext) => void;
   onCaptureStateChange?: (state: VoiceCaptureState) => void;
   /** The backend expects the answer to end soon with this text (never submitted). */
   onProvisionalAnswer?: (transcript: string, revision: number, speechEpoch: number) => void;
@@ -171,7 +174,7 @@ type Attempt = {
   assessmentEnabled: boolean;
   awaitingAssessment: boolean;
   /** Socket kept open after `complete` only to deliver the verdict of this follow-up candidate revision. */
-  lingering?: { turnId: string; revision: number; timer: ReturnType<typeof setTimeout> };
+  lingering?: { turnId?: string; revision?: number; timer: ReturnType<typeof setTimeout> };
 };
 
 /** The server reported (in `ready`) whether pronunciation assessment follows this answer. */
@@ -185,7 +188,7 @@ function streamFailureMessage(reason: AnswerStreamFailure): string {
   return "A conexão de áudio foi interrompida. Tente novamente ou pule esta pergunta.";
 }
 
-export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, onSpeechEpoch, onAnswerComplete, followUpCandidate = null, onFollowUpCandidateStatus, onPlannedQuestionStatus, getPlannedStartContext, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, onDeviceFallback, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
+export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscriptionChange, onAssessmentChange, onReviewedTranscript, onCaptureStateChange, onProvisionalAnswer, onSpeechResumed, onSpeechEpoch, onAnswerComplete, followUpCandidate = null, onFollowUpCandidateStatus, onPlannedQuestionStatus, getPlannedStartContext, onHandoffTimingEvent, autoStartSignal = null, micEngine = null, onDeviceFallback, preconnectSignal = null, assessmentSockets, assessmentContext }: MicrophoneCaptureProps) {
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -206,6 +209,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
   const onLevelRef = useRef(onLevel);
   const onTranscriptionChangeRef = useRef(onTranscriptionChange);
   const onAssessmentChangeRef = useRef(onAssessmentChange);
+  const onReviewedTranscriptRef = useRef(onReviewedTranscript);
   const onCaptureStateChangeRef = useRef(onCaptureStateChange);
   const onProvisionalAnswerRef = useRef(onProvisionalAnswer);
   const onSpeechResumedRef = useRef(onSpeechResumed);
@@ -230,6 +234,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     onLevelRef.current = onLevel;
     onTranscriptionChangeRef.current = onTranscriptionChange;
     onAssessmentChangeRef.current = onAssessmentChange;
+    onReviewedTranscriptRef.current = onReviewedTranscript;
     onCaptureStateChangeRef.current = onCaptureStateChange;
     onProvisionalAnswerRef.current = onProvisionalAnswer;
     onSpeechResumedRef.current = onSpeechResumed;
@@ -242,7 +247,7 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
     assessmentContextRef.current = assessmentContext;
     micEngineRef.current = micEngine;
     onDeviceFallbackRef.current = onDeviceFallback;
-  }, [onDeviceFallback, assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onSpeechEpoch, onAnswerComplete, onFollowUpCandidateStatus, onPlannedQuestionStatus, getPlannedStartContext, onTranscriptionChange, onAssessmentChange, onCaptureStateChange]);
+  }, [onDeviceFallback, assessmentContext, onLevel, micEngine, onHandoffTimingEvent, onProvisionalAnswer, onSpeechResumed, onSpeechEpoch, onAnswerComplete, onFollowUpCandidateStatus, onPlannedQuestionStatus, getPlannedStartContext, onTranscriptionChange, onAssessmentChange, onReviewedTranscript, onCaptureStateChange]);
 
   useEffect(() => {
     if (followUpCandidate) attemptRef.current?.stream.sendControl(followUpCandidate);
@@ -334,6 +339,10 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
   /** Every server message after `ready` (the stream consumes `ready` and setup errors itself). */
   const handleStreamMessage = (attempt: Attempt, message: StreamMessage, socket: AnswerStreamSocket) => {
     const { generation, attemptId, context: attemptAssessmentContext } = attempt;
+    if (message.type === "reviewed_transcript") {
+      onReviewedTranscriptRef.current?.(attemptId, parseReviewedTranscript(message), message.changed === true, attemptAssessmentContext);
+      return;
+    }
     if (message.type === "assessment") {
       attempt.awaitingAssessment = false;
       assessmentSockets.finish(attemptId, socket as unknown as WebSocket);
@@ -440,11 +449,9 @@ export function MicrophoneCapture({ disabled = false, render, onLevel, onTranscr
         attempt.lingering = { ...pendingFollowUpCheck, timer: setTimeout(() => closeLingering(attempt, socket), PENDING_STATUS_LINGER_MS) };
       } else {
         onAssessmentChangeRef.current?.(attemptId, { status: "unavailable", reason: "not_enabled" }, attemptAssessmentContext);
-        attempt.stream.release();
-        socket.onclose = null;
-        socket.onerror = null;
-        socket.close();
         if (attemptRef.current === attempt) attemptRef.current = null;
+        assessmentSockets.register(attemptId, socket as unknown as WebSocket);
+        attempt.lingering = { timer: setTimeout(() => closeLingering(attempt, socket), 20_000) };
       }
       return;
     }

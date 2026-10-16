@@ -1,5 +1,21 @@
 /** Time allowed at the end of the interview for background turn analyses to settle. */
 export const turnAnalysisWaitMs = 12_000;
+export const reviewedTranscriptWaitMs = 15_000;
+
+/** Prefer the reviewed answer for analysis, but let the interview finish promptly if review is delayed. */
+export async function waitForReviewedTranscriptOrTimeout(reviewedTranscript, draft, { timeoutMs = reviewedTranscriptWaitMs } = {}) {
+  let timer;
+  const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(draft), Math.max(0, timeoutMs)); });
+  const reviewed = Promise.resolve(reviewedTranscript).then((value) => value || draft, () => draft);
+  const result = await Promise.race([reviewed, timeout]);
+  clearTimeout(timer);
+  return result;
+}
+
+/** Replace one candidate row's text while preserving all other report turns. */
+export function replaceCandidateTurnContent(turns, sequenceNumber, content) {
+  return turns.map((turn) => turn.sequenceNumber === sequenceNumber && turn.speaker === "candidate" ? { ...turn, content } : turn);
+}
 
 /**
  * Wait (bounded) for the per-answer analyses started during the interview and

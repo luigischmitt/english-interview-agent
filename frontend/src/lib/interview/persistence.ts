@@ -136,6 +136,22 @@ export async function appendInterviewTurn(input: InterviewTurnInput): Promise<Pe
   return { ok: true, value: toTurn(data as TurnRow) };
 }
 
+export async function updateCandidateTurnContent(interviewId: string, sequenceNumber: number, content: string): Promise<PersistenceResult<InterviewTurn>> {
+  const auth = await authenticatedClient();
+  if (!auth.ok) return auth;
+  const { data, error } = await auth.value.client
+    .from("interview_turns")
+    .update({ content })
+    .eq("interview_id", interviewId)
+    .eq("sequence_number", sequenceNumber)
+    .eq("speaker", "candidate")
+    .select(turnColumns)
+    .single();
+  if (error) return failure(error);
+  invalidateDashboardCache("progress");
+  return { ok: true, value: toTurn(data as TurnRow) };
+}
+
 export async function updateInterviewStatus(
   interviewId: string,
   status: Exclude<InterviewSessionStatus, "draft" | "in_progress">,
