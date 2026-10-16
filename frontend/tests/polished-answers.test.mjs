@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mergeAnsweredQuestions, mergeSavedPolishedAnswers, pairAnsweredQuestions } from "../src/lib/interview/polished-answers.mjs";
+import { mergeAnsweredQuestions, mergeSavedPolishedAnswers, pairAnsweredQuestions } from "../src/lib/interview/polished-answers-data.mjs";
 
 test("pairs question turns with candidate answers and ignores unpaired/empty turns", () => {
   assert.deepEqual(pairAnsweredQuestions([
