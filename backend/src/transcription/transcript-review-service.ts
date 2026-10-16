@@ -16,16 +16,20 @@ export class OpenRouterTranscriptReviewService implements TranscriptReviewServic
     let status = "unavailable";
     let changed = false;
     let lengthRatio = "unknown";
+    let costUsd: number | null = null;
     try {
       const response = await this.fetchImplementation("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST", headers: { Authorization: `Bearer ${this.options.key}`, "Content-Type": "application/json" }, signal: requestSignal,
-        body: JSON.stringify({ model: this.options.model ?? "google/gemini-3.8-flash", temperature: 0, provider: { data_collection: "deny" }, messages: [{ role: "user", content: [
+        body: JSON.stringify({ model: this.options.model ?? "google/gemini-3.8-flash", temperature: 0,
+          // Without this the model spends 2-5k reasoning tokens per answer (~US$0.011-0.020 per audio minute instead of ~US$0.0018) with no measured quality gain.
+          reasoning: { effort: "minimal" }, usage: { include: true }, provider: { data_collection: "deny" }, messages: [{ role: "user", content: [
           { type: "text", text: instruction.replace("<question>", question ?? "").replace("<draft>", draft) },
           { type: "input_audio", input_audio: { data: audioWav.toString("base64"), format: "wav" } },
         ] }] }),
       });
       if (!response.ok) return null;
-      const payload = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
+      const payload = await response.json() as { choices?: Array<{ message?: { content?: unknown } }>; usage?: { cost?: unknown } };
+      if (typeof payload.usage?.cost === "number" && Number.isFinite(payload.usage.cost)) costUsd = payload.usage.cost;
       const content = payload.choices?.[0]?.message?.content;
       if (typeof content !== "string") return null;
       const transcript = cleanTranscript(content);
@@ -40,7 +44,7 @@ export class OpenRouterTranscriptReviewService implements TranscriptReviewServic
     } catch {
       return null;
     } finally {
-      console.info(JSON.stringify({ event: "transcript_review", status, durationMs: Date.now() - startedAt, changed, lengthRatio }));
+      console.info(JSON.stringify({ event: "transcript_review", status, durationMs: Date.now() - startedAt, changed, lengthRatio, costUsd }));
     }
   }
 }
