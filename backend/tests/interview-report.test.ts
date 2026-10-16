@@ -103,8 +103,8 @@ describe("final interview report service", () => {
     expect(englishPatternSchema.properties.patterns.items.properties.why.maxLength).toBe(170);
     expect(body.messages[0].content).toContain("fazer uma pergunta maps literally to 'make a question'");
     expect(englishPatternSchema.properties.patterns.items.properties.rephrasedExample.description).toContain("complete English sentence");
-    expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.strengths.maxItems).toBe(2);
-    expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.gaps.maxItems).toBe(3);
+    expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.strengths.maxItems).toBe(5);
+    expect((schema.technicalContent as { properties: { strengths: { maxItems: number }; gaps: { maxItems: number } } }).properties.gaps.maxItems).toBe(4);
     expect(JSON.parse(body.messages[1].content)).toEqual({ roleContext: input.roleContext, turns: input.turns });
     const providerLog = info.mock.calls.map((call) => JSON.parse(String(call[0]))).find((entry) => entry.phase === "provider");
     expect(providerLog).toMatchObject({ event: "interview_report_phase_timing", promptTokens: 800, completionTokens: 210, costUsd: 0.00012, cachedTokens: 500 });
@@ -339,12 +339,12 @@ describe("final interview report service", () => {
     const report = await makeService(async () => providerResponse(JSON.stringify(providerOutput))).generate({ ...input, turns });
     const counts = report.evidenceReview;
 
-    expect(report.technicalContent.strengths).toHaveLength(2);
-    expect(report.technicalContent.gaps).toHaveLength(3);
+    expect(report.technicalContent.strengths).toHaveLength(5);
+    expect(report.technicalContent.gaps).toHaveLength(4);
     expect(report.englishCommunication.patterns).toHaveLength(3);
     expect(report.priorities).toHaveLength(3);
-    expect(counts?.technicalStrengths).toMatchObject({ candidates: 9, accepted: 2, rejected: 7, rejectionReasons: { limit: 7 } });
-    expect(counts?.technicalGaps).toMatchObject({ candidates: 9, accepted: 3, rejected: 6, rejectionReasons: { limit: 6 } });
+    expect(counts?.technicalStrengths).toMatchObject({ candidates: 9, accepted: 5, rejected: 4, rejectionReasons: { limit: 4 } });
+    expect(counts?.technicalGaps).toMatchObject({ candidates: 9, accepted: 4, rejected: 5, rejectionReasons: { limit: 5 } });
     expect(counts?.englishPatterns).toMatchObject({ candidates: 10, accepted: 3, rejected: 7, rejectionReasons: { limit: 7 } });
     expect(counts?.priorities).toMatchObject({ candidates: 4, accepted: 3, rejected: 1, rejectionReasons: { limit: 1 } });
     for (const category of Object.values(counts ?? {})) {
