@@ -16,8 +16,10 @@ import type { ClosingReactionService } from "../thinking/closing-reaction-servic
 import type { SpeculativeTurnAnalysisService } from "../thinking/speculative-turn-analysis-service.js";
 import type { StudyPlanService } from "../thinking/study-plan-service.js";
 import type { PolishedAnswerService } from "../thinking/polished-answer-service.js";
+import { createRedoCheckController } from "../controllers/redo-check-controller.js";
+import type { RedoCheckService } from "../thinking/redo-check-service.js";
 
-export function createThinkingRouter(service: ThinkingService | null, orchestrationService: InterviewOrchestrationService, reportService: InterviewReportService | null, jobDirectionService: JobDirectionService | null, resumeDirectionService: ResumeDirectionService | null, jobDirectionUserLimit: JobDirectionUserLimit, speechPrefetcher: InterviewerSpeechPrefetcher | null = null, speculativeService: SpeculativeTurnAnalysisService | null = null, speculativeEnabled = false, closingReactionService: ClosingReactionService | null = null, studyPlanService: StudyPlanService | null = null, polishedAnswerService: PolishedAnswerService | null = null) {
+export function createThinkingRouter(service: ThinkingService | null, orchestrationService: InterviewOrchestrationService, reportService: InterviewReportService | null, jobDirectionService: JobDirectionService | null, resumeDirectionService: ResumeDirectionService | null, jobDirectionUserLimit: JobDirectionUserLimit, speechPrefetcher: InterviewerSpeechPrefetcher | null = null, speculativeService: SpeculativeTurnAnalysisService | null = null, speculativeEnabled = false, closingReactionService: ClosingReactionService | null = null, studyPlanService: StudyPlanService | null = null, polishedAnswerService: PolishedAnswerService | null = null, redoCheckService: RedoCheckService | null = null) {
   const thinkingRouter = Router();
   thinkingRouter.post("/", createThinkingController(service));
   thinkingRouter.post("/job-direction", createJobDirectionController(jobDirectionService, jobDirectionUserLimit));
@@ -31,5 +33,6 @@ export function createThinkingRouter(service: ThinkingService | null, orchestrat
   thinkingRouter.post("/report/consolidate", createInterviewReportConsolidationController(reportService));
   thinkingRouter.post("/polished-answer", createPolishedAnswerController(polishedAnswerService));
   thinkingRouter.post("/study-plan", createStudyPlanController(studyPlanService));
+  thinkingRouter.post("/redo-check", createRedoCheckController(redoCheckService));
   return thinkingRouter;
 }
