@@ -72,7 +72,7 @@ describe("real report calibration", () => {
     expect(result.diagnostics.optionalItems.rejectionReasons.artifact).toBe(4);
   });
 
-  it("rejects trivial 'mentioned technology X' strengths and keeps a real one, capped at 2", () => {
+  it("rejects trivial 'mentioned technology X' strengths and keeps concrete strengths, capped at 5", () => {
     const real = gap(1, "I use the next.js for the frontend", "Você justificou a escolha do Next.js para o frontend.");
     const result = report({
       technicalContent: {
@@ -88,20 +88,20 @@ describe("real report calibration", () => {
         gaps: [],
       },
     });
-    expect(result.report?.technicalContent.strengths).toEqual([real, gap(2, "A project that I worked on", "Você liderou o desenho do framework de imagens sintéticas.")]);
-    expect(result.diagnostics.optionalItems.rejectionReasons).toMatchObject({ invalidFormat: 3, limit: 1 });
+    expect(result.report?.technicalContent.strengths).toEqual([real, gap(2, "A project that I worked on", "Você liderou o desenho do framework de imagens sintéticas."), gap(2, "I did it", "Você entregou o resultado para os gerentes.")]);
+    expect(result.diagnostics.optionalItems.rejectionReasons).toMatchObject({ invalidFormat: 3, limit: 0 });
     expect(isTrivialStrength("O candidato mencionou a tecnologia Next.js.")).toBe(true);
     expect(isTrivialStrength("Você justificou a escolha do Next.js para o frontend.")).toBe(false);
   });
 
-  it("caps technical gaps at 3 in the report", () => {
+  it("caps technical gaps at 4 in the report", () => {
     const answer = "x";
     const many = ["I use the next.js for the frontend", "the backend I use node.js", "A project that I worked on", "I worked in several projects"];
     const result = report({
       technicalContent: { summary: "Resumo objetivo.", strengths: [], gaps: many.map((evidence, index) => gap(index < 2 ? 1 : 2, evidence, "Você não explicou o resultado pedido pela pergunta.")) },
     });
     expect(answer).toBe("x");
-    expect(result.report?.technicalContent.gaps).toHaveLength(3);
+    expect(result.report?.technicalContent.gaps).toHaveLength(4);
   });
 
   it("rejects English sentences in Portuguese fields and repairs third person", () => {
@@ -122,4 +122,20 @@ describe("real report calibration", () => {
     expect(repairThirdPerson("O candidato explicou o fluxo.")).toBe("Você explicou o fluxo.");
     expect(hasMissingPortugueseAccents("Voce nao explicou a comunicacao.")).toBe(true);
   });
+
+  it("accepts both optional interviewer fields only when localized and grounded", () => {
+    const validTakeaway = { remember: "Você explicou decisões técnicas concretas com clareza.", concern: "Você poderia detalhar melhor como monitorou o resultado em produção." };
+    const validMoment = { sequenceNumber: 2, evidence: "A project that I worked on is a framework", why: "Você descreveu uma contribuição específica que ajuda o entrevistador a entender seu papel." };
+    const valid = report({ interviewerTakeaway: validTakeaway, bestMoment: validMoment });
+    expect(valid.report?.interviewerTakeaway).toEqual(validTakeaway);
+    expect(valid.report?.bestMoment).toEqual(validMoment);
+
+    const invalid = report({
+      interviewerTakeaway: { remember: "The candidate explained the concrete technical decision clearly.", concern: validTakeaway.concern },
+      bestMoment: { ...validMoment, evidence: "invented evidence not in answer" },
+    });
+    expect(invalid.report).not.toHaveProperty("interviewerTakeaway");
+    expect(invalid.report).not.toHaveProperty("bestMoment");
+  });
+
 });

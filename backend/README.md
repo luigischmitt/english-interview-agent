@@ -312,7 +312,7 @@ Technical strengths and gaps are evaluated for each question/answer pair; a gap
 describes an explanation that was missing from the answer, not a conclusion that
 the candidate lacks knowledge. The report avoids classifying tools or claiming
 mastery, correctness, ownership, or impact when the answer does not provide
-evidence. English feedback can include up to eight distinct prioritized patterns
+evidence. English feedback can include up to three distinct prioritized patterns
 and omits duplicate findings and excerpts likely to be transcription artifacts.
 English patterns are limited to errors that affect meaning or credibility (no valid
 jargon, synonyms, punctuation or fillers), use type definitions, and may be fewer or
@@ -320,6 +320,12 @@ none; each pattern can also include a short `why` sentence explaining the
 Brazilian Portuguese transfer behind that specific error. It is localized with the
 report, capped at 170 characters, and omitted when invalid; the same rules apply to
 per-answer analysis and consolidation.
+The report can also include optional `interviewerTakeaway` (`remember` and
+`concern`, one localized sentence each) and `bestMoment` (the answer's
+`sequenceNumber`, a validated excerpt of at least six words, and a short
+localized explanation). Both are omitted when they fail locale, grounding, or
+transcription-artifact checks. Strengths are capped at five per report (up to
+two per answer); material technical gaps are capped at four.
 The backend does not fetch or persist sessions and does not authorize an
 interview ID; the authenticated frontend persists results through Supabase RLS.
 Provider/configuration errors use the standardized thinking error object.
@@ -334,14 +340,14 @@ report, and the same privacy routing (`data_collection: "deny"`).
 - `POST /api/v1/thinking/report/turn` takes `{ roleContext, turn }` (one
   `sequenceNumber`/`question`/`answer`, same limits and strictness; interview IDs
   are rejected) and returns `{ sequenceNumber, technicalStrengths, technicalGaps,
-  englishPatterns, model }` with at most 3/3/4 server-validated items. Deadline:
+  englishPatterns, model }` with at most 2/1/3 server-validated items. Deadline:
   20 seconds.
 - `POST /api/v1/thinking/report/consolidate` takes `{ roleContext, turns,
   turnAnalyses }` with exactly one analysis per turn. The server never trusts the
   client: every item is validated again against its matching answer, English
-  patterns are deduplicated across turns, and the usual caps apply (8 strengths,
-  8 gaps, 8 patterns, 3 priorities). One small structured call then produces only
-  the summary, overall clarity, and up to three priorities that must build on a
+  patterns are deduplicated across turns, and the usual caps apply (5 strengths,
+  4 gaps, 3 patterns, 3 priorities). One small structured call then produces the
+  summary, optional interviewer takeaway and best moment, overall clarity, and up to three priorities that must build on a
   validated finding. The response has the exact full-report shape (`model`,
   `analysisVersion: "v2"`, `evidenceReview`), so persistence and UI are unchanged.
   `evidenceReview` counts the items submitted for consolidation (turn-stage

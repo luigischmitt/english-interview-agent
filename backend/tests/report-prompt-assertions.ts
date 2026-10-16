@@ -19,7 +19,7 @@ export function expectPrecisionRules(prompt: string) {
 }
 
 export function expectConciseTechnicalRules(prompt: string) {
-  expect(prompt).toContain("at most 1 per answer and 3 in total, and ONLY material ones");
+  expect(prompt).toContain("at most 1 per answer and 4 in total, and ONLY material ones");
   expect(prompt).toContain("a real interviewer for that role and seniority would consider important to answer THAT question well");
   expect(prompt).toContain("If the answer covered the question reasonably, return no gaps");
   expect(prompt).toContain("Never list optional details the candidate simply did not mention");
@@ -27,7 +27,7 @@ export function expectConciseTechnicalRules(prompt: string) {
   expect(prompt).toContain("unless the question explicitly asks for them");
   expect(prompt).toContain("never \"mentioned technology X\"");
   expect(prompt).toContain("how an API was integrated, how data was separated, or how conflicts were avoided");
-  expect(prompt).toContain("report at most 1 strength per answer and 2 in total");
+  expect(prompt).toContain("report at most 2 strengths per answer and 5 in total");
 }
 
 export function expectPortugueseQualityRules(prompt: string) {

@@ -111,12 +111,12 @@ describe("per-turn analysis service", () => {
     } finally { info.mockRestore(); }
   });
 
-  it("asks for at most one strength, one gap and three English patterns per answer with a bounded output", async () => {
+  it("asks for at most two strengths, one gap and three English patterns per answer with a bounded output", async () => {
     const { bodies, fetchImplementation } = capture({ technicalStrengths: [], technicalGaps: [], englishPatterns: [] });
     await makeService(fetchImplementation).analyzeTurn({ roleContext, turn: turns[0] });
     const schema = bodies[0].response_format.json_schema.schema.properties;
-    expect([schema.technicalStrengths.maxItems, schema.technicalGaps.maxItems, schema.englishPatterns.maxItems]).toEqual([1, 1, 3]);
-    expect(bodies[0].max_tokens).toBeLessThanOrEqual(800);
+    expect([schema.technicalStrengths.maxItems, schema.technicalGaps.maxItems, schema.englishPatterns.maxItems]).toEqual([2, 1, 3]);
+    expect(bodies[0].max_tokens).toBeLessThanOrEqual(1_000);
     expect(bodies[0].max_tokens).toBeGreaterThanOrEqual(450);
     // Static rules first, identical between calls (prompt caching); the answer lives only in the user message.
     expect(bodies[0].messages[0].content).not.toContain(turns[0].answer);
@@ -192,6 +192,8 @@ describe("per-turn analysis service", () => {
 describe("consolidation service", () => {
   const consolidationOutput = {
     summary: "Descreve timeouts, retries limitados e monitoramento de erros e latência.",
+    interviewerTakeaway: { remember: "Você descreveu retries limitados como uma proteção contra falhas transitórias.", concern: "Você poderia explicar melhor como define os limites de alerta." },
+    bestMoment: { sequenceNumber: 2, evidence: "I would add timeouts and bounded retries", why: "Você apresentou uma ação concreta que mostra como reduzir falhas transitórias." },
     clarity: "MOSTLY_CLEAR",
     priorities: [
       { area: "ENGLISH_COMMUNICATION", sequenceNumber: 2, evidence: "Yesterday I have deployed", focus: "Na próxima resposta, use o passado simples para narrar o deploy.", exercise: "Na próxima resposta, diga quando você fez o deploy." },
@@ -220,11 +222,13 @@ describe("consolidation service", () => {
     expect(bodies[0].max_tokens).toBeLessThanOrEqual(1_536);
     expectSpecificPriorityRules(bodies[0].messages[0].content);
     expect(bodies[0].messages[0].content).toContain('Address the candidate directly as "você"');
-    expect(Object.keys(bodies[0].response_format.json_schema.schema.properties).sort()).toEqual(["clarity", "coveredGapIndexes", "overview", "priorities", "summary"]);
+    expect(Object.keys(bodies[0].response_format.json_schema.schema.properties).sort()).toEqual(["bestMoment", "clarity", "coveredGapIndexes", "interviewerTakeaway", "overview", "priorities", "summary"]);
     // ENG-113: the consolidation (which decides clarity) must carry the transcription-error guard.
     expect(bodies[0].messages[0].content).toContain("a transcription error must never become the candidate's error");
     expect(bodies[0].messages[0].content).toContain("Do not lower clarity because of garbled");
-    expect(Object.keys(result).sort()).toEqual(["analysisVersion", "englishCommunication", "evidenceReview", "model", "priorities", "technicalContent"]);
+    expect(Object.keys(result).sort()).toEqual(["analysisVersion", "bestMoment", "englishCommunication", "evidenceReview", "interviewerTakeaway", "model", "priorities", "technicalContent"]);
+    expect(result.interviewerTakeaway).toEqual(consolidationOutput.interviewerTakeaway);
+    expect(result.bestMoment).toEqual(consolidationOutput.bestMoment);
     expect(result.analysisVersion).toBe("v2");
     expect(result.model).toBe(defaultThinkingModel);
     expect(result.technicalContent).toEqual({ summary: consolidationOutput.summary, strengths: [strength2], gaps: [gap4] });
@@ -326,8 +330,8 @@ describe("consolidation service", () => {
     }));
     const { fetchImplementation } = capture({ summary: "Resumo técnico completo e objetivo.", clarity: "CLEAR", priorities: [] });
     const result = await makeService(fetchImplementation).consolidate({ roleContext, turns: manyTurns, turnAnalyses: perTurn as InterviewTurnAnalysis[] });
-    expect(result.technicalContent.strengths).toHaveLength(2);
-    expect(result.evidenceReview?.technicalStrengths.rejectionReasons?.limit).toBe(16);
+    expect(result.technicalContent.strengths).toHaveLength(5);
+    expect(result.evidenceReview?.technicalStrengths.rejectionReasons?.limit).toBe(13);
     expect(result.englishCommunication.patterns).toHaveLength(3);
     expect(result.englishCommunication.evidenceStatus).toBe("SUFFICIENT");
     const reasons = result.evidenceReview?.englishPatterns.rejectionReasons;
