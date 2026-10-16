@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { loadTranscriptionConfig } from "./config.js";
 
 describe("optional Azure assessment configuration", () => {
+  it("loads transcript review defaults and overrides", () => {
+    expect(loadTranscriptionConfig()).toMatchObject({ transcriptReviewEnabled: true, transcriptReviewModel: "google/gemini-3.8-flash", transcriptReviewTimeoutMs: 20_000 });
+    expect(loadTranscriptionConfig({ TRANSCRIPT_REVIEW_ENABLED: "false", TRANSCRIPT_REVIEW_MODEL: "provider/model", TRANSCRIPT_REVIEW_TIMEOUT_MS: "12000" })).toMatchObject({ transcriptReviewEnabled: false, transcriptReviewModel: "provider/model", transcriptReviewTimeoutMs: 12_000 });
+  });
   it("is off by default and uses a bounded positive timeout", () => {
     const config = loadTranscriptionConfig({});
     expect(config.assessmentEnabled).toBe(false);

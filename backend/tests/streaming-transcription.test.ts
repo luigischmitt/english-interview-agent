@@ -21,9 +21,9 @@ function createService(transcript = "I led the migration") {
   return { service, transcribe };
 }
 
-async function openStreamServer(service: TranscriptionService, assessmentService: PronunciationAssessmentService | null = null, limits = defaultStreamingLimits) {
+async function openStreamServer(service: TranscriptionService, assessmentService: PronunciationAssessmentService | null = null, limits = defaultStreamingLimits, streaming: Parameters<typeof attachTranscriptionWebSocket>[4] = null) {
   const server = createServer();
-  attachTranscriptionWebSocket(server, service, assessmentService, limits);
+  attachTranscriptionWebSocket(server, service, assessmentService, limits, streaming);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Expected an ephemeral TCP address");
@@ -443,6 +443,53 @@ describe("versioned transcription WebSocket", () => {
       sockets.forEach((socket) => socket.close());
       await fixture.close();
     }
+  });
+
+  it("sends reviewed transcript after complete and assesses reviewed references; falls back on review failure", async () => {
+    const { service } = createService("I work hard and build service");
+    const order: string[] = [];
+    const review = { review: vi.fn(async () => { order.push("review"); return { transcript: "I work very hard and build services", changed: true }; }) };
+    const assessmentService: PronunciationAssessmentService = { assess: vi.fn(async (_audio, _format, referenceText) => {
+      order.push(`assessment:${referenceText}`);
+      return { provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 80, fluency: 80, prosody: 80 } };
+    }) };
+    const fixture = await openStreamServer(service, assessmentService, defaultStreamingLimits, { answerGraceMs: 500, transcriptReview: review });
+    const socket = await openSocket(fixture.url);
+    try {
+      const messages: string[] = [];
+      socket.on("message", (raw) => messages.push(JSON.parse(raw.toString()).type));
+      await startStream(socket);
+      await prepareAnswer(socket, 8);
+      const completeWaiter = waitForType(socket, "complete");
+      const reviewedWaiter = waitForType(socket, "reviewed_transcript");
+      const assessmentWaiter = waitForType(socket, "assessment");
+      socket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await completeWaiter;
+      await expect(reviewedWaiter).resolves.toMatchObject({ transcript: "I work very hard and build services", changed: true });
+      await assessmentWaiter;
+      await delay(5);
+      expect(messages.indexOf("complete")).toBeLessThan(messages.indexOf("reviewed_transcript"));
+      expect(messages.indexOf("reviewed_transcript")).toBeLessThan(messages.indexOf("assessment"));
+      expect(order).toContain("assessment:I work very hard and build services");
+    } finally { socket.close(); await fixture.close(); }
+
+    const failingReview = { review: vi.fn(async () => { throw new Error("private detail"); }) };
+    const fallbackAssessment = { assess: vi.fn(async (_audio: Buffer, _format: "wav", referenceText: string) => {
+      expect(referenceText).toBe("I work hard and build service");
+      return { provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 80, fluency: 80, prosody: 80 } };
+    }) };
+    const fallbackFixture = await openStreamServer(service, fallbackAssessment, defaultStreamingLimits, { answerGraceMs: 500, transcriptReview: failingReview });
+    const fallbackSocket = await openSocket(fallbackFixture.url);
+    try {
+      await startStream(fallbackSocket); await prepareAnswer(fallbackSocket, 8);
+      const completeWaiter = waitForType(fallbackSocket, "complete");
+      const reviewWaiter = waitForType(fallbackSocket, "reviewed_transcript");
+      const assessmentWaiter = waitForType(fallbackSocket, "assessment");
+      fallbackSocket.send(JSON.stringify({ type: "finalize", reason: "manual" }));
+      await completeWaiter;
+      await expect(reviewWaiter).resolves.toMatchObject({ status: "unavailable" });
+      await assessmentWaiter;
+    } finally { fallbackSocket.close(); await fallbackFixture.close(); }
   });
 
   it("reports a safe category when every Azure block fails", async () => {

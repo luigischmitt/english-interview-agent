@@ -55,6 +55,47 @@ export function normalizeToken(token: string): string {
   return token.toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]/gu, "");
 }
 
+/** Replaces timing block references with reviewed words mapped through an LCS token alignment. */
+export function mapAzureBlockReferencesToReviewed(blocks: AzureAudioBlock[], draft: string, reviewed: string): AzureAudioBlock[] {
+  const tokenPattern = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
+  const draftTokens = [...draft.matchAll(tokenPattern)].map((match) => match[0]);
+  const reviewedTokens = [...reviewed.matchAll(tokenPattern)].map((match) => match[0]);
+  if (!draftTokens.length || !reviewedTokens.length) return blocks;
+  const rows = draftTokens.length + 1;
+  const cols = reviewedTokens.length + 1;
+  const dp = Array.from({ length: rows }, () => new Uint16Array(cols));
+  for (let i = draftTokens.length - 1; i >= 0; i -= 1) for (let j = reviewedTokens.length - 1; j >= 0; j -= 1) {
+    dp[i]![j] = normalizeToken(draftTokens[i]!) === normalizeToken(reviewedTokens[j]!) ? dp[i + 1]![j + 1]! + 1 : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+  }
+  const mapping = new Map<number, number>();
+  let i = 0; let j = 0;
+  while (i < draftTokens.length && j < reviewedTokens.length) {
+    if (normalizeToken(draftTokens[i]!) === normalizeToken(reviewedTokens[j]!)) { mapping.set(i++, j++); }
+    else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i += 1;
+    else j += 1;
+  }
+  let cursor = 0;
+  return blocks.map((block) => {
+    const count = (block.referenceText.match(tokenPattern) ?? []).length;
+    if (!count) return block;
+    const target = (block.referenceText.match(tokenPattern) ?? []).map((token) => normalizeToken(token));
+    while (cursor < draftTokens.length && normalizeToken(draftTokens[cursor]!) !== target[0]) cursor += 1;
+    const firstDraft = cursor;
+    let matched = 0;
+    while (cursor < draftTokens.length && matched < target.length) {
+      if (normalizeToken(draftTokens[cursor]!) === target[matched]) matched += 1;
+      cursor += 1;
+    }
+    const lastDraft = Math.max(firstDraft, cursor - 1);
+    const previousAnchor = [...mapping.entries()].filter(([draftIndex]) => draftIndex < firstDraft).at(-1);
+    const nextAnchor = [...mapping.entries()].find(([draftIndex]) => draftIndex > lastDraft);
+    const start = mapping.get(firstDraft) ?? (previousAnchor ? previousAnchor[1] + 1 : 0);
+    const end = mapping.get(lastDraft) ?? (nextAnchor ? nextAnchor[1] - 1 : reviewedTokens.length - 1);
+    if (start < 0 || end < start) return block;
+    return { ...block, referenceText: reviewedTokens.slice(start, end + 1).join(" ") };
+  });
+}
+
 /** Groups adjacent, timestamped words deterministically and slices the canonical mono 16 kHz WAV. */
 export function createAzureAlignedBlocks(wav: Buffer, words: TranscriptionWord[]): AzureAudioBlock[] {
   const pcmLength = wav.length - 44;
