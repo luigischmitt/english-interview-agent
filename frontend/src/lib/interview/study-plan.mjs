@@ -78,30 +78,6 @@ export async function requestInterviewStudyPlan(config, report, fetcher, endpoin
   }
 }
 
-function serializeRedoAttempt(attempt) {
-  const delivery = isRecord(attempt.delivery) ? Object.fromEntries(["wordsPerMinute", "pauseCount", "longestPauseMs", "startDelayMs", "fillerCount"].flatMap((key) => Number.isFinite(attempt.delivery[key]) ? [[key, attempt.delivery[key]]] : [])) : {};
-  if (isRecord(attempt.delivery?.fillers)) {
-    const counts = Object.fromEntries(Object.entries(attempt.delivery.fillers).filter(([key, count]) => key.length <= 80 && Number.isSafeInteger(count) && count >= 0));
-    if (Object.keys(counts).length) delivery.fillers = counts;
-  } else if (Array.isArray(attempt.delivery?.fillers)) {
-    const fillers = attempt.delivery.fillers.filter((filler) => cleanText(filler, 80)).slice(0, 20);
-    if (fillers.length) delivery.fillers = fillers;
-  }
-  const scores = isRecord(attempt.scores) ? Object.fromEntries(["accuracy", "fluency", "prosody"].flatMap((key) => attempt.scores[key] === null || Number.isFinite(attempt.scores[key]) && attempt.scores[key] >= 0 && attempt.scores[key] <= 100 ? [[key, attempt.scores[key]]] : [])) : {};
-  const sentence = attempt.worstSentence;
-  const worstSentence = isRecord(sentence) && Number.isSafeInteger(sentence.sentenceIndex) && sentence.sentenceIndex >= 0 && cleanText(sentence.text, 1_000) && Number.isFinite(sentence.score) && sentence.score >= 0 && sentence.score <= 100
-    ? { sentenceIndex: sentence.sentenceIndex, text: sentence.text.trim(), score: sentence.score, ...(Number.isFinite(sentence.startMs) && sentence.startMs >= 0 ? { startMs: sentence.startMs } : {}), ...(Number.isFinite(sentence.endMs) && sentence.endMs >= 0 ? { endMs: sentence.endMs } : {}) }
-    : null;
-  const patternCheck = Array.isArray(attempt.patternCheck) ? attempt.patternCheck.filter((item) => isRecord(item) && cleanText(item.evidence, 300) && typeof item.fixed === "boolean" && cleanText(item.note, 180)).slice(0, 3).map((item) => ({ evidence: item.evidence.trim(), fixed: item.fixed, note: item.note.trim() })) : [];
-  return {
-    createdAt: attempt.createdAt.trim(), transcript: attempt.transcript.trim(),
-    ...(Object.keys(delivery).length ? { delivery } : {}),
-    ...(Object.keys(scores).length ? { scores } : {}),
-    ...(worstSentence ? { worstSentence } : {}),
-    ...(patternCheck.length ? { patternCheck } : {}),
-  };
-}
-
 /** Serialize the public report allowlist, including new optional fields without losing legacy compatibility. */
 export function serializeInterviewAnalysis(result) {
   const turns = Array.isArray(result.turns) ? result.turns.filter((turn) => Number.isSafeInteger(turn?.sequenceNumber) && turn.sequenceNumber > 0 && Array.isArray(turn.technicalStrengths) && Array.isArray(turn.technicalGaps) && Array.isArray(turn.englishPatterns)).map((turn) => ({ sequenceNumber: turn.sequenceNumber, technicalStrengths: turn.technicalStrengths, technicalGaps: turn.technicalGaps, englishPatterns: turn.englishPatterns })) : [];
@@ -110,20 +86,15 @@ export function serializeInterviewAnalysis(result) {
       .map(({ sequenceNumber, topicId }) => ({ sequenceNumber, topicId: topicId.trim() }))
     : [];
   const studyPlan = normalizeInterviewStudyPlan(result.studyPlan);
-  const redos = isRecord(result.redos) ? Object.fromEntries(Object.entries(result.redos).flatMap(([sequence, attempts]) => {
-    if (!/^\d+$/u.test(sequence) || !Number.isSafeInteger(Number(sequence)) || Number(sequence) < 1 || !Array.isArray(attempts)) return [];
-    const valid = attempts.filter((attempt) => isRecord(attempt) && cleanText(attempt.createdAt, 40) && cleanText(attempt.transcript, 5_000)).slice(-5).map(serializeRedoAttempt);
-    return valid.length ? [[sequence, valid]] : [];
-  })) : undefined;
   return {
     locale: result.locale ?? "pt-BR",
     ...(result.jobDirection ? { jobDirection: result.jobDirection } : {}),
     ...(snapshot.length ? { technicalQuestionTopics: snapshot } : {}),
     ...(studyPlan ? { studyPlan } : {}),
     ...(isRecord(result.polishedAnswers) ? { polishedAnswers: result.polishedAnswers } : {}),
-    ...(redos ? { redos } : {}),
     ...(turns.length ? { turns } : {}),
     evidenceReview: result.evidenceReview,
+    ...(isRecord(result.overview) && (cleanText(result.overview.technical, 500) || cleanText(result.overview.english, 500)) ? { overview: { ...(cleanText(result.overview.technical, 500) ? { technical: cleanText(result.overview.technical, 500) } : {}), ...(cleanText(result.overview.english, 500) ? { english: cleanText(result.overview.english, 500) } : {}) } } : {}),
     technicalContent: result.technicalContent,
     englishCommunication: result.englishCommunication,
     priorities: result.priorities,

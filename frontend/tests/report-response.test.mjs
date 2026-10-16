@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { findingsForAnswer, phonemeHint, summarizeDelivery, worstSentence } from "../src/lib/interview/report-response.mjs";
+import { findingsForAnswer, phonemeHint, summarizeDelivery } from "../src/lib/interview/report-response.mjs";
 
 const item = { sequenceNumber: 2, evidence: "a", explanation: "b" };
 const report = { turns: [], technicalContent: { strengths: [item], gaps: [] }, englishCommunication: { patterns: [] } };
@@ -17,8 +17,7 @@ test("delivery stays descriptive and only adds a hint outside comfortable ranges
   assert.match(summarizeDelivery({ wordsPerMinute: 180, pauseCount: 4, longestPauseMs: 1200, fillerCount: 5 }).hint, /acelerado/u);
 });
 
-test("finds the lowest scored sentence and maps common Portuguese-speaker sounds", () => {
-  assert.equal(worstSentence({ sentences: [{ score: 80 }, { score: 62 }] }).score, 62);
+test("maps common Portuguese-speaker sounds", () => {
   assert.match(phonemeHint("θ"), /th/u);
   assert.equal(phonemeHint("unknown"), null);
 });

@@ -1359,7 +1359,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             if (!auth.user) return;
             const uploaded = await Promise.all(availableEntries.flatMap((entry) => entry.state.status === "available" ? (entry.state.clips ?? []).map(async (clip) => {
               const timeout = new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 4_000));
-              return { key: `${entry.sequenceNumber}:${clip.sentenceIndex}`, path: await Promise.race([uploadAnswerClip(feedbackSessionId, auth.user!.id, entry.sequenceNumber, clip), timeout]) };
+              return { key: `${entry.sequenceNumber}:${clip.phraseIndex}`, path: await Promise.race([uploadAnswerClip(feedbackSessionId, auth.user!.id, entry.sequenceNumber, clip.phraseIndex, clip), timeout]) };
             }) : []));
             if (mountedRef.current) setAnswerClipPaths((paths) => ({ ...paths, ...Object.fromEntries(uploaded.flatMap(({ key, path }) => path ? [[key, path]] : [])) }));
           } catch { /* Clip storage must never block report generation. */ }

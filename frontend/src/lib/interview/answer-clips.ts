@@ -1,11 +1,11 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-export async function uploadAnswerClip(interviewId: string, userId: string, sequenceNumber: number, clip: { sentenceIndex: number; base64: string }): Promise<string | null> {
+export async function uploadAnswerClip(interviewId: string, userId: string, sequenceNumber: number, phraseIndex: number, clip: { base64: string }): Promise<string | null> {
   try {
     const binary = atob(clip.base64);
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     const blob = new Blob([bytes], { type: "audio/webm" });
-    const path = `${userId}/${interviewId}/${sequenceNumber}-${clip.sentenceIndex}.webm`;
+    const path = `${userId}/${interviewId}/${sequenceNumber}-p${phraseIndex}.webm`;
     const { error } = await getSupabaseBrowserClient().storage.from("answer-clips").upload(path, blob, { upsert: true, contentType: "audio/webm" });
     return error ? null : path;
   } catch { return null; }

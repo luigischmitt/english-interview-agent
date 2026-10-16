@@ -131,3 +131,9 @@ test("persisted report allowlist retains per-answer turns while legacy reports r
   assert.deepEqual(serializeInterviewAnalysis({ ...report, turns: [turn] }).turns, [turn]);
   assert.equal("turns" in serializeInterviewAnalysis(report), false);
 });
+
+test("report serializer persists qualitative overview and ignores legacy redo data", () => {
+  const serialized = serializeInterviewAnalysis({ ...report, overview: { technical: "Good technical explanation.", english: "Clear phrasing." }, redos: { 1: [{ transcript: "legacy" }] } });
+  assert.deepEqual(serialized.overview, { technical: "Good technical explanation.", english: "Clear phrasing." });
+  assert.equal("redos" in serialized, false);
+});

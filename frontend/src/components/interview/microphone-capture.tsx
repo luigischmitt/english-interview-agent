@@ -28,7 +28,7 @@ type StreamMessage = {
   message?: string;
   features?: { pronunciationAssessment?: boolean };
   scores?: { accuracy: number | null; fluency: number | null; prosody: number | null };
-  sentences?: unknown;
+  phrases?: unknown;
   delivery?: unknown;
   clips?: unknown;
   durationMs?: number;
@@ -65,7 +65,7 @@ type HandoffTimingEvent = "finalizing" | "transcription-queued" | "transcription
 export type VoiceAssessmentState =
   | { status: "pending" }
   | { status: "unavailable"; segmented?: boolean; reason?: string; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] }
-  | { status: "available"; segmented: true; durationMs: number; scores: { accuracy: number | null; fluency: number | null; prosody: number | null }; sentences?: AssessmentDetails["sentences"]; delivery?: AssessmentDetails["delivery"]; clips?: AssessmentDetails["clips"]; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] };
+  | { status: "available"; segmented: true; durationMs: number; scores: { accuracy: number | null; fluency: number | null; prosody: number | null }; phrases?: AssessmentDetails["phrases"]; delivery?: AssessmentDetails["delivery"]; clips?: AssessmentDetails["clips"]; blockCount?: number; assessedBlockCount?: number; failedBlockCount?: number; diagnostics?: StreamMessage["diagnostics"] };
 
 type AssessmentContext = { questionLabel: string; sequenceNumber: number; /** Answer window within the question; changes after a clarification request. */ round?: number };
 
