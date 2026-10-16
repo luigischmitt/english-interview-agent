@@ -146,7 +146,7 @@ describe("final interview report service", () => {
     const report = await makeService(async () => providerResponse(JSON.stringify(content))).generate({ ...input, jobDirection });
     expect(report.technicalContent.gaps).toEqual([gap]);
     expect(report.priorities[0]).toEqual(priority);
-    const { vacancyCompetency: _unlinked, ...secondPriority } = { ...priority, focus: "Outro foco técnico.", vacancyCompetency: "security" };
+    const { vacancyCompetency: _unlinked, ...secondPriority } = { ...priority, focus: "Outro foco técnico", vacancyCompetency: "security" };
     expect(report.priorities[1]).toEqual(secondPriority);
   });
 
