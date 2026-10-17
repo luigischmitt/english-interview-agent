@@ -6,9 +6,11 @@ import { AudioLines, Play } from "lucide-react";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { getAnswerClipUrl, purgeExpiredAnswerClips } from "@/lib/interview/answer-clips";
+import { readStoredInterviewerSpeechSpeed } from "@/lib/interview/interviewer-speech-speed.mjs";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import { phonemeTip } from "@/lib/interview/report-presentation.mjs";
 import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
+import { readStoredInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
 import { buildVoiceInsights, type VoicePhrase } from "@/lib/interview/voice-insights.mjs";
 import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { useLocale } from "@/lib/locale";
@@ -34,13 +36,11 @@ function highlightedPhrase(phrase: VoicePhrase) {
 function PhraseCard({
   phrase,
   metric,
-  slow,
   unavailableClips,
   onClipUnavailable,
 }: {
   phrase: VoicePhrase;
   metric: "accuracy" | "fluency" | "prosody";
-  slow: boolean;
   unavailableClips: Set<string>;
   onClipUnavailable: (path: string) => void;
 }) {
@@ -101,7 +101,8 @@ function PhraseCard({
       const blob = await fetchSpeechBlob(phrase.text, {
         endpoint: speechEndpoint,
         fetcher: authorizedFetch,
-        speed: slow ? 0.8 : 1,
+        voice: readStoredInterviewerVoice(window.localStorage),
+        speed: readStoredInterviewerSpeechSpeed(window.localStorage),
       });
       await playUrl(URL.createObjectURL(blob), "model", true);
     } catch {
@@ -153,7 +154,6 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
   const [isLoading, setIsLoading] = useState(!cached);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [slow, setSlow] = useState(false);
   const [unavailableClips, setUnavailableClips] = useState<Set<string>>(() => new Set());
   const insights = useMemo(() => buildVoiceInsights(records), [records]);
   const sections = useMemo(() => [...insights.metrics].sort((first, second) => Number(second.key === insights.focus) - Number(first.key === insights.focus)), [insights]);
@@ -228,10 +228,6 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
             </div>
             <p className="vv-disclaimer ds-small">{t("Estas métricas não medem seu nível de inglês nem seu sotaque. A prosódia pode ficar mais baixa para falantes de português mesmo com boa inteligibilidade.")}</p>
           </section>
-          <label className="ds-toggle vv-speed-toggle">
-            <input type="checkbox" className="ds-switch" checked={slow} onChange={(event) => setSlow(event.target.checked)} />
-            {t("Mais devagar")}
-          </label>
           {sections.map((metric) => (
             <section className="vv-section" aria-labelledby={`voice-${metric.key}`} key={metric.key}>
               <h2 id={`voice-${metric.key}`} className="ds-h2">{t(metric.heading)}</h2>
@@ -246,7 +242,6 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
                       key={`${metric.key}-${phrase.interviewId}-${phrase.answerNumber}-${phrase.phraseIndex}`}
                       phrase={phrase}
                       metric={metric.key}
-                      slow={slow}
                       unavailableClips={unavailableClips}
                       onClipUnavailable={(path) => setUnavailableClips((previous) => new Set(previous).add(path))}
                     />
