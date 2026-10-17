@@ -22,8 +22,9 @@ test("keeps a bounded focused weak-point summary in the tab hand-off", () => {
   assert.equal("focusWeakPoints" in parseRoomHandoff(serializeRoomHandoff({ ...config, focusWeakPoints: "x".repeat(1201) }, 1000), 2000), false);
 });
 
-test("the chosen interviewer voice reaches the room; unknown voices are dropped", () => {
-  assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, voice: "bf_emma" }, 1), 2).voice, "bf_emma");
+test("the chosen interviewer voice and speech speed reach the room; unknown values are dropped", () => {
+  assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, voice: "en-GB-SoniaNeural", speechSpeed: 0.9 }, 1), 2).voice, "en-GB-SoniaNeural");
+  assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, speechSpeed: 0.9 }, 1), 2).speechSpeed, 0.9);
   assert.equal("voice" in parseRoomHandoff(serializeRoomHandoff({ ...config, voice: "nope" }, 1), 2), false);
   assert.equal("voice" in parseRoomHandoff(serializeRoomHandoff(config, 1), 2), false);
 });

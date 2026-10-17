@@ -31,12 +31,12 @@ test("session summary reports interviewer audio, captions, microphone, camera, d
     { label: "Foco", value: "Comunicação e clareza" },
     { label: "Duração", value: "Até 15 min" },
     { label: "Como o entrevistador fala", value: "Com áudio" },
-    { label: "Voz", value: "Echo" },
+    { label: "Voz", value: "Andrew" },
     { label: "Legendas das perguntas", value: "Ligadas" },
     { label: "Microfone", value: "Inicia após cada pergunta" },
     { label: "Câmera", value: "Desligada" },
   ]);
-  assert.equal(getInterviewSetupSummary({ ...baseConfig, voice: "bf_emma" }, {}, {}).find((row) => row.label === "Voz").value, "Emma");
+  assert.equal(getInterviewSetupSummary({ ...baseConfig, voice: "en-US-EmmaNeural" }, {}, {}).find((row) => row.label === "Voz").value, "Emma");
 
   const textSummary = getInterviewSetupSummary({ ...baseConfig, role: " ", playInterviewerAudio: false, showQuestionCaptions: false, autoCaptureVoice: false, candidateCameraEnabled: true }, {}, {});
   assert.equal(textSummary[0].value, "Não selecionado");

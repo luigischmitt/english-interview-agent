@@ -14,5 +14,6 @@ export function storeInterviewerVoice(storage: Pick<Storage, "setItem" | "remove
 export type VoiceSampleResult = { status: "completed" } | { status: "unavailable"; message: string } | { status: "cancelled" };
 export function playVoiceSample(
   id: string,
-  createAudio?: (src: string) => Pick<HTMLAudioElement, "play" | "pause" | "onended" | "onerror">,
+  speedOrCreateAudio?: number | ((src: string) => Pick<HTMLAudioElement, "play" | "pause" | "playbackRate" | "onended" | "onerror">),
+  createAudio?: (src: string) => Pick<HTMLAudioElement, "play" | "pause" | "playbackRate" | "onended" | "onerror">,
 ): { promise: Promise<VoiceSampleResult>; cancel: () => void };

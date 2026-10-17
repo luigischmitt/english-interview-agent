@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 
 import { normalizeTextForSpeech } from "../speech/text-normalization.js";
-import { resolveVoice } from "../speech/voices.js";
+import { resolveKokoroVoice, resolveVoice } from "../speech/voices.js";
 import { SpeechProviderUnavailableError } from "../speech/errors.js";
 import type { SpeechConfig } from "../speech/config.js";
 import type { SpeechCache, SpeechCacheResult } from "../speech/speech-cache.js";
@@ -99,7 +99,9 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
     try {
       const synthesisRequest = {
         text: normalizeTextForSpeech(text),
-        voice: resolveVoice(body.voice, config.interviewerVoice),
+        voice: config.provider === "azure-openrouter"
+          ? resolveVoice(body.voice, config.interviewerVoice)
+          : resolveKokoroVoice(body.voice, config.interviewerVoice),
         speed,
         format: config.format,
       };

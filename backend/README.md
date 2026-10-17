@@ -42,7 +42,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `SUPABASE_URL` | — | Public Supabase project URL (same value as the frontend's `NEXT_PUBLIC_SUPABASE_URL`). Required while `BACKEND_AUTH_REQUIRED` is `true`; must be `https` (or `http` for `localhost`/`127.0.0.1`). The backend fails at startup without it. |
 | `SUPABASE_PUBLISHABLE_KEY` | — | Optional public key (same value as the frontend's `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; recommended). Enables the remote token check described under Authentication; without it, only ES256 tokens with a known `kid` are accepted. |
 | `BACKEND_AUTH_REQUIRED` | `true` | `false` disables access-token checks (local development only; a content-free `auth_disabled` warning is logged at startup). Any value other than `true`/`false` fails at startup. |
-| `SPEECH_PROVIDER` | `fake` | `fake` returns deterministic test audio; `kokoro` calls a Kokoro server; `openrouter` calls Kokoro through OpenRouter; `kokoro-openrouter` (hybrid) uses self-hosted Kokoro first with OpenRouter as the hedge. |
+| `SPEECH_PROVIDER` | `fake` | `fake` returns deterministic test audio; `kokoro` calls a Kokoro server; `openrouter` calls Kokoro through OpenRouter; `kokoro-openrouter` (hybrid) uses self-hosted Kokoro first with OpenRouter as the hedge; `azure-openrouter` uses Azure Neural TTS with OpenRouter Kokoro fallback. |
 | `KOKORO_URL` | — | Kokoro HTTP base URL, e.g. the private Cloud Run service. Required with `kokoro-openrouter`; with `kokoro` it takes precedence over `KOKORO_BASE_URL`. |
 | `KOKORO_BASE_URL` | `http://localhost:8880` | Kokoro HTTP base URL when `KOKORO_URL` is unset (local Docker). |
 | `KOKORO_AUTH` | `none` | `gcp-id-token` sends `Authorization: Bearer <Google identity token>` (audience = the Kokoro URL origin, from the metadata server) on every Kokoro request, health included. |
@@ -59,6 +59,7 @@ performed by the authenticated frontend client. The speech service accepts:
 | `SPEECH_PREFETCH_STATIC` | `1` | `0` skips synthesizing the fixed phrases at startup. |
 | `OPENROUTER_SPEECH_URL` | `https://openrouter.ai/api/v1/audio/speech` | Speech endpoint override, mainly for tests. |
 | `INTERVIEWER_SPEED` | `1` | Positive default speech speed. |
+| `AZURE_TTS_VOICE` | `en-US-AndrewNeural` | Configured Azure fallback voice. With `azure-openrouter`, clients may choose Andrew, Brian, Guy, Ryan, Ava, Emma, Jenny or Sonia; each selected Azure voice maps to a same-gender/accent Kokoro fallback. |
 | `AZURE_SPEECH_KEY` | — | Azure Speech resource key. Required only for voice transcription. Keep it server-side. |
 | `AZURE_SPEECH_REGION` | — | Azure Speech resource region, such as `brazilsouth`. Required only for voice transcription. |
 | `AZURE_SPEECH_TIMEOUT_MS` | `20000` | Positive Azure Speech request timeout in milliseconds. |

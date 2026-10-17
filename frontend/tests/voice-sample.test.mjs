@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import test from "node:test";
 import { playVoiceSample, voiceSamplePath } from "../src/lib/interview/voice-picker.mjs";
 import { INTERVIEWER_VOICE_OPTIONS } from "../src/lib/interview/voices.mjs";
@@ -9,22 +8,22 @@ function fakeAudio({ fail = false } = {}) {
   return audio;
 }
 
-test("every selectable voice has a static sample, so testing a voice never calls the speech API", () => {
-  for (const option of INTERVIEWER_VOICE_OPTIONS) assert.ok(existsSync(new URL(`../public${voiceSamplePath(option.id)}`, import.meta.url)), option.id);
+test("every selectable voice has a static sample path, so testing a voice never calls the speech API", () => {
+  for (const option of INTERVIEWER_VOICE_OPTIONS) assert.equal(voiceSamplePath(option.id), `/voices/${option.id}.mp3`);
 });
 
 test("the voice test plays the static sample and reports completion, failure and cancellation", async () => {
   let created = null;
-  const done = playVoiceSample("am_echo", (src) => { created = { src, audio: fakeAudio() }; return created.audio; });
-  assert.equal(created.src, voiceSamplePath("am_echo"));
+  const done = playVoiceSample("en-US-AndrewNeural", (src) => { created = { src, audio: fakeAudio() }; return created.audio; });
+  assert.equal(created.src, voiceSamplePath("en-US-AndrewNeural"));
   created.audio.onended();
   assert.deepEqual(await done.promise, { status: "completed" });
 
-  const failed = playVoiceSample("am_echo", () => fakeAudio({ fail: true }));
+  const failed = playVoiceSample("en-US-AndrewNeural", () => fakeAudio({ fail: true }));
   assert.equal((await failed.promise).status, "unavailable");
 
   const audio = fakeAudio();
-  const cancelled = playVoiceSample("am_echo", () => audio);
+  const cancelled = playVoiceSample("en-US-AndrewNeural", () => audio);
   cancelled.cancel();
   assert.deepEqual(await cancelled.promise, { status: "cancelled" });
   assert.equal(audio.paused, true);

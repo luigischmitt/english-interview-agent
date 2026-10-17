@@ -27,6 +27,7 @@ import { getFixedInterviewQuestions } from "@/lib/interview/questions";
 import { composeContextualOpening } from "@/lib/interview/speech-playback.mjs";
 import { storeRoomHandoff } from "@/lib/interview/room-handoff.mjs";
 import { readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
+import { readStoredInterviewerSpeechSpeed, storeInterviewerSpeechSpeed } from "@/lib/interview/interviewer-speech-speed.mjs";
 import { DEFAULT_INTERVIEWER_VOICE } from "@/lib/interview/voices.mjs";
 import { readStoredInterviewerCharacter, storeInterviewerCharacter } from "@/lib/interview/interviewer-character-preference.mjs";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
@@ -395,12 +396,20 @@ function SettingsView() {
   const storedVoice = useSyncExternalStore(subscribeNever, () => readStoredInterviewerVoice(window.localStorage), () => DEFAULT_INTERVIEWER_VOICE);
   const storedCharacter = useSyncExternalStore(subscribeNever, () => readStoredInterviewerCharacter(window.localStorage), () => true);
   const [chosenVoice, setChosenVoice] = useState<string | undefined>(undefined);
+  const [chosenSpeechSpeed, setChosenSpeechSpeed] = useState<number | undefined>(undefined);
   const [chosenCharacter, setChosenCharacter] = useState<boolean | undefined>(undefined);
   const voice = chosenVoice ?? storedVoice;
+  const storedSpeechSpeed = useSyncExternalStore(subscribeNever, () => readStoredInterviewerSpeechSpeed(window.localStorage), () => 1);
+  const speechSpeed = chosenSpeechSpeed ?? storedSpeechSpeed;
   const showCharacter = chosenCharacter ?? storedCharacter;
   const chooseVoice = (next: string) => {
     setChosenVoice(next);
     storeInterviewerVoice(window.localStorage, next);
+  };
+  const chooseSpeechSpeed = (next: string) => {
+    const speed = Number(next);
+    setChosenSpeechSpeed(speed);
+    storeInterviewerSpeechSpeed(window.localStorage, speed);
   };
   const chooseCharacter = (next: boolean) => {
     setChosenCharacter(next);
@@ -456,7 +465,20 @@ function SettingsView() {
           </div>
         </div>
         <div className="pb-6 pt-2 sm:pl-[3.75rem]">
-          <VoicePicker value={voice} onChange={chooseVoice} />
+          <VoicePicker value={voice} onChange={chooseVoice} speed={speechSpeed} />
+          <div className="mt-5">
+            <p id="interviewer-speech-speed" className="ds-label">{t("Velocidade da fala")}</p>
+            <SlidingSegmented
+              name="interviewer-speech-speed"
+              ariaLabel={t("Velocidade da fala")}
+              ariaDescribedBy="interviewer-speech-speed-help"
+              className="mt-2 grid-cols-4"
+              options={[{ value: "0.8", label: "0,8×" }, { value: "0.9", label: "0,9×" }, { value: "1", label: "1×" }, { value: "1.1", label: "1,1×" }]}
+              value={String(speechSpeed)}
+              onChange={chooseSpeechSpeed}
+            />
+            <p id="interviewer-speech-speed-help" className="ds-small mt-2">{t("Diminua se a voz parecer rápida demais.")}</p>
+          </div>
         </div>
         <div className="shl-row">
           <span className="shl-icon-tile" aria-hidden="true"><Video className="size-5" /></span>

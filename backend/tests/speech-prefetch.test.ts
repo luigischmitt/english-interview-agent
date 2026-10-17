@@ -298,19 +298,19 @@ describe("speech cache configuration", () => {
 describe("selectable voices", () => {
   it("accepts only the whitelist and falls back to the default for anything else", async () => {
     const { resolveVoice, selectableVoices, selectableVoiceList } = await import("../src/speech/voices.js");
-    expect(selectableVoices).toHaveLength(20);
-    expect(selectableVoiceList.find((voice) => voice.id === "bm_george")).toEqual({ id: "bm_george", gender: "male", accent: "UK" });
-    expect(selectableVoiceList.find((voice) => voice.id === "af_kore")).toEqual({ id: "af_kore", gender: "female", accent: "US" });
-    expect(selectableVoices[0]).toBe("am_echo");
+    expect(selectableVoices).toHaveLength(8);
+    expect(selectableVoiceList.find((voice) => voice.id === "en-GB-RyanNeural")).toEqual({ id: "en-GB-RyanNeural", kokoroVoice: "bm_george", gender: "male", accent: "UK" });
+    expect(selectableVoiceList.find((voice) => voice.id === "en-US-JennyNeural")).toEqual({ id: "en-US-JennyNeural", kokoroVoice: "af_sarah", gender: "female", accent: "US" });
+    expect(selectableVoices[0]).toBe("en-US-AndrewNeural");
     expect(selectableVoices).toEqual(clientVoices.INTERVIEWER_VOICES);
     expect(selectableVoiceList).toEqual(clientVoices.INTERVIEWER_VOICE_OPTIONS);
-    expect(resolveVoice("am_puck", "am_echo")).toBe("am_puck");
-    expect(resolveVoice("bf_isabella", "am_echo")).toBe("bf_isabella");
-    for (const bad of ["af_bella+af_heart", "AM_ECHO", "../etc", "", undefined, null, 5, {}]) expect(resolveVoice(bad, "am_echo")).toBe("am_echo");
+    expect(resolveVoice("en-US-GuyNeural", "en-US-AndrewNeural")).toBe("en-US-GuyNeural");
+    expect(resolveVoice("am_michael", "en-US-AndrewNeural")).toBe("en-US-AndrewNeural");
+    for (const bad of ["af_bella+af_heart", "AM_ECHO", "../etc", "", undefined, null, 5, {}]) expect(resolveVoice(bad, "en-US-AndrewNeural")).toBe("en-US-AndrewNeural");
   });
 
   it("includes the voice in the cache key", () => {
-    expect(speechCacheKey({ ...base, voice: "am_echo" })).not.toBe(speechCacheKey({ ...base, voice: "am_puck" }));
+    expect(speechCacheKey({ ...base, voice: "am_echo" })).not.toBe(speechCacheKey({ ...base, voice: "am_michael" }));
   });
 
   it("uses the voice sent with /speech, ignoring anything outside the whitelist", async () => {
@@ -330,13 +330,13 @@ describe("selectable voices", () => {
     const orchestrationService = { decide: async () => ({ decision: "NEXT" as const, followUpQuestion: null, nextQuestion: "How do you monitor a service in production?", acknowledgement: null }) };
     const app = createApp({ speechConfig: config, speechProvider: provider, orchestrationService, accessTokenVerifier: null, thinkingService: null, reportService: null, jobDirectionService: null });
     const next = { currentQuestion: "Q?", transcript: "I add bounded retries with jitter on the gateway.", nextFixedQuestion: "x?", followUpUsed: false, roleContext: { targetRole: "Backend Engineer" } };
-    await request(app).post("/api/v1/thinking/next-turn").send({ ...next, voice: "am_puck" });
+    await request(app).post("/api/v1/thinking/next-turn").send({ ...next, voice: "am_michael" });
     await request(app).post("/api/v1/thinking/next-turn").send({ ...next, voice: "not-a-voice" });
     await tick();
-    expect(provider.calls.map((call) => call.voice)).toEqual(["am_puck", "am_echo"]);
-    await request(app).post("/api/v1/speech").send({ text: "How do you monitor a service in production?", voice: "am_puck" });
+    expect(provider.calls.map((call) => call.voice)).toEqual(["am_michael", "am_echo"]);
+    await request(app).post("/api/v1/speech").send({ text: "How do you monitor a service in production?", voice: "am_michael" });
     await request(app).post("/api/v1/speech").send({ text: "How do you monitor a service in production?", voice: "bf_emma" });
-    expect(provider.calls.map((call) => call.voice)).toEqual(["am_puck", "am_echo", "bf_emma"]);
+    expect(provider.calls.map((call) => call.voice)).toEqual(["am_michael", "am_echo", "bf_emma"]);
   });
 });
 

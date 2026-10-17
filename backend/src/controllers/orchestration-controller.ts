@@ -56,7 +56,8 @@ export function createOrchestrationController(service: InterviewOrchestrationSer
     speechPrefetcher?.onTurnStarted();
     const result = await service.decide(input);
     // Start synthesizing the question this very moment, before the response even reaches the client.
-    speechPrefetcher?.prefetchDecision(input, result, (request.body as { voice?: unknown } | undefined)?.voice);
+    const preferences = request.body as { voice?: unknown; speed?: unknown } | undefined;
+    speechPrefetcher?.prefetchDecision(input, result, preferences?.voice, preferences?.speed);
     response.status(200).json(result);
   };
 }

@@ -1,36 +1,21 @@
-/**
- * Voices a client may pick for the interviewer (OpenRouter Kokoro ids). Anything else (free text, blends, unknown ids)
- * falls back to the default, and only these ids are ever passed to a speech provider on a client's behalf.
- * Keep in sync with frontend/src/lib/interview/voices.mjs, which the setup screen renders.
- */
-export const defaultInterviewerVoice = "am_echo";
+/** Azure public identifiers with equivalent Kokoro voices for an OpenRouter fallback. Keep in sync with the frontend. */
+export const defaultInterviewerVoice = "en-US-AndrewNeural";
 
-export type SelectableVoiceInfo = { id: string; gender: "male" | "female"; accent: "US" | "UK" };
+export type SelectableVoiceInfo = { id: string; kokoroVoice: string; gender: "male" | "female"; accent: "US" | "UK" };
 
 export const selectableVoiceList: readonly SelectableVoiceInfo[] = [
-  { id: "am_echo", gender: "male", accent: "US" },
-  { id: "am_michael", gender: "male", accent: "US" },
-  { id: "am_puck", gender: "male", accent: "US" },
-  { id: "am_liam", gender: "male", accent: "US" },
-  { id: "am_eric", gender: "male", accent: "US" },
-  { id: "am_adam", gender: "male", accent: "US" },
-  { id: "am_onyx", gender: "male", accent: "US" },
-  { id: "am_fenrir", gender: "male", accent: "US" },
-  { id: "bm_fable", gender: "male", accent: "UK" },
-  { id: "bm_george", gender: "male", accent: "UK" },
-  { id: "bm_lewis", gender: "male", accent: "UK" },
-  { id: "bm_daniel", gender: "male", accent: "UK" },
-  { id: "af_heart", gender: "female", accent: "US" },
-  { id: "af_bella", gender: "female", accent: "US" },
-  { id: "af_nicole", gender: "female", accent: "US" },
-  { id: "af_sarah", gender: "female", accent: "US" },
-  { id: "af_aoede", gender: "female", accent: "US" },
-  { id: "af_kore", gender: "female", accent: "US" },
-  { id: "bf_emma", gender: "female", accent: "UK" },
-  { id: "bf_isabella", gender: "female", accent: "UK" },
+  { id: "en-US-AndrewNeural", kokoroVoice: "am_echo", gender: "male", accent: "US" },
+  { id: "en-US-BrianNeural", kokoroVoice: "am_michael", gender: "male", accent: "US" },
+  { id: "en-US-GuyNeural", kokoroVoice: "am_eric", gender: "male", accent: "US" },
+  { id: "en-GB-RyanNeural", kokoroVoice: "bm_george", gender: "male", accent: "UK" },
+  { id: "en-US-AvaNeural", kokoroVoice: "af_heart", gender: "female", accent: "US" },
+  { id: "en-US-EmmaNeural", kokoroVoice: "af_bella", gender: "female", accent: "US" },
+  { id: "en-US-JennyNeural", kokoroVoice: "af_sarah", gender: "female", accent: "US" },
+  { id: "en-GB-SoniaNeural", kokoroVoice: "bf_emma", gender: "female", accent: "UK" },
 ];
 
 export const selectableVoices: readonly string[] = selectableVoiceList.map((voice) => voice.id);
+const legacyKokoroVoices = new Set(selectableVoiceList.map((voice) => voice.kokoroVoice));
 
 export function isSelectableVoice(value: unknown): value is string {
   return typeof value === "string" && selectableVoices.includes(value);
@@ -39,4 +24,10 @@ export function isSelectableVoice(value: unknown): value is string {
 /** The requested voice when it is selectable, otherwise `fallback` (the configured default). */
 export function resolveVoice(requested: unknown, fallback: string): string {
   return isSelectableVoice(requested) ? requested : fallback;
+}
+
+/** The Kokoro counterpart of a selectable Azure voice; no untrusted client value reaches a provider. */
+export function resolveKokoroVoice(requested: unknown, fallback: string): string {
+  if (typeof requested === "string" && legacyKokoroVoices.has(requested)) return requested;
+  return selectableVoiceList.find((voice) => voice.id === requested)?.kokoroVoice ?? fallback;
 }
