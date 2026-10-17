@@ -22,19 +22,6 @@ describe("speculative turn analysis", () => {
     expect(body.messages[0].content).toContain("KEEP is forbidden");
   });
 
-  it("adds focused report guidance only when supplied", async () => {
-    const focus = "Technical gaps: migrations";
-    const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null });
-    await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...input, focusWeakPoints: focus });
-    const body = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0]?.[1]?.body));
-    expect(body.messages[0].content).toContain("Keep pressure respectful");
-    expect(JSON.parse(body.messages[1].content).focusWeakPoints).toBe(focus);
-    const plainFetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null });
-    await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, plainFetcher).analyze(input);
-    const plainBody = JSON.parse(String((plainFetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0]?.[1]?.body));
-    expect(plainBody.messages[0].content).not.toContain("Keep pressure respectful");
-  });
-
   it("returns a validated grounded bridge from the same speculative call", async () => {
     const fetcher = response({
       revision: 2,

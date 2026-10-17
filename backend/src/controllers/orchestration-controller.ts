@@ -31,7 +31,6 @@ export function parseOrchestrationInput(body: unknown): InterviewOrchestrationIn
   const roleSeniority = typeof roleContext.seniority === "string" ? roleContext.seniority.trim() : undefined;
   const jobDirection = body.jobDirection === undefined ? undefined : parseApprovedJobDirection(body.jobDirection, targetRole.trim(), roleSeniority);
   if (body.jobDirection !== undefined && !jobDirection) return null;
-  if (body.focusWeakPoints !== undefined && !validText(body.focusWeakPoints, 1200)) return null;
   return {
     currentQuestion: body.currentQuestion.trim(), transcript: body.transcript.trim(), nextFixedQuestion: body.nextFixedQuestion === null ? null : body.nextFixedQuestion.trim(), followUpUsed: body.followUpUsed,
     ...(body.clarificationHint ? { clarificationHint: body.clarificationHint as ClarificationHint } : {}),
@@ -40,7 +39,6 @@ export function parseOrchestrationInput(body: unknown): InterviewOrchestrationIn
     ...(Array.isArray(body.previousAnswers) ? { previousAnswers: body.previousAnswers.map((pair) => ({ question: (pair.question as string).trim(), answer: (pair.answer as string).trim() })) } : {}),
     ...(Array.isArray(body.recentAcknowledgements) ? { recentAcknowledgements: body.recentAcknowledgements.map((acknowledgement) => (acknowledgement as string).trim()) } : {}),
     ...(jobDirection ? { jobDirection } : {}),
-    ...(typeof body.focusWeakPoints === "string" ? { focusWeakPoints: body.focusWeakPoints.trim() } : {}),
     roleContext: { targetRole: targetRole.trim(), ...(roleSeniority !== undefined ? { seniority: roleSeniority } : {}), ...(typeof roleContext.focus === "string" ? { focus: roleContext.focus.trim() } : {}) },
   };
 }

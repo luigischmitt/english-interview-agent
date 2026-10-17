@@ -97,4 +97,15 @@ describe("speculative turn controller cancellation", () => {
     expect(await run(undefined)).toEqual({ followUpUsed: false, status: 200 });
     expect(await run("yes")).toEqual({ followUpUsed: undefined, status: 400 });
   });
+
+  it("ignores retired focused-practice fields from older clients", async () => {
+    let received: Record<string, unknown> | null = null;
+    const service = { analyze: async (value: Record<string, unknown>) => { received = value; return null; } };
+    const request = new EventEmitter() as EventEmitter & { body: unknown };
+    request.body = { ...body, focusWeakPoints: "x".repeat(1201) };
+    const response = fakeResponse();
+    await createSpeculativeTurnController(service as never, true)(request as never, response as never, () => {});
+    expect(response.sent).toEqual({ enabled: true, analysis: null });
+    expect(received).not.toHaveProperty("focusWeakPoints");
+  });
 });
