@@ -27,8 +27,6 @@ import "./interview-setup.css";
 import { defaultInterviewConfig } from "../interview-config";
 import { interviewDurationOptions } from "@/lib/interview/session-policy.mjs";
 import { VoiceReadinessStatus } from "./voice-readiness-status";
-import { loadProgressRecords } from "@/lib/interview/persistence";
-import { buildWeakPointsContext } from "@/lib/interview/weak-points.mjs";
 
 const seniorityLabels: Record<InterviewConfig["seniority"], string> = {
   junior: "Júnior",
@@ -83,8 +81,6 @@ export function InterviewSetup({
   const [audioTestStatus, setAudioTestStatus] = useState<{ kind: "idle" | "loading" | "success" | "error"; message?: string }>({ kind: "idle" });
   const audioTestRef = useRef<{ cancel: () => void } | null>(null);
   const [roomOptionsOpen, setRoomOptionsOpen] = useState(false);
-  const [weakPointsContext, setWeakPointsContext] = useState("");
-  const [focusWeakPoints, setFocusWeakPoints] = useState(false);
   const inApp = useInAppBrowser();
   const { copied, copy } = useCopyPageLink();
   const roomOptionsRef = useRef<HTMLElement>(null);
@@ -104,14 +100,6 @@ export function InterviewSetup({
     audioTestRef.current = null;
     jobAnalysisGenerationRef.current += 1;
     resumeAnalysisGenerationRef.current += 1;
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    void loadProgressRecords().then((result) => {
-      if (active && result.ok) setWeakPointsContext(buildWeakPointsContext(result.value));
-    });
-    return () => { active = false; };
   }, []);
 
   // The device chosen in an earlier session (this browser only); null on the server render, so hydration matches.
@@ -415,7 +403,6 @@ export function InterviewSetup({
       microphoneDeviceId,
       interviewSource: setupMode === "auto" ? "job" : setupMode,
       ...(jobDirection ? { jobDirection } : {}),
-      ...(focusWeakPoints && weakPointsContext ? { focusWeakPoints: weakPointsContext } : {}),
     });
   };
 
@@ -464,14 +451,6 @@ export function InterviewSetup({
               <h2 id="interview-details-title" className="ds-h2">{t("Detalhes da entrevista")}</h2>
             </div>
             <p className="ds-body mt-2">{t("Você pode mudar essas opções a cada nova sessão.")}</p>
-            <label className={`mt-5 flex items-start gap-3 rounded-xl border border-base-300/70 bg-base-200/40 p-4 ${weakPointsContext ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}>
-              <input type="checkbox" className="checkbox checkbox-sm mt-0.5" checked={focusWeakPoints && !!weakPointsContext} disabled={!weakPointsContext} onChange={(event) => setFocusWeakPoints(event.target.checked)} />
-              <span>
-                <span className="block text-sm font-medium">{t("Focada nos meus pontos fracos")}</span>
-                <span className="ds-small mt-1 block">{weakPointsContext ? t("A entrevista vai retomar alguns pontos dos seus relatórios recentes.") : t("Disponível depois do seu primeiro relatório")}</span>
-              </span>
-            </label>
-
             <div className="mt-6 flex flex-col gap-6">
               <fieldset className="flex min-w-0 flex-col gap-2">
                 <legend className="ds-label mb-2">{t("Como definir a entrevista")}</legend>

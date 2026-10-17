@@ -22,8 +22,3 @@ export function deriveOverviewTiles(result, answers = []) {
     { id: "voice", title: "Voz", text: voice },
   ];
 }
-
-export function flattenAndRankPhrases(answers = [], turns = [], limit = 6) {
-  const ordinals = new Map(turns.map((turn, index) => [turn.sequenceNumber, index + 1]));
-  return answers.flatMap((answer) => (answer.phrases ?? []).map((phrase) => ({ ...phrase, sequenceNumber: answer.sequenceNumber, ordinal: ordinals.get(answer.sequenceNumber) ?? answer.sequenceNumber, clip: answer.clips?.find((clip) => clip.phraseIndex === phrase.phraseIndex) ?? null }))).sort((a, b) => a.score - b.score).slice(0, limit);
-}

@@ -131,6 +131,3 @@
 .rp-priority-item[data-area="ENGLISH_COMMUNICATION"] .rp-priority-number { background: var(--ds-warning-tint); color: var(--ds-warning); }
 .rp-priority-area { display: block; width: fit-content; margin-bottom: 0.25rem; color: var(--ds-text-2); font-size: 0.6875rem; }
 .rp-priority-evidence { display: block; margin-top: 0.25rem; color: var(--ds-text-2); font-size: 0.8125rem; }
-.rp-word-hints { display: grid; gap: 0.25rem; margin-top: 0.75rem; color: var(--ds-text-2); font-size: 0.8125rem; line-height: 1.45; }
-.rp-word-hints li { display: flex; gap: 0.45rem; }
-.rp-word-hints strong { color: var(--ds-ink); }

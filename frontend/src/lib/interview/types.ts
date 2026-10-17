@@ -20,8 +20,6 @@ export type InterviewConfig = {
   speechSpeed?: number;
   /** User-approved job summary handed to the room; raw job description is never included. */
   jobDirection?: JobDirection;
-  /** Bounded summaries from recent ready reports; only sent for focused practice and never persisted. */
-  focusWeakPoints?: string;
   /** How the approved interview plan was created. The original job description or resume is never stored here. */
   interviewSource?: "manual" | "job" | "resume";
 };

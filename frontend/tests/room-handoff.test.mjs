@@ -16,12 +16,6 @@ test("round-trips a valid config", () => {
   assert.deepEqual(parseRoomHandoff(serializeRoomHandoff(config, 1000), 2000), config);
 });
 
-test("keeps a bounded focused weak-point summary in the tab hand-off", () => {
-  const focused = { ...config, focusWeakPoints: "Technical gaps: API migrations" };
-  assert.deepEqual(parseRoomHandoff(serializeRoomHandoff(focused, 1000), 2000), focused);
-  assert.equal("focusWeakPoints" in parseRoomHandoff(serializeRoomHandoff({ ...config, focusWeakPoints: "x".repeat(1201) }, 1000), 2000), false);
-});
-
 test("the chosen interviewer voice and speech speed reach the room; unknown values are dropped", () => {
   assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, voice: "en-GB-SoniaNeural", speechSpeed: 0.9 }, 1), 2).voice, "en-GB-SoniaNeural");
   assert.equal(parseRoomHandoff(serializeRoomHandoff({ ...config, speechSpeed: 0.9 }, 1), 2).speechSpeed, 0.9);
@@ -50,7 +44,7 @@ test("rejects missing, malformed, stale, future and incomplete payloads", () => 
 });
 
 test("drops unknown fields, including retired ones from older configs", () => {
-  assert.deepEqual(parseRoomHandoff(serializeRoomHandoff({ ...config, showCandidateCaptions: false, transcriptionEngine: "ink-2" }, 1), 2), config);
+  assert.deepEqual(parseRoomHandoff(serializeRoomHandoff({ ...config, focusWeakPoints: "Technical gaps: API migrations", showCandidateCaptions: false, transcriptionEngine: "ink-2" }, 1), 2), config);
   assert.deepEqual(parseRoomHandoff(serializeRoomHandoff({ ...config, extra: "x" }, 1), 2), config);
 });
 

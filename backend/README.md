@@ -357,7 +357,7 @@ report, and the same privacy routing (`data_collection: "deny"`).
   client: every item is validated again against its matching answer, English
   patterns are deduplicated across turns, and the usual caps apply (5 strengths,
   4 gaps, 3 patterns, 3 priorities). One small structured call then produces the
-  summary, optional interviewer takeaway and best moment, overall clarity, and up to three priorities that must build on a
+  summary, optional interviewer takeaway, overall clarity, and up to three priorities that must build on a
   validated finding. The response has the exact full-report shape (`model`,
   `analysisVersion: "v2"`, `evidenceReview`), so persistence and UI are unchanged.
   `evidenceReview` counts the items submitted for consolidation (turn-stage
