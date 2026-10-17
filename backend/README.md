@@ -324,10 +324,8 @@ Brazilian Portuguese transfer behind that specific error. It is localized with t
 report, capped at 170 characters, and omitted when invalid; the same rules apply to
 per-answer analysis and consolidation.
 The report can also include optional `interviewerTakeaway` (`remember` and
-`concern`, one localized sentence each) and `bestMoment` (the answer's
-`sequenceNumber`, a validated excerpt of at least six words, and a short
-localized explanation). Both are omitted when they fail locale, grounding, or
-transcription-artifact checks. Strengths are capped at five per report (up to
+`concern`, one localized sentence each). It is omitted when it fails locale
+validation. Strengths are capped at five per report (up to
 two per answer); material technical gaps are capped at four.
 The backend does not fetch or persist sessions and does not authorize an
 interview ID; the authenticated frontend persists results through Supabase RLS.

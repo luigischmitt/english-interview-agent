@@ -30,7 +30,6 @@ export type InterviewReport = {
   };
   overview?: { technical?: string; english?: string };
   interviewerTakeaway?: { remember: string; concern: string };
-  bestMoment?: { sequenceNumber: number; evidence: string; why: string };
   englishCommunication: {
     clarity: "CLEAR" | "MOSTLY_CLEAR" | "UNCLEAR";
     evidenceStatus: "SUFFICIENT" | "LIMITED" | "INSUFFICIENT" | "NO_PATTERN_FOUND" | "CANDIDATES_REJECTED";

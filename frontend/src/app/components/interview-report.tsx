@@ -1,102 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getCurrentLocale, t } from "@/lib/locale";
-import { ArrowLeft, ArrowUpRight, ArrowRight, Play } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ArrowRight } from "lucide-react";
 import { answerOrdinalForSequence, pairInterviewTurns, type InterviewReportResult } from "@/lib/interview/report";
 import type { AzureMetricSummary } from "@/lib/interview/report-metrics.mjs";
 import type { InterviewConfig } from "@/lib/interview/types";
 import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { RESUME_PRACTICE_LABEL } from "@/lib/interview/resume-neutral.mjs";
-import { getAnswerClipUrl } from "@/lib/interview/answer-clips";
-import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
-import { authorizedFetch } from "@/lib/auth/backend-auth";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { findingsForAnswer } from "@/lib/interview/report-response.mjs";
-import { deriveOverviewTiles, flattenAndRankPhrases, groupPatternsByType } from "@/lib/interview/report-overview.mjs";
-import { buildReportDeltas, diffReportWords, phonemeTip } from "@/lib/interview/report-presentation.mjs";
+import { deriveOverviewTiles, groupPatternsByType } from "@/lib/interview/report-overview.mjs";
+import { buildReportDeltas, diffReportWords } from "@/lib/interview/report-presentation.mjs";
 import { AzureVoiceReport } from "./azure-voice-report";
 import "./interview-report.css";
 
 export type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
 type Turns = ReturnType<typeof pairInterviewTurns>;
-
-function PhrasePlayer({ phrase, slow }: { phrase: ReturnType<typeof flattenAndRankPhrases>[number]; slow: boolean }) {
-  const [playing, setPlaying] = useState<"self" | "model" | null>(null);
-  const [message, setMessage] = useState("");
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => () => { audioRef.current?.pause(); }, []);
-  async function playSelf() {
-    if (!phrase.clip) return;
-    try {
-      const url = await getAnswerClipUrl(phrase.clip.path);
-      if (!url) throw new Error();
-      const player = new Audio(url);
-      audioRef.current = player;
-      player.onended = () => setPlaying(null);
-      setPlaying("self");
-      await player.play();
-    } catch {
-      setMessage(t("Não foi possível reproduzir este trecho."));
-      setPlaying(null);
-    }
-  }
-  async function playModel() {
-    try {
-      const blob = await fetchSpeechBlob(phrase.text, {
-        endpoint: `${process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"}/api/v1/speech`,
-        fetcher: authorizedFetch,
-        speed: slow ? 0.8 : 1,
-        retainMs: 300_000,
-      });
-      const url = URL.createObjectURL(blob);
-      const player = new Audio(url);
-      audioRef.current = player;
-      player.onended = () => {
-        URL.revokeObjectURL(url);
-        setPlaying(null);
-      };
-      setPlaying("model");
-      await player.play();
-    } catch {
-      setMessage(t("Não foi possível gerar a reprodução agora."));
-      setPlaying(null);
-    }
-  }
-  const problemWords = phrase.problemWords ?? [];
-  const hints = problemWords.map((word) => ({ word: word.word, tip: phonemeTip(word.worstPhoneme, word.word) }));
-  const words = phrase.text.split(/(\s+)/u);
-
-  return (
-    <article className="rp-phrase">
-      <p lang="en" className="rp-sentence-text">
-        {words.map((part, index) => {
-          const clean = part.replace(/[^\p{L}'-]/gu, "").toLowerCase();
-          const isProblemWord = problemWords.some((word) => word.word.toLowerCase() === clean);
-
-          return isProblemWord
-            ? <span key={index} className="rp-problem-word">{part}</span>
-            : part;
-        })}
-      </p>
-      {hints.length ? <ul className="rp-word-hints">{hints.map((item, index) => <li key={`${item.word}-${index}`}><strong lang="en">{item.word}</strong><span>{t(item.tip)}</span></li>)}</ul> : phrase.issue === "intonation" && <p className="rp-hint mt-2">{t("Entonação plana: tente subir ou descer o tom em uma palavra-chave.")}</p>}
-      <p className="rp-phrase-ref">{t("Resposta ")}{phrase.ordinal}</p>
-      <div className="rp-player-row">
-        {phrase.clip && (
-          <button type="button" className="ds-btn ds-btn-soft" onClick={playSelf}>
-            <Play className="size-4" aria-hidden="true" />
-            {t(playing === "self" ? "Reproduzindo" : "Você")}
-          </button>
-        )}
-        <button type="button" className="ds-btn ds-btn-soft" onClick={playModel}>
-          <Play className="size-4" aria-hidden="true" />
-          {t(playing === "model" ? "Reproduzindo" : "Como soa")}
-        </button>
-      </div>
-      {message && <p className="rp-hint" role="status">{t(message)}</p>}
-    </article>
-  );
-}
 
 function AnswerCard({ turn, result, ordinal }: { turn: Turns[number]; result: InterviewReportResult; ordinal: number }) {
   const [expanded, setExpanded] = useState(false);
@@ -163,20 +83,15 @@ function SectionHeading({
   title,
   description,
   id,
-  children,
 }: {
   title: string;
   description: string;
   id: string;
-  children?: ReactNode;
 }) {
   return (
-    <header className={`rp-section-heading${children ? " rp-section-heading-with-control" : ""}`}>
-      <div className="rp-section-heading-copy">
-        <h2 id={id} className="ds-h2">{t(title)}</h2>
-        <p className="rp-hint mt-1">{t(description)}</p>
-      </div>
-      {children}
+    <header className="rp-section-heading">
+      <h2 id={id} className="ds-h2">{t(title)}</h2>
+      <p className="rp-hint mt-1">{t(description)}</p>
     </header>
   );
 }
@@ -200,10 +115,8 @@ function ReadyReport({
 }) {
   const answers = azureSummary.answers ?? [];
   const tiles = deriveOverviewTiles(result, answers);
-  const phrases = flattenAndRankPhrases(answers, turns);
   const patterns = groupPatternsByType(turns.flatMap((turn) => findingsForAnswer(result, turn.sequenceNumber).patterns));
   const [showAllPatterns, setShowAllPatterns] = useState(false);
-  const [slow, setSlow] = useState(false);
   const reference = (sequenceNumber: number) => answerOrdinalForSequence(turns, sequenceNumber);
   const allPatterns = patterns.flatMap((group) => group.items);
   const visiblePatterns = showAllPatterns ? allPatterns : allPatterns.slice(0, 4);
@@ -212,13 +125,12 @@ function ReadyReport({
 
   return (
     <div className="rp-stack rp-ready">
-      {(result.interviewerTakeaway?.remember?.trim() || result.interviewerTakeaway?.concern?.trim() || result.bestMoment?.evidence?.trim()) && <section className="rp-section" aria-labelledby="perceived-title">
+      {(result.interviewerTakeaway?.remember?.trim() || result.interviewerTakeaway?.concern?.trim()) && <section className="rp-section" aria-labelledby="perceived-title">
         <SectionHeading id="perceived-title" title="Como você foi percebido" description="O que pode ficar na memória depois da conversa." />
         <div className="rp-perception-grid">
           {result.interviewerTakeaway?.remember?.trim() && <article className="ds-card rp-card rp-perception" data-tone="remember"><h3 className="ds-label">{t("O que o entrevistador vai lembrar")}</h3><p>{result.interviewerTakeaway.remember}</p></article>}
           {result.interviewerTakeaway?.concern?.trim() && <article className="ds-card rp-card rp-perception" data-tone="concern"><h3 className="ds-label">{t("O que pode pesar contra")}</h3><p>{result.interviewerTakeaway.concern}</p></article>}
         </div>
-        {result.bestMoment?.evidence?.trim() && <article className="rp-best-moment"><h3 className="rp-subtitle">{t("Seu melhor momento")}</h3><blockquote lang="en">“{result.bestMoment.evidence}”</blockquote>{result.bestMoment.why?.trim() && <p className="rp-hint">{result.bestMoment.why}</p>}<span className="rp-phrase-ref">{t("Resposta ")}{reference(result.bestMoment.sequenceNumber)}</span></article>}
       </section>}
       <section className="rp-section" aria-labelledby="overview-title">
         <SectionHeading
@@ -242,41 +154,6 @@ function ReadyReport({
         </div>
         {deltas.length > 0 && <section className="rp-deltas" aria-label={t("Desde a última entrevista")}><h3 className="rp-subtitle">{t("Desde a última entrevista")}</h3>{deltas.map((delta) => <p key={delta.label} data-change={delta.change}><ArrowRight className="size-4" aria-hidden="true" /><span>{t(delta.label)} ({delta.before} → {delta.after})</span></p>)}</section>}
       </section>
-      {phrases.length > 0 && (
-        <section className="rp-section" aria-labelledby="phrases-title">
-          <SectionHeading
-            id="phrases-title"
-            title="Frases para ouvir"
-            description="Escute trechos curtos e compare sua fala com uma pronúncia clara."
-          >
-            <label className="ds-toggle rp-speed-toggle">
-              <input
-                type="checkbox"
-                className="ds-switch"
-                checked={slow}
-                onChange={(event) => setSlow(event.target.checked)}
-              />
-              {t("Mais devagar")}
-            </label>
-          </SectionHeading>
-          <div className="rp-phrase-grid">
-            {phrases.map((phrase) => (
-              <PhrasePlayer
-                key={`${phrase.sequenceNumber}-${phrase.phraseIndex}`}
-                phrase={phrase}
-                slow={slow}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-      {answers.length > 0 && phrases.length === 0 && (
-        <section className="rp-section" aria-labelledby="voice-phrases-empty">
-          <p id="voice-phrases-empty" className="rp-hint">
-            {t("Nenhuma frase com problema claro de pronúncia nesta entrevista.")}
-          </p>
-        </section>
-      )}
       <section className="rp-section" id="english-section" aria-labelledby="english-title">
         <SectionHeading
           id="english-title"

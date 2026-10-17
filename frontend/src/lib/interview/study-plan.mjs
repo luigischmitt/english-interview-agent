@@ -94,7 +94,6 @@ export function serializeInterviewAnalysis(result) {
     ...(turns.length ? { turns } : {}),
     evidenceReview: result.evidenceReview,
     ...(isRecord(result.interviewerTakeaway) ? { interviewerTakeaway: result.interviewerTakeaway } : {}),
-    ...(isRecord(result.bestMoment) ? { bestMoment: result.bestMoment } : {}),
     ...(isRecord(result.overview) && (cleanText(result.overview.technical, 500) || cleanText(result.overview.english, 500)) ? { overview: { ...(cleanText(result.overview.technical, 500) ? { technical: cleanText(result.overview.technical, 500) } : {}), ...(cleanText(result.overview.english, 500) ? { english: cleanText(result.overview.english, 500) } : {}) } } : {}),
     technicalContent: result.technicalContent,
     englishCommunication: result.englishCommunication,
