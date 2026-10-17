@@ -29,6 +29,7 @@ import { loadTranscriptionConfig, type TranscriptionConfig } from "./transcripti
 import { createTranscriptionService } from "./transcription/create-transcription-service.js";
 import { createPronunciationAssessmentService } from "./transcription/create-pronunciation-assessment-service.js";
 import type { TranscriptionService } from "./transcription/types.js";
+import { AdminUsageService } from "./admin/usage-service.js";
 
 /** Speculative analysis deadline; the call is off the critical path, so it gets 7 s unless SPECULATIVE_ANALYSIS_TIMEOUT_MS overrides it. */
 function speculativeAnalysisTimeoutMs(): number {
@@ -59,13 +60,15 @@ type AppDependencies = {
   studyPlanService?: StudyPlanService | null;
   polishedAnswerService?: PolishedAnswerService | null;
   redoCheckService?: RedoCheckService | null;
+  adminUsageService?: AdminUsageService;
+  adminUserIds?: string;
   /** Omit for the environment default; pass null to disable authentication. */
   accessTokenVerifier?: AccessTokenVerifier | null;
   /** Receives one JSON line per accepted client audio diagnostic (defaults to console.info). */
   clientEventLogger?: (line: string) => void;
 };
 
-export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, jobDirectionService, resumeDirectionService, jobDirectionUserLimit, accessTokenVerifier, clientEventLogger, closingReactionService, practiceService, studyPlanService, polishedAnswerService, redoCheckService }: AppDependencies = {}) {
+export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, jobDirectionService, resumeDirectionService, jobDirectionUserLimit, accessTokenVerifier, clientEventLogger, closingReactionService, practiceService, studyPlanService, polishedAnswerService, redoCheckService, adminUsageService, adminUserIds }: AppDependencies = {}) {
   const resolvedSpeechConfig = speechConfig ?? loadSpeechConfig();
   const resolvedSpeechProvider = speechProvider ?? createSpeechProvider(resolvedSpeechConfig);
   const resolvedTranscriptionService = transcriptionService
@@ -100,7 +103,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
 
   const verifier = accessTokenVerifier === undefined ? defaultAccessTokenVerifier : accessTokenVerifier;
   app.use("/api/v1", requireAccessToken(verifier, (request) => request.method === "GET" && request.path === "/speech/health"));
-  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, resolvedJobDirectionService, resolvedResumeDirectionService, resolvedJobDirectionUserLimit, clientEventLogger, speculativeService, resolvedThinkingConfig.speculativeHandoffEnabled === true, resolvedClosingReactionService, resolvedPracticeService, resolvedStudyPlanService, resolvedPolishedAnswerService, resolvedRedoCheckService));
+  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, resolvedJobDirectionService, resolvedResumeDirectionService, resolvedJobDirectionUserLimit, clientEventLogger, speculativeService, resolvedThinkingConfig.speculativeHandoffEnabled === true, resolvedClosingReactionService, resolvedPracticeService, resolvedStudyPlanService, resolvedPolishedAnswerService, resolvedRedoCheckService, adminUsageService, adminUserIds));
   app.use(notFoundHandler);
   app.use(errorHandler);
 

@@ -6,6 +6,8 @@ import { createSpeechRouter } from "./speech.routes.js";
 import { createPracticeRouter } from "./practice.routes.js";
 import { createThinkingRouter } from "./thinking.routes.js";
 import { createTranscriptionRouter } from "./transcription.routes.js";
+import { createAdminRouter } from "./admin.routes.js";
+import { AdminUsageService } from "../admin/usage-service.js";
 import type { SpeechConfig } from "../speech/config.js";
 import type { SpeechProvider } from "../speech/types.js";
 import { createSpeechServices } from "../speech/speech-services.js";
@@ -19,7 +21,7 @@ import type { InterviewOrchestrationService, InterviewReportService, JobDirectio
 import type { JobDirectionUserLimit } from "../thinking/job-direction-user-limit.js";
 import type { TranscriptionService } from "../transcription/types.js";
 
-export function createApiRouter(provider: SpeechProvider, config: SpeechConfig, transcriptionService: TranscriptionService, thinkingService: ThinkingService | null, orchestrationService: InterviewOrchestrationService, reportService: InterviewReportService | null, jobDirectionService: JobDirectionService | null, resumeDirectionService: ResumeDirectionService | null, jobDirectionUserLimit: JobDirectionUserLimit, clientEventLogger?: (line: string) => void, speculativeService: SpeculativeTurnAnalysisService | null = null, speculativeEnabled = false, closingReactionService: ClosingReactionService | null = null, practiceService: PracticeService | null = null, studyPlanService: StudyPlanService | null = null, polishedAnswerService: PolishedAnswerService | null = null, redoCheckService: RedoCheckService | null = null) {
+export function createApiRouter(provider: SpeechProvider, config: SpeechConfig, transcriptionService: TranscriptionService, thinkingService: ThinkingService | null, orchestrationService: InterviewOrchestrationService, reportService: InterviewReportService | null, jobDirectionService: JobDirectionService | null, resumeDirectionService: ResumeDirectionService | null, jobDirectionUserLimit: JobDirectionUserLimit, clientEventLogger?: (line: string) => void, speculativeService: SpeculativeTurnAnalysisService | null = null, speculativeEnabled = false, closingReactionService: ClosingReactionService | null = null, practiceService: PracticeService | null = null, studyPlanService: StudyPlanService | null = null, polishedAnswerService: PolishedAnswerService | null = null, redoCheckService: RedoCheckService | null = null, adminUsageService: AdminUsageService = new AdminUsageService(), adminUserIds = process.env.ADMIN_USER_IDS) {
   const apiRouter = Router();
   const speechServices = createSpeechServices(provider, config);
 
@@ -28,6 +30,7 @@ export function createApiRouter(provider: SpeechProvider, config: SpeechConfig, 
   apiRouter.use("/practice", createPracticeRouter(practiceService));
   apiRouter.use("/formulations", formulationRouter);
   apiRouter.use("/client-events", createClientEventsRouter(clientEventLogger));
+  apiRouter.use("/admin", createAdminRouter(adminUsageService, adminUserIds));
   apiRouter.use("/speech", createSpeechRouter(provider, config, speechServices.cache));
 
   return apiRouter;

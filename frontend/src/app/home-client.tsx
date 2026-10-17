@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   Home,
   AudioLines,
+  Gauge,
   Leaf,
   LineChart,
   PanelLeftClose,
@@ -32,10 +33,11 @@ import { DEFAULT_INTERVIEWER_VOICE } from "@/lib/interview/voices.mjs";
 import { readStoredInterviewerCharacter, storeInterviewerCharacter } from "@/lib/interview/interviewer-character-preference.mjs";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { useLocale } from "@/lib/locale";
+import { authorizedFetch } from "@/lib/auth/backend-auth";
 
 import "./components/shell.css";
 
-type View = "home" | "interview-setup" | "train" | "progress" | "voice" | "settings";
+type View = "home" | "interview-setup" | "train" | "progress" | "voice" | "settings" | "admin-usage";
 type InitialView = View | "pronunciation";
 
 const primaryNavigationItems = [
@@ -46,7 +48,7 @@ const primaryNavigationItems = [
 ];
 
 const settingsNavigationItem = { id: "settings" as const, label: "Configurações", icon: SlidersHorizontal };
-const navigationItems = [...primaryNavigationItems, settingsNavigationItem];
+const adminNavigationItem = { id: "admin-usage" as const, label: "Custos e limites", icon: Gauge };
 
 import { prewarmInterviewerUtterance, useSpeechWarmup, useVoiceReadiness } from "./hooks/use-speech-playback";
 import { PageIntro } from "./components/shared";
@@ -59,6 +61,7 @@ const loadInterviewSetup = () => import("./components/interview-setup").then((mo
 const loadTrainView = () => import("./components/train/train-view").then((module) => module.TrainView);
 const loadProgressView = () => import("./components/progress-view").then((module) => module.ProgressView);
 const loadVoiceView = () => import("./components/voice-view").then((module) => module.VoiceView);
+const loadAdminUsageView = () => import("./components/admin-usage-view").then((module) => module.AdminUsageView);
 
 const ViewLoading = () => (
   <main id="main-content" className="mx-auto w-full max-w-6xl px-4 pb-28 pt-7 sm:px-8 sm:pb-12">
@@ -75,12 +78,14 @@ const InterviewSetup = dynamic(loadInterviewSetup, { loading: ViewLoading });
 const TrainView = dynamic(loadTrainView, { loading: ViewLoading });
 const ProgressView = dynamic(loadProgressView, { loading: ViewLoading });
 const VoiceView = dynamic(loadVoiceView, { loading: ViewLoading });
+const AdminUsageView = dynamic(loadAdminUsageView, { loading: ViewLoading });
 
 function preloadView(view: View) {
   if (view === "interview-setup") void loadInterviewSetup();
   if (view === "train") void loadTrainView();
   if (view === "progress") void loadProgressView();
   if (view === "voice") void loadVoiceView();
+  if (view === "admin-usage") void loadAdminUsageView();
 }
 
 function isNavigationItemActive(view: View, item: View) {
@@ -95,6 +100,7 @@ const viewTrail: Record<View, readonly [string, string?]> = {
   progress: ["Progresso"],
   voice: ["Sua voz"],
   settings: ["Configurações"],
+  "admin-usage": ["Custos e limites"],
 };
 
 const warmUpPrompts = [
@@ -134,7 +140,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
   );
 }
 
-type NavigationItem = (typeof navigationItems)[number];
+type NavigationItem = (typeof primaryNavigationItems)[number] | typeof settingsNavigationItem | typeof adminNavigationItem;
 
 function Navigation({
   view,
@@ -142,12 +148,14 @@ function Navigation({
   onPrefetch,
   sidebarExpanded,
   onToggleSidebar,
+  isAdmin,
 }: {
   view: View;
   onNavigate: (view: View) => void;
   onPrefetch: (view: View) => void;
   sidebarExpanded: boolean;
   onToggleSidebar: () => void;
+  isAdmin: boolean;
 }) {
   const { t } = useLocale();
   const [tooltip, setTooltip] = useState<{ label: string; top: number; left: number } | null>(null);
@@ -187,6 +195,8 @@ function Navigation({
   };
 
   const primaryIndex = primaryNavigationItems.findIndex((item) => isNavigationItemActive(view, item.id));
+  const utilityNavigationItems = isAdmin ? [settingsNavigationItem, adminNavigationItem] : [settingsNavigationItem];
+  const navigationItems = [...primaryNavigationItems, ...utilityNavigationItems];
   const mobileIndex = navigationItems.findIndex((item) => isNavigationItemActive(view, item.id));
 
   return (
@@ -227,8 +237,8 @@ function Navigation({
         <div className="mt-auto pt-4">
           <nav aria-label={t("Navegação utilitária")}>
             <ul className="shl-nav-list">
-              <li aria-hidden="true" className="shl-thumb" data-hidden={view !== "settings"} />
-              {renderNavigationItem(settingsNavigationItem)}
+              <li aria-hidden="true" className="shl-thumb" data-hidden={!utilityNavigationItems.some((item) => view === item.id)} />
+              {utilityNavigationItems.map(renderNavigationItem)}
             </ul>
           </nav>
         </div>
@@ -250,7 +260,7 @@ function Navigation({
         aria-label={t("Navegação móvel")}
         className="shl-mobile-nav fixed inset-x-0 bottom-0 z-20 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden"
       >
-        <ul className="shl-mobile-list" style={{ "--idx": Math.max(mobileIndex, 0) } as CSSProperties}>
+        <ul className="shl-mobile-list" style={{ "--idx": Math.max(mobileIndex, 0), "--nav-count": navigationItems.length } as CSSProperties}>
           <li aria-hidden="true" className="shl-thumb" />
           {navigationItems.map(({ id, label: sourceLabel, icon: Icon }) => {
             const label = t(sourceLabel);
@@ -521,6 +531,16 @@ export default function App({ initialView = "home", initialLesson, initialPart }
   const dashboardPrefetchStarted = useRef(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [startError, setStartError] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void authorizedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"}/api/v1/admin/status`)
+      .then(async (response) => response.ok ? response.json() as Promise<{ admin?: unknown }> : null)
+      .then((body) => { if (active) setIsAdmin(body?.admin === true); })
+      .catch(() => { if (active) setIsAdmin(false); });
+    return () => { active = false; };
+  }, []);
 
   const prefetchDashboardData = useCallback(() => {
     if (initialView === "interview-setup" || dashboardPrefetchStarted.current) return;
@@ -581,6 +601,7 @@ export default function App({ initialView = "home", initialLesson, initialPart }
           }}
           sidebarExpanded={sidebarExpanded}
           onToggleSidebar={() => setSidebarExpanded((expanded) => !expanded)}
+          isAdmin={isAdmin}
         />
         <div
           aria-hidden="true"
@@ -620,6 +641,7 @@ export default function App({ initialView = "home", initialLesson, initialPart }
           {view === "progress" && <ProgressView onStart={() => navigate("interview-setup")} />}
           {view === "voice" && <VoiceView onStart={() => navigate("interview-setup")} />}
           {view === "settings" && <SettingsView />}
+          {view === "admin-usage" && isAdmin && <AdminUsageView />}
         </div>
       </div>
     </div>

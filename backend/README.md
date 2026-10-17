@@ -39,6 +39,14 @@ performed by the authenticated frontend client. The speech service accepts:
 | --- | --- | --- |
 | `PORT` | `3001` | HTTP port. |
 | `ALLOWED_ORIGIN` | `http://localhost:3000` | Browser origin allowed by CORS. |
+| `ADMIN_USER_IDS` | empty | Comma-separated Supabase user IDs permitted to view `/api/v1/admin/*`. An empty value grants access to nobody. IDs are never logged. |
+| `AZURE_MONITOR_TENANT_ID`, `AZURE_MONITOR_CLIENT_ID`, `AZURE_MONITOR_CLIENT_SECRET` | — | Azure AD client credentials used only to read Azure Monitor metrics for the Speech resource. |
+| `AZURE_SPEECH_RESOURCE_ID` | — | Full Azure Speech resource ID used by the Azure usage source. |
+| `AZURE_TTS_MONTHLY_CHAR_LIMIT` | `500000` | Optional Azure neural TTS monthly character limit shown to administrators. |
+| `AZURE_STT_MONTHLY_SECONDS_LIMIT` | `18000` | Optional Azure speech-to-text/assessment monthly seconds limit shown to administrators. |
+| `GCP_BILLING_EXPORT_TABLE` | — | Cloud Billing BigQuery export table as `project.dataset.table`, used for month-to-date real costs. |
+| `GCP_PROJECT_ID` | metadata-server project | GCP project for Cloud Run Monitoring metrics; Cloud Run discovers it through metadata when unset. |
+| `GOOGLE_ACCESS_TOKEN` | — | Local/test-only GCP access-token override. Production uses the Cloud Run metadata server. |
 | `SUPABASE_URL` | — | Public Supabase project URL (same value as the frontend's `NEXT_PUBLIC_SUPABASE_URL`). Required while `BACKEND_AUTH_REQUIRED` is `true`; must be `https` (or `http` for `localhost`/`127.0.0.1`). The backend fails at startup without it. |
 | `SUPABASE_PUBLISHABLE_KEY` | — | Optional public key (same value as the frontend's `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; recommended). Enables the remote token check described under Authentication; without it, only ES256 tokens with a known `kid` are accepted. |
 | `BACKEND_AUTH_REQUIRED` | `true` | `false` disables access-token checks (local development only; a content-free `auth_disabled` warning is logged at startup). Any value other than `true`/`false` fails at startup. |
