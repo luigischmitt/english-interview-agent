@@ -64,14 +64,36 @@ export interface PronunciationAssessmentService {
   assess(audio: Buffer, format: AudioFormat, referenceText: string, signal?: AbortSignal): Promise<PronunciationAssessment>;
 }
 
+const maxRateLimitAttempts = 3;
+
+function rateLimitDelayMs(retryAfter: string | null, attempt: number): number {
+  const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(5_000, seconds * 1_000);
+  return 600 * attempt + Math.floor(Math.random() * 400);
+}
+
+function sleepWithSignal(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+    function done() {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    }
+  });
+}
+
 export class AzurePronunciationAssessmentService implements PronunciationAssessmentService {
   private readonly convert: AudioConverter;
   private readonly fetcher: typeof fetch;
   private readonly endpoint: string;
+  private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void>;
 
-  constructor(private readonly options: { key: string; region: string; timeoutMs: number; convert?: AudioConverter; fetchImplementation?: typeof fetch }) {
+  constructor(private readonly options: { key: string; region: string; timeoutMs: number; convert?: AudioConverter; fetchImplementation?: typeof fetch; sleepImplementation?: (ms: number, signal: AbortSignal) => Promise<void> }) {
     this.convert = options.convert ?? createAudioToWav({ timeoutMs: options.timeoutMs });
     this.fetcher = options.fetchImplementation ?? fetch;
+    this.sleep = options.sleepImplementation ?? sleepWithSignal;
     this.endpoint = `https://${options.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US&format=detailed`;
   }
 
@@ -98,17 +120,28 @@ export class AzurePronunciationAssessmentService implements PronunciationAssessm
       })).toString("base64");
       abortTimer = setTimeout(() => controller.abort(), requestBudget);
       const abortRequest = () => controller.abort();
-      const response = await withinDeadline(this.fetcher(this.endpoint, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
-          "Ocp-Apim-Subscription-Key": this.options.key,
-          "Pronunciation-Assessment": assessmentHeader,
-        },
-        body: new Uint8Array(wav),
-        signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
-      }), deadline, abortRequest);
+      const requestSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
+      let response: Response;
+      // The free tier rejects bursts of parallel answers with 429; retry within the same deadline instead of dropping the answer.
+      for (let attempt = 1; ; attempt += 1) {
+        response = await withinDeadline(this.fetcher(this.endpoint, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+            "Ocp-Apim-Subscription-Key": this.options.key,
+            "Pronunciation-Assessment": assessmentHeader,
+          },
+          body: new Uint8Array(wav),
+          signal: requestSignal,
+        }), deadline, abortRequest);
+        if (response.status !== 429 || attempt >= maxRateLimitAttempts) break;
+        const delayMs = rateLimitDelayMs(response.headers.get("retry-after"), attempt);
+        if (delayMs >= remaining()) break;
+        await response.body?.cancel().catch(() => undefined);
+        await this.sleep(delayMs, requestSignal);
+        if (signal?.aborted) throw new AzureAssessmentError("cancelled");
+      }
       if (remaining() <= 0) throw new AzureAssessmentError("timeout");
       if (!response.ok) {
         const category: AzureAssessmentFailureCategory = response.status === 401 || response.status === 403
