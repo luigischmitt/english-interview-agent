@@ -523,9 +523,8 @@ function SettingsView() {
 export default function App({ initialView = "home", initialLesson, initialPart }: { initialView?: InitialView; initialLesson?: string; initialPart?: string }) {
   const { locale, t } = useLocale();
   const router = useRouter();
-  const [voiceWarmupAttempt, setVoiceWarmupAttempt] = useState(0);
-  useSpeechWarmup(voiceWarmupAttempt); // Wake the interviewer voice as soon as the signed-in user lands here.
-  const voiceReadiness = useVoiceReadiness(true, voiceWarmupAttempt);
+  useSpeechWarmup(); // Wake the interviewer voice as soon as the signed-in user lands here.
+  const voiceReadiness = useVoiceReadiness(true);
   const resolvedInitialView: View = initialView === "pronunciation" ? "voice" : initialView;
   const [view, setView] = useState<View>(resolvedInitialView);
   const dashboardPrefetchStarted = useRef(false);
@@ -625,7 +624,6 @@ export default function App({ initialView = "home", initialLesson, initialPart }
             <InterviewSetup
               onBack={() => navigate("home")}
               voiceReadiness={voiceReadiness}
-              onRetryVoice={() => setVoiceWarmupAttempt((attempt) => attempt + 1)}
               onStart={(config) => {
                 // The opening is fully known here: synthesize it while the room mounts; the room's playback reuses it.
                 if (config.playInterviewerAudio) {

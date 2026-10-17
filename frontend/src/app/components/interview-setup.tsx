@@ -26,7 +26,6 @@ import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import "./interview-setup.css";
 import { defaultInterviewConfig } from "../interview-config";
 import { interviewDurationOptions } from "@/lib/interview/session-policy.mjs";
-import { VoiceReadinessStatus } from "./voice-readiness-status";
 
 const seniorityLabels: Record<InterviewConfig["seniority"], string> = {
   junior: "Júnior",
@@ -54,12 +53,10 @@ export function InterviewSetup({
   onBack,
   onStart,
   voiceReadiness,
-  onRetryVoice,
 }: {
   onBack: () => void;
   onStart: (config: InterviewConfig) => void;
   voiceReadiness: VoiceReadinessState;
-  onRetryVoice: () => void;
 }) {
   const [config, setConfig] = useState<InterviewConfig>(defaultInterviewConfig);
   const [jobDescription, setJobDescription] = useState("");
@@ -695,8 +692,7 @@ export function InterviewSetup({
             </fieldset>
 
             {config.playInterviewerAudio && (
-              <div className="ds-fade-in mt-5 space-y-4">
-                <VoiceReadinessStatus state={voiceReadiness} onRetry={onRetryVoice} />
+              <div className="ds-fade-in mt-5">
                 <div className="flex flex-col gap-2 min-[460px]:flex-row min-[460px]:items-center">
                   <button type="button" className="ds-btn ds-btn-soft" onClick={() => void testAudio()} disabled={voiceReadiness !== "ready"}>
                     {t(audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio")}
