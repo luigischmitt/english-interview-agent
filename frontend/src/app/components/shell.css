@@ -90,11 +90,11 @@
   box-shadow: var(--ds-shadow-bar);
 }
 @media (prefers-reduced-transparency: reduce) { .shl-mobile-nav { background: var(--ds-cream); backdrop-filter: none; -webkit-backdrop-filter: none; } }
-.shl-mobile-list { position: relative; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-radius: var(--ds-r-lg); background: var(--ds-track); padding: 0.25rem; }
+.shl-mobile-list { position: relative; display: grid; grid-template-columns: repeat(var(--nav-count, 5), minmax(0, 1fr)); border-radius: var(--ds-r-lg); background: var(--ds-track); padding: 0.25rem; }
 .shl-mobile-list .shl-thumb {
   top: 0.25rem;
   left: 0.25rem;
-  width: calc((100% - 0.5rem) / 4);
+  width: calc((100% - 0.5rem) / var(--nav-count, 5));
   height: calc(100% - 0.5rem);
   transform: translateX(calc(var(--idx, 0) * 100%));
 }

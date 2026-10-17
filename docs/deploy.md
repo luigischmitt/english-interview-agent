@@ -31,6 +31,25 @@ backend refuses to start without it while `BACKEND_AUTH_REQUIRED` is unset or
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; enables the remote token check for non-ES256 signing
 keys), `ALLOWED_ORIGIN=https://entoa.vercel.app,https://englishinterview.vercel.app,https://english-interview-agent.vercel.app` (no trailing slash).
 
+For the owner-only **Custos e limites** area, set `ADMIN_USER_IDS` to a
+comma-separated allowlist of Supabase user IDs. Add `AZURE_MONITOR_TENANT_ID`,
+`AZURE_MONITOR_CLIENT_ID`, `AZURE_MONITOR_CLIENT_SECRET`, and
+`AZURE_SPEECH_RESOURCE_ID` to read Azure Speech usage. Set
+`GCP_BILLING_EXPORT_TABLE=project.dataset.table` after enabling the Cloud
+Billing export; `GCP_PROJECT_ID` is optional on Cloud Run. Keep client secrets
+in Secret Manager, never in `--set-env-vars` or source control.
+
+### Usage-monitoring setup
+
+Azure: create a service principal for the monitor credentials above and grant it
+the **Monitoring Reader** role on the Speech resource.
+
+GCP: enable Cloud Billing export to BigQuery in the Google Cloud console. Grant
+the Cloud Run runtime service account `roles/bigquery.jobUser` and
+`roles/bigquery.dataViewer` on the billing-export dataset, plus
+`roles/monitoring.viewer` on the project. The running service uses its metadata
+identity; do not configure `GOOGLE_ACCESS_TOKEN` in production.
+
 To use the self-hosted Kokoro service below as the primary interviewer voice
 (OpenRouter becomes the hedge), set `SPEECH_PROVIDER=kokoro-openrouter`,
 `KOKORO_URL=<kokoro service url>` and `KOKORO_AUTH=gcp-id-token` instead of
