@@ -35,13 +35,14 @@ import { useLocale } from "@/lib/locale";
 
 import "./components/shell.css";
 
-type View = "home" | "interview-setup" | "train" | "progress" | "pronunciation" | "settings";
+type View = "home" | "interview-setup" | "train" | "progress" | "voice" | "settings";
+type InitialView = View | "pronunciation";
 
 const primaryNavigationItems = [
   { id: "home" as const, label: "Início", icon: Home },
   { id: "interview-setup" as const, label: "Entrevista", icon: Video },
   { id: "progress" as const, label: "Progresso", icon: LineChart },
-  { id: "pronunciation" as const, label: "Pronúncia", icon: AudioLines },
+  { id: "voice" as const, label: "Sua voz", icon: AudioLines },
 ];
 
 const settingsNavigationItem = { id: "settings" as const, label: "Configurações", icon: SlidersHorizontal };
@@ -57,7 +58,7 @@ const subscribeNever = () => () => {};
 const loadInterviewSetup = () => import("./components/interview-setup").then((module) => module.InterviewSetup);
 const loadTrainView = () => import("./components/train/train-view").then((module) => module.TrainView);
 const loadProgressView = () => import("./components/progress-view").then((module) => module.ProgressView);
-const loadPronunciationView = () => import("./components/pronunciation-view").then((module) => module.PronunciationView);
+const loadVoiceView = () => import("./components/voice-view").then((module) => module.VoiceView);
 
 const ViewLoading = () => (
   <main id="main-content" className="mx-auto w-full max-w-6xl px-4 pb-28 pt-7 sm:px-8 sm:pb-12">
@@ -73,13 +74,13 @@ const ViewLoading = () => (
 const InterviewSetup = dynamic(loadInterviewSetup, { loading: ViewLoading });
 const TrainView = dynamic(loadTrainView, { loading: ViewLoading });
 const ProgressView = dynamic(loadProgressView, { loading: ViewLoading });
-const PronunciationView = dynamic(loadPronunciationView, { loading: ViewLoading });
+const VoiceView = dynamic(loadVoiceView, { loading: ViewLoading });
 
 function preloadView(view: View) {
   if (view === "interview-setup") void loadInterviewSetup();
   if (view === "train") void loadTrainView();
   if (view === "progress") void loadProgressView();
-  if (view === "pronunciation") void loadPronunciationView();
+  if (view === "voice") void loadVoiceView();
 }
 
 function isNavigationItemActive(view: View, item: View) {
@@ -92,7 +93,7 @@ const viewTrail: Record<View, readonly [string, string?]> = {
   "interview-setup": ["Entrevista", "Preparar entrevista"],
   train: ["Treinar"],
   progress: ["Progresso"],
-  pronunciation: ["Pronúncia"],
+  voice: ["Sua voz"],
   settings: ["Configurações"],
 };
 
@@ -509,13 +510,14 @@ function SettingsView() {
   );
 }
 
-export default function App({ initialView = "home", initialLesson, initialPart }: { initialView?: View; initialLesson?: string; initialPart?: string }) {
+export default function App({ initialView = "home", initialLesson, initialPart }: { initialView?: InitialView; initialLesson?: string; initialPart?: string }) {
   const { locale, t } = useLocale();
   const router = useRouter();
   const [voiceWarmupAttempt, setVoiceWarmupAttempt] = useState(0);
   useSpeechWarmup(voiceWarmupAttempt); // Wake the interviewer voice as soon as the signed-in user lands here.
   const voiceReadiness = useVoiceReadiness(true, voiceWarmupAttempt);
-  const [view, setView] = useState<View>(initialView);
+  const resolvedInitialView: View = initialView === "pronunciation" ? "voice" : initialView;
+  const [view, setView] = useState<View>(resolvedInitialView);
   const dashboardPrefetchStarted = useRef(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [startError, setStartError] = useState(false);
@@ -616,7 +618,7 @@ export default function App({ initialView = "home", initialLesson, initialPart }
           )}
           {view === "train" && <TrainView initialLesson={initialLesson} initialPart={initialPart} onInterview={() => navigate("interview-setup")} />}
           {view === "progress" && <ProgressView onStart={() => navigate("interview-setup")} />}
-          {view === "pronunciation" && <PronunciationView onStart={() => navigate("interview-setup")} />}
+          {view === "voice" && <VoiceView onStart={() => navigate("interview-setup")} />}
           {view === "settings" && <SettingsView />}
         </div>
       </div>
