@@ -8,13 +8,14 @@ import type {
   VoiceStatus,
 } from "./types.js";
 
-type Source = "kokoro" | "openrouter";
+type Source = "kokoro" | "azure" | "openrouter";
 
 type HybridSpeechProviderOptions = {
   primary: SpeechProvider;
   secondary: SpeechProvider;
   /** Each provider gets its own voice: Kokoro accepts blends, OpenRouter does not. */
   primaryVoice: string;
+  primarySource?: "kokoro" | "azure";
   secondaryVoice: string;
   timeoutMs: number;
   /** Start the secondary after this delay without primary audio; 0 disables the timed hedge (fast failures still fall back). */
@@ -79,7 +80,8 @@ export class HybridSpeechProvider implements SpeechProvider {
       };
       const win = (source: Source, speech: SynthesizedSpeech) => {
         if (settled) return;
-        controllers[source === "kokoro" ? "secondary" : "primary"].abort(new Error("Another speech request answered first."));
+        const primarySource = this.options.primarySource ?? "kokoro";
+        controllers[source === primarySource ? "secondary" : "primary"].abort(new Error("Another speech request answered first."));
         if (source === "kokoro") this.lastReadyAt = this.now();
         const hedge: HedgeOutcome = source === "openrouter" ? "hedge_won" : secondaryStarted ? "primary_won" : "not_needed";
         finish(() => resolve({ ...speech, diagnostics: { ...speech.diagnostics, hedge, voiceSource: source } }));
@@ -104,7 +106,7 @@ export class HybridSpeechProvider implements SpeechProvider {
       if (signal?.aborted) { onCallerAbort(); return; }
 
       overallTimer = setTimeout(fail, timeoutMs);
-      run(primary, primaryVoice, "kokoro", controllers.primary.signal).catch(() => {
+      run(primary, primaryVoice, this.options.primarySource ?? "kokoro", controllers.primary.signal).catch(() => {
         primaryFailed = true;
         if (settled) return;
         if (!secondaryStarted) startSecondary();
@@ -125,6 +127,7 @@ export class HybridSpeechProvider implements SpeechProvider {
 
   /** Cached readiness of the primary voice; polling may trigger a throttled background probe. */
   voiceStatus(): VoiceStatus {
+    if (!this.options.warmupRequest) return "ready";
     const ttl = this.options.statusTtlMs ?? 60_000;
     if (this.now() - this.lastReadyAt < ttl) return "ready";
     this.probe(this.options.statusProbeIntervalMs ?? 5_000);

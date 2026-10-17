@@ -1,5 +1,6 @@
 import type { SpeechConfig } from "./config.js";
 import { FakeSpeechProvider } from "./fake-speech-provider.js";
+import { AzureSpeechProvider } from "./azure-speech-provider.js";
 import { createGcpIdTokenProvider } from "./gcp-identity-token.js";
 import { HybridSpeechProvider } from "./hybrid-speech-provider.js";
 import { KokoroSpeechProvider } from "./kokoro-speech-provider.js";
@@ -7,6 +8,19 @@ import { OpenRouterSpeechProvider } from "./openrouter-speech-provider.js";
 import type { SpeechProvider } from "./types.js";
 
 export function createSpeechProvider(config: SpeechConfig): SpeechProvider {
+  if (config.provider === "azure-openrouter") {
+    if (!config.azure || !config.openRouter || !config.hybrid) throw new Error("Azure hybrid speech configuration is missing.");
+    return new HybridSpeechProvider({
+      primary: new AzureSpeechProvider(config.azure),
+      secondary: new OpenRouterSpeechProvider({ apiKey: config.openRouter.apiKey, url: config.openRouter.url, model: config.openRouter.model, timeoutMs: config.kokoroTimeoutMs, hedgeAfterMs: config.openRouter.hedgeAfterMs }),
+      primaryVoice: config.azure.voice,
+      primarySource: "azure",
+      secondaryVoice: config.hybrid.openRouterVoice,
+      // The OpenRouter fallback takes 7-11 s, so the overall budget is the general speech timeout, not Azure's own.
+      timeoutMs: Math.max(config.azure.timeoutMs, config.kokoroTimeoutMs),
+      hedgeAfterMs: config.hybrid.hedgeAfterMs,
+    });
+  }
   if (config.provider === "kokoro" || config.provider === "kokoro-openrouter") {
     const idTokenProvider = config.kokoroAuth === "gcp-id-token"
       ? createGcpIdTokenProvider({ audienceUrl: config.kokoroBaseUrl })

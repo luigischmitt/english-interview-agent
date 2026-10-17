@@ -36,6 +36,34 @@ To use the self-hosted Kokoro service below as the primary interviewer voice
 `KOKORO_URL=<kokoro service url>` and `KOKORO_AUTH=gcp-id-token` instead of
 `SPEECH_PROVIDER=openrouter`. `OPENROUTER_API_KEY` stays required.
 
+### Interviewer voice: Azure (free tier)
+
+Azure Neural TTS uses the F0 allowance of 500,000 characters per month. The
+backend opens a cooldown after quota, authorization, or repeated rate-limit
+responses and immediately uses OpenRouter Kokoro during that window.
+
+Switch to Azure without rebuilding:
+
+```bash
+gcloud run services update english-interview-backend --region us-east1 --update-env-vars SPEECH_PROVIDER=azure-openrouter,AZURE_TTS_VOICE=en-US-AndrewNeural
+```
+
+Switch back to Kokoro without rebuilding:
+
+```bash
+gcloud run services update english-interview-backend --region us-east1 --update-env-vars SPEECH_PROVIDER=kokoro-openrouter
+```
+
+Sum this month's Azure characters (Cloud Run ingests these JSON stdout lines
+as `jsonPayload`):
+
+```bash
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="english-interview-backend" AND jsonPayload.event="speech_usage" AND jsonPayload.provider="azure" AND timestamp >= "'"$(date -u +%Y-%m-01T00:00:00Z)"'"' --limit=1000000 --format=json | jq '[.[].jsonPayload.chars] | add // 0'
+```
+
+Or run `backend/scripts/azure-tts-usage.sh`; it prints usage and the percentage
+of the 500,000-character allowance.
+
 Do not set `KOKORO_BASE_URL` or
 `INTERVIEW_REASONING_DIAGNOSTICS`. Cloud Run injects `PORT=8080`. Every other
 variable keeps its default; see the table in `backend/README.md`.
