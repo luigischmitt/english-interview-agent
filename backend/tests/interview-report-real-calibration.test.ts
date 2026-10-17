@@ -123,19 +123,12 @@ describe("real report calibration", () => {
     expect(hasMissingPortugueseAccents("Voce nao explicou a comunicacao.")).toBe(true);
   });
 
-  it("accepts both optional interviewer fields only when localized and grounded", () => {
+  it("accepts interviewer takeaways only when localized", () => {
     const validTakeaway = { remember: "Você explicou decisões técnicas concretas com clareza.", concern: "Você poderia detalhar melhor como monitorou o resultado em produção." };
-    const validMoment = { sequenceNumber: 2, evidence: "A project that I worked on is a framework", why: "Você descreveu uma contribuição específica que ajuda o entrevistador a entender seu papel." };
-    const valid = report({ interviewerTakeaway: validTakeaway, bestMoment: validMoment });
+    const valid = report({ interviewerTakeaway: validTakeaway });
     expect(valid.report?.interviewerTakeaway).toEqual(validTakeaway);
-    expect(valid.report?.bestMoment).toEqual(validMoment);
-
-    const invalid = report({
-      interviewerTakeaway: { remember: "The candidate explained the concrete technical decision clearly.", concern: validTakeaway.concern },
-      bestMoment: { ...validMoment, evidence: "invented evidence not in answer" },
-    });
+    const invalid = report({ interviewerTakeaway: { remember: "The candidate explained the concrete technical decision clearly.", concern: validTakeaway.concern } });
     expect(invalid.report).not.toHaveProperty("interviewerTakeaway");
-    expect(invalid.report).not.toHaveProperty("bestMoment");
   });
 
 });

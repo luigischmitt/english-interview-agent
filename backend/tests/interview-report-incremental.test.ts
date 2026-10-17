@@ -193,7 +193,6 @@ describe("consolidation service", () => {
   const consolidationOutput = {
     summary: "Descreve timeouts, retries limitados e monitoramento de erros e latência.",
     interviewerTakeaway: { remember: "Você descreveu retries limitados como uma proteção contra falhas transitórias.", concern: "Você poderia explicar melhor como define os limites de alerta." },
-    bestMoment: { sequenceNumber: 2, evidence: "I would add timeouts and bounded retries", why: "Você apresentou uma ação concreta que mostra como reduzir falhas transitórias." },
     clarity: "MOSTLY_CLEAR",
     priorities: [
       { area: "ENGLISH_COMMUNICATION", sequenceNumber: 2, evidence: "Yesterday I have deployed", focus: "Na próxima resposta, use o passado simples para narrar o deploy.", exercise: "Na próxima resposta, diga quando você fez o deploy." },
@@ -222,13 +221,12 @@ describe("consolidation service", () => {
     expect(bodies[0].max_tokens).toBeLessThanOrEqual(1_536);
     expectSpecificPriorityRules(bodies[0].messages[0].content);
     expect(bodies[0].messages[0].content).toContain('Address the candidate directly as "você"');
-    expect(Object.keys(bodies[0].response_format.json_schema.schema.properties).sort()).toEqual(["bestMoment", "clarity", "coveredGapIndexes", "interviewerTakeaway", "overview", "priorities", "summary"]);
+    expect(Object.keys(bodies[0].response_format.json_schema.schema.properties).sort()).toEqual(["clarity", "coveredGapIndexes", "interviewerTakeaway", "overview", "priorities", "summary"]);
     // ENG-113: the consolidation (which decides clarity) must carry the transcription-error guard.
     expect(bodies[0].messages[0].content).toContain("a transcription error must never become the candidate's error");
     expect(bodies[0].messages[0].content).toContain("Do not lower clarity because of garbled");
-    expect(Object.keys(result).sort()).toEqual(["analysisVersion", "bestMoment", "englishCommunication", "evidenceReview", "interviewerTakeaway", "model", "priorities", "technicalContent"]);
+    expect(Object.keys(result).sort()).toEqual(["analysisVersion", "englishCommunication", "evidenceReview", "interviewerTakeaway", "model", "priorities", "technicalContent"]);
     expect(result.interviewerTakeaway).toEqual(consolidationOutput.interviewerTakeaway);
-    expect(result.bestMoment).toEqual(consolidationOutput.bestMoment);
     expect(result.analysisVersion).toBe("v2");
     expect(result.model).toBe(defaultThinkingModel);
     expect(result.technicalContent).toEqual({ summary: consolidationOutput.summary, strengths: [strength2], gaps: [gap4] });
