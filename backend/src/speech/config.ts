@@ -2,7 +2,7 @@ import type { AudioFormat } from "./types.js";
 import { defaultInterviewerVoice } from "./voices.js";
 
 export type SpeechConfig = {
-  provider: "fake" | "kokoro" | "openrouter" | "kokoro-openrouter";
+  provider: "fake" | "kokoro" | "openrouter" | "kokoro-openrouter" | "azure-openrouter";
   kokoroBaseUrl: string;
   kokoroAuth?: "none" | "gcp-id-token";
   kokoroTimeoutMs: number;
@@ -12,6 +12,7 @@ export type SpeechConfig = {
   openRouter?: { apiKey: string; url: string; model: string; hedgeAfterMs: number };
   /** Only with SPEECH_PROVIDER=kokoro-openrouter: Kokoro first, OpenRouter as the hedge. */
   hybrid?: { hedgeAfterMs: number; openRouterVoice: string };
+  azure?: { key: string; region: string; voice: string; timeoutMs: number; cooldownMs: number };
   /** Server-side cache of finished audio, joined with in-flight syntheses and prefetched from next-turn decisions. Absent = off. */
   cache?: { ttlMs: number; staticTtlMs: number; prefetch: boolean; prefetchChunks: number };
 };
@@ -71,10 +72,11 @@ function loadCacheConfig(environment: NodeJS.ProcessEnv): NonNullable<SpeechConf
 
 export function loadSpeechConfig(environment = process.env): SpeechConfig {
   const provider = environment.SPEECH_PROVIDER ?? "fake";
-  if (provider !== "fake" && provider !== "kokoro" && provider !== "openrouter" && provider !== "kokoro-openrouter") {
-    throw new Error("SPEECH_PROVIDER must be 'fake', 'kokoro', 'openrouter' or 'kokoro-openrouter'.");
+  if (provider !== "fake" && provider !== "kokoro" && provider !== "openrouter" && provider !== "kokoro-openrouter" && provider !== "azure-openrouter") {
+    throw new Error("SPEECH_PROVIDER must be 'fake', 'kokoro', 'openrouter', 'kokoro-openrouter' or 'azure-openrouter'.");
   }
   const hybrid = provider === "kokoro-openrouter";
+  const azureHybrid = provider === "azure-openrouter";
   const kokoroAuth = environment.KOKORO_AUTH?.trim() || "none";
   if (kokoroAuth !== "none" && kokoroAuth !== "gcp-id-token") {
     throw new Error("KOKORO_AUTH must be 'none' or 'gcp-id-token'.");
@@ -85,17 +87,17 @@ export function loadSpeechConfig(environment = process.env): SpeechConfig {
   }
 
   // With 'openrouter' the voice is OPENROUTER_SPEECH_VOICE (then INTERVIEWER_VOICE, then the default constant above).
-  const interviewerVoice = provider === "openrouter"
+  const interviewerVoice = azureHybrid ? environment.AZURE_TTS_VOICE?.trim() || "en-US-AndrewNeural" : provider === "openrouter"
     ? environment.OPENROUTER_SPEECH_VOICE?.trim() || environment.INTERVIEWER_VOICE?.trim() || openRouterDefaultVoice
     : environment.INTERVIEWER_VOICE?.trim() || kokoroDefaultVoice;
   let openRouter: SpeechConfig["openRouter"];
   let hybridConfig: SpeechConfig["hybrid"];
-  if (provider === "openrouter" || hybrid) {
+  if (provider === "openrouter" || hybrid || azureHybrid) {
     const apiKey = environment.OPENROUTER_API_KEY?.trim();
     if (!apiKey) {
       throw new Error(`OPENROUTER_API_KEY is required when SPEECH_PROVIDER is '${provider}'.`);
     }
-    if (hybrid) {
+    if (hybrid || azureHybrid) {
       const openRouterVoice = environment.OPENROUTER_SPEECH_VOICE?.trim() || openRouterDefaultVoice;
       if (openRouterVoice.includes("+")) {
         throw new Error("OPENROUTER_SPEECH_VOICE cannot be a voice blend; use a single voice such as 'am_echo'.");
@@ -112,6 +114,15 @@ export function loadSpeechConfig(environment = process.env): SpeechConfig {
     };
   }
 
+  let azure: SpeechConfig["azure"];
+  if (azureHybrid) {
+    const key = environment.AZURE_SPEECH_KEY?.trim();
+    const region = environment.AZURE_SPEECH_REGION?.trim();
+    if (!key) throw new Error("AZURE_SPEECH_KEY is required when SPEECH_PROVIDER is 'azure-openrouter'.");
+    if (!region) throw new Error("AZURE_SPEECH_REGION is required when SPEECH_PROVIDER is 'azure-openrouter'.");
+    azure = { key, region, voice: interviewerVoice, timeoutMs: parsePositiveNumber(environment.AZURE_TTS_TIMEOUT_MS, 8_000), cooldownMs: parsePositiveNumber(environment.AZURE_TTS_COOLDOWN_MS, 600_000) };
+  }
+
   return {
     provider,
     kokoroBaseUrl: kokoroUrl || environment.KOKORO_BASE_URL || "http://localhost:8880",
@@ -122,6 +133,7 @@ export function loadSpeechConfig(environment = process.env): SpeechConfig {
     format: "mp3",
     ...(openRouter ? { openRouter } : {}),
     ...(hybridConfig ? { hybrid: hybridConfig } : {}),
+    ...(azure ? { azure } : {}),
     cache: loadCacheConfig(environment),
   };
 }
