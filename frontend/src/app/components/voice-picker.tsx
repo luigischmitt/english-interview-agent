@@ -17,6 +17,7 @@ export function VoicePicker({
   value,
   onChange,
   onSampleStart,
+  speed = 1,
   disabled = false,
   disabledNote,
 }: {
@@ -24,6 +25,7 @@ export function VoicePicker({
   onChange: (voice: string) => void;
   /** Called when a sample starts, so the caller can silence other audio (e.g. the "Testar áudio" phrase). */
   onSampleStart?: () => void;
+  speed?: number;
   disabled?: boolean;
   disabledNote?: string;
 }) {
@@ -59,6 +61,7 @@ export function VoicePicker({
     stopSample();
     onSampleStart?.();
     const audio = new Audio(voiceSamplePath(id));
+    audio.playbackRate = speed;
     audioRef.current = audio;
     const finish = () => { if (audioRef.current === audio) { audioRef.current = null; setPlayingId(null); } };
     audio.addEventListener("ended", finish);
@@ -121,7 +124,7 @@ export function VoicePicker({
                               {voice.name}
                               {voice.isDefault && <span className="rounded-full bg-tint px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-green-deep">{t("Padrão")}</span>}
                             </span>
-                            <span className="ds-small block leading-5">{t(voice.accent === "UK" ? "britânica" : "americana")}</span>
+                            <span className="ds-small block leading-5">{t(voice.gender === "female" ? "feminina" : "masculina")}, {t(voice.accent === "UK" ? "britânica" : "americana")}</span>
                           </span>
                         </label>
                         <button

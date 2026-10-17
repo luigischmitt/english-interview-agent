@@ -41,34 +41,34 @@ export function useVoiceReadiness(enabled: boolean, attempt = 0): VoiceReadiness
 }
 
 /** Starts synthesizing the next interviewer utterance early; the later playback of the same utterance reuses it. */
-export function prewarmInterviewerUtterance(utterance: string, voice?: string) {
-  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 30_000, voice });
+export function prewarmInterviewerUtterance(utterance: string, voice?: string, speed = 1) {
+  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 30_000, voice, speed });
 }
 
 /**
  * Speculative follow-up audio: preparations now outlive many pauses of a long answer, so the audio is retained for as long
  * as the preparation can be used. `cancel()` (discard, abort, turn change) releases it.
  */
-export function prewarmFollowUpUtterance(utterance: string, voice?: string) {
-  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 4 * 60_000, voice });
+export function prewarmFollowUpUtterance(utterance: string, voice?: string, speed = 1) {
+  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 4 * 60_000, voice, speed });
 }
 
 /** Predictable transition/question chunks survive long answers and still share the normal voice/speed cache key. */
-export function prewarmFixedInterviewerUtterance(utterance: string, voice?: string) {
-  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 4 * 60_000, voice });
+export function prewarmFixedInterviewerUtterance(utterance: string, voice?: string, speed = 1) {
+  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 4 * 60_000, voice, speed });
 }
 
 /**
  * Synthesizes the closing line while the candidate is still answering, so it is ready if this turns out to be the last one.
  * The audio is retained for the rest of a typical interview; the backend also keeps fixed phrases cached for an hour.
  */
-export function prewarmInterviewerClosing(utterance: string, voice?: string) {
-  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 20 * 60_000, voice });
+export function prewarmInterviewerClosing(utterance: string, voice?: string, speed = 1) {
+  return prewarmInterviewerSpeech(splitInterviewerSpeech(utterance), { endpoint: speechEndpoint, fetcher: authorizedFetch, timeoutMs: 20_000, retainMs: 20 * 60_000, voice, speed });
 }
 
 /** The instant "Okay." / "Got it." player: its phrases are synthesized once (preload) and then played from memory. */
-export function createInterviewerAcknowledgements(onChunkAudio: SpeechPlaybackOptions["onChunkAudio"], voice?: string) {
-  return createAcknowledgementPlayer({ endpoint: speechEndpoint, fetcher: authorizedFetch, voice, onChunkAudio, onDiagnostic: reportAudioDiagnostic });
+export function createInterviewerAcknowledgements(onChunkAudio: SpeechPlaybackOptions["onChunkAudio"], voice?: string, speed = 1) {
+  return createAcknowledgementPlayer({ endpoint: speechEndpoint, fetcher: authorizedFetch, voice, speed, onChunkAudio, onDiagnostic: reportAudioDiagnostic });
 }
 
 export function useSpeechPlayback(segments: string[], onReady: () => void, enabled = true, onTimingEvent?: (event: SpeechTimingEvent) => void, onFinalChunkStarted?: () => void, speed = 1, onChunkAudio?: SpeechPlaybackOptions["onChunkAudio"], waitBeforePlayback?: () => Promise<unknown>, voice?: string, onInterChunkGap?: (gapMs: number) => void, onQuestionStarted?: () => void, onFinalChunkPlaybackStarted?: () => void) {

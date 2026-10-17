@@ -12,7 +12,7 @@ import {
 import type { SpeechCache } from "./speech-cache.js";
 import { normalizeTextForSpeech } from "./text-normalization.js";
 import type { AudioFormat } from "./types.js";
-import { resolveVoice } from "./voices.js";
+import { resolveKokoroVoice, resolveVoice } from "./voices.js";
 
 /** Texts that never change (acknowledgements, the closing line, the closing fallback reactions): cached longer and synthesized ahead of the interview. */
 export function staticSpeechTexts(): string[] {
@@ -62,20 +62,22 @@ export class InterviewerSpeechPrefetcher {
   }
 
   /** `voice` is what the client sent with the next-turn request; only selectable voices are honoured. */
-  prefetchDecision(input: Pick<InterviewOrchestrationInput, "transcript">, result: InterviewOrchestrationResult, voice?: unknown): void {
+  prefetchDecision(input: Pick<InterviewOrchestrationInput, "transcript">, result: InterviewOrchestrationResult, voice?: unknown, speed?: unknown): void {
     try {
       const utterance = this.utteranceFor(input, result);
-      if (utterance) this.prefetchUtterance(utterance, voice);
+      if (utterance) this.prefetchUtterance(utterance, voice, speed);
     } catch { /* Prefetching never affects the decision response. */ }
   }
 
-  prefetchUtterance(utterance: string, voice?: unknown): void {
-    for (const text of interviewerChunkTexts(utterance).slice(0, this.options.chunks)) this.prefetchText(text, voice);
+  prefetchUtterance(utterance: string, voice?: unknown, speed?: unknown): void {
+    for (const text of interviewerChunkTexts(utterance).slice(0, this.options.chunks)) this.prefetchText(text, voice, speed);
   }
 
-  prefetchText(text: string, voice?: unknown): void {
+  prefetchText(text: string, voice?: unknown, requestedSpeed?: unknown): void {
     const { cache, speed, format } = this.options;
-    cache.prefetch({ text: normalizeTextForSpeech(text.trim()), voice: resolveVoice(voice, this.options.voice), speed, format });
+    const resolvedVoice = this.options.voice.includes("Neural") ? resolveVoice(voice, this.options.voice) : resolveKokoroVoice(voice, this.options.voice);
+    const resolvedSpeed = typeof requestedSpeed === "number" && Number.isFinite(requestedSpeed) && requestedSpeed >= 0.25 && requestedSpeed <= 4 ? requestedSpeed : speed;
+    cache.prefetch({ text: normalizeTextForSpeech(text.trim()), voice: resolvedVoice, speed: resolvedSpeed, format });
   }
 
   /** Synthesizes the fixed phrases once so the instant acknowledgements and the closing line are ready before they are needed. */
@@ -84,7 +86,7 @@ export class InterviewerSpeechPrefetcher {
     const { cache, speed, format } = this.options;
     for (const text of staticSpeechTexts()) {
       try {
-        await cache.synthesize({ text: normalizeTextForSpeech(text.trim()), voice: resolveVoice(undefined, this.options.voice), speed, format });
+        await cache.synthesize({ text: normalizeTextForSpeech(text.trim()), voice: this.options.voice, speed, format });
       } catch { /* A missing phrase is synthesized on demand later. */ }
     }
   }

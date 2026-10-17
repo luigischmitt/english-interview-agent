@@ -1,5 +1,4 @@
 import type { AudioFormat } from "./types.js";
-import { defaultInterviewerVoice } from "./voices.js";
 
 export type SpeechConfig = {
   provider: "fake" | "kokoro" | "openrouter" | "kokoro-openrouter" | "azure-openrouter";
@@ -50,7 +49,8 @@ function parseHybridHedgeAfterMs(value: string | undefined): number {
 
 const kokoroDefaultVoice = "af_bella+af_heart";
 /** The default OpenRouter Kokoro voice (single voices only; blends are rejected upstream). Change the interviewer's voice here. */
-export const openRouterDefaultVoice = defaultInterviewerVoice;
+// Kokoro id for the OpenRouter voice (also the fallback voice of azure-openrouter); the Azure default lives in voices.ts.
+export const openRouterDefaultVoice = "am_echo";
 
 function parseIntegerInRange(name: string, value: string | undefined, fallback: number, minimum: number, maximum: number): number {
   if (value === undefined || value.trim() === "") return fallback;

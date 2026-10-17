@@ -5,21 +5,28 @@ import { createSpeechProvider } from "../src/speech/create-speech-provider.js";
 import { HybridSpeechProvider } from "../src/speech/hybrid-speech-provider.js";
 import type { SpeechProvider, SpeechSynthesisRequest, SynthesizedSpeech } from "../src/speech/types.js";
 
-const req: SpeechSynthesisRequest = { text: `A & B < C > "D" 'E'`, voice: "am_echo", speed: 0.85, format: "mp3" };
+const req: SpeechSynthesisRequest = { text: `A & B < C > "D" 'E'`, voice: "en-US-BrianNeural", speed: 0.85, format: "mp3" };
 const make = (fetchImplementation: typeof fetch, options: Partial<ConstructorParameters<typeof AzureSpeechProvider>[0]> = {}) => new AzureSpeechProvider({ key: "key", region: "brazilsouth", voice: "en-US-AndrewNeural", timeoutMs: 8_000, cooldownMs: 10_000, fetchImplementation, ...options });
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("Azure TTS", () => {
-  it("escapes SSML, maps rate and always uses configured voice", async () => {
+  it("escapes SSML, maps rate and uses a selectable requested Azure voice", async () => {
     let init: RequestInit | undefined;
     const provider = make(async (_url, requestInit) => { init = requestInit; return new Response("mp3"); });
     await provider.synthesize(req);
     expect(init?.headers).toMatchObject({ "Content-Type": "application/ssml+xml", "Ocp-Apim-Subscription-Key": "key", "User-Agent": "entoa-backend" });
-    expect(init?.body).toContain("voice name='en-US-AndrewNeural'");
+    expect(init?.body).toContain("voice name='en-US-BrianNeural'");
     expect(init?.body).toContain("rate='-15%'");
     expect(init?.body).toContain("A &amp; B &lt; C &gt; &quot;D&quot; &apos;E&apos;");
     expect(init?.body).not.toContain("am_echo");
+  });
+
+  it("uses the configured Azure voice for a legacy or untrusted request voice", async () => {
+    let init: RequestInit | undefined;
+    const provider = make(async (_url, requestInit) => { init = requestInit; return new Response("mp3"); });
+    await provider.synthesize({ ...req, voice: "am_michael" });
+    expect(init?.body).toContain("voice name='en-US-AndrewNeural'");
   });
 
   it("retries 429 respecting Retry-After, then succeeds", async () => {
@@ -59,6 +66,15 @@ describe("Azure TTS", () => {
     const result = await hybrid.synthesize(req);
     expect(result.diagnostics?.voiceSource).toBe("openrouter");
     expect(hybrid.voiceStatus()).toBe("ready");
+  });
+
+  it("maps the Azure request voice to its paired Kokoro fallback", async () => {
+    const calls: SpeechSynthesisRequest[] = [];
+    const azure: SpeechProvider = { name: "azure", health: async () => ({ status: "ready" }), synthesize: async () => { throw new Error("down"); } };
+    const fallback: SpeechProvider = { name: "openrouter", health: async () => ({ status: "ready" }), synthesize: async (request) => { calls.push(request); return { audio: Buffer.from("mp3"), contentType: "audio/mpeg" }; } };
+    const hybrid = new HybridSpeechProvider({ primary: azure, secondary: fallback, primaryVoice: "en-US-AndrewNeural", primarySource: "azure", secondaryVoice: "am_echo", timeoutMs: 1_000, hedgeAfterMs: 0 });
+    await hybrid.synthesize({ ...req, voice: "en-GB-SoniaNeural" });
+    expect(calls[0].voice).toBe("bf_emma");
   });
 
   it("validates Azure credentials and leaves Kokoro hybrid configuration unchanged", () => {

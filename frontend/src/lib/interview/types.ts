@@ -16,6 +16,8 @@ export type InterviewConfig = {
   microphoneDeviceId?: string | null;
   /** Interviewer voice (see lib/interview/voices.mjs); absent means the default, "am_echo". */
   voice?: string;
+  /** Per-browser interviewer speech speed. */
+  speechSpeed?: number;
   /** User-approved job summary handed to the room; raw job description is never included. */
   jobDirection?: JobDirection;
   /** Bounded summaries from recent ready reports; only sent for focused practice and never persisted. */

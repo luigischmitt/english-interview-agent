@@ -1,4 +1,5 @@
 import { SpeechProviderUnavailableError } from "./errors.js";
+import { resolveKokoroVoice, resolveVoice } from "./voices.js";
 import type {
   HedgeOutcome,
   SpeechProvider,
@@ -49,6 +50,10 @@ export class HybridSpeechProvider implements SpeechProvider {
 
   async synthesize(request: SpeechSynthesisRequest, signal?: AbortSignal): Promise<SynthesizedSpeech> {
     const { primary, secondary, primaryVoice, secondaryVoice, timeoutMs, hedgeAfterMs } = this.options;
+    const primaryVoiceForRequest = this.options.primarySource === "azure"
+      ? resolveVoice(request.voice, primaryVoice)
+      : resolveKokoroVoice(request.voice, primaryVoice);
+    const fallbackVoice = resolveKokoroVoice(request.voice, secondaryVoice);
     const controllers = { primary: new AbortController(), secondary: new AbortController() };
     let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
     let overallTimer: ReturnType<typeof setTimeout> | undefined;
@@ -96,7 +101,7 @@ export class HybridSpeechProvider implements SpeechProvider {
         if (settled || secondaryStarted) return;
         secondaryStarted = true;
         clearTimeout(hedgeTimer);
-        run(secondary, secondaryVoice, "openrouter", controllers.secondary.signal).catch(() => {
+        run(secondary, fallbackVoice, "openrouter", controllers.secondary.signal).catch(() => {
           secondaryFailed = true;
           if (primaryFailed) fail();
         });
@@ -106,7 +111,7 @@ export class HybridSpeechProvider implements SpeechProvider {
       if (signal?.aborted) { onCallerAbort(); return; }
 
       overallTimer = setTimeout(fail, timeoutMs);
-      run(primary, primaryVoice, this.options.primarySource ?? "kokoro", controllers.primary.signal).catch(() => {
+      run(primary, primaryVoiceForRequest, this.options.primarySource ?? "kokoro", controllers.primary.signal).catch(() => {
         primaryFailed = true;
         if (settled) return;
         if (!secondaryStarted) startSecondary();

@@ -9,9 +9,9 @@ export const interviewerVoiceStorageKey = "eia:interviewer-voice";
 const accentLabels = { US: "americana", UK: "britânica" };
 const genderLabels = { male: "masculina", female: "feminina" };
 
-/** "am_echo" -> "Echo", "bf_emma" -> "Emma". */
+/** "en-US-AndrewNeural" -> "Andrew". */
 export function voiceDisplayName(id) {
-  const name = String(id ?? "").split("_").slice(1).join(" ");
+  const name = String(id ?? "").match(/-([A-Za-z]+)Neural$/)?.[1] ?? "";
   return name === "" ? String(id ?? "") : name.charAt(0).toUpperCase() + name.slice(1);
 }
 
@@ -68,8 +68,11 @@ export function storeInterviewerVoice(storage, voice) {
  * for tests. Resolves { status: "completed" } when it ends, { status: "unavailable", message } on a playback error and
  * { status: "cancelled" } after `cancel()`.
  */
-export function playVoiceSample(id, createAudio = (src) => new Audio(src)) {
+export function playVoiceSample(id, speedOrCreateAudio = 1, maybeCreateAudio) {
+  const speed = typeof speedOrCreateAudio === "number" ? speedOrCreateAudio : 1;
+  const createAudio = maybeCreateAudio ?? (typeof speedOrCreateAudio === "function" ? speedOrCreateAudio : (src) => new Audio(src));
   const audio = createAudio(voiceSamplePath(id));
+  audio.playbackRate = speed;
   let settle = () => {};
   let settled = false;
   const promise = new Promise((resolve) => {

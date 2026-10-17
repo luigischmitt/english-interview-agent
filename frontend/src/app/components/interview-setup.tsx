@@ -20,6 +20,7 @@ import { readStoredMicrophoneDeviceId, storeMicrophoneDeviceId } from "@/lib/int
 import { readStoredInterviewerCharacter, storeInterviewerCharacter } from "@/lib/interview/interviewer-character-preference.mjs";
 import { VoicePicker } from "./voice-picker";
 import { playVoiceSample, readStoredInterviewerVoice, storeInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
+import { readStoredInterviewerSpeechSpeed } from "@/lib/interview/interviewer-speech-speed.mjs";
 import { RoleCombobox } from "@/components/ui/role-combobox";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import "./interview-setup.css";
@@ -122,6 +123,7 @@ export function InterviewSetup({
   const storedVoice = useSyncExternalStore(subscribeNever, () => readStoredInterviewerVoice(window.localStorage), () => defaultInterviewConfig.voice ?? "");
   const [chosenVoice, setChosenVoice] = useState<string | undefined>(undefined);
   const voice = chosenVoice ?? storedVoice;
+  const speechSpeed = useSyncExternalStore(subscribeNever, () => readStoredInterviewerSpeechSpeed(window.localStorage), () => defaultInterviewConfig.speechSpeed ?? 1);
   const storedCharacter = useSyncExternalStore(subscribeNever, () => readStoredInterviewerCharacter(window.localStorage), () => true);
   const [chosenCharacter, setChosenCharacter] = useState<boolean | undefined>(undefined);
   const showCharacter = chosenCharacter ?? storedCharacter;
@@ -359,7 +361,7 @@ export function InterviewSetup({
 
     setAudioTestStatus({ kind: "loading", message: "Reproduzindo uma frase em inglês…" });
     // The same static sample as the voice list: testing (and re-testing) a voice never calls the speech API.
-    const playback = playVoiceSample(voice);
+    const playback = playVoiceSample(voice, speechSpeed);
     audioTestRef.current = playback;
     const result = await playback.promise;
     if (audioTestRef.current !== playback) return;
@@ -408,6 +410,7 @@ export function InterviewSetup({
       ...config,
       role: config.role.trim(),
       voice,
+      speechSpeed,
       showInterviewerCharacter: showCharacter,
       microphoneDeviceId,
       interviewSource: setupMode === "auto" ? "job" : setupMode,
@@ -757,6 +760,7 @@ export function InterviewSetup({
                     <VoicePicker
                       value={voice}
                       onChange={chooseVoice}
+                      speed={speechSpeed}
                       onSampleStart={() => { cancelAudioTest(); setAudioTestStatus({ kind: "idle" }); }}
                       disabled={!config.playInterviewerAudio}
                       disabledNote={t("Disponível com áudio. No modo somente texto o entrevistador não fala.")}

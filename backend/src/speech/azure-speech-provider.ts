@@ -1,6 +1,7 @@
 import { SpeechProviderUnavailableError } from "./errors.js";
 import { readAudioBody } from "./provider-request.js";
 import type { SpeechProvider, SpeechProviderHealth, SpeechSynthesisRequest, SynthesizedSpeech } from "./types.js";
+import { isSelectableVoice } from "./voices.js";
 
 type AzureSpeechProviderOptions = {
   key: string;
@@ -66,7 +67,7 @@ export class AzureSpeechProvider implements SpeechProvider {
             "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
             "User-Agent": "entoa-backend",
           },
-          body: `<speak version='1.0' xml:lang='en-US'><voice name='${escapeXml(this.options.voice)}'><prosody rate='${azureRate(request.speed)}'>${escapeXml(request.text)}</prosody></voice></speak>`,
+          body: `<speak version='1.0' xml:lang='en-US'><voice name='${escapeXml(isSelectableVoice(request.voice) ? request.voice : this.options.voice)}'><prosody rate='${azureRate(request.speed)}'>${escapeXml(request.text)}</prosody></voice></speak>`,
           signal: controller.signal,
         });
         if (response.ok) {
