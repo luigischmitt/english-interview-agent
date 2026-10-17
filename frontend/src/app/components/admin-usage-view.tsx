@@ -71,7 +71,7 @@ export function AdminUsageView() {
             <div className="min-w-0"><h2 id={`${source.id}-title`} className="ds-h2">{t(source.label)}</h2><Status source={source} /></div>
             <a className="ds-btn ds-btn-quiet shrink-0" href={source.consoleUrl} target="_blank" rel="noreferrer"><ExternalLink className="size-4" aria-hidden="true" /><span className="sr-only sm:not-sr-only">{t("Abrir console")}</span></a>
           </div>
-          {source.status === "not_configured" && <p className="mt-5 rounded-[var(--ds-r-lg)] bg-warning-tint px-4 py-3 text-sm leading-6 text-[color:var(--ds-warning)]">{t(setupHints[source.id] ?? source.setupHint ?? "")}</p>}
+          {source.status === "not_configured" && <p className="mt-5 rounded-[var(--ds-r-lg)] bg-warning-tint px-4 py-3 text-sm leading-6 text-[color:var(--ds-warning)]">{t(source.setupHint ?? setupHints[source.id] ?? "")}</p>}
           {source.status === "error" && <p className="mt-5 rounded-[var(--ds-r-lg)] bg-danger-tint px-4 py-3 text-sm leading-6 text-danger">{t("Não foi possível consultar este provedor agora.")}</p>}
           {source.metrics.length > 0 && <dl className="mt-5 grid gap-5">
             {source.metrics.map((metric) => <div key={metric.id}>

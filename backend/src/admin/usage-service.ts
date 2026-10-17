@@ -98,12 +98,35 @@ export class AdminUsageService {
         const body = await json(this.fetchImpl, `https://management.azure.com/${this.env.AZURE_SPEECH_RESOURCE_ID}/providers/Microsoft.Insights/metrics?${params}`, { headers: { authorization: `Bearer ${token.access_token}` } }) as { value?: Array<{ timeseries?: Array<{ data?: Array<{ total?: unknown }> }> }> };
         return body.value?.[0]?.timeseries?.flatMap((series) => series.data ?? []).reduce<number>((sum, point) => sum + (number(point.total) ?? 0), 0) ?? null;
       };
-      const [characters, seconds] = await Promise.all([metric("SynthesizedCharacters").catch(() => null), metric("AudioSecondsTranscribed").catch(() => null)]);
+      // An F0 Speech resource publishes only call counters to Azure Monitor (no characters or audio seconds), so the
+      // quota usage comes from the backend's own content-free logs: every Azure call goes through this backend.
+      const [calls, blocked, logged] = await Promise.all([metric("TotalCalls").catch(() => null), metric("BlockedCalls").catch(() => null), this.azureUsageFromLogs(window.start).catch(() => null)]);
       return { id, label, status: "ok", consoleUrl, updatedAt: this.now().toISOString(), metrics: [
-        { id: "tts_characters", label: "Caracteres de voz neural", value: characters, unit: "characters", limit: envNumber(this.env.AZURE_TTS_MONTHLY_CHAR_LIMIT, MONTHLY_TTS_LIMIT), period: "Este mês" },
-        { id: "stt_audio", label: "Áudio transcrito / avaliado", value: seconds === null ? null : seconds / 3600, unit: "hours", limit: envNumber(this.env.AZURE_STT_MONTHLY_SECONDS_LIMIT, MONTHLY_STT_LIMIT) / 3600, period: "Este mês" },
+        { id: "tts_characters", label: "Caracteres de voz neural", value: logged?.characters ?? null, unit: "characters", limit: envNumber(this.env.AZURE_TTS_MONTHLY_CHAR_LIMIT, MONTHLY_TTS_LIMIT), period: "Este mês", note: "Somado dos logs do backend" },
+        { id: "stt_audio", label: "Áudio avaliado (pronúncia)", value: logged ? logged.assessedMs / 3_600_000 : null, unit: "hours", limit: envNumber(this.env.AZURE_STT_MONTHLY_SECONDS_LIMIT, MONTHLY_STT_LIMIT) / 3600, period: "Este mês", note: "Somado dos logs do backend" },
+        { id: "total_calls", label: "Chamadas ao Azure", value: calls, unit: "calls", period: "Este mês", note: "Azure Monitor" },
+        { id: "blocked_calls", label: "Chamadas bloqueadas (cota ou limite)", value: blocked, unit: "calls", period: "Este mês", note: "Azure Monitor" },
       ] };
     } catch { return sourceError(id, label, consoleUrl); }
+  }
+
+  /** Month-to-date Azure TTS characters (`speech_usage`) and assessed audio (`azure_assessment`) from Cloud Logging. */
+  private async azureUsageFromLogs(start: string): Promise<{ characters: number; assessedMs: number }> {
+    const project = await this.gcpProjectId();
+    if (!project) throw new Error("missing GCP project");
+    const token = await this.gcpToken();
+    const filter = `resource.type="cloud_run_revision" AND resource.labels.service_name="english-interview-backend" AND timestamp>="${start}" AND ((jsonPayload.event="speech_usage" AND jsonPayload.provider="azure") OR (jsonPayload.event="azure_assessment" AND jsonPayload.assessedDurationMs>0))`;
+    let characters = 0; let assessedMs = 0; let pageToken: string | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const body = await json(this.fetchImpl, "https://logging.googleapis.com/v2/entries:list", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ resourceNames: [`projects/${project}`], filter, pageSize: 1000, ...(pageToken ? { pageToken } : {}) }) }) as { entries?: Array<{ jsonPayload?: { event?: unknown; chars?: unknown; assessedDurationMs?: unknown } }>; nextPageToken?: unknown };
+      for (const entry of body.entries ?? []) {
+        if (entry.jsonPayload?.event === "speech_usage") characters += number(entry.jsonPayload.chars) ?? 0;
+        else assessedMs += number(entry.jsonPayload?.assessedDurationMs) ?? 0;
+      }
+      if (typeof body.nextPageToken !== "string" || !body.nextPageToken) return { characters, assessedMs };
+      pageToken = body.nextPageToken;
+    }
+    throw new Error("too many log pages");
   }
 
   private async gcpToken(): Promise<string> {
@@ -138,7 +161,11 @@ export class AdminUsageService {
         return service && cost !== null ? [{ id: `service_${index}`, label: service, value: cost, unit: currency, period: "Este mês" }] : [];
       });
       return { id, label, status: "ok", consoleUrl, updatedAt: this.now().toISOString(), metrics: [{ id: "month_cost", label: "Custo no mês", value: costs.reduce((sum, cost) => sum + cost, 0), unit: currency, period: "Este mês" }, ...services] };
-    } catch { return sourceError(id, label, consoleUrl); }
+    } catch (error) {
+      // The export table only appears a few hours after the export is enabled in the Billing console.
+      if (error instanceof Error && error.message.endsWith("status 404")) return { id, label, status: "not_configured", metrics: [], consoleUrl, setupHint: "Aguardando o primeiro export: a tabela aparece algumas horas depois de ativar o export no Billing." };
+      return sourceError(id, label, consoleUrl);
+    }
   }
 
   private async gcpRun(): Promise<UsageSource> {
@@ -148,7 +175,7 @@ export class AdminUsageService {
       const token = await this.gcpToken(); const { start, end } = monthWindow(this.now());
       const query = async (metric: string) => {
         const filter = `metric.type = \"${metric}\" AND resource.type = \"cloud_run_revision\" AND (resource.labels.service_name = \"english-interview-backend\" OR resource.labels.service_name = \"english-interview-kokoro\")`;
-        const params = new URLSearchParams({ filter, intervalStartTime: start, intervalEndTime: end, "aggregation.alignmentPeriod": "86400s", "aggregation.perSeriesAligner": "ALIGN_SUM", "aggregation.groupByFields": "resource.labels.service_name" });
+        const params = new URLSearchParams({ filter, "interval.startTime": start, "interval.endTime": end, "aggregation.alignmentPeriod": "86400s", "aggregation.perSeriesAligner": "ALIGN_SUM", "aggregation.crossSeriesReducer": "REDUCE_SUM", "aggregation.groupByFields": "resource.labels.service_name" });
         const body = await json(this.fetchImpl, `https://monitoring.googleapis.com/v3/projects/${encodeURIComponent(project)}/timeSeries?${params}`, { headers: { authorization: `Bearer ${token}` } }) as { timeSeries?: Array<{ resource?: { labels?: { service_name?: unknown } }; points?: Array<{ value?: { doubleValue?: unknown; int64Value?: unknown } }> }> };
         return (body.timeSeries ?? []).map((series) => ({
           service: typeof series.resource?.labels?.service_name === "string" ? series.resource.labels.service_name : "Cloud Run",
