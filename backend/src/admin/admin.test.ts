@@ -35,11 +35,17 @@ describe("AdminUsageService", () => {
   });
 
   it("normalizes Azure Monitor, BigQuery billing, and Cloud Run Monitoring usage", async () => {
-    const fetchImpl = vi.fn(async (url: string | URL) => {
+    const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const value = String(url);
       if (value.includes("login.microsoftonline.com")) return response({ access_token: "azure-token" });
-      if (value.includes("management.azure.com") && value.includes("SynthesizedCharacters")) return response({ value: [{ timeseries: [{ data: [{ total: 1200 }] }] }] });
-      if (value.includes("management.azure.com")) return response({ value: [{ timeseries: [{ data: [{ total: 7200 }] }] }] });
+      if (value.includes("management.azure.com") && value.includes("TotalCalls")) return response({ value: [{ timeseries: [{ data: [{ total: 40 }, { total: 2 }] }] }] });
+      if (value.includes("management.azure.com")) return response({ value: [{ timeseries: [{ data: [{ total: 3 }] }] }] });
+      if (value.includes("logging.googleapis.com")) {
+        const page = JSON.parse(String(init?.body)).pageToken;
+        return page
+          ? response({ entries: [{ jsonPayload: { event: "azure_assessment", assessedDurationMs: 5_400_000 } }] })
+          : response({ entries: [{ jsonPayload: { event: "speech_usage", chars: 1000 } }, { jsonPayload: { event: "speech_usage", chars: 200 } }, { jsonPayload: { event: "azure_assessment", assessedDurationMs: 1_800_000 } }], nextPageToken: "next" });
+      }
       if (value.includes("metadata.google.internal")) return response({ access_token: "gcp-token" });
       if (value.includes("bigquery.googleapis.com")) return response({ rows: [{ f: [{ v: "Cloud Run" }, { v: "12.5" }, { v: "USD" }] }] });
       if (value.includes("billable_instance_time")) return response({ timeSeries: [{ resource: { labels: { service_name: "english-interview-backend" } }, points: [{ value: { doubleValue: 7200 } }] }] });
@@ -49,9 +55,25 @@ describe("AdminUsageService", () => {
       AZURE_MONITOR_TENANT_ID: "tenant", AZURE_MONITOR_CLIENT_ID: "client", AZURE_MONITOR_CLIENT_SECRET: "secret", AZURE_SPEECH_RESOURCE_ID: "subscriptions/x/resourceGroups/y/providers/Microsoft.CognitiveServices/accounts/z",
       GCP_BILLING_EXPORT_TABLE: "project.dataset.table", GCP_PROJECT_ID: "project",
     } }).getUsage();
-    expect(usage.sources.find((source) => source.id === "azure")).toMatchObject({ status: "ok", metrics: [expect.objectContaining({ id: "tts_characters", value: 1200 }), expect.objectContaining({ id: "stt_audio", value: 2 })] });
+    expect(usage.sources.find((source) => source.id === "azure")).toMatchObject({ status: "ok", metrics: [expect.objectContaining({ id: "tts_characters", value: 1200 }), expect.objectContaining({ id: "stt_audio", value: 2 }), expect.objectContaining({ id: "total_calls", value: 42 }), expect.objectContaining({ id: "blocked_calls", value: 3 })] });
     expect(usage.sources.find((source) => source.id === "gcp_billing")).toMatchObject({ status: "ok", metrics: expect.arrayContaining([expect.objectContaining({ id: "month_cost", value: 12.5, unit: "USD" })]) });
     expect(usage.sources.find((source) => source.id === "gcp_run")).toMatchObject({ status: "ok", metrics: expect.arrayContaining([expect.objectContaining({ id: "english_interview_backend_billable_instance_time", value: 2 }), expect.objectContaining({ id: "english_interview_backend_request_count", value: 4 })]) });
+  });
+});
+
+describe("AdminUsageService GCP edge cases", () => {
+  it("shows a missing billing export table as pending and queries Monitoring with valid parameters", async () => {
+    const urls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string | URL) => {
+      urls.push(String(url));
+      if (String(url).includes("bigquery.googleapis.com")) return response({ error: { code: 404 } }, 404);
+      return response({ timeSeries: [] });
+    }) as unknown as typeof fetch;
+    const usage = await new AdminUsageService({ fetchImpl, env: { GOOGLE_ACCESS_TOKEN: "t", GCP_PROJECT_ID: "project", GCP_BILLING_EXPORT_TABLE: "project.dataset.table" } }).getUsage();
+    expect(usage.sources.find((source) => source.id === "gcp_billing")).toMatchObject({ status: "not_configured", setupHint: expect.stringContaining("Aguardando") });
+    const monitoring = new URL(urls.find((url) => url.includes("monitoring.googleapis.com"))!);
+    expect(monitoring.searchParams.get("interval.startTime")).toBeTruthy();
+    expect(monitoring.searchParams.get("aggregation.crossSeriesReducer")).toBe("REDUCE_SUM");
   });
 });
 
