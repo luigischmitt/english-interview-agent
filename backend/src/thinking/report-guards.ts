@@ -317,3 +317,12 @@ export function isLowContentAnswer(answer: string): boolean {
 
 /** Fewer meaningful words than this leave nothing to analyze ("I used AWS."); the shortest real error samples have five. */
 const minimumAnalyzableWords = 4;
+
+/**
+ * A capture fragment below this threshold cannot establish technical knowledge or an English pattern.
+ * Count all spoken-word tokens: unlike isLowContentAnswer this is deliberately not a semantic judgment.
+ */
+export function isNearEmptyAnswer(answer: string): boolean {
+  const words = answer.match(/[\p{L}\p{N}]+(?:['’][\p{L}]+)?/gu) ?? [];
+  return words.length < 6;
+}

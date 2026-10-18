@@ -22,6 +22,10 @@ export type TranscriptionConfig = {
   pauseMs: number;
   answerGraceMs: number;
   incompleteGraceMs: number;
+  /** A committed transcript below minAnswerWords keeps this longer grace, even if it looks complete. */
+  shortAnswerGraceMs: number;
+  /** Minimum committed transcript words required for turn-end or semantic completion. */
+  minAnswerWords: number;
   prepareAfterMs: number;
   maxPrepares: number;
   semanticEndEnabled: boolean;
@@ -111,6 +115,8 @@ export function loadTranscriptionConfig(environment = process.env): Transcriptio
     pauseMs: parseIntegerInRange(environment.TRANSCRIPTION_PAUSE_MS, 800, 300, 3_000, "Transcription pause"),
     answerGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_ANSWER_GRACE_MS, 3_500, 500, 10_000, "Answer grace"),
     incompleteGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_INCOMPLETE_GRACE_MS, 6_000, 500, 15_000, "Incomplete-turn grace"),
+    shortAnswerGraceMs: parseIntegerInRange(environment.TRANSCRIPTION_SHORT_ANSWER_GRACE_MS, 10_000, 500, 30_000, "Short-answer grace"),
+    minAnswerWords: parseIntegerInRange(environment.TRANSCRIPTION_MIN_ANSWER_WORDS, 6, 1, 20, "Minimum answer words"),
     prepareAfterMs: parseIntegerInRange(environment.TRANSCRIPTION_PREPARE_AFTER_MS, 1_200, 0, 10_000, "Prepare delay"),
     maxPrepares: parseIntegerInRange(environment.TRANSCRIPTION_MAX_PREPARES, 12, 0, 12, "Max prepares"),
     semanticEndEnabled: environment.TRANSCRIPTION_SEMANTIC_END_ENABLED?.trim().toLowerCase() !== "false",

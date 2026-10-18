@@ -3,7 +3,7 @@ import { ThinkingServiceError } from "./errors.js";
 import { isDegenerateProviderOutput } from "./report-degeneration.js";
 import { parseApprovedJobDirection } from "./job-direction-validation.js";
 import { parseOpenRouterUsage, type OpenRouterUsage, type OpenRouterUsagePayload } from "./openrouter-usage.js";
-import { analyzeEnglishEdit, checkGrammarRuleLabel, isGenericExercise, isLowContentAnswer, hasBrokenSentenceBoundary, isLikelyTranscriptionArtifactEdit, isLikelyTranscriptionArtifactRephrase, isOffQuestionIntegrationItem, isIdiomaticOnRewritten, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
+import { analyzeEnglishEdit, checkGrammarRuleLabel, isGenericExercise, isLowContentAnswer, isNearEmptyAnswer, hasBrokenSentenceBoundary, isLikelyTranscriptionArtifactEdit, isLikelyTranscriptionArtifactRephrase, isOffQuestionIntegrationItem, isIdiomaticOnRewritten, isRephraseUnchanged, isUngrammaticalRephrase, suggestsFixingNames } from "./report-guards.js";
 import {
   communicationClarities,
   communicationObservationTypes,
@@ -33,6 +33,7 @@ const promptRules = {
   why: "For every English pattern, include why: one specific short sentence (maximum 170 characters) in the report locale explaining why Brazilian Portuguese speakers tend to make this exact mistake. Ground it in the cited evidence and contrast with Brazilian Portuguese when useful; never use a generic explanation. Examples: literal translation of depender de produces 'depend of' (Portuguese uses de); fazer uma pergunta maps literally to 'make a question' (English collocates ask); a missing English article can reflect Portuguese article use and countability not mapping one-to-one; 'actually' mistaken for atualmente is a false cognate; 'I have 20 years' mirrors 'tenho 20 anos'; 'discuss about' carries over the preposition used in Portuguese; 'pretend' for pretender transfers a false cognate; 'people is' can follow the singular form of gente. Write this sentence in Brazilian Portuguese by default, or English when locale is en. Keep it specific to the actual evidence, respectful, and concise.",
   patternTypes: "Choose each pattern type by its definition, not by topic. GRAMMAR: tense or aspect (for example, present perfect with since/for: \"I live in Recife since 2019\"), subject-verb agreement (\"the servers was down\"), articles, prepositions of time or place, verb forms (-ing after prepositions such as before/after: \"after deploy the fix\"), and plurals. WORD_CHOICE: a real English word used with the wrong meaning or an unnatural collocation that changes or obscures the meaning (not a mere synonym). FALSE_COGNATE: only when a word is used with the meaning of a similar Portuguese word (for example, actually for atualmente, pretend for pretender, realize for realizar); never use it for grammar. STRUCTURE: sentence or answer organization that hurts clarity (run-on sentences, missing subject or verb, confusing order), never commas.",
   whisper: "Whisper transcripts can contain recognition errors. Do not criticize isolated acronyms, names, technical terms, fillers, repeated syllables, phonetic fragments, or phrases that look incomplete or nonsensical. An English finding must be supported by a complete, understandable phrase with a clear language issue; when unsure whether the phrase was recognized correctly, omit it. Never cite a fragment that may be a recognition error as a technical gap, a priority or evidence for low clarity: a transcription error must never become the candidate's error. Before citing any excerpt, check that it is plausible: if it contains an implausible word, garbled syntax, a stutter or a likely mis-hearing (for example \"stained\" for trained, \"super base\" or \"Superbase\" for Supabase, \"Versal\" for Vercel, \"to hospital\" for to host), never use it as a technical gap, a strength or an English pattern. Never treat a mis-transcribed product or technology name as an error. Never treat a mis-transcribed project name as an error either: for example, Whisper may split \"Rancho\" into the common words \"run show\". Do not use a mis-transcribed name in the summary. Do not lower clarity because of garbled, incomplete or nonsensical fragments; judge clarity only from complete, understandable phrases.",
+  nearEmpty: "An answer with fewer than six words may be an interruption or capture failure, not lack of knowledge. Treat it as not answered: never derive a technical gap, English pattern, priority, or interviewerTakeaway concern from it. Do not blame the candidate for a system cut or missing capture.",
   noInfer: "Do not infer vocal delivery, pronunciation, accent, fluency of speech, confidence, or pauses from text. Do not invent numeric scores, English levels, evidence, or facts.",
   concision: "Keep every user-facing text field concise and complete: summary 2–3 short sentences (maximum 420 characters) assessing specifically what you explained well technically, what was thin, your overall English clarity, and the single most important improvement; address you directly, use no scores. Overview technical and english are each one short sentence (maximum 160 characters) with qualitative verdicts and no numbers. Each explanation and suggestion one short sentence (about 8–18 words), each focus one actionable complete sentence, each priority tip a concrete sentence (maximum 140 characters) describing what to say differently next time, never an exercise, and each corrected example one complete English sentence. Stay below every field limit. End sentences with punctuation. Evidence fields are exact excerpts and do not need sentence punctuation.",
   takeaway: "Include interviewerTakeaway {remember, concern}, or null when unsupported. Each takeaway field is one specific second-person sentence in the report locale (maximum 170 characters), grounded in validated findings, with no scores or levels. The server will omit the field when invalid.",
@@ -60,14 +61,14 @@ const systemPrompt = Object.values(promptRules).join(" ");
 
 const turnAnalysisPrompt = [
   "You analyze one answer from a technical job interview practice session conducted in English. A later step consolidates the per-answer analyses into the final report.",
-  promptRules.technical, promptRules.factual, promptRules.language, promptRules.second, promptRules.audit, promptRules.patterns, promptRules.why, promptRules.patternTypes, promptRules.whisper, promptRules.noInfer, promptRules.concision, promptRules.untrusted,
+  promptRules.technical, promptRules.factual, promptRules.language, promptRules.second, promptRules.audit, promptRules.patterns, promptRules.why, promptRules.patternTypes, promptRules.whisper, promptRules.nearEmpty, promptRules.noInfer, promptRules.concision, promptRules.untrusted,
   "The user message holds exactly one question and answer pair. Return technicalStrengths (the technicalContent.strengths rules), technicalGaps (the technicalContent.gaps rules) and englishPatterns (the English patterns rules) for that pair only, citing its sequenceNumber. Return at most 2 strengths, 1 material gap and 3 English patterns, keeping the highest-impact ones; empty arrays are valid when no clear error exists, but do not omit a clear error from a clean span merely because a different span may be a transcription artifact. Do not write a summary or priorities.",
   promptRules.vacancy,
 ].join(" ");
 
 const consolidationPrompt = [
   "You finish the final report of a technical job interview practice session conducted in English. Each answer was already analyzed; the user message holds the role context, the question and answer pairs, and the validated findings (technicalStrengths, technicalGaps, englishPatterns).",
-  promptRules.factual, promptRules.summary, promptRules.language, promptRules.second, promptRules.whisper, promptRules.noInfer, promptRules.concision, promptRules.takeaway,
+  promptRules.factual, promptRules.summary, promptRules.language, promptRules.second, promptRules.whisper, promptRules.nearEmpty, promptRules.noInfer, promptRules.concision, promptRules.takeaway,
   "Return only: summary, optional overview, interviewerTakeaway {remember, concern}, clarity, coveredGapIndexes, and priorities. interviewerTakeaway has two specific second-person sentences (max 170 characters each), respectively the positive impression and main concern an interviewer would remember, grounded only in validated findings, with no scores or levels. Omit this optional field when unsupported or invalid. Summary remains 2–3 short sentences (max 420 characters), second person, with no scores. Do not repeat or rewrite findings.",
   "Each technical gap was found by reading one answer alone. In coveredGapIndexes list the index of every validated technicalGaps item whose missing point the candidate explicitly explains in another answer of this session (for example a gap \"did not explain how tests are maintained\" when a later answer describes page objects and fixtures). List only clear cases; return [] when none. Never build a priority on a covered gap.",
   promptRules.priorities,
@@ -414,7 +415,7 @@ function validateTechnicalItems(items: unknown[], answerFor: AnswerLookup, count
     // Only an exact approved competency survives; an invented one, or any link on a session without a direction, is
     // dropped from the finding (the finding itself is still judged on its evidence).
     const vacancyCompetency = typeof item.vacancyCompetency === "string" && jobDirection?.priorityCompetencies.includes(item.vacancyCompetency) ? item.vacancyCompetency : undefined;
-    if (!answer || !evidence) { counts.rejectionReasons.mismatch += 1; return []; }
+    if (!answer || !evidence || (kind === "gap" && isNearEmptyAnswer(answer))) { counts.rejectionReasons.mismatch += 1; return []; }
     if (likelyTranscriptionArtifact(evidence)) { counts.rejectionReasons.artifact += 1; return []; }
     if (!explanation || (kind === "strength" && isTrivialStrength(explanation))) { counts.rejectionReasons.invalidFormat += 1; return []; }
     // A gap about how something was integrated or implemented is unfair when the question never asked for it.
@@ -436,7 +437,7 @@ function validatePatternCandidates(items: unknown[], answerFor: AnswerLookup, co
       counts.rejectionReasons.invalidFormat += 1; return [];
     }
     const evidence = answer ? resolveCanonicalEvidence(answer, item.evidence, 160) : undefined;
-    if (!answer || !evidence) { counts.rejectionReasons.mismatch += 1; return []; }
+    if (!answer || !evidence || isNearEmptyAnswer(answer)) { counts.rejectionReasons.mismatch += 1; return []; }
     if (likelyTranscriptionArtifact(evidence)) { counts.rejectionReasons.artifact += 1; return []; }
     const suggestion = localizedField(normalizeFeedbackSentence(item.suggestion, 200, 4), locale);
     const why = localizedField(normalizeFeedbackSentence(item.why, 170, 1), locale);
@@ -487,7 +488,7 @@ function validatePriorities(items: unknown[], answerFor: AnswerLookup, counts: M
     const answer = answerFor(item.sequenceNumber);
     if (!boundedString(item.evidence, 120)) { counts.rejectionReasons.invalidFormat += 1; return []; }
     const evidence = answer ? resolveCanonicalEvidence(answer, item.evidence, 120) : undefined;
-    if (!answer || !evidence) { counts.rejectionReasons.mismatch += 1; return []; }
+    if (!answer || !evidence || isNearEmptyAnswer(answer)) { counts.rejectionReasons.mismatch += 1; return []; }
     if (likelyTranscriptionArtifact(evidence)) { counts.rejectionReasons.artifact += 1; return []; }
     const normalizedExercise = typeof item.exercise === "string" ? localizedField(normalizeFeedbackSentence(item.exercise, 140, 1), locale) : undefined;
     const exercise = normalizedExercise && !isGenericExercise(normalizedExercise) ? normalizedExercise : undefined;

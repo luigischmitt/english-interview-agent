@@ -88,4 +88,33 @@ describe("interview report focus lens", () => {
     expect(result.report?.technicalContent.gaps).toEqual([]);
     expect(result.report?.evidenceReview?.technicalGaps).toMatchObject({ candidates: 1, accepted: 0, rejected: 1 });
   });
+
+  it("drops gaps, English patterns, and priorities tied to a near-empty answer", () => {
+    const result = evaluateInterviewReportProviderOutput(JSON.stringify({
+      technicalContent: {
+        summary: "You started an answer.",
+        strengths: [],
+        gaps: [{ sequenceNumber: 1, evidence: "So", explanation: "You did not explain the technique.", vacancyCompetency: null }],
+      },
+      englishCommunication: {
+        clarity: "MOSTLY_CLEAR",
+        patterns: [{ type: "STRUCTURE", sequenceNumber: 1, evidence: "So", suggestion: "Use a complete sentence.", why: "A fragment cannot show the intended structure.", rephrasedExample: "So, I would start with the data." }],
+      },
+      priorities: [{ area: "TECHNICAL_CONTENT", sequenceNumber: 1, evidence: "So", focus: "Explain the technique.", exercise: null, vacancyCompetency: null }],
+    }), {
+      locale: "en",
+      roleContext: { targetRole: "Backend Engineer", focus: "technical-depth" },
+      turns: [{ sequenceNumber: 1, question: "How would you approach it?", answer: "So" }],
+    });
+
+    expect(result.report).not.toBeNull();
+    expect(result.report?.technicalContent.gaps).toEqual([]);
+    expect(result.report?.englishCommunication.patterns).toEqual([]);
+    expect(result.report?.priorities).toEqual([]);
+    expect(result.report?.evidenceReview).toMatchObject({
+      technicalGaps: { candidates: 1, accepted: 0, rejected: 1 },
+      englishPatterns: { candidates: 1, accepted: 0, rejected: 1 },
+      priorities: { candidates: 1, accepted: 0, rejected: 1 },
+    });
+  });
 });
