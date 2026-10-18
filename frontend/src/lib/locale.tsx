@@ -244,7 +244,6 @@ const englishCopy: Record<string, string> = {
   "Em inglês, observe": "In English, watch for",
   "Seu próximo relatório vai mostrar o padrão de inglês que mais vale observar.": "Your next report will show the English pattern most worth watching.",
   "Um foco de cada vez": "One focus at a time",
-  "Treinar minha voz": "Practice my voice",
   "No seu ritmo": "At your own pace",
   "Entrevistas concluídas": "Completed interviews",
   "Padrão de inglês para observar": "English pattern to watch",
