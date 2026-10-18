@@ -35,15 +35,17 @@ describe("AdminUsageService", () => {
   });
 
   it("normalizes Azure Monitor, BigQuery billing, and Cloud Run Monitoring usage", async () => {
+    let loggingFilter = "";
     const fetchImpl = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const value = String(url);
       if (value.includes("login.microsoftonline.com")) return response({ access_token: "azure-token" });
       if (value.includes("management.azure.com") && value.includes("TotalCalls")) return response({ value: [{ timeseries: [{ data: [{ total: 40 }, { total: 2 }] }] }] });
       if (value.includes("management.azure.com")) return response({ value: [{ timeseries: [{ data: [{ total: 3 }] }] }] });
       if (value.includes("logging.googleapis.com")) {
+        loggingFilter = JSON.parse(String(init?.body)).filter;
         const page = JSON.parse(String(init?.body)).pageToken;
         return page
-          ? response({ entries: [{ jsonPayload: { event: "azure_assessment", assessedDurationMs: 5_400_000 } }] })
+          ? response({ entries: [{ jsonPayload: { event: "practice_assessment", assessedDurationMs: 5_400_000 } }] })
           : response({ entries: [{ jsonPayload: { event: "speech_usage", chars: 1000 } }, { jsonPayload: { event: "speech_usage", chars: 200 } }, { jsonPayload: { event: "azure_assessment", assessedDurationMs: 1_800_000 } }], nextPageToken: "next" });
       }
       if (value.includes("metadata.google.internal")) return response({ access_token: "gcp-token" });
@@ -56,6 +58,7 @@ describe("AdminUsageService", () => {
       GCP_BILLING_EXPORT_TABLE: "project.dataset.table", GCP_PROJECT_ID: "project",
     } }).getUsage();
     expect(usage.sources.find((source) => source.id === "azure")).toMatchObject({ status: "ok", metrics: [expect.objectContaining({ id: "tts_characters", value: 1200 }), expect.objectContaining({ id: "stt_audio", value: 2 }), expect.objectContaining({ id: "total_calls", value: 42 }), expect.objectContaining({ id: "blocked_calls", value: 3 })] });
+    expect(loggingFilter).toContain('jsonPayload.event="practice_assessment"');
     expect(usage.sources.find((source) => source.id === "gcp_billing")).toMatchObject({ status: "ok", metrics: expect.arrayContaining([expect.objectContaining({ id: "month_cost", value: 12.5, unit: "USD" })]) });
     expect(usage.sources.find((source) => source.id === "gcp_run")).toMatchObject({ status: "ok", metrics: expect.arrayContaining([expect.objectContaining({ id: "english_interview_backend_billable_instance_time", value: 2 }), expect.objectContaining({ id: "english_interview_backend_request_count", value: 4 })]) });
   });
