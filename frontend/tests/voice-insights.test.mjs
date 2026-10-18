@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPracticeWordList, buildVoiceEvolution, buildVoiceInsights, buildVoicePracticePlan, encodeWav16Mono, likelyTranscriptionArtifact, normalizePracticeSentenceCapitalization, readPracticeAttempts, savePracticeAttempt } from "../src/lib/interview/voice-insights.mjs";
+import { buildPracticeWordList, buildVoiceEvolution, buildVoiceInsights, buildVoiceLesson, buildVoicePracticePlan, encodeWav16Mono, likelyTranscriptionArtifact, normalizePracticeSentenceCapitalization, readPracticeAttempts, savePracticeAttempt } from "../src/lib/interview/voice-insights.mjs";
 
 const metric = (mean, totalDurationMs = 25_000) => ({ mean, sampleCount: 1, totalDurationMs });
 const record = (id, completedAt, scores, answers = []) => ({ id, completedAt, createdAt: completedAt, feedback: { status: "ready", azureSummary: { accuracy: metric(scores.accuracy), fluency: metric(scores.fluency), prosody: metric(scores.prosody), answers } } });
@@ -50,6 +50,38 @@ test("keeps the empty state honest when no voice data exists", () => {
   const insights = buildVoiceInsights([{ id: "empty", completedAt: "2026-04-01", createdAt: "2026-04-01", feedback: null }]);
   assert.equal(insights.hasVoiceData, false);
   assert.equal(insights.focus, null);
+});
+
+test("builds lessons with only evidence-backed personal guidance", () => {
+  const answer = { sequenceNumber: 1, delivery: { wordsPerMinute: 180, fillers: { um: 2 } }, phrases: [
+    phrase(0, "I worked with this team", "pronunciation", [{ word: "worked", score: 40, worstPhoneme: "t", prosodyErrors: [] }]),
+    phrase(1, "The result was reliable", "intonation", [{ word: "reliable", score: 50, worstPhoneme: null, prosodyErrors: ["Monotone"] }]),
+  ] };
+  const data = [record("latest", "2026-04-01", { accuracy: 60, fluency: 55, prosody: 50 }, [answer])];
+  const accuracy = buildVoiceLesson(data, "accuracy");
+  assert.equal(accuracy.example.text, "I worked with the team.");
+  assert.deepEqual(accuracy.personalized[0], { key: "Na família {family}, seus exemplos são {words}.", values: { family: "Final -ed (worked, used)", words: "“worked”" } });
+  assert.equal(buildVoiceLesson(data, "fluency").personalized.length, 2);
+  assert.deepEqual(buildVoiceLesson(data, "prosody").personalized[0], { key: "Suas palavras com sinais de prosódia são {words}.", values: { words: "“reliable”" } });
+  assert.equal(buildVoiceLesson([], "prosody").personalized.length, 0);
+});
+
+test("does not put generic coaching in personal guidance", () => {
+  const data = [record("latest", "2026-04-01", { accuracy: 60, fluency: 55, prosody: 50 }, [{ sequenceNumber: 1, delivery: { wordsPerMinute: 180, pauseCount: 8 }, phrases: [
+    phrase(0, "The result was clear", "intonation", [{ word: "clear", score: 50, prosodyErrors: ["Monotone"] }]),
+    phrase(1, "The migration reduced costs", "intonation", []),
+    phrase(2, "We shipped it safely", "pronunciation", [{ word: "shipped", score: 60, prosodyErrors: ["UnexpectedBreak"] }]),
+  ] }])];
+  assert.deepEqual(buildVoiceLesson(data, "fluency").personalized, [
+    { key: "Seu ritmo recente foi de {wpm} palavras por minuto nas respostas avaliadas.", values: { wpm: "180" } },
+  ]);
+  const prosodyPersonalized = buildVoiceLesson(data, "prosody").personalized;
+  assert.deepEqual(prosodyPersonalized, [
+    { key: "Suas palavras com sinais de prosódia são {words}.", values: { words: "“clear”, “shipped”" } },
+    { key: "Em {count} frases suas a entonação ficou plana.", values: { count: 2 } },
+  ]);
+  assert.equal(prosodyPersonalized.some((tip) => typeof tip === "string"), false);
+  assert.equal(buildVoiceLesson([], "accuracy").personalized.length, 0);
 });
 
 test("creates a stable daily practice plan from corrected report sentences before complete saved answers", () => {

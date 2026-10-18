@@ -10,6 +10,15 @@
 .vv-disclaimer { max-width: 74ch; margin-top: 0.875rem; color: var(--ds-text-2); }
 .vv-section { scroll-margin-top: 1rem; }
 .vv-section > .ds-h2 { margin-bottom: 0.875rem; }
+.vv-lesson { max-width: 46rem; }
+.vv-lesson-measure { max-width: 62ch; margin-top: 1rem; }
+.vv-lesson-detail { margin-top: 1.25rem; }
+.vv-lesson-detail ul { display: grid; gap: 0.5rem; max-width: 68ch; margin-top: 0.5rem; padding-left: 1.125rem; color: var(--ds-text-2); font-size: 0.875rem; line-height: 1.55; }
+.vv-lesson-detail li::marker { color: var(--ds-green); }
+.vv-lesson-example { display: flex; align-items: flex-start; flex-direction: column; gap: 0.5rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--ds-line); }
+.vv-lesson-example p { margin-top: 0.25rem; color: var(--ds-ink); font-size: 1rem; line-height: 1.5; }
+.vv-lesson-example strong { color: var(--ds-green-deep); font-weight: 700; }
+.vv-practice-now { margin-top: 0.75rem; padding-left: 0; }
 .vv-empty { display: grid; justify-items: start; gap: 0.875rem; }
 .vv-training { padding: clamp(1.25rem, 3vw, 2rem); }
 .vv-training-top, .vv-training-actions, .vv-word-actions, .vv-before-now > div { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
