@@ -58,7 +58,8 @@ test("the warm bird accent keeps 3:1 contrast on light and dark app surfaces", (
 test("authenticated Home carries its Brazilian signature and retains its optimized forest detail", () => {
   assert.match(home, /Feito no Brasil, para vaga lá fora/u);
   assert.doesNotMatch(home, /data-home-item=/u);
-  assert.match(home, /src="\/landing\/footer-mata-alpha\.png"[\s\S]+alt=""[\s\S]+aria-hidden="true"[\s\S]+fill/u);
+  assert.match(home, /src="\/landing\/hero-mata\.png"[\s\S]+alt=""[\s\S]+fill[\s\S]+priority/u);
+  assert.doesNotMatch(home, /ds-card shl-home/u);
   assert.match(shell, /\.shl-nav-item\[aria-current="page"\] svg \{ color: var\(--ds-green\); \}/u);
   assert.match(shell, /\.shl-mobile-item\[aria-current="page"\] svg \{ color: var\(--ds-green\); \}/u);
   assert.doesNotMatch(shell, /data-home-item="true"\]\[aria-current="page"\]/u);
