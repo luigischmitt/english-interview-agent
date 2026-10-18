@@ -110,18 +110,18 @@ export class AdminUsageService {
     } catch { return sourceError(id, label, consoleUrl); }
   }
 
-  /** Month-to-date Azure TTS characters (`speech_usage`) and assessed audio (`azure_assessment`) from Cloud Logging. */
+  /** Month-to-date Azure TTS characters and assessed audio (`azure_assessment` and `practice_assessment`) from Cloud Logging. */
   private async azureUsageFromLogs(start: string): Promise<{ characters: number; assessedMs: number }> {
     const project = await this.gcpProjectId();
     if (!project) throw new Error("missing GCP project");
     const token = await this.gcpToken();
-    const filter = `resource.type="cloud_run_revision" AND resource.labels.service_name="english-interview-backend" AND timestamp>="${start}" AND ((jsonPayload.event="speech_usage" AND jsonPayload.provider="azure") OR (jsonPayload.event="azure_assessment" AND jsonPayload.assessedDurationMs>0))`;
+    const filter = `resource.type="cloud_run_revision" AND resource.labels.service_name="english-interview-backend" AND timestamp>="${start}" AND ((jsonPayload.event="speech_usage" AND jsonPayload.provider="azure") OR ((jsonPayload.event="azure_assessment" OR jsonPayload.event="practice_assessment") AND jsonPayload.assessedDurationMs>0))`;
     let characters = 0; let assessedMs = 0; let pageToken: string | undefined;
     for (let page = 0; page < 20; page += 1) {
       const body = await json(this.fetchImpl, "https://logging.googleapis.com/v2/entries:list", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ resourceNames: [`projects/${project}`], filter, pageSize: 1000, ...(pageToken ? { pageToken } : {}) }) }) as { entries?: Array<{ jsonPayload?: { event?: unknown; chars?: unknown; assessedDurationMs?: unknown } }>; nextPageToken?: unknown };
       for (const entry of body.entries ?? []) {
         if (entry.jsonPayload?.event === "speech_usage") characters += number(entry.jsonPayload.chars) ?? 0;
-        else assessedMs += number(entry.jsonPayload?.assessedDurationMs) ?? 0;
+        else if (entry.jsonPayload?.event === "azure_assessment" || entry.jsonPayload?.event === "practice_assessment") assessedMs += number(entry.jsonPayload?.assessedDurationMs) ?? 0;
       }
       if (typeof body.nextPageToken !== "string" || !body.nextPageToken) return { characters, assessedMs };
       pageToken = body.nextPageToken;
