@@ -11,12 +11,11 @@ import {
   Gauge,
   Leaf,
   LineChart,
+  MicVocal,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
-  Shuffle,
   SlidersHorizontal,
-  Target,
   Video,
   Volume2,
 } from "lucide-react";
@@ -32,6 +31,10 @@ import { readStoredInterviewerSpeechSpeed, storeInterviewerSpeechSpeed } from "@
 import { DEFAULT_INTERVIEWER_VOICE } from "@/lib/interview/voices.mjs";
 import { readStoredInterviewerCharacter, storeInterviewerCharacter } from "@/lib/interview/interviewer-character-preference.mjs";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
+import { loadProgressRecords } from "@/lib/interview/persistence";
+import { buildHomeInsights } from "@/lib/interview/home-insights.mjs";
+import { getHomeParallaxOffset } from "@/lib/home-motion.mjs";
+import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { useLocale } from "@/lib/locale";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 
@@ -102,24 +105,6 @@ const viewTrail: Record<View, readonly [string, string?]> = {
   settings: ["Configurações"],
   "admin-usage": ["Custos e limites"],
 };
-
-const warmUpPrompts = [
-  {
-    topic: "Technical decision",
-    question: "Tell me about a technical decision you made with incomplete information.",
-    cue: "Start with the constraint, then name the trade-off you chose.",
-  },
-  {
-    topic: "Collaboration",
-    question: "Describe a time you helped a team move through a difficult disagreement.",
-    cue: "Give the context first. Then show what changed because of your contribution.",
-  },
-  {
-    topic: "Impact",
-    question: "What is a project where your work made a meaningful difference?",
-    cue: "Pick one concrete result and connect it to the decision behind it.",
-  },
-] as const;
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
@@ -317,87 +302,186 @@ const pageMain = "mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py
 function HomeView({
   onStart,
   onProgress,
+  onVoice,
 }: {
   onStart: () => void;
   onProgress: () => void;
+  onVoice: () => void;
 }) {
-  const { t } = useLocale();
-  const [promptIndex, setPromptIndex] = useState(0);
-  const prompt = warmUpPrompts[promptIndex];
+  const { locale, t } = useLocale();
+  const homeRef = useRef<HTMLElement>(null);
+  const artRef = useRef<HTMLDivElement>(null);
+  const cachedRecords = readDashboardCache("progress") as ProgressRecord[] | undefined;
+  const [records, setRecords] = useState<ProgressRecord[]>(() => cachedRecords ?? []);
+  const [isLoading, setIsLoading] = useState(!cachedRecords);
+  const insights = buildHomeInsights(records);
+  const hasInterviews = insights.interviewCount > 0;
+  const lastInterviewDate = insights.lastInterviewAt
+    ? new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", year: "numeric" }).format(new Date(insights.lastInterviewAt))
+    : null;
+
+  useEffect(() => {
+    let active = true;
+    void loadProgressRecords().then((result) => {
+      if (!active) return;
+      if (result.ok) setRecords(result.value);
+      setIsLoading(false);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const targets = homeRef.current?.querySelectorAll<HTMLElement>("[data-home-reveal]");
+    if (!targets?.length || !("IntersectionObserver" in window)) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.setAttribute("data-revealed", "true");
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.12 });
+
+    targets.forEach((target) => {
+      target.setAttribute("data-reveal-ready", "true");
+      observer.observe(target);
+    });
+    return () => observer.disconnect();
+  }, [hasInterviews, isLoading]);
+
+  useEffect(() => {
+    const art = artRef.current;
+    if (!art || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      if (!window.matchMedia("(min-width: 1024px)").matches) {
+        art.style.transform = "none";
+        return;
+      }
+      const offset = getHomeParallaxOffset(art.getBoundingClientRect().top, window.innerHeight);
+      art.style.transform = `translate3d(0, ${offset}px, 0)`;
+    };
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, []);
 
   return (
-    <main id="main-content" className={pageMain}>
-      <PageIntro
-        title={t("Vamos praticar?")}
-        description={t("Monte uma entrevista para o cargo que você busca e responda em inglês.")}
-      />
-
-      <div className="mt-8 grid items-start gap-5 lg:mt-10 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:gap-6">
-        {/* Primary action: the one thing to do here. */}
-        <section className="shl-hero ds-enter p-6 sm:p-8" style={{ "--i": 0 } as CSSProperties} aria-labelledby="start-title">
+    <main ref={homeRef} id="main-content" className={`${pageMain} shl-home`}>
+      <section className="shl-home-hero" aria-labelledby="home-title">
+        <div className="shl-home-hero-copy" data-home-reveal>
+          <p className="shl-home-kicker">
+            <MicVocal className="size-4" aria-hidden="true" /> {t("Vamos praticar?")}
+          </p>
+          <h1 id="home-title" className="shl-home-title">
+            {t("Sua próxima entrevista começa aqui.")}
+          </h1>
+          <p className="shl-home-subcopy">
+            {t("Pratique em voz alta e leve mais clareza para a próxima conversa.")}
+          </p>
+          <button type="button" className="ds-btn ds-btn-cta-green shl-home-primary" onClick={onStart}>
+            <Play className="size-4 fill-current" aria-hidden="true" /> {t("Começar entrevista")}
+          </button>
+          <p className="shl-home-signature">
+            <Leaf className="size-3.5" aria-hidden="true" /> {t("Feito no Brasil, para vaga lá fora")}
+          </p>
+        </div>
+        <div ref={artRef} className="shl-home-hero-art" aria-hidden="true">
           <Image
-            src="/landing/footer-mata-alpha.png"
+            src="/landing/hero-mata.png"
             alt=""
-            aria-hidden="true"
             fill
-            sizes="(max-width: 639px) 100vw, 60vw"
+            sizes="(max-width: 767px) 100vw, 50vw"
+            priority
             className="shl-hero-forest"
           />
-          <h2 id="start-title" className="text-balance font-[family-name:var(--font-display)] text-[clamp(1.875rem,1.4rem+1.6vw,2.375rem)] leading-[1.1] tracking-[-0.02em]">
-            {t("Prepare sua prática.")}
-          </h2>
-          <p className="shl-hero-muted mt-3 max-w-[48ch] text-[0.9375rem] leading-6">
-            {t("Escolha o cargo e o foco. Na entrevista, as perguntas aparecem em texto e também podem ser lidas em voz alta.")}
-          </p>
-          <button type="button" className="ds-btn ds-btn-cta mt-7" onClick={onStart}>
-            <Play className="size-4 fill-current" aria-hidden="true" /> {t("Começar prática")}
-          </button>
-          <dl className="shl-hero-facts mt-8 grid gap-2 text-sm sm:grid-cols-3">
-            <div><dt className="shl-hero-muted text-xs">{t("Modo")}</dt><dd className="font-medium">{t("Inglês, respostas faladas")}</dd></div>
-            <div><dt className="shl-hero-muted text-xs">{t("Foco")}</dt><dd className="font-medium">{t("Escolha na configuração")}</dd></div>
-            <div><dt className="shl-hero-muted text-xs">{t("Sala")}</dt><dd className="font-medium">{t("Você responde no seu ritmo e escolhe quando ver as legendas.")}</dd></div>
-          </dl>
-          <p className="mt-5 flex items-center gap-2 text-xs font-medium tracking-[0.01em] shl-hero-muted">
-            <Leaf className="size-3.5 shrink-0 text-[color:var(--ds-brand-warm)]" aria-hidden="true" />
-            {t("Feito no Brasil, para vaga lá fora")}
-          </p>
-        </section>
+        </div>
+      </section>
 
-        {/* Optional: a single warm-up question. */}
-        <aside className="ds-card ds-enter p-5 sm:p-6" style={{ "--i": 1 } as CSSProperties} aria-labelledby="warm-up-title">
-          <div className="flex items-start gap-3">
-            <span className="shl-icon-tile" aria-hidden="true"><Target className="size-5" /></span>
-            <div className="min-w-0">
-              <h2 id="warm-up-title" className="ds-h2">{t("Aquecimento opcional")}</h2>
-              <p className="ds-small mt-1">{t("Use uma pergunta para começar a pensar em inglês.")}</p>
-            </div>
+      {isLoading ? (
+        <section className="shl-home-flow" aria-live="polite" data-home-reveal>
+          <p className="shl-home-label">{t("Organizando seu histórico")}</p>
+          <div className="mt-6 max-w-xl space-y-3">
+            <div className="skeleton h-4 w-2/3" />
+            <div className="skeleton h-4 w-full" />
           </div>
-          <div aria-live="polite" className="shl-well mt-5">
-            <div key={promptIndex} className="ds-enter">
-              <p className="ds-hint font-semibold tabular-nums text-green">{prompt.topic}</p>
-              <p lang="en" className="mt-1.5 text-base font-medium leading-6 tracking-[-0.005em] text-ink">{prompt.question}</p>
-              <p lang="en" className="ds-small mt-3">{prompt.cue}</p>
-            </div>
-          </div>
-          <button type="button" onClick={() => setPromptIndex((promptIndex + 1) % warmUpPrompts.length)} className="ds-btn ds-btn-soft mt-4">
-            <Shuffle className="size-4" aria-hidden="true" /> {t("Outra pergunta")}
-          </button>
-        </aside>
-
-        {/* Secondary destination. */}
-        <section className="ds-card ds-enter flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6 lg:col-span-2" style={{ "--i": 2 } as CSSProperties} aria-labelledby="history-title">
-          <div className="flex items-start gap-3">
-            <span className="shl-icon-tile" aria-hidden="true"><LineChart className="size-5" /></span>
-            <div>
-              <h2 id="history-title" className="ds-h2">{t("Confira seu histórico de prática.")}</h2>
-              <p className="ds-small mt-1">{t("Veja as sessões que você já concluiu.")}</p>
-            </div>
-          </div>
-          <button type="button" className="ds-btn ds-btn-soft w-fit shrink-0" onClick={onProgress}>
-            {t("Ver progresso")} <ArrowUpRight className="size-4" aria-hidden="true" />
-          </button>
         </section>
-      </div>
+      ) : hasInterviews ? (
+        <>
+          <section className="shl-home-flow" aria-labelledby="last-interview-title" data-home-reveal>
+            <div className="shl-home-flow-label">
+              <h2 id="last-interview-title">{t("Sua última entrevista")}</h2>
+              <p>{lastInterviewDate ?? t("Data não disponível")}</p>
+            </div>
+            <div className="shl-home-flow-content">
+              <blockquote className="shl-home-takeaway">
+                {insights.lastTakeaway ?? t(insights.lastReportReady ? "O relatório desta entrevista está disponível no seu progresso." : "A análise desta entrevista ainda não está disponível.")}
+              </blockquote>
+              <button type="button" className="shl-home-link" onClick={onProgress}>
+                {t("Ver relatório e progresso")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
+              </button>
+            </div>
+          </section>
+
+          <section className="shl-home-flow" aria-labelledby="practice-history-title" data-home-reveal>
+            <div className="shl-home-flow-label">
+              <h2 id="practice-history-title">{t("Até aqui")}</h2>
+              <p>{t("Prática que já conta")}</p>
+            </div>
+            <div className="shl-home-flow-content">
+              <p className="shl-home-count">
+                <span>{insights.interviewCount}</span> {t(insights.interviewCount === 1 ? "entrevista concluída" : "entrevistas concluídas")}
+              </p>
+              <p className="shl-home-detail">
+                {insights.topPattern ? <><strong>{t("Em inglês, observe")}{insights.topPattern.type ? ` ${t(insights.topPattern.type)}` : ""}:</strong> {insights.topPattern.suggestion}</> : t("Seu próximo relatório vai mostrar o padrão de inglês que mais vale observar.")}
+              </p>
+              <button type="button" className="shl-home-link" onClick={onProgress}>
+                {t("Ver progresso")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
+              </button>
+            </div>
+          </section>
+
+          <section className="shl-home-flow" aria-labelledby="voice-focus-title" data-home-reveal>
+            <div className="shl-home-flow-label">
+              <h2 id="voice-focus-title">{t("Sua voz")}</h2>
+              <p>{t("Um foco de cada vez")}</p>
+            </div>
+            <div className="shl-home-flow-content">
+              {insights.voiceFocus ? <>
+                <p className="shl-home-voice-score">
+                  <span>{Math.round(insights.voiceFocus.value)}</span><small>/100</small> {t(insights.voiceFocus.label)}
+                </p>
+                <p className="shl-home-detail">{t(insights.voiceFocus.measure)}</p>
+              </> : <p className="shl-home-detail">{t("Ainda não há áudio suficiente para mostrar um foco. Sua análise de voz aparece depois de respostas faladas avaliadas.")}</p>}
+              <button type="button" className="shl-home-link" onClick={onVoice}>
+                {t("Treinar minha voz")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
+              </button>
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="shl-home-how" aria-labelledby="how-it-works-title" data-home-reveal>
+          <div className="shl-home-flow-label">
+            <h2 id="how-it-works-title">{t("Como a Entoa funciona")}</h2>
+            <p>{t("No seu ritmo")}</p>
+          </div>
+          <ol className="shl-home-steps">
+            <li><span>01</span><p>{t("Você faz uma entrevista por voz.")}</p></li>
+            <li><span>02</span><p>{t("Recebe um relatório do que ficou claro e do que praticar.")}</p></li>
+            <li><span>03</span><p>{t("Leva um foco para a próxima entrevista.")}</p></li>
+          </ol>
+        </section>
+      )}
     </main>
   );
 }
@@ -615,6 +699,7 @@ export default function App({ initialView = "home", initialLesson, initialPart }
             <HomeView
               onStart={() => navigate("interview-setup")}
               onProgress={() => navigate("progress")}
+              onVoice={() => navigate("voice")}
             />
           )}
           {startError && view === "interview-setup" && (
