@@ -153,22 +153,30 @@
 .shl-signout .btn:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) { .shl-signout .btn:hover:not(:disabled) { background: var(--ds-hover-wash); color: var(--ds-ink); } }
 
-/* ---- Home. ---- */
-.shl-hero { position: relative; isolation: isolate; overflow: hidden; border-radius: var(--ds-r-panel); background: var(--ds-panel); color: var(--ds-on-panel); box-shadow: var(--ds-shadow-panel); }
-.shl-hero-forest {
-  position: absolute;
-  z-index: -1;
-  object-fit: cover;
-  object-position: right bottom;
-  opacity: 0.12;
-  pointer-events: none;
-  mask-image: linear-gradient(90deg, transparent 18%, var(--ds-on-panel) 82%);
-  -webkit-mask-image: linear-gradient(90deg, transparent 18%, var(--ds-on-panel) 82%);
-}
-.shl-hero .ds-btn-cta { width: auto; padding: 0 1.75rem; }
-.shl-hero-muted { color: color-mix(in srgb, var(--ds-on-panel) 74%, transparent); }
-.shl-hero-facts > div { display: flex; flex-direction: column; gap: 0.125rem; border-radius: var(--ds-r-lg); background: var(--ds-panel-wash-faint); padding: 0.75rem 1rem; }
-@media (max-width: 639px) { .shl-hero-forest { opacity: 0.08; } }
+/* ---- Home: a calm rehearsal desk with equal visual weight for the next action and recent evidence. ---- */
+.shl-home-grid { display: grid; gap: 1.25rem; }
+.shl-home-start,
+.shl-home-card { display: flex; min-height: 19rem; flex-direction: column; border-radius: var(--ds-r-card); padding: 1.5rem; }
+.shl-home-start { position: relative; isolation: isolate; overflow: hidden; background: var(--ds-panel); color: var(--ds-on-panel); box-shadow: var(--ds-shadow-panel); }
+.shl-home-start::before { position: absolute; z-index: 1; inset: 0; background: linear-gradient(90deg, var(--ds-panel) 0%, var(--ds-panel) 55%, transparent 100%); content: ""; pointer-events: none; }
+.shl-home-start > :not(.shl-hero-forest) { position: relative; z-index: 2; }
+.shl-hero-forest { position: absolute; z-index: 0; right: 0; bottom: 0; object-fit: cover; object-position: right bottom; opacity: var(--ds-forest-opacity); pointer-events: none; mask-image: linear-gradient(90deg, transparent 12%, var(--ds-on-panel) 86%); -webkit-mask-image: linear-gradient(90deg, transparent 12%, var(--ds-on-panel) 86%); }
+.shl-home-start .ds-btn-cta { padding-inline: 1.5rem; }
+.shl-home-panel-copy { max-width: 39ch; color: color-mix(in srgb, var(--ds-on-panel) 76%, transparent); font-size: 0.9375rem; line-height: 1.6; }
+.shl-home-signature { display: flex; align-items: center; gap: 0.5rem; color: color-mix(in srgb, var(--ds-on-panel) 72%, transparent); font-size: 0.75rem; font-weight: 600; }
+.shl-home-signature svg { color: var(--ds-brand-warm); }
+.shl-home-card { gap: 1rem; }
+.shl-home-takeaway { max-width: 52ch; color: var(--ds-ink); font-size: 0.9375rem; line-height: 1.6; }
+.shl-home-count { color: var(--ds-ink); font-size: 3.25rem; font-weight: 600; letter-spacing: -0.05em; line-height: 1; font-variant-numeric: tabular-nums; }
+.shl-home-detail { margin-top: 0.5rem; color: var(--ds-text-2); font-size: 0.875rem; line-height: 1.55; }
+.shl-home-score { color: var(--ds-green); font-variant-numeric: tabular-nums; }
+.shl-home-steps { display: grid; gap: 0.875rem; counter-reset: home-steps; color: var(--ds-text-2); font-size: 0.9375rem; line-height: 1.5; }
+.shl-home-steps li { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); align-items: start; gap: 0.75rem; }
+.shl-home-steps li::before { display: grid; width: 1.5rem; height: 1.5rem; place-items: center; border-radius: var(--ds-r-pill); background: var(--ds-tint); color: var(--ds-green-deep); content: counter(home-steps); counter-increment: home-steps; font-size: 0.75rem; font-weight: 700; line-height: 1; }
+@media (min-width: 640px) { .shl-home-start, .shl-home-card { padding: 1.75rem; } }
+@media (min-width: 768px) { .shl-home-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .shl-home-grid { gap: 1.5rem; } .shl-home-start, .shl-home-card { min-height: 20rem; padding: 2rem; } }
+@media (max-width: 639px) { .shl-home-start::before { background: linear-gradient(90deg, var(--ds-panel) 0%, color-mix(in srgb, var(--ds-panel) 76%, transparent) 58%, transparent 100%); } .shl-hero-forest { opacity: 0.08; } }
 
 .shl-icon-tile { display: grid; width: 2.5rem; height: 2.5rem; flex: none; place-items: center; border-radius: var(--ds-r-md); background: var(--ds-tint); color: var(--ds-green); }
 .shl-well { border-radius: var(--ds-r-xl); background: var(--ds-field); padding: 1rem 1.125rem; }
