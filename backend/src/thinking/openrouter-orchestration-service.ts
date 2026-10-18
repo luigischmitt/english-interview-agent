@@ -393,8 +393,8 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
 
   /**
    * Second step: after a decision is chosen (model or deterministic fallback), a separate small call writes the spoken
-   * bridge. FOLLOW_UP keeps the decision's own validated acknowledgement when no bridge is available; NEXT falls back to a
-   * neutral rotating transition (and to null when there is no question left).
+   * bridge. FOLLOW_UP keeps the decision's own validated acknowledgement when no bridge is available; NEXT uses a
+   * neutral rotating transition whenever NEXT has no validated acknowledgement.
    */
   private async applyBridge(input: InterviewOrchestrationInput, result: StandardResult, deadlineAt: number): Promise<{ result: StandardResult; log: BridgeLog; usage: OpenRouterUsage }> {
     const question = result.decision === "FOLLOW_UP" ? result.followUpQuestion : result.nextQuestion;
@@ -402,12 +402,12 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
     if (!question) return { result, log: { bridge: "none" }, usage: emptyOpenRouterUsage() };
     if (this.bridgeMode === "disabled") return { result, log: { bridge: own ? "neutral" : "none" }, usage: emptyOpenRouterUsage() };
     if (!this.bridgeService) {
-      const evaluation = evaluateBridge(result.acknowledgement, { decision: result.decision, transcript: input.transcript, question, recentAcknowledgements: input.recentAcknowledgements });
+      const evaluation = evaluateBridge(result.acknowledgement, { decision: result.decision, transcript: input.transcript, currentQuestion: input.currentQuestion, question, recentAcknowledgements: input.recentAcknowledgements });
       if ("dropReason" in evaluation) {
-        const acknowledgement = result.decision === "NEXT" ? pickFallbackTransition(input.recentAcknowledgements) : null;
+        const acknowledgement = own ?? (result.decision === "NEXT" ? pickFallbackTransition(input.recentAcknowledgements) : null);
         return {
           result: { ...result, acknowledgement },
-          log: { bridge: "dropped", outcome: "dropped", dropReason: evaluation.dropReason },
+          log: { bridge: result.decision === "NEXT" && acknowledgement ? "neutral" : "dropped", outcome: "dropped", dropReason: evaluation.dropReason },
           usage: emptyOpenRouterUsage(),
         };
       }
@@ -418,8 +418,8 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
           usage: emptyOpenRouterUsage(),
         };
       }
-      const acknowledgement = result.decision === "NEXT" ? pickFallbackTransition(input.recentAcknowledgements) : null;
-      return { result: { ...result, acknowledgement }, log: { bridge: acknowledgement ? "neutral" : "none", outcome: "generated" }, usage: emptyOpenRouterUsage() };
+      const acknowledgement = own ?? (result.decision === "NEXT" ? pickFallbackTransition(input.recentAcknowledgements) : null);
+      return { result: { ...result, acknowledgement }, log: { bridge: result.decision === "NEXT" && acknowledgement ? "neutral" : "none", outcome: "generated" }, usage: emptyOpenRouterUsage() };
     }
     const written = await this.bridgeService.write({ decision: result.decision, currentQuestion: input.currentQuestion, transcript: input.transcript, question, roleContext: input.roleContext, recentAcknowledgements: input.recentAcknowledgements, deadlineAt });
     const timing = { outcome: written.outcome, latencyMs: written.latencyMs };
@@ -430,10 +430,11 @@ export class OpenRouterOrchestrationService implements InterviewOrchestrationSer
         usage: written.usage,
       };
     }
-    const acknowledgement = own ?? (result.decision === "NEXT" ? pickFallbackTransition(input.recentAcknowledgements) : null);
+    const useFallback = result.decision === "NEXT";
+    const acknowledgement = own ?? (useFallback ? pickFallbackTransition(input.recentAcknowledgements) : null);
     return {
       result: { ...result, acknowledgement },
-      log: { bridge: written.outcome === "dropped" ? "dropped" : acknowledgement ? "neutral" : "none", ...timing, ...(written.dropReason ? { dropReason: written.dropReason } : {}) },
+      log: { bridge: useFallback && acknowledgement ? "neutral" : written.outcome === "dropped" ? "dropped" : "none", ...timing, ...(written.dropReason ? { dropReason: written.dropReason } : {}) },
       usage: written.usage,
     };
   }

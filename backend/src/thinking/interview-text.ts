@@ -7,6 +7,22 @@ export function normalizedWords(text: string): string[] {
   return (text.toLocaleLowerCase().match(tokenPattern) ?? []);
 }
 
+/**
+ * Conservative inflection tolerance for spoken-text matching. It permits only a
+ * long shared beginning, so it accepts identify/identification and
+ * mammographies/mammographic without turning loose semantic similarity into a
+ * match.
+ */
+export function sharesMorphologicalPrefix(left: string, right: string): boolean {
+  const first = left.toLocaleLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/gu, "");
+  const second = right.toLocaleLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/gu, "");
+  const shorter = Math.min(first.length, second.length);
+  if (shorter < 6) return false;
+  let prefix = 0;
+  while (prefix < shorter && first[prefix] === second[prefix]) prefix += 1;
+  return prefix >= 6 && prefix / shorter >= 0.75;
+}
+
 export function sequenceIndices(haystack: string[], needle: string[]): number[] {
   if (needle.length === 0) return [];
   const indices: number[] = [];

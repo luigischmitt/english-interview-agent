@@ -582,7 +582,10 @@ when this flag is enabled. The opt-in `npm run eval:followup` reports bridge
 rates (overall and by decision), the bridge outcome and drop-reason histograms,
 lead-in variety and an interview-sequence pass that feeds accepted bridges back
 as `recentAcknowledgements`; with `FOLLOWUP_EVAL_PRINT_ACCEPTED=true` it prints
-the accepted bridges locally. Orchestration
+the accepted bridges locally. To replay real interview handoffs from a local
+case file without persisting its contents or outputs, run
+`npx tsx evals/bridge-replay.ts <cases.json> [--runs N]`; each case is
+`{question, transcript, next}` and requires `OPENROUTER_API_KEY`. Orchestration
 uses a separate 6-second timeout by default; answer assessment retains its
 15-second timeout. The browser cancels orchestration requests after 7 seconds
 so its fallback stays slightly outside the backend timeout.

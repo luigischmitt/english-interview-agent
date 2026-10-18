@@ -4,7 +4,7 @@ import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { defaultThinkingModel, defaultThinkingTimeoutMs, type ThinkingConfig } from "../src/thinking/config.js";
-import { assignBridgeLeadIn, bridgeSystemPrompt, minBridgeBudgetMs, OpenRouterBridgeService, pickFallbackTransition, type BridgeInput } from "../src/thinking/interview-bridge-service.js";
+import { assignBridgeLeadIn, bridgeSystemPrompt, evaluateBridge, minBridgeBudgetMs, OpenRouterBridgeService, pickFallbackTransition, type BridgeInput } from "../src/thinking/interview-bridge-service.js";
 import { createOrchestrationService, OpenRouterOrchestrationService } from "../src/thinking/openrouter-orchestration-service.js";
 import type { InterviewOrchestrationInput } from "../src/thinking/types.js";
 import type { SpeechConfig } from "../src/speech/config.js";
@@ -31,6 +31,33 @@ function bridgeService(fetchImplementation: typeof fetch, overrides: Partial<Thi
 }
 
 describe("interview bridge call", () => {
+  it("grounds a restatement in the just-asked question and accepts close morphological forms", () => {
+    expect(evaluateBridge("So you used metrics and testing to ensure texture and anatomical fidelity.", {
+      decision: "FOLLOW_UP", transcript: "I used metrics and testing during the work.", currentQuestion: "How did you ensure the texture and anatomical fidelity?", question: "What was your deployment strategy?",
+    })).toMatchObject({ bridge: "So you used metrics and testing to ensure texture and anatomical fidelity." });
+    expect(evaluateBridge("You used mammographic and synthetic images for your model.", {
+      decision: "FOLLOW_UP", transcript: "I trained my model with mammographies and synthetic images.", currentQuestion: "Which images did you use for the model?", question: "What was your deployment strategy?",
+    })).toMatchObject({ bridge: "You used mammographic and synthetic images for your model." });
+    expect(evaluateBridge("You built an interface that adapts to different screen sizes.", {
+      decision: "FOLLOW_UP", transcript: "I made the layout adapt to each screen size.", currentQuestion: "How did you build an interface that adapts to different screen sizes?", question: "What was your deployment strategy?",
+    })).toMatchObject({ bridge: "You built an interface that adapts to different screen sizes." });
+  });
+
+  it("still rejects invented conclusions and multi-verb paraphrases", () => {
+    expect(evaluateBridge("So you're not familiar with database indexes.", {
+      decision: "FOLLOW_UP", transcript: "I worked on database migrations.", currentQuestion: "Tell me about a database project.", question: "How did you validate it?",
+    })).toMatchObject({ dropReason: "invented_detail" });
+    expect(evaluateBridge("So you broke down the problem into smaller parts to tackle them separately.", {
+      decision: "FOLLOW_UP", transcript: "The payment issue was complex and affected several services.", currentQuestion: "Tell me about a difficult problem.", question: "What happened next?",
+    })).toMatchObject({ dropReason: "invented_detail" });
+  });
+
+  it("accepts a topical-only NEXT bridge and drops one for a different topic", () => {
+    const base = { decision: "NEXT" as const, transcript: "Um, yeah.", currentQuestion: "Tell me about yourself.", question: "How do you test your code?" };
+    expect(evaluateBridge("Now I'd like to talk about how you test your code.", base)).toMatchObject({ bridge: "Now I'd like to talk about how you test your code." });
+    expect(evaluateBridge("Now I'd like to talk about team meetings.", base)).toMatchObject({ dropReason: "invented_detail" });
+  });
+
   it("sends a small strict JSON request with its own prompt and the assigned lead-in", async () => {
     let init: RequestInit | undefined;
     const result = await bridgeService(async (_url, options) => { init = options; return chat({ bridge: "So you moved the billing service to separate services because deploys were slow." }); }).write(bridgeInput({ recentAcknowledgements: ["I see."] }));
@@ -321,6 +348,13 @@ describe("next-turn flow with the bridge step", () => {
     expect(logsOf(info)[0].transitionDropped).toBeUndefined();
   });
 
+  it("uses a valid topical transition as written", async () => {
+    const topical = "So you moved the billing service because deploys were slow. Now I'd like to hear how you approach monitoring.";
+    const { fetchImplementation } = routedFetch(nextDecision, { bridge: topical });
+    const result = await new OpenRouterOrchestrationService(config, fetchImplementation).decide({ ...decisionInput, followUpUsed: true });
+    expect(result.acknowledgement).toBe(topical);
+  });
+
   it("falls back to a neutral rotating transition on NEXT when the bridge times out", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { fetchImplementation } = routedFetch(nextDecision, () => new Promise<Response>(() => undefined));
@@ -329,13 +363,13 @@ describe("next-turn flow with the bridge step", () => {
     expect(logsOf(info)[0]).toMatchObject({ bridge: "neutral", bridgeOutcome: "timeout" });
   });
 
-  it("falls back to a neutral transition on NEXT when the bridge call errors or is invalid", async () => {
+  it("falls back to a neutral transition when a NEXT bridge errors or is dropped", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const errored = routedFetch(nextDecision, () => new Response("no", { status: 500 }));
     await expect(new OpenRouterOrchestrationService(config, errored.fetchImplementation).decide({ ...decisionInput, followUpUsed: true })).resolves.toMatchObject({ acknowledgement: "Thanks for that. Let's move on." });
     const invented = routedFetch(nextDecision, { bridge: "So you moved the billing service to Kubernetes because deploys were slow." });
     await expect(new OpenRouterOrchestrationService(config, invented.fetchImplementation).decide({ ...decisionInput, followUpUsed: true })).resolves.toMatchObject({ acknowledgement: "Thanks for that. Let's move on." });
-    expect(logsOf(info).map((entry) => [entry.bridge, entry.bridgeOutcome, entry.bridgeDropReason])).toEqual([["neutral", "error", undefined], ["dropped", "dropped", "invented_detail"]]);
+    expect(logsOf(info).map((entry) => [entry.bridge, entry.bridgeOutcome, entry.bridgeDropReason])).toEqual([["neutral", "error", undefined], ["neutral", "dropped", "invented_detail"]]);
   });
 
   it("also bridges the deterministic fallback NEXT when the decision call fails", async () => {
@@ -347,7 +381,7 @@ describe("next-turn flow with the bridge step", () => {
     expect(logsOf(info)[0]).toMatchObject({ outcome: "fallback", reason: "provider_unavailable", bridge: "grounded" });
   });
 
-  it("skips the bridge call and uses a neutral NEXT transition for a low-information transcript", async () => {
+  it("uses a neutral transition when the bridge call is skipped for low information", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { calls, fetchImplementation } = routedFetch(nextDecision, { bridge: groundedNext });
     const result = await new OpenRouterOrchestrationService(config, fetchImplementation).decide({ ...decisionInput, transcript: "Um, yeah. Maybe." });

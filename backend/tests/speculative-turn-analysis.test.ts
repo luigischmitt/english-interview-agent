@@ -42,6 +42,14 @@ describe("speculative turn analysis", () => {
     expect(JSON.parse(body.messages[1].content)).toMatchObject({ recentAcknowledgements, bridgeLeadIn: "You mentioned" });
   });
 
+  it("keeps a topical-only planned bridge when the snapshot has no concrete detail", async () => {
+    const fetcher = response({ revision: 2, followUpAction: "NONE", followUpQuestion: null, followUpAnchor: null, fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null, bridge: "Now I'd like to talk about how you test your code." });
+    const result = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, fetcher).analyze({ ...input, snapshot: "Um, yeah.", currentQuestion: "Tell me about yourself.", firstFixedQuestion: "How do you test your code?" });
+    expect(result).toMatchObject({ bridge: "Now I'd like to talk about how you test your code.", bridgeFor: "How do you test your code?" });
+    const body = JSON.parse(String((fetcher.mock.calls as unknown as Array<[string, RequestInit]>)[0]?.[1]?.body));
+    expect(body.messages[0].content).toContain("one topical transition");
+  });
+
   it("returns a one-sentence follow-up bridge validated against the follow-up, and drops an invented one", async () => {
     const analysis = { revision: 2, followUpAction: "REPLACE", followUpQuestion: "Why did you choose Kafka for the pipeline?", followUpAnchor: "Kafka pipeline", fixedAction: "KEEP", adaptedFixedQuestion: null, fixedEvidenceAnchor: null };
     const grounded = await new SpeculativeTurnAnalysisService({ apiKey: "key", model: "model", timeoutMs: 500 }, response({ ...analysis, followUpBridge: "You mentioned that it reduced latency." })).analyze(input);
