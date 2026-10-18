@@ -201,11 +201,12 @@ async function loadProgressRecordsUncached(): Promise<PersistenceResult<Progress
   const rows = data as unknown as ProgressInterviewRow[];
 
   const answerCounts = new Map<string, number>();
+  const candidateAnswers = new Map<string, Array<{ sequenceNumber: number; content: string }>>();
   const answerCountChunks = await Promise.all(Array.from({ length: Math.ceil(rows.length / progressTurnChunk) }, (_, chunk) => {
     const ids = rows.slice(chunk * progressTurnChunk, (chunk + 1) * progressTurnChunk).map((row) => row.id);
     return client
       .from("interview_turns")
-      .select("interview_id")
+      .select("interview_id,sequence_number,content")
       .in("interview_id", ids)
       .eq("speaker", "candidate")
       // Keep the server-side count equivalent to content?.trim() without downloading answer text.
@@ -214,8 +215,11 @@ async function loadProgressRecordsUncached(): Promise<PersistenceResult<Progress
   }));
   for (const { data: turns, error: turnsError } of answerCountChunks) {
     if (turnsError) return failure(turnsError);
-    for (const turn of turns as Array<{ interview_id: string }>) {
+    for (const turn of turns as Array<{ interview_id: string; sequence_number: number; content: string }>) {
       answerCounts.set(turn.interview_id, (answerCounts.get(turn.interview_id) ?? 0) + 1);
+      const answers = candidateAnswers.get(turn.interview_id) ?? [];
+      answers.push({ sequenceNumber: turn.sequence_number, content: turn.content.trim() });
+      candidateAnswers.set(turn.interview_id, answers);
     }
   }
 
@@ -232,6 +236,7 @@ async function loadProgressRecordsUncached(): Promise<PersistenceResult<Progress
         completedAt: session.completedAt,
         createdAt: session.createdAt,
         answerCount: answerCounts.get(session.id) ?? 0,
+        candidateAnswers: (candidateAnswers.get(session.id) ?? []).sort((first, second) => first.sequenceNumber - second.sequenceNumber),
         feedback: embedded ? { status: embedded.status, azureSummary: embedded.azure_summary, analysis: embedded.analysis } : null,
       };
     });

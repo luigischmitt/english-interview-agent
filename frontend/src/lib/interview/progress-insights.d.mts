@@ -11,6 +11,8 @@ export type ProgressRecord = {
   completedAt: string | null;
   createdAt: string;
   answerCount: number;
+  /** Complete saved candidate answers, used only to select clean repetition sentences. */
+  candidateAnswers?: Array<{ sequenceNumber: number; content: string }>;
   feedback: { status: "pending" | "ready" | "unavailable"; azureSummary: AzureMetricSummary | null; analysis: unknown } | null;
 };
 export type ProgressDimension = { key: string; kind: "pattern" | "voice"; label: string; fullLabel: string; value: number; detail: string };

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildVoiceInsights } from "../src/lib/interview/voice-insights.mjs";
+import { buildPracticeWordList, buildVoiceEvolution, buildVoiceInsights, buildVoicePracticePlan, encodeWav16Mono, likelyTranscriptionArtifact, normalizePracticeSentenceCapitalization, readPracticeAttempts, savePracticeAttempt } from "../src/lib/interview/voice-insights.mjs";
 
 const metric = (mean, totalDurationMs = 25_000) => ({ mean, sampleCount: 1, totalDurationMs });
 const record = (id, completedAt, scores, answers = []) => ({ id, completedAt, createdAt: completedAt, feedback: { status: "ready", azureSummary: { accuracy: metric(scores.accuracy), fluency: metric(scores.fluency), prosody: metric(scores.prosody), answers } } });
@@ -50,4 +50,60 @@ test("keeps the empty state honest when no voice data exists", () => {
   const insights = buildVoiceInsights([{ id: "empty", completedAt: "2026-04-01", createdAt: "2026-04-01", feedback: null }]);
   assert.equal(insights.hasVoiceData, false);
   assert.equal(insights.focus, null);
+});
+
+test("creates a stable daily practice plan from corrected report sentences before complete saved answers", () => {
+  const item = record("latest", "2026-04-01", { accuracy: 50, fluency: 75, prosody: 80 }, [{ sequenceNumber: 2, phrases: [phrase(0, "pause fragment", "pronunciation", [{ word: "architecture", score: 45, prosodyErrors: [] }])] }]);
+  item.candidateAnswers = [{ sequenceNumber: 2, content: "Um I led the architecture migration for a highly available platform. I reduced deployment time without affecting customer traffic." }];
+  item.feedback.analysis = { englishCommunication: { patterns: [
+    { sequenceNumber: 2, rephrasedExample: "I led the architecture migration for a highly available platform." },
+    { sequenceNumber: 2, rephrasedExample: "We delivered stable releases without affecting customer traffic." },
+  ] } };
+  const first = buildVoicePracticePlan([item], { now: new Date("2026-04-02T12:00:00Z") });
+  const second = buildVoicePracticePlan([item], { now: new Date("2026-04-02T20:00:00Z") });
+  assert.deepEqual(first.sentences, second.sentences);
+  assert.equal(first.sentences[0].source, "report");
+  assert.deepEqual(first.sentences.slice(0, 2).map((sentence) => sentence.text), ["I led the architecture migration for a highly available platform.", "We delivered stable releases without affecting customer traffic."]);
+  assert.equal(first.sentences[2].source, "answer");
+  assert.equal(likelyTranscriptionArtifact("um I led the platform"), true);
+  assert.equal(likelyTranscriptionArtifact("I built a service service for customers."), true);
+});
+
+test("groups useful low-scored words and keeps only reliable evolution values", () => {
+  const old = record("old", "2026-01-01", { accuracy: 60, fluency: 70, prosody: 80 }, [{ sequenceNumber: 1, phrases: [phrase(0, "ignored", "pronunciation", [{ word: "Database", score: 40, prosodyErrors: [] }, { word: "API", score: 30, prosodyErrors: [] }])] }]);
+  const recent = record("recent", "2026-02-01", { accuracy: 80, fluency: 50, prosody: 70 }, [{ sequenceNumber: 1, phrases: [phrase(0, "ignored", "pronunciation", [{ word: "database", score: 60, prosodyErrors: [] }, { word: "go", score: 20, prosodyErrors: [] }])] }]);
+  assert.deepEqual(buildPracticeWordList([old, recent]).map((word) => word.word), ["database"]);
+  const evolution = buildVoiceEvolution([recent, old]);
+  assert.deepEqual(evolution.accuracy.map((point) => point.value), [60, 80]);
+});
+
+test("only keeps repeated, substantial work words and uses them for sentence attention", () => {
+  const old = record("old", "2026-01-01", { accuracy: 60, fluency: 70, prosody: 80 }, [{ sequenceNumber: 1, phrases: [phrase(0, "I will build a tree", "pronunciation", [
+    { word: "will", score: 20, prosodyErrors: [] }, { word: "tree", score: 20, prosodyErrors: [] }, { word: "database", score: 65, prosodyErrors: [] }, { word: "API", score: 20, prosodyErrors: [] },
+  ])] }]);
+  const recent = record("recent", "2026-02-01", { accuracy: 50, fluency: 70, prosody: 80 }, [{ sequenceNumber: 1, phrases: [phrase(0, "I maintain a database", "pronunciation", [{ word: "database", score: 45, prosodyErrors: [] }])] }]);
+  recent.candidateAnswers = [{ sequenceNumber: 1, content: "I am building a Machine learning model with a database." }];
+  const words = buildPracticeWordList([old, recent]);
+  assert.deepEqual(words.map((word) => word.word), ["database"]);
+  const plan = buildVoicePracticePlan([old, recent], { now: new Date("2026-04-02T12:00:00Z") });
+  assert.equal(plan.sentences[0].text, "I am building a machine learning model with a database.");
+  assert.deepEqual(plan.sentences[0].attentionWords, ["database"]);
+});
+
+test("normalizes mid-sentence capitalization while preserving I, products, and acronyms", () => {
+  assert.equal(normalizePracticeSentenceCapitalization("I am building a Machine learning model with Python, React, Gemini, WhatsApp, Meta and UFPB."), "I am building a machine learning model with Python, React, Gemini, WhatsApp, Meta and UFPB.");
+  assert.equal(normalizePracticeSentenceCapitalization("The interviewer asked what I do. I'm building systems, I've led teams, I'd improve reliability, and I'll share the results."), "The interviewer asked what I do. I'm building systems, I've led teams, I'd improve reliability, and I'll share the results.");
+  assert.equal(normalizePracticeSentenceCapitalization("I’m building a scalable platform for our customers."), "I’m building a scalable platform for our customers.");
+});
+
+test("encodes a browser-ready 16-bit mono WAV and bounds local attempts", () => {
+  const wav = new DataView(encodeWav16Mono(new Float32Array([0, 1, -1])));
+  assert.equal(wav.getUint32(24, true), 16_000);
+  assert.equal(wav.getUint16(22, true), 1);
+  assert.equal(wav.getUint16(34, true), 16);
+  const values = new Map();
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  const attempt = { scores: { accuracy: 80, fluency: 70, prosody: 60 }, words: [], createdAt: "2026-04-01" };
+  for (let index = 0; index < 6; index += 1) savePracticeAttempt(storage, "sentence", { ...attempt, createdAt: `2026-04-0${index + 1}` });
+  assert.equal(readPracticeAttempts(storage).sentence.length, 4);
 });
