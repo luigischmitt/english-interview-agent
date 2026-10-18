@@ -3,7 +3,7 @@
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { startTransition, useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import {
   ArrowUpRight,
   Home,
@@ -34,7 +34,9 @@ import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import { buildHomeInsights } from "@/lib/interview/home-insights.mjs";
 import { getHomeParallaxOffset } from "@/lib/home-motion.mjs";
-import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
+import { buildProgressInsights, type ProgressRecord } from "@/lib/interview/progress-insights.mjs";
+import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics } from "@/lib/interview/voice-trend.mjs";
+import { useReplayReveal } from "@/lib/use-replay-reveal";
 import { useLocale } from "@/lib/locale";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 
@@ -57,6 +59,7 @@ import { prewarmInterviewerUtterance, useSpeechWarmup, useVoiceReadiness } from 
 import { PageIntro } from "./components/shared";
 import { VoicePicker } from "./components/voice-picker";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
+import { MetricSwatch, VoiceTrendChart } from "./components/charts/voice-trend-chart";
 
 const subscribeNever = () => () => {};
 
@@ -315,6 +318,13 @@ function HomeView({
   const [records, setRecords] = useState<ProgressRecord[]>(() => cachedRecords ?? []);
   const [isLoading, setIsLoading] = useState(!cachedRecords);
   const insights = buildHomeInsights(records);
+  const progress = useMemo(() => buildProgressInsights(records, { locale: locale === "en" ? "en" : "pt-BR" }), [records, locale]);
+  const voiceRows = useMemo(() => mergeVoiceSeries(progress.series), [progress.series]);
+  const weeklyMax = Math.max(1, ...progress.weekly.map((week) => week.count));
+  const voiceFocusKey = voiceTrendMetrics
+    .map((metric) => ({ metric, summary: voiceMetricSummary(voiceRows, metric) }))
+    .filter((item) => item.summary)
+    .sort((a, b) => (a.summary?.latest ?? 0) - (b.summary?.latest ?? 0))[0]?.metric ?? null;
   const hasInterviews = insights.interviewCount > 0;
   const lastInterviewDate = insights.lastInterviewAt
     ? new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", year: "numeric" }).format(new Date(insights.lastInterviewAt))
@@ -330,25 +340,7 @@ function HomeView({
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const targets = homeRef.current?.querySelectorAll<HTMLElement>("[data-home-reveal]");
-    if (!targets?.length || !("IntersectionObserver" in window)) return;
-
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        if (!entry.isIntersecting) return;
-        entry.target.setAttribute("data-revealed", "true");
-        observer.unobserve(entry.target);
-      });
-    }, { threshold: 0.12 });
-
-    targets.forEach((target) => {
-      target.setAttribute("data-reveal-ready", "true");
-      observer.observe(target);
-    });
-    return () => observer.disconnect();
-  }, [hasInterviews, isLoading]);
+  useReplayReveal(homeRef, [hasInterviews, isLoading]);
 
   useEffect(() => {
     const art = artRef.current;
@@ -379,7 +371,7 @@ function HomeView({
   return (
     <main ref={homeRef} id="main-content" className={`${pageMain} shl-home`}>
       <section className="shl-home-hero" aria-labelledby="home-title">
-        <div className="shl-home-hero-copy" data-home-reveal>
+        <div className="shl-home-hero-copy">
           <p className="shl-home-kicker">
             <MicVocal className="size-4" aria-hidden="true" /> {t("Vamos praticar?")}
           </p>
@@ -409,7 +401,7 @@ function HomeView({
       </section>
 
       {isLoading ? (
-        <section className="shl-home-flow" aria-live="polite" data-home-reveal>
+        <section className="shl-home-flow" aria-live="polite" data-reveal>
           <p className="shl-home-label">{t("Organizando seu histórico")}</p>
           <div className="mt-6 max-w-xl space-y-3">
             <div className="skeleton h-4 w-2/3" />
@@ -418,7 +410,7 @@ function HomeView({
         </section>
       ) : hasInterviews ? (
         <>
-          <section className="shl-home-flow" aria-labelledby="last-interview-title" data-home-reveal>
+          <section className="shl-home-flow" aria-labelledby="last-interview-title" data-reveal>
             <div className="shl-home-flow-label">
               <h2 id="last-interview-title">{t("Sua última entrevista")}</h2>
               <p>{lastInterviewDate ?? t("Data não disponível")}</p>
@@ -433,7 +425,7 @@ function HomeView({
             </div>
           </section>
 
-          <section className="shl-home-flow" aria-labelledby="practice-history-title" data-home-reveal>
+          <section className="shl-home-flow" aria-labelledby="practice-history-title" data-reveal>
             <div className="shl-home-flow-label">
               <h2 id="practice-history-title">{t("Até aqui")}</h2>
               <p>{t("Prática que já conta")}</p>
@@ -442,6 +434,20 @@ function HomeView({
               <p className="shl-home-count">
                 <span>{insights.interviewCount}</span> {t(insights.interviewCount === 1 ? "entrevista concluída" : "entrevistas concluídas")}
               </p>
+              <div
+                className="shl-home-weeks"
+                role="img"
+                aria-label={locale === "en" ? `Practices per week: ${progress.weekly.map((week) => `${week.label}, ${week.count}`).join("; ")}.` : `Práticas por semana: ${progress.weekly.map((week) => `${week.label}, ${week.count}`).join("; ")}.`}
+              >
+                {progress.weekly.map((week, index) => (
+                  <div key={week.start} className="shl-home-week" style={{ "--i": index } as CSSProperties}>
+                    <span className="shl-home-week-n">{week.count || ""}</span>
+                    <div className="shl-home-week-track"><i data-empty={week.count === 0} style={{ height: week.count === 0 ? "3px" : `${Math.max(12, (week.count / weeklyMax) * 100)}%` }} /></div>
+                    <span className="shl-home-week-l">{week.label}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="shl-home-caption">{t("Entrevistas por semana, nas últimas 8 semanas.")}</p>
               <p className="shl-home-detail">
                 {insights.topPattern ? <><strong>{t("Em inglês, observe")}{insights.topPattern.type ? ` ${t(insights.topPattern.type)}` : ""}:</strong> {insights.topPattern.suggestion}</> : t("Seu próximo relatório vai mostrar o padrão de inglês que mais vale observar.")}
               </p>
@@ -451,17 +457,26 @@ function HomeView({
             </div>
           </section>
 
-          <section className="shl-home-flow" aria-labelledby="voice-focus-title" data-home-reveal>
+          <section className="shl-home-flow" aria-labelledby="voice-focus-title" data-reveal>
             <div className="shl-home-flow-label">
               <h2 id="voice-focus-title">{t("Sua voz")}</h2>
               <p>{t("Um foco de cada vez")}</p>
             </div>
             <div className="shl-home-flow-content">
-              {insights.voiceFocus ? <>
-                <p className="shl-home-voice-score">
-                  <span>{Math.round(insights.voiceFocus.value)}</span><small>/100</small> {t(insights.voiceFocus.label)}
-                </p>
-                <p className="shl-home-detail">{t(insights.voiceFocus.measure)}</p>
+              {voiceRows.length > 0 ? <>
+                <dl className="shl-home-voice-metrics">
+                  {voiceTrendMetrics.map((metric) => {
+                    const summary = voiceMetricSummary(voiceRows, metric);
+                    return (
+                      <div key={metric} data-focus={metric === voiceFocusKey}>
+                        <dt><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === voiceFocusKey && <em>{t("foco")}</em>}</dt>
+                        <dd>{summary ? Math.round(summary.latest) : "—"}<small>/100</small></dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+                {voiceRows.length >= 2 && <div className="shl-home-voice-chart"><VoiceTrendChart rows={voiceRows.slice(-10)} variant="compact" focus={voiceFocusKey} /></div>}
+                {voiceFocusKey && <p className="shl-home-detail"><strong>{t(voiceTrendCopy[voiceFocusKey].label)}:</strong> {t(voiceTrendCopy[voiceFocusKey].measure)}</p>}
               </> : <p className="shl-home-detail">{t("Ainda não há áudio suficiente para mostrar um foco. Sua análise de voz aparece depois de respostas faladas avaliadas.")}</p>}
               <button type="button" className="shl-home-link" onClick={onVoice}>
                 {t("Treinar minha voz")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
@@ -470,7 +485,7 @@ function HomeView({
           </section>
         </>
       ) : (
-        <section className="shl-home-how" aria-labelledby="how-it-works-title" data-home-reveal>
+        <section className="shl-home-how" aria-labelledby="how-it-works-title" data-reveal>
           <div className="shl-home-flow-label">
             <h2 id="how-it-works-title">{t("Como a Entoa funciona")}</h2>
             <p>{t("No seu ritmo")}</p>

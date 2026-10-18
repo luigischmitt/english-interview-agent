@@ -263,6 +263,10 @@
   --ds-overlay: rgba(6, 20, 14, 0.6);        /* modal backdrop */
   --ds-chart-ring: #c9d8cf;
   --ds-chart-axis: #d5e1d9;
+  /* Voice metric series (precision, rhythm, prosody): validated for CVD and contrast on surface; always paired with direct labels and marker shapes. */
+  --ds-series-accuracy: #2f8a5a;
+  --ds-series-fluency: #3b6fd1;
+  --ds-series-prosody: #c98a12;
   --ds-forest-filter: none;  /* landing illustrations */
   --ds-forest-opacity: 0.9;
   /* Interview stage (call-stage.css): tile, captions, dock, toasts */
@@ -389,6 +393,9 @@
   --ds-green-wash: rgba(95, 208, 143, 0.16);
   --ds-chart-ring: #3a3e46;
   --ds-chart-axis: #2e3137;
+  --ds-series-accuracy: #3a9a66;
+  --ds-series-fluency: #5f8ce0;
+  --ds-series-prosody: #b9861f;
   --ds-forest-filter: brightness(0.62) saturate(0.85);
   --ds-forest-opacity: 0.8;
   --ds-tile-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 18px 40px -22px rgba(0, 0, 0, 0.8);
