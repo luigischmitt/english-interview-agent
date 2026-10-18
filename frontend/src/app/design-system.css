@@ -291,3 +291,8 @@ select.ds-field {
 :root {
   --ds-leaf-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 14C2 7 6 3 14 2 14 9.500 10 13.500 3.500 13.500L2 14Z'/%3E%3C/svg%3E");
 }
+
+/* Replayable scroll entrance: useReplayReveal sets data-inview on [data-reveal]; hidden only while explicitly "false". */
+[data-reveal] { transition: opacity 500ms var(--ease-out), transform 500ms var(--ease-out); }
+[data-reveal][data-inview="false"] { opacity: 0; transform: translateY(18px); transition: none; }
+@media (prefers-reduced-motion: reduce) { [data-reveal] { transition: none; } }
