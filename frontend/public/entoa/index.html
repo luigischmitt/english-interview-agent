@@ -13,7 +13,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <style>
 :root{
-  --s1:#2f8a5a; --s2:#3b6fd1; --s3:#c98a12;
   --ink:#0e2a1f; --green:#1f6b45; --green-deep:#17563a; --warm:#ae6b30;
   --cream:#f3f4ee; --surface:#fbfbf7; --field:#f1f3ec; --track:#e8ece3; --tint:#e6f1ea;
   --text2:#44604f; --err:#8a3a21; --err-tint:#f6e9e2; --warn-tint:#f6ecd0; --danger:#b4432a;
@@ -261,37 +260,65 @@ main{overflow-x:clip}
 .stage-art img{width:100%;height:100%;object-fit:cover;object-position:center 70%;opacity:.9}
 @media(max-width:640px){.stage-art{top:auto;height:55%}.stage-art img{object-position:30% 100%}}
 .rep{max-width:1000px;margin-inline:auto;background:var(--surface);border-radius:28px;overflow:hidden;box-shadow:0 2px 4px rgba(14,42,31,.05),0 40px 80px -36px rgba(14,42,31,.5)}
-.rep-top{display:grid;gap:1.6rem;padding:1.5rem}
-@media(min-width:800px){.rep-top{grid-template-columns:minmax(0,.8fr) minmax(0,1.4fr);gap:2.4rem;padding:2.2rem 2.4rem 1.8rem;align-items:center}}
+.rep-top{display:grid;gap:1.4rem;padding:1.5rem}
+@media(min-width:860px){.rep-top{grid-template-columns:minmax(0,.85fr) minmax(0,1.5fr) minmax(0,.85fr);gap:1.2rem;padding:2.2rem 2.4rem 1.6rem;align-items:center}}
 .badge{display:inline-flex;align-items:center;gap:.45rem;width:fit-content;border-radius:99px;background:var(--tint);padding:.22rem .7rem .22rem .6rem;font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--green-deep)}
 .badge i{width:7px;height:7px;border-radius:50%;background:var(--green)}
 .rep-role{margin-top:.7rem;font-weight:600;font-size:1.05rem}
 .rep-k{font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text2)}
-.rep-title{margin-top:1.1rem;font-family:var(--serif);font-size:1.7rem;line-height:1.05;letter-spacing:-.02em}
-.rep-metrics{display:grid;gap:.9rem;margin-top:1.3rem}
-.rep-metrics>div{display:grid;grid-template-columns:auto 1fr;align-items:baseline;column-gap:1rem}
-.rep-metrics dt{display:flex;align-items:center;gap:.45rem;font-size:.88rem;font-weight:600;color:var(--text2);grid-column:1/-1}
-.rep-metrics dd{font-size:2.6rem;font-weight:600;letter-spacing:-.045em;line-height:1;font-variant-numeric:tabular-nums}
-.rep-metrics dd small{font-size:.85rem;color:var(--text2);font-weight:500;letter-spacing:0;margin-left:.2rem}
-.rep-delta{font-size:.82rem;font-weight:600;color:var(--green-deep)}
-.trend{min-width:0}
-.trend svg{display:block;width:100%;height:auto;overflow:visible}
-.trend .tl{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1}
-.rep.in .trend .tl{stroke-dashoffset:0;transition:stroke-dashoffset 1.2s var(--ease)}
-.trend .tm,.trend .te{opacity:0}
-.rep.in .trend .tm,.rep.in .trend .te{opacity:1;transition:opacity .35s ease}
-.trend .grid{stroke:#d5e1d9}
-.trend .ax{fill:var(--text2);font-size:11px;font-family:var(--sans)}
-.trend .tev{fill:var(--ink);font-size:15px;font-weight:700;font-family:var(--sans)}
-.trend .tel{fill:var(--text2);font-size:12px;font-weight:600;font-family:var(--sans)}
-@media(max-width:640px){.trend .ax{font-size:18px}.trend .ax.mid{display:none}.trend .tev{font-size:26px}.trend .tel{display:none}}
-.rep-bottom{display:grid;gap:.25rem;padding:1.1rem 1.5rem 1.4rem;background:var(--field)}
-@media(min-width:800px){.rep-bottom{grid-template-columns:auto auto 1fr;align-items:baseline;column-gap:1.5rem;padding:1.2rem 2.4rem 1.4rem}}
-.rep-fix{font-family:var(--serif);font-size:1.6rem;line-height:1.3}
+.rep-title{margin-top:.9rem;font-family:var(--serif);font-size:1.7rem;line-height:1.05;letter-spacing:-.02em}
+.rep-how{margin-top:.7rem;color:var(--text2);font-size:.9rem;line-height:1.45;max-width:30ch}
+.rep-how b{color:var(--ink);font-weight:600}
+.rep-sum{display:grid;gap:.7rem;margin-top:1.2rem}
+.rep-sum div{display:grid;gap:.1rem}
+.rep-sum b{font-size:1.05rem;font-weight:600}
+.rep-sum b span{color:var(--green-deep);font-variant-numeric:tabular-nums}
+.rep-sum .att b span{color:var(--warm)}
+.radar{position:relative;display:flex;justify-content:center;min-width:0}
+.radar svg{width:100%;max-width:440px;height:auto;overflow:visible}
+.radar .ring{fill:none;stroke:rgba(14,42,31,.13);stroke-dasharray:3 4}
+.radar .ring.out{stroke-dasharray:none;stroke:rgba(14,42,31,.16)}
+.radar .ringv{fill:var(--text2);font:500 9px var(--sans);opacity:.8}
+.radar .axis{stroke:rgba(14,42,31,.08)}
+.radar .axis.on{stroke:var(--green);stroke-width:1.5}
+.radar .poly{fill:rgba(31,107,69,.16);stroke:var(--green);stroke-width:2;stroke-linejoin:round;transform-origin:150px 150px;transform:scale(.3);opacity:0;transition:transform .9s var(--ease) .15s,opacity .4s ease .15s}
+.rep.in .radar .poly{transform:none;opacity:1}
+.radar .pt{opacity:0;transition:opacity .3s ease}
+.rep.in .radar .pt{opacity:1;transition:opacity .3s ease calc(.75s + var(--k)*60ms)}
+.radar .pt.on{stroke:var(--surface);stroke-width:2}
+.radar .lab{opacity:0;transition:opacity .35s ease}
+.rep.in .radar .lab{opacity:1;transition:opacity .35s ease calc(.9s + var(--k)*60ms)}
+.radar .ln{fill:var(--text2);font:600 12px var(--sans)}
+.radar .lv{fill:var(--ink);font:700 17px var(--sans);font-variant-numeric:tabular-nums}
+.radar .lab.on .ln{fill:var(--green-deep)}
+.radar .hit{fill:transparent;cursor:pointer}
+.rep-fix{font-family:var(--serif);font-size:1.6rem;line-height:1.3;margin-top:.4rem}
 .rep-fix s{color:var(--err);text-decoration-color:#c9694a;text-decoration-thickness:1.5px}
 .rep-fix strong{font-weight:600;color:var(--green-deep);background:rgba(31,107,69,.12);border-radius:.3em;padding:.05em .25em}
-.rep-meta{color:var(--text2);font-size:.92rem}
-@media(prefers-reduced-motion:reduce){.trend .tl{stroke-dashoffset:0}.trend .tm,.trend .te{opacity:1}.rep.in .trend .tl,.rep.in .trend .tm,.rep.in .trend .te{transition:none}}
+.rep-meta{color:var(--text2);font-size:.92rem;margin-top:.35rem}
+.dims{display:grid;gap:.9rem;padding:1rem .75rem 1.1rem;background:var(--field)}
+@media(min-width:860px){.dims{grid-template-columns:minmax(0,4fr) minmax(0,3fr);gap:1.4rem;padding:1.2rem 1.6rem 1.3rem}}
+.dg-h{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .5rem;padding:0 .4rem .5rem;font-size:.8rem;font-weight:700}
+.dg-h span{font-weight:500;color:var(--text2)}
+.dg-h i{width:9px;height:9px;border-radius:50%;background:var(--green)}
+.dg-h i.v{border-radius:2px;transform:rotate(45deg);background:var(--ink)}
+.dg-cells{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+@media(min-width:560px){.dg-cells{grid-template-columns:repeat(4,minmax(0,1fr))}.dg-cells.v{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.dim{display:flex;flex-direction:column;gap:.3rem;border:0;background:none;text-align:left;border-radius:14px;padding:.7rem .8rem;transition:background .16s,box-shadow .16s}
+.dim.on{background:var(--surface);box-shadow:var(--shadow)}
+.dim:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.dim b{font-size:1.5rem;font-weight:600;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.dim b small{font-size:.8rem;font-weight:500;color:var(--text2);margin-left:.1rem}
+.dim.on b{color:var(--green-deep)}
+.dim .dbar{height:5px;border-radius:99px;background:var(--track);overflow:hidden}
+.dim .dbar i{display:block;height:100%;width:0;border-radius:inherit;background:var(--green);transition:width .9s var(--ease) calc(.4s + var(--k)*60ms)}
+.dg-cells.v .dim .dbar i{background:var(--ink)}
+.rep.in .dim .dbar i{width:var(--w)}
+.dim span{font-size:.8rem;color:var(--text2);line-height:1.25}
+.dim-detail{min-height:2.9em;padding:.2rem 1.5rem 1.2rem;background:var(--field);color:var(--text2);font-size:.9rem;line-height:1.45}
+.dim-detail b{color:var(--ink);font-weight:600}
+@media(min-width:860px){.dim-detail{padding:0 2.4rem 1.4rem}}
+@media(prefers-reduced-motion:reduce){.radar .poly{transform:none;opacity:1}.radar .pt,.radar .lab{opacity:1}.dim .dbar i{width:var(--w)}.radar .poly,.radar .pt,.radar .lab,.dim .dbar i,.rep.in .radar .poly,.rep.in .radar .pt,.rep.in .radar .lab,.rep.in .dim .dbar i{transition:none}}
 
 .compact{padding:clamp(40px,5vw,72px) 0}
 /* ===== você × nativo ===== */
@@ -422,25 +449,30 @@ main{overflow-x:clip}
   <div class="wrap">
     <div class="rep" id="rep">
       <div class="rep-top">
-        <div class="rep-side">
+        <div>
           <span class="badge"><i></i>Exemplo</span>
           <p class="rep-role">Backend Engineer · Sênior</p>
-          <p class="rep-title">Sua voz, entrevista a entrevista</p>
-          <dl class="rep-metrics">
-            <div><dt><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="var(--s1)"/></svg>Precisão</dt><dd><span data-count="88">0</span><small>/100</small></dd><p class="rep-delta">+10 desde a 1ª</p></div>
-            <div><dt><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="2" width="8" height="8" rx="1.5" fill="var(--s2)"/></svg>Ritmo</dt><dd><span data-count="79">0</span><small>/100</small></dd><p class="rep-delta">+15 desde a 1ª</p></div>
-            <div><dt><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6,1 L11,6 L6,11 L1,6 Z" fill="var(--s3)"/></svg>Prosódia</dt><dd><span data-count="70">0</span><small>/100</small></dd><p class="rep-delta">+12 desde a 1ª</p></div>
-          </dl>
+          <p class="rep-title">Seu perfil depois de 6 entrevistas</p>
+          <p class="rep-how">Cada ponta é uma parte da sua fala. <b>Quanto mais perto da borda, melhor.</b></p>
+          <div class="rep-sum">
+            <div><p class="rep-k">Ponto forte</p><b>Falsos cognatos <span>95%</span></b></div>
+            <div class="att"><p class="rep-k">Ponto de atenção</p><b>Gramática <span>70%</span></b></div>
+          </div>
         </div>
-        <div class="trend">
-          <svg viewBox="0 0 520 280" id="trend" role="img" aria-label="Gráfico de exemplo: em seis entrevistas, precisão subiu de 78 para 88, ritmo de 64 para 79 e prosódia de 58 para 70"></svg>
+        <div class="radar">
+          <svg viewBox="-62 -22 424 344" id="radar" role="img" aria-label="Radar de exemplo: gramática 70%, escolha de palavras 85%, falsos cognatos 95% e estrutura 80% das respostas sem erro; precisão 84, ritmo 78 e prosódia 72 de 100"></svg>
+        </div>
+        <div>
+          <p class="rep-k">Ponto principal do inglês</p>
+          <p class="rep-fix">experience <s>on</s> <strong>in</strong> backend</p>
+          <p class="rep-meta">Experiência em uma área pede <em>in</em>.</p>
         </div>
       </div>
-      <div class="rep-bottom">
-        <p class="rep-k">Ponto principal do inglês</p>
-        <p class="rep-fix">experience <s>on</s> <strong>in</strong> backend</p>
-        <p class="rep-meta">Experiência em uma área pede <em>in</em>.</p>
+      <div class="dims">
+        <div><p class="dg-h"><i></i>Seu inglês <span>% das respostas sem esse erro</span></p><div class="dg-cells" id="dimsEn"></div></div>
+        <div><p class="dg-h"><i class="v"></i>Sua voz <span>nota do Azure, de 0 a 100</span></p><div class="dg-cells v" id="dimsVoz"></div></div>
       </div>
+      <p class="dim-detail" id="dimDetail" aria-live="polite"></p>
     </div>
   </div>
 </section>
@@ -802,34 +834,51 @@ AWS e observabilidade</div></div>
   requestAnimationFrame(n=>{last=n;requestAnimationFrame(frame)});
 
 
-  /* ================= relatório: evolução da voz (mesmo gráfico do Progresso) ================= */
+  /* ================= relatório: radar do perfil ================= */
   const NS='http://www.w3.org/2000/svg',mk=(tag,at)=>{const e=document.createElementNS(NS,tag);for(const k in at)e.setAttribute(k,at[k]);return e};
-  const SERIES=[['Precisão','var(--s1)',[78,80,83,82,85,88],'c'],['Ritmo','var(--s2)',[64,68,66,72,75,79],'s'],['Prosódia','var(--s3)',[58,61,60,64,67,70],'d']];
-  const DATES=['08/09','15/09','22/09','29/09','06/10','13/10'];
-  const trend=$('#trend'),TW=520,TH=280,PL=30,PR=104,PT=16,PB=28,LO=50,HI=100;
-  const tx=i=>PL+i*(TW-PL-PR)/(DATES.length-1),ty=v=>PT+(TH-PT-PB)*(1-(v-LO)/(HI-LO));
-  [50,60,70,80,90,100].forEach(v=>{trend.appendChild(mk('line',{class:'grid',x1:PL,x2:TW-PR,y1:ty(v),y2:ty(v)}));if(v%20===0||v===50){const t=mk('text',{class:'ax',x:PL-8,y:ty(v)+4,'text-anchor':'end'});t.textContent=v;trend.appendChild(t)}});
-  DATES.forEach((d,i)=>{const t=mk('text',{class:i>0&&i<DATES.length-1?'ax mid':'ax',x:tx(i),y:TH-6,'text-anchor':i===0?'start':i===DATES.length-1?'end':'middle'});t.textContent=d;trend.appendChild(t)});
-  const marker=(shape,x,y,fill,cls,delay)=>{const at={class:cls,fill,stroke:'#fbfbf7','stroke-width':2,style:`transition-delay:${delay}ms`};
-    if(shape==='s')return mk('rect',{...at,x:x-4,y:y-4,width:8,height:8,rx:1.5});
-    if(shape==='d')return mk('path',{...at,d:`M${x},${y-5} L${x+5},${y} L${x},${y+5} L${x-5},${y} Z`});
-    return mk('circle',{...at,cx:x,cy:y,r:4})};
-  let labelYs=[];
-  SERIES.forEach(([name,color,vals,shape],k)=>{
-    const d=vals.map((v,i)=>`${i?'L':'M'}${tx(i).toFixed(1)},${ty(v).toFixed(1)}`).join(' ');
-    const line=mk('path',{class:'tl',d,stroke:color,pathLength:1,style:`transition-delay:${k*150}ms`});trend.appendChild(line);
-    vals.forEach((v,i)=>trend.appendChild(marker(shape,tx(i),ty(v),color,'tm',900+k*150+i*40)));
-    let ly=ty(vals[vals.length-1]);labelYs.forEach(y=>{if(Math.abs(ly-y)<17)ly=y+17});labelYs.push(ly);
-    const lab=mk('text',{class:'te',x:tx(vals.length-1)+12,y:ly+5,style:`transition-delay:${1100+k*150}ms`});
-    const v1=mk('tspan',{class:'tev'});v1.textContent=vals[vals.length-1];const v2=mk('tspan',{class:'tel',dx:6});v2.textContent=name;lab.append(v1,v2);trend.appendChild(lab)});
+  const DIM=[
+    ['Gramática',70,'en','Tempo verbal, artigos e preposições. 7 de cada 10 respostas saíram sem erro de gramática.'],
+    ['Escolha de palavras',85,'en','Usar a palavra que um nativo usaria naquele contexto.'],
+    ['Falsos cognatos',95,'en','Palavras que parecem português e enganam, como <em>actually</em> e <em>pretend</em>.'],
+    ['Estrutura',80,'en','Se a resposta tem começo, meio e fim fáceis de seguir.'],
+    ['Precisão',84,'v','Quão claro cada som e cada palavra saiu.'],
+    ['Ritmo',78,'v','Pausas, hesitações e velocidade: se a fala flui sem travar.'],
+    ['Prosódia',72,'v','Entonação e acento das palavras, a “melodia” da frase.']];
+  const C=150,R=112,N=DIM.length,ang=i=>-Math.PI/2+i*Math.PI*2/N,rpt=(i,r)=>[C+r*Math.cos(ang(i)),C+r*Math.sin(ang(i))];
+  const poly=f=>DIM.map((d,i)=>rpt(i,R*f(d)).map(n=>n.toFixed(1)).join(',')).join(' ');
+  const radar=$('#radar'),detail=$('#dimDetail'),cellsEn=$('#dimsEn'),cellsVoz=$('#dimsVoz');
+  [1,.75,.5,.25].forEach(f=>radar.appendChild(mk('polygon',{class:f===1?'ring out':'ring',points:poly(()=>f)})));
+  [50,100].forEach(v=>{const t=mk('text',{class:'ringv',x:C+4,y:C-R*v/100+11});t.textContent=v;radar.appendChild(t)});
+  const axes=[],pts=[],labs=[],cells=[];
+  DIM.forEach((d,i)=>{const a=rpt(i,R);const l=mk('line',{class:'axis',x1:C,y1:C,x2:a[0].toFixed(1),y2:a[1].toFixed(1)});radar.appendChild(l);axes.push(l)});
+  radar.appendChild(mk('polygon',{class:'poly',points:poly(d=>d[1]/100)}));
+  DIM.forEach((d,i)=>{
+    const [x,y]=rpt(i,R*d[1]/100),k=`--k:${i}`;
+    const pt=d[2]==='v'?mk('rect',{class:'pt',x:x-4,y:y-4,width:8,height:8,rx:1.5,fill:'#0e2a1f',transform:`rotate(45 ${x} ${y})`,style:k}):mk('circle',{class:'pt',cx:x,cy:y,r:4.5,fill:'#1f6b45',style:k});
+    radar.appendChild(pt);pts.push(pt);
+    const [lx,ly]=rpt(i,R+22),c=Math.cos(ang(i)),anchor=Math.abs(c)<.2?'middle':c>0?'start':'end';
+    const g=mk('g',{class:'lab',style:k}),dy=Math.sin(ang(i))<-.5?-14:Math.sin(ang(i))>.5?6:-4;
+    const tn=mk('text',{class:'ln',x:lx.toFixed(1),y:(ly+dy).toFixed(1),'text-anchor':anchor});tn.textContent=d[0];
+    const tv=mk('text',{class:'lv',x:lx.toFixed(1),y:(ly+dy+18).toFixed(1),'text-anchor':anchor});tv.textContent=d[2]==='en'?d[1]+'%':d[1];
+    g.append(tn,tv);radar.appendChild(g);labs.push(g);
+    const hit=mk('circle',{class:'hit',cx:x,cy:y,r:16});radar.appendChild(hit);
+    const cell=document.createElement('button');cell.type='button';cell.className='dim';cell.style.cssText=`${k};--w:${d[1]}%`;
+    cell.innerHTML=`<b>${d[1]}${d[2]==='en'?'<small>%</small>':''}</b><span class="dbar"><i></i></span><span>${d[0]}</span>`;
+    (d[2]==='en'?cellsEn:cellsVoz).appendChild(cell);cells.push(cell);
+    [hit,g,cell].forEach(el=>{el.addEventListener('pointerenter',()=>hl(i));el.addEventListener('pointerleave',()=>hl(-1))});
+    cell.addEventListener('focus',()=>hl(i));cell.addEventListener('click',()=>{pinned=i;hl(i)});
+  });
+  let pinned=0;
+  function hl(k){const on=k<0?pinned:k;
+    axes.forEach((a,i)=>a.classList.toggle('on',i===on));pts.forEach((p,i)=>p.classList.toggle('on',i===on));
+    labs.forEach((l,i)=>l.classList.toggle('on',i===on));cells.forEach((c,i)=>c.classList.toggle('on',i===on));
+    detail.innerHTML=`<b>${DIM[on][0]}.</b> ${DIM[on][3]}`}
+  hl(-1);
   // Plays when the card is really in view (not when only its top edge peeks into the first screen) and replays on return.
-  const counters=$$('#rep [data-count]');
-  const count=()=>{const st=performance.now(),D=reduce?0:1200;(function tick(n){const p=D?Math.min(1,(n-st)/D):1;counters.forEach(c=>c.textContent=Math.round(+c.dataset.count*(1-Math.pow(1-p,3))));if(p<1&&$('#rep').classList.contains('in'))requestAnimationFrame(tick)})(st)};
   new IntersectionObserver(es=>es.forEach(e=>{const rep=e.target;
-    if(e.isIntersecting&&e.intersectionRatio>=.45){if(!rep.classList.contains('in')){rep.classList.add('in');count()}}
-    else if(!e.isIntersecting){rep.classList.remove('in');counters.forEach(c=>c.textContent=reduce?c.dataset.count:'0')}
+    if(e.isIntersecting&&e.intersectionRatio>=.45)rep.classList.add('in');
+    else if(!e.isIntersecting)rep.classList.remove('in');
   }),{threshold:[0,.45]}).observe($('#rep'));
-  if(reduce)counters.forEach(c=>c.textContent=c.dataset.count);
 
   /* ================= você × nativo ================= */
   // hovering or tapping a marked part lights up the same part in the other sentence

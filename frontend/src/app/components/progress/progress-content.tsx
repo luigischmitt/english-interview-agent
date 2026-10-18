@@ -13,9 +13,11 @@ import type {
   ProgressSessionRow,
   ProgressStudyTopic,
 } from "@/lib/interview/progress-insights.mjs";
-import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics } from "@/lib/interview/voice-trend.mjs";
+import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics, type VoiceTrendMetric } from "@/lib/interview/voice-trend.mjs";
+import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import { useReplayReveal } from "@/lib/use-replay-reveal";
 import { MetricSwatch, VoiceTrendChart } from "../charts/voice-trend-chart";
+import { ProfileRadar, type RadarItem } from "../charts/profile-radar";
 import { SectionHeading } from "../shared";
 import "./progress.css";
 
@@ -49,7 +51,7 @@ function seniorityLabel(value: string | null | undefined) {
   return value === "staff" ? "Staff / Lead" : value ?? "";
 }
 
-/* ------------------------------------------------------------- Voice hero */
+/* ------------------------------------------------------------------- Hero */
 
 function ChangeLabel({ change }: { change: number | null }) {
   if (change === null) return <span className="pg-change">{t("1ª medição")}</span>;
@@ -63,21 +65,152 @@ function ChangeLabel({ change }: { change: number | null }) {
   );
 }
 
-export function VoiceHero({ insights }: { insights: ProgressInsights }) {
+const voiceExplainer: Record<VoiceTrendMetric, string> = {
+  accuracy: "Quão claro cada som e cada palavra saiu, segundo o Azure.",
+  fluency: "Pausas, hesitações e velocidade: se a fala flui sem travar.",
+  prosody: "Entonação e acento das palavras, a melodia da frase. Não é nota de sotaque.",
+};
+
+function radarItems(insights: ProgressInsights): (RadarItem & { explain: string })[] {
+  return insights.dimensions.map((dimension) => {
+    if (dimension.kind === "voice") {
+      const metric = dimension.key as VoiceTrendMetric;
+      return { key: metric, group: "voice", label: t(voiceTrendCopy[metric].label), value: dimension.value, display: String(Math.round(dimension.value)), explain: t(voiceExplainer[metric]) };
+    }
+    const type = dimension.key as PatternType;
+    return {
+      key: type,
+      group: "english",
+      label: type === "STRUCTURE" ? dimension.label : dimension.fullLabel,
+      value: dimension.value,
+      display: `${Math.round(dimension.value)}%`,
+      explain: `${t(patternExplainer[type])} ${getCurrentLocale() === "en"
+        ? `${Math.round((dimension.value / 100) * insights.analyzedAnswers)} of ${insights.analyzedAnswers} answers without this error.`
+        : `${Math.round((dimension.value / 100) * insights.analyzedAnswers)} de ${insights.analyzedAnswers} respostas sem esse erro.`}`,
+    };
+  });
+}
+
+function radarEmptyMessage(insights: ProgressInsights) {
+  if (insights.reportReadyCount === 0) return t("Seu perfil aparece aqui assim que o relatório de uma prática ficar pronto.");
+  if (getCurrentLocale() === "en") return `At least ${minAnswersForProfile} analyzed answers are needed to build your profile. You have ${insights.analyzedAnswers}.`;
+  return `Precisamos de pelo menos ${minAnswersForProfile} respostas analisadas para montar o perfil. Você tem ${insights.analyzedAnswers}.`;
+}
+
+function ProfileView({ insights }: { insights: ProgressInsights }) {
+  const items = useMemo(() => radarItems(insights), [insights]);
+  const english = items.filter((item) => item.group === "english");
+  const voice = items.filter((item) => item.group === "voice");
+  const strongest = [...items].sort((a, b) => b.value - a.value)[0] ?? null;
+  const weakest = [...items].sort((a, b) => a.value - b.value)[0] ?? null;
+  const [picked, setPicked] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const activeKey = hovered ?? picked ?? weakest?.key ?? null;
+  const active = items.find((item) => item.key === activeKey) ?? null;
+
+  if (items.length < 3) {
+    return (
+      <div className="pg-empty">
+        {insights.sessionCount === 0 && <span className="pg-tucano" aria-hidden="true" />}
+        <p>{radarEmptyMessage(insights)}</p>
+      </div>
+    );
+  }
+
+  const summary = items.map((item) => `${item.label} ${item.display}`).join(", ");
+  const cell = (item: RadarItem & { explain: string }, index: number) => (
+    <button
+      key={item.key}
+      type="button"
+      className="pg-dim"
+      aria-pressed={activeKey === item.key}
+      style={{ ...stagger(index), "--w": `${Math.max(2, Math.min(100, item.value))}%` } as CSSProperties}
+      onClick={() => setPicked(item.key)}
+      onFocus={() => setPicked(item.key)}
+      onMouseEnter={() => setHovered(item.key)}
+      onMouseLeave={() => setHovered(null)}
+    >
+      <span className="pg-dim-v">{Math.round(item.value)}{item.group === "english" && <small>%</small>}</span>
+      <span className="pg-dim-bar" data-group={item.group}><i /></span>
+      <span className="pg-dim-l">{item.label}</span>
+    </button>
+  );
+
+  return (
+    <>
+      <div className="pg-profile">
+        <div className="pg-radar">
+          <ProfileRadar items={items} active={activeKey} onActive={setHovered} label={`${t("Seu perfil")}: ${summary}.`} />
+        </div>
+        <div className="pg-profile-side">
+          {strongest && <div><p className="pg-side-k">{t("Ponto forte")}</p><p className="pg-side-v">{strongest.label} <span data-tone="good">{strongest.display}</span></p></div>}
+          {weakest && weakest.key !== strongest?.key && <div><p className="pg-side-k">{t("Ponto de atenção")}</p><p className="pg-side-v">{weakest.label} <span data-tone="attention">{weakest.display}</span></p></div>}
+          {active && <p className="pg-side-detail" aria-live="polite"><strong>{active.label}.</strong> {active.explain}</p>}
+        </div>
+      </div>
+      <div className="pg-dims">
+        {english.length > 0 && (
+          <div role="group" aria-label={t("Seu inglês")}>
+            <p className="pg-dims-h"><i data-group="english" aria-hidden="true" />{t("Seu inglês")} <span>{t("% das respostas sem esse erro")}</span></p>
+            <div className="pg-dims-cells" data-count={english.length}>{english.map((item, index) => cell(item, index))}</div>
+          </div>
+        )}
+        {voice.length > 0 && (
+          <div role="group" aria-label={t("Sua voz")}>
+            <p className="pg-dims-h"><i data-group="voice" aria-hidden="true" />{t("Sua voz")} <span>{t("nota do Azure, de 0 a 100")}</span></p>
+            <div className="pg-dims-cells" data-count={voice.length}>{voice.map((item, index) => cell(item, english.length + index))}</div>
+          </div>
+        )}
+      </div>
+      <p className="pg-dims-note">{t("Baseado em ")}{plural(insights.analyzedAnswers, "resposta analisada", "respostas analisadas")} {t("de ")}{plural(insights.analyzedSessions, "prática", "práticas")}{t(". Isto não é uma medida do seu nível de inglês.")}</p>
+    </>
+  );
+}
+
+function VoiceTrendView({ insights }: { insights: ProgressInsights }) {
   const rows = useMemo(() => mergeVoiceSeries(insights.series), [insights.series]);
   const summaries = voiceTrendMetrics.map((metric) => ({ metric, summary: voiceMetricSummary(rows, metric) }));
   const focus = summaries
     .filter((item) => item.summary)
     .sort((a, b) => (a.summary?.latest ?? 0) - (b.summary?.latest ?? 0))[0]?.metric ?? null;
+
+  if (rows.length === 0) {
+    return <div className="pg-empty"><p>{t("Ainda não há fala avaliada suficiente. Respostas mais longas ajudam a deixar a precisão, o ritmo e a prosódia confiáveis.")}</p></div>;
+  }
+  return (
+    <>
+      <div className="pg-metrics">
+        {summaries.map(({ metric, summary }, index) => (
+          <div key={metric} className="pg-metric" data-focus={metric === focus} style={stagger(index)}>
+            <p className="pg-metric-label"><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === focus && <span className="pg-focus">{t("seu foco")}</span>}</p>
+            <p className="pg-metric-value">{summary ? Math.round(summary.latest) : "—"}<small>/100</small></p>
+            {summary && <ChangeLabel change={summary.change} />}
+            <p className="pg-metric-measure">{t(voiceTrendCopy[metric].measure)}</p>
+          </div>
+        ))}
+      </div>
+      <div className="pg-chart">
+        {rows.length >= 2
+          ? <VoiceTrendChart rows={rows} focus={focus} />
+          : <p className="pg-note">{t("Com mais uma entrevista com fala avaliada, o gráfico mostra como cada métrica está mudando.")}</p>}
+      </div>
+    </>
+  );
+}
+
+export function ProgressHero({ insights }: { insights: ProgressInsights }) {
+  const [view, setView] = useState<"profile" | "trend">("profile");
   const role = [insights.latestRole || t("Prática de entrevista"), seniorityLabel(insights.latestSeniority)].filter(Boolean).join(" · ");
 
   return (
-    <section className="pg-hero" aria-labelledby="pg-voice-title" data-reveal>
+    <section className="pg-hero" aria-labelledby="pg-hero-title" data-reveal>
       <div className="pg-hero-head">
         <div>
           <p className="pg-kicker">{role}</p>
-          <h2 id="pg-voice-title" className="pg-hero-title">{t("Sua voz, entrevista a entrevista")}</h2>
-          <p className="pg-hero-sub">{t("Precisão, ritmo e prosódia medidos pelo Azure em cada entrevista. Não são nota de inglês nem de sotaque.")}</p>
+          <h2 id="pg-hero-title" className="pg-hero-title">{t(view === "profile" ? "Seu perfil de entrevista" : "Sua voz, entrevista a entrevista")}</h2>
+          <p className="pg-hero-sub">{t(view === "profile"
+            ? "Cada ponta do gráfico é uma parte da sua fala. Quanto mais perto da borda, melhor."
+            : "Precisão, ritmo e prosódia medidos pelo Azure em cada entrevista. Não são nota de inglês nem de sotaque.")}</p>
         </div>
         <dl className="pg-totals">
           <div><dt>{t("Entrevistas")}</dt><dd>{insights.sessionCount}</dd></div>
@@ -85,31 +218,15 @@ export function VoiceHero({ insights }: { insights: ProgressInsights }) {
           <div><dt>{t("Tempo falando")}</dt><dd>{formatPracticeDuration(insights.practiceMs)}</dd></div>
         </dl>
       </div>
-
-      {rows.length > 0 ? (
-        <>
-          <div className="pg-metrics">
-            {summaries.map(({ metric, summary }, index) => (
-              <div key={metric} className="pg-metric" data-focus={metric === focus} style={stagger(index)}>
-                <p className="pg-metric-label"><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === focus && <span className="pg-focus">{t("seu foco")}</span>}</p>
-                <p className="pg-metric-value">{summary ? Math.round(summary.latest) : "—"}<small>/100</small></p>
-                {summary && <ChangeLabel change={summary.change} />}
-                <p className="pg-metric-measure">{t(voiceTrendCopy[metric].measure)}</p>
-              </div>
-            ))}
-          </div>
-          <div className="pg-chart">
-            {rows.length >= 2
-              ? <VoiceTrendChart rows={rows} focus={focus} />
-              : <p className="pg-note">{t("Com mais uma entrevista com fala avaliada, o gráfico mostra como cada métrica está mudando.")}</p>}
-          </div>
-        </>
-      ) : (
-        <div className="pg-empty">
-          {insights.sessionCount === 0 && <span className="pg-tucano" aria-hidden="true" />}
-          <p>{t("Ainda não há fala avaliada suficiente. Respostas mais longas ajudam a deixar a precisão, o ritmo e a prosódia confiáveis.")}</p>
-        </div>
-      )}
+      <SlidingSegmented
+        name="progress-hero-view"
+        ariaLabel={t("O que mostrar")}
+        options={[{ value: "profile", label: t("Perfil") }, { value: "trend", label: t("Evolução da voz") }]}
+        value={view}
+        onChange={(value) => setView(value as "profile" | "trend")}
+        className="pg-view-switch grid-cols-2"
+      />
+      {view === "profile" ? <ProfileView insights={insights} /> : <VoiceTrendView insights={insights} />}
     </section>
   );
 }
@@ -368,7 +485,7 @@ export function ProgressContent({ insights, onOpenReport }: { insights: Progress
   useReplayReveal(rootRef, [insights]);
   return (
     <div ref={rootRef} className="pg-page mt-8 lg:mt-10">
-      <VoiceHero insights={insights} />
+      <ProgressHero insights={insights} />
       <EnglishPatterns insights={insights} />
       <div className="pg-split">
         <StudyTopics insights={insights} />

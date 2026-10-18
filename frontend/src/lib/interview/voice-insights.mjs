@@ -428,7 +428,7 @@ export function readPracticeAttempts(storage) {
 
 export function savePracticeAttempt(storage, sentenceId, attempt) {
   const items = readPracticeAttempts(storage);
-  const history = Array.isArray(items[sentenceId]) ? items[sentenceId].slice(-3) : [];
+  const history = Array.isArray(items[sentenceId]) ? items[sentenceId].slice(-5) : [];
   history.push(attempt);
   const bounded = Object.fromEntries(Object.entries({ ...items, [sentenceId]: history }).slice(-30));
   try { storage?.setItem?.(practiceStorageKey, JSON.stringify({ version: 1, items: bounded })); } catch { /* Local progress is optional. */ }

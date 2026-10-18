@@ -43,10 +43,43 @@ function translateTip(t: (key: string, values?: Record<string, string | number>)
   return typeof tip === "string" ? t(tip) : t(tip.key, tip.values);
 }
 
-function AttemptResult({ attempt, compact = false }: { attempt: VoicePracticeAttempt; compact?: boolean }) {
-  return <div className={`vv-attempt${compact ? " vv-attempt-compact" : ""}`} role="status">
-    <div className="vv-attempt-scores">{metricKeys.map((key) => <span key={key}><b>{key === "accuracy" ? "P" : key === "fluency" ? "R" : "Pr"}</b> {formatMetric(attempt.scores[key])}</span>)}</div>
-    {!compact && attempt.words.length > 0 && <p className="vv-attempt-words" lang="en">{attempt.words.map((word, index) => <span className={word.errorType ? "vv-problem-word" : ""} key={`${word.word}-${index}`}>{word.word}</span>)}</p>}
+const metricLabel: Record<VoiceMetricKey, string> = { accuracy: "Precisão", fluency: "Ritmo", prosody: "Prosódia" };
+
+function sameScores(first: VoicePracticeAttempt, second: VoicePracticeAttempt) {
+  return metricKeys.every((key) => (first.scores[key] === null ? null : Math.round(first.scores[key]!)) === (second.scores[key] === null ? null : Math.round(second.scores[key]!)));
+}
+
+/** Latest attempt with full metric names, the change against the previous attempt and the words Azure flagged. */
+function AttemptResult({ attempts, focus }: { attempts: VoicePracticeAttempt[]; focus: VoiceMetricKey }) {
+  const { t } = useLocale();
+  const latest = attempts.at(-1)!;
+  const previous = attempts.length > 1 ? attempts.at(-2)! : null;
+  const flagged = latest.words.some((word) => word.errorType && word.errorType !== "None");
+  const history = attempts.map((attempt) => attempt.scores[focus]).filter((value): value is number => value !== null);
+  const time = new Date(latest.createdAt);
+  const when = Number.isNaN(time.getTime()) ? "" : time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return <div className="vv-result" role="status" aria-live="polite">
+    <div className="vv-result-head">
+      <p className="ds-label">{attempts.length === 1 ? t("Sua primeira tentativa") : t("Tentativa {n}", { n: attempts.length })}{when && <span> · {when}</span>}</p>
+      {previous && <p className="ds-small">{t("Comparada com a tentativa anterior")}</p>}
+    </div>
+    <div className="vv-scores">{metricKeys.map((key) => {
+      const value = latest.scores[key];
+      const before = previous?.scores[key] ?? null;
+      const delta = value !== null && before !== null ? Math.round(value) - Math.round(before) : null;
+      return <div className="vv-score" data-focus={key === focus} key={key}>
+        <span className="vv-score-name">{t(metricLabel[key])}</span>
+        <span className="vv-score-value">{formatMetric(value)}</span>
+        {delta !== null && <span className="vv-score-delta" data-direction={delta > 0 ? "up" : delta < 0 ? "down" : "same"}>{delta > 0 ? `+${delta}` : delta === 0 ? t("igual") : delta}</span>}
+        <span className="vv-score-bar" aria-hidden="true"><i style={{ width: `${Math.max(2, Math.min(100, value ?? 0))}%` }} /></span>
+      </div>;
+    })}</div>
+    {latest.words.length > 0 && <>
+      <p className="vv-attempt-words" lang="en">{latest.words.map((word, index) => <span className={word.errorType && word.errorType !== "None" ? "vv-problem-word" : ""} key={`${word.word}-${index}`}>{word.word}</span>)}</p>
+      <p className="ds-small mt-1">{t(flagged ? "Em destaque: palavras que o Azure marcou nesta tentativa." : "Nenhuma palavra marcada nesta tentativa.")}</p>
+    </>}
+    {previous && sameScores(previous, latest) && <p className="vv-same ds-small">{t("Mesmo resultado da tentativa anterior. Tente outra vez exagerando a palavra destacada ou falando um pouco mais devagar.")}</p>}
+    {history.length > 1 && <p className="vv-history ds-small">{t("{metric} nas suas tentativas", { metric: t(metricLabel[focus]) })}: <b>{history.map((value) => Math.round(value)).join(" → ")}</b></p>}
   </div>;
 }
 
@@ -64,6 +97,7 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
   const [activeCapture, setActiveCapture] = useState<string | null>(null);
   const [assessing, setAssessing] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<"sentence" | "word">("sentence");
   const [attempts, setAttempts] = useState<Record<string, VoicePracticeAttempt[]>>(() => typeof window === "undefined" ? {} : readPracticeAttempts(window.localStorage));
   const captureRef = useRef<Capture | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -132,6 +166,7 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
   const startRecording = async (target: string, text: string) => {
     if (captureRef.current) return;
     setMessage(null);
+    setMessageTarget(target.startsWith("word:") ? "word" : "sentence");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
       const context = new AudioContext();
@@ -226,10 +261,10 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
               </div>
               <button type="button" className="ds-btn ds-btn-quiet vv-practice-now" onClick={practiceNow}>{t("Praticar agora")}<ArrowRight className="size-4 ds-arrow" aria-hidden="true" /></button>
             </section>
-            <section ref={trainingRef} className="vv-section" aria-labelledby="today-training"><h2 id="today-training" className="ds-h2">{t("Treino de hoje · foco em {metric}", { metric: t(lesson.label).toLocaleLowerCase() })}</h2>{sentence ? <article className="vv-training ds-card"><div className="vv-training-top"><p className="ds-small">{t("Frase completa da sua entrevista")}</p><p className="ds-small">{t("{current} de {total}", { current: currentSentenceIndex + 1, total: plan.sentences.length })}</p></div><p className="vv-training-sentence" lang="en"><HighlightedText text={sentence.text} words={sentence.attentionWords} /></p><div className="vv-training-actions"><div className="vv-training-primary-actions"><button type="button" className="ds-btn ds-btn-soft" onClick={() => void playText(sentence.text)} disabled={activeCapture !== null || assessing !== null}><Volume2 className="size-4" aria-hidden="true" />{t("Ouvir")}</button>{activeCapture === sentence.id ? <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => void stopRecording()}><Square className="size-4 fill-current" aria-hidden="true" />{t("Parar")}</button> : <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => void startRecording(sentence.id, sentence.text)} disabled={activeCapture !== null || assessing !== null}><Mic className="size-4" aria-hidden="true" />{assessing === sentence.id && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}{t("Gravar")}</button>}</div><button type="button" className="ds-btn ds-btn-quiet vv-next-sentence" onClick={nextSentence} disabled={activeCapture !== null || plan.sentences.length < 2}>{t("Próxima frase")}<ArrowRight className="size-4 ds-arrow" aria-hidden="true" /></button></div>{attempts[sentence.id]?.length ? <div className="vv-before-now"><p className="ds-label">{t("Antes → Agora")}</p><div><span>{t("Antes")}</span><AttemptResult attempt={attempts[sentence.id][0]} compact /></div><div><span>{t("Agora")}</span><AttemptResult attempt={attempts[sentence.id].at(-1)!} /></div></div> : <p className="ds-body mt-4">{t("Grave uma tentativa para ver suas métricas e as palavras avaliadas.")}</p>}</article> : <p className="ds-body mt-3">{t("Ainda não há frases completas e confiáveis das suas entrevistas para repetir.")}</p>}</section>
+            <section ref={trainingRef} className="vv-section" aria-labelledby="today-training"><h2 id="today-training" className="ds-h2">{t("Treino de hoje · foco em {metric}", { metric: t(lesson.label).toLocaleLowerCase() })}</h2>{sentence ? <article className="vv-training ds-card"><div className="vv-training-top"><p className="ds-small">{t("Frase completa da sua entrevista")}</p><p className="ds-small">{t("{current} de {total}", { current: currentSentenceIndex + 1, total: plan.sentences.length })}</p></div><p className="vv-training-sentence" lang="en"><HighlightedText text={sentence.text} words={sentence.attentionWords} /></p><div className="vv-training-actions"><div className="vv-training-primary-actions"><button type="button" className="ds-btn ds-btn-soft" onClick={() => void playText(sentence.text)} disabled={activeCapture !== null || assessing !== null}><Volume2 className="size-4" aria-hidden="true" />{t("Ouvir")}</button>{activeCapture === sentence.id ? <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => void stopRecording()}><Square className="size-4 fill-current" aria-hidden="true" />{t("Parar")}</button> : <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => void startRecording(sentence.id, sentence.text)} disabled={activeCapture !== null || assessing !== null}><Mic className="size-4" aria-hidden="true" />{assessing === sentence.id && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}{t("Gravar")}</button>}</div><button type="button" className="ds-btn ds-btn-quiet vv-next-sentence" onClick={nextSentence} disabled={activeCapture !== null || plan.sentences.length < 2}>{t("Próxima frase")}<ArrowRight className="size-4 ds-arrow" aria-hidden="true" /></button></div>{activeCapture === sentence.id ? <p className="vv-status ds-small" role="status"><span className="vv-rec-dot" aria-hidden="true" />{t("Gravando. Leia a frase e toque em Parar.")}</p> : assessing === sentence.id ? <p className="vv-status ds-small" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t("Avaliando sua gravação…")}</p> : null}{message && messageTarget !== "word" && <p className="vv-message mt-4" role="alert">{message}</p>}{attempts[sentence.id]?.length ? <AttemptResult attempts={attempts[sentence.id]} focus={activeMetric} /> : <p className="ds-body mt-4">{t("Grave uma tentativa para ver suas métricas e as palavras avaliadas.")}</p>}</article> : <p className="ds-body mt-3">{t("Ainda não há frases completas e confiáveis das suas entrevistas para repetir.")}</p>}</section>
             <section className="vv-section" aria-labelledby="work-words"><h2 id="work-words" className="ds-h2">{t("Suas palavras de trabalho")}</h2>{plan.words.length ? <div className="vv-words">{plan.words.map((word) => { const key = `word:${word.word}`; const latest = attempts[key]?.at(-1); return <article className="vv-word ds-card" key={word.word}><p lang="en" className="vv-word-name">{word.word}</p><div className="vv-word-actions"><button type="button" className="ds-btn ds-btn-quiet" onClick={() => void playText(word.word)} disabled={activeCapture !== null || assessing !== null}><Volume2 className="size-4" aria-hidden="true" />{t("Ouvir")}</button>{activeCapture === key ? <button type="button" className="ds-btn ds-btn-soft" onClick={() => void stopRecording()}><Square className="size-4 fill-current" aria-hidden="true" />{t("Parar")}</button> : <button type="button" className="ds-btn ds-btn-soft" onClick={() => void startRecording(key, word.word)} disabled={activeCapture !== null || assessing !== null}><Mic className="size-4" aria-hidden="true" />{t("Gravar")}</button>}</div>{latest && <p className="vv-word-score">{t("Precisão")}: {formatMetric(latest.scores.accuracy)}</p>}</article>; })}</div> : <p className="ds-body mt-3">{t("Quando uma palavra relevante aparecer em mais entrevistas, ela fica disponível aqui.")}</p>}</section>
             <section className="vv-section" aria-labelledby="voice-evolution"><h2 id="voice-evolution" className="ds-h2">{t("Evolução")}</h2><div className="vv-evolution ds-card">{insights.metrics.map((metric) => { const points = plan.evolution[metric.key]; const delta = points.length > 1 ? Math.round(points.at(-1)!.value - points[0].value) : 0; return <div className="vv-evolution-row" key={metric.key}><div className="vv-evolution-label"><span className="ds-label">{t(metric.label)}</span>{delta !== 0 && <span className="vv-evolution-delta">{t("{delta} desde a primeira", { delta: `${delta > 0 ? "+" : ""}${delta}` })}</span>}</div>{points.length ? <div className="vv-evolution-series">{points.map((point, index) => <div className="vv-evolution-point" key={point.id}><span className="vv-evolution-value">{Math.round(point.value)}</span><span className="vv-evolution-bar" data-latest={index === points.length - 1} style={{ "--vv-value": `${point.value}%` } as CSSProperties} aria-label={t("{metric}: {value} em {date}", { metric: metric.label, value: Math.round(point.value), date: point.date ? new Date(point.date).toLocaleDateString() : t("data não disponível") })}><span /></span></div>)}</div> : <span className="ds-body">{t("Dados confiáveis ainda não disponíveis.")}</span>}</div>; })}</div></section>
-            {message && <p className="vv-message" role="alert">{message}</p>}
+            {message && messageTarget === "word" && <p className="vv-message" role="alert">{message}</p>}
           </div>}
   </main>;
 }
