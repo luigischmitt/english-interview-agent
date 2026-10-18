@@ -155,7 +155,6 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
                 persistenceMessage={null}
                 feedbackSyncMessage={null}
                 reportState={{ status: "ready", result: historicalReport }}
-                reportCaption="Relatório salvo"
                 turns={[]}
                 azureSummary={historicalAzureSummary}
                 coverage={{ available: historicalAssessmentCount, pending: 0, total: historicalAssessmentCount }}

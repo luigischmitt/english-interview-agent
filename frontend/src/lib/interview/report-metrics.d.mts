@@ -4,7 +4,7 @@ export type AzureAssessmentSample = { durationMs?: number } & (
   | { status: "available"; scores: Record<AzureReportDimension, number | null> }
 );
 export type AzureDimensionSummary = { mean: number | null; sampleCount: number; /** Assessed speech behind the mean; null/absent when unknown (older saved reports). */ totalDurationMs?: number | null };
-export type AzureAnswerDelivery = { wordsPerMinute?: number; pauseCount?: number; longestPauseMs?: number; startDelayMs?: number; fillerCount?: number; fillers?: string[] };
+export type AzureAnswerDelivery = { wordsPerMinute?: number; pauseCount?: number; longestPauseMs?: number; startDelayMs?: number; fillerCount?: number; fillers?: string[] | Record<string, number> };
 export type AzureAnswerPhrase = { phraseIndex: number; text: string; startMs: number; endMs: number; score: number; issue: "pronunciation" | "intonation"; problemWords?: Array<{ word: string; score: number | null; errorType: string | null; worstPhoneme: string | null; prosodyErrors: string[] }> };
 export type AzureAnswerSummary = { sequenceNumber: number; scores: Record<AzureReportDimension, number | null>; durationMs: number; delivery?: AzureAnswerDelivery; phrases?: AzureAnswerPhrase[]; clips?: Array<{ phraseIndex: number; startMs: number; endMs: number; path: string }> };
 export type AzureMetricSummary = { accuracy: AzureDimensionSummary; fluency: AzureDimensionSummary; prosody: AzureDimensionSummary; answers?: AzureAnswerSummary[] };
