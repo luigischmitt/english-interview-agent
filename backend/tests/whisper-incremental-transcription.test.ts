@@ -84,17 +84,17 @@ const incremental = (extra: Partial<StreamingOptions> = {}): StreamingOptions =>
 
 describe("incremental Whisper over the stream WebSocket", () => {
   it("transcribes the pause-cut segment in the background and completes after the grace without a full-audio call", async () => {
-    const whisper = createWhisper(["Secret answer about Kafka."]);
+    const whisper = createWhisper(["Secret answer about Kafka handled our traffic."]);
     const { connect } = await startServer(whisper.service, incremental());
     const { socket, messages, waitFor } = await connect();
     await speak(socket, 800, 0.05);
     await speak(socket, 500, 0.001);
     const complete = await waitFor("complete");
-    expect(complete).toMatchObject({ status: "complete", provider: "whisper-incremental", transcript: "Secret answer about Kafka." });
+    expect(complete).toMatchObject({ status: "complete", provider: "whisper-incremental", transcript: "Secret answer about Kafka handled our traffic." });
     expect(whisper.transcribe).toHaveBeenCalledTimes(1);
     // The segment is the audio up to the pause, not the full recording.
     expect(whisper.wavSizes[0]).toBeLessThanOrEqual(44 + 14 * frameBytes);
-    expect(messages.filter((message) => message.type === "caption").pop()).toMatchObject({ committed: "Secret answer about Kafka.", partial: "" });
+    expect(messages.filter((message) => message.type === "caption").pop()).toMatchObject({ committed: "Secret answer about Kafka handled our traffic.", partial: "" });
     const completeLog = JSON.parse(logs().split("\n").find((line) => line.includes('"status":"complete"'))!);
     expect(completeLog).toMatchObject({ provider: "whisper-incremental", answerEndReason: "turn_end_grace", segmentsTranscribed: 1, incrementalTurns: 1 });
     expect(completeLog).toHaveProperty("segmentsSkipped");
@@ -106,8 +106,15 @@ describe("incremental Whisper over the stream WebSocket", () => {
   it("reuses incremental word timing for Azure without a full-audio transcription", async () => {
     const transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo"): Promise<TranscriptionResult> => ({
       provider,
-      transcript: "Clear answer.",
-      words: [{ text: "Clear", start: 0.1, end: 0.4 }, { text: "answer", start: 0.45, end: 0.8 }],
+      transcript: "Clear answer explains the production tradeoffs.",
+      words: [
+        { text: "Clear", start: 0.05, end: 0.1717 },
+        { text: "answer", start: 0.1717, end: 0.2933 },
+        { text: "explains", start: 0.2933, end: 0.415 },
+        { text: "the", start: 0.415, end: 0.5367 },
+        { text: "production", start: 0.5367, end: 0.6583 },
+        { text: "tradeoffs", start: 0.6583, end: 0.78 },
+      ],
     }));
     const service: TranscriptionService = { availableProviders: () => ["whisper-large-v3-turbo"], transcribe };
     const assess = vi.fn(async (_audio: Buffer, _format: "wav", _referenceText: string) => ({ provider: "azure" as const, locale: "en-US" as const, mode: "scripted" as const, scores: { accuracy: 90, fluency: 85, prosody: 80 } }));
@@ -115,16 +122,16 @@ describe("incremental Whisper over the stream WebSocket", () => {
     const { socket, waitFor } = await connect();
     await speak(socket, 800, 0.05);
     await speak(socket, 500, 0.001);
-    await expect(waitFor("complete")).resolves.toMatchObject({ provider: "whisper-incremental", transcript: "Clear answer." });
+    await expect(waitFor("complete")).resolves.toMatchObject({ provider: "whisper-incremental", transcript: "Clear answer explains the production tradeoffs." });
     await expect(waitFor("assessment")).resolves.toMatchObject({ status: "available", blockCount: 1, assessedBlockCount: 1 });
     expect(transcribe).toHaveBeenCalledTimes(1);
     expect(assess).toHaveBeenCalledTimes(1);
-    expect(assess.mock.calls[0]?.[2]).toBe("Clear answer");
+    expect(assess.mock.calls[0]?.[2]).toBe("Clear answer explains the production tradeoffs");
     expect(logs()).toContain('"timingOrigin":"incremental"');
   });
 
   it("joins segments across a resumed-speech pause: the first pause's grace is cancelled and the whole transcript completes", async () => {
-    const whisper = createWhisper(["Part one,", "part two."]);
+    const whisper = createWhisper(["Part one covers the initial migration,", "part two explains the production rollout."]);
     const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_200, incompleteGraceMs: 1_200 }));
     const { socket, messages, waitFor } = await connect();
     await speak(socket, 800, 0.05);
@@ -133,7 +140,7 @@ describe("incremental Whisper over the stream WebSocket", () => {
     expect(messages.some((message) => message.type === "speech-resumed")).toBe(true);
     expect(messages.some((message) => message.type === "complete")).toBe(false);
     await speak(socket, 500, 0.001);
-    await expect(waitFor("complete")).resolves.toMatchObject({ provider: "whisper-incremental", transcript: "Part one, part two." });
+    await expect(waitFor("complete")).resolves.toMatchObject({ provider: "whisper-incremental", transcript: "Part one covers the initial migration, part two explains the production rollout." });
     expect(whisper.transcribe).toHaveBeenCalledTimes(2);
   });
 
@@ -153,13 +160,13 @@ describe("incremental Whisper over the stream WebSocket", () => {
   });
 
   it("retries a failed segment (tail only) instead of re-transcribing the full audio", async () => {
-    const whisper = createWhisper([new Error("boom"), "Recovered by the retry."], "Full audio transcript.");
+    const whisper = createWhisper([new Error("boom"), "Recovered by the retry without a fallback."], "Full audio transcript.");
     const { connect } = await startServer(whisper.service, incremental());
     const { socket, waitFor } = await connect();
     await speak(socket, 800, 0.05);
     await speak(socket, 500, 0.001);
     const complete = await waitFor("complete");
-    expect(complete).toMatchObject({ provider: "whisper-incremental", transcript: "Recovered by the retry." });
+    expect(complete).toMatchObject({ provider: "whisper-incremental", transcript: "Recovered by the retry without a fallback." });
     // Same short segment twice; no full-audio call.
     expect(whisper.transcribe).toHaveBeenCalledTimes(2);
     expect(whisper.wavSizes[0]).toBe(whisper.wavSizes[1]);
@@ -188,7 +195,7 @@ describe("incremental Whisper over the stream WebSocket", () => {
     const transcribe = vi.fn(async (_audio: Buffer, provider: "whisper-large-v3-turbo", _format?: unknown, signal?: AbortSignal): Promise<TranscriptionResult> => {
       calls.push(Date.now());
       if (calls.length === 1) await new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
-      return { provider, transcript: "Hedged answer." };
+      return { provider, transcript: "Hedged answer completes without a fallback." };
     });
     const service: TranscriptionService = { availableProviders: () => ["whisper-large-v3-turbo"], transcribe };
     const { connect } = await startServer(service, incremental({ incrementalWhisper: { segmentHedgeAfterMs: 150 } }));
@@ -196,7 +203,7 @@ describe("incremental Whisper over the stream WebSocket", () => {
     await speak(socket, 800, 0.05);
     await speak(socket, 500, 0.001);
     const complete = await waitFor("complete");
-    expect(complete).toMatchObject({ provider: "whisper-incremental", transcript: "Hedged answer." });
+    expect(complete).toMatchObject({ provider: "whisper-incremental", transcript: "Hedged answer completes without a fallback." });
     expect(transcribe).toHaveBeenCalledTimes(2);
     expect(logs()).toContain('"segmentHedges":1');
     expect(logs()).toContain('"segmentHedgeWins":1');
@@ -221,7 +228,7 @@ describe("timing from the pause, not from text arrival", () => {
   });
 
   it("fires the grace at pause + grace, not at text arrival + grace", async () => {
-    const whisper = createWhisper(["I worked on payments."], "x", 1_200);
+    const whisper = createWhisper(["I worked on payments for several years."], "x", 1_200);
     const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 2_000, incompleteGraceMs: 2_000 }));
     const { socket, waitFor } = await connect();
     await speak(socket, 800, 0.05);
@@ -238,14 +245,14 @@ describe("answer-provisional and captions", () => {
   const provisionals = (messages: Array<Record<string, any>>) => messages.filter((message) => message.type === "answer-provisional");
 
   it("sends the changed tail transcript immediately at pause start and logs only the count", async () => {
-    const whisper = createWhisper(["Zeta provisional sentence."]);
+    const whisper = createWhisper(["Zeta provisional sentence explains the deployment strategy."]);
     const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 2_500, incompleteGraceMs: 2_500, prepareAfterMs: 0 }));
     const { socket, messages, waitFor } = await connect();
     await speak(socket, 800, 0.05);
     const silenceStartedAt = Date.now();
     await speak(socket, 1_000, 0.001);
     const provisional = await waitFor("answer-provisional");
-    expect(provisional).toMatchObject({ transcript: "Zeta provisional sentence.", revision: 1, speechEpoch: 0 });
+    expect(provisional).toMatchObject({ transcript: "Zeta provisional sentence explains the deployment strategy.", revision: 1, speechEpoch: 0 });
     expect(provisional.at - silenceStartedAt).toBeLessThan(2_400);
     const complete = await waitFor("complete");
     expect(provisional.at).toBeLessThan(complete.at);
@@ -255,17 +262,17 @@ describe("answer-provisional and captions", () => {
   });
 
   it("sends the final pause snapshot even when delayed preparation is disabled", async () => {
-    const whisper = createWhisper(["Quiet sentence."]);
+    const whisper = createWhisper(["Quiet sentence explains the production deployment strategy."]);
     const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_000, incompleteGraceMs: 1_000, prepareAfterMs: 0 }));
     const { socket, messages, waitFor } = await connect();
     await speak(socket, 800, 0.05);
     await speak(socket, 600, 0.001);
     await waitFor("complete");
-    expect(provisionals(messages)).toMatchObject([{ transcript: "Quiet sentence.", revision: 1, speechEpoch: 0 }]);
+    expect(provisionals(messages)).toMatchObject([{ transcript: "Quiet sentence explains the production deployment strategy.", revision: 1, speechEpoch: 0 }]);
   });
 
   it("refreshes the provisional after resumed speech commits a changed tail", async () => {
-    const whisper = createWhisper(["First clause,", "second clause,"]);
+    const whisper = createWhisper(["First clause explains the migration approach,", "second clause covers the deployment strategy,"]);
     const { connect } = await startServer(whisper.service, incremental({
       prepareAfterSpeechMs: 400,
       incrementalWhisper: { maxSegmentMs: 500 },
@@ -276,20 +283,20 @@ describe("answer-provisional and captions", () => {
     const speechStartedAt = Date.now();
     await speak(socket, 1_200, 0.05);
     const duringSpeech = provisionals(messages);
-    expect(duringSpeech.map(({ transcript, revision }) => [transcript, revision])).toEqual([["First clause,", 1]]);
+    expect(duringSpeech.map(({ transcript, revision }) => [transcript, revision])).toEqual([["First clause explains the migration approach,", 1]]);
     expect(duringSpeech.every((message) => message.at - speechStartedAt < 1_200)).toBe(true);
 
     await speak(socket, 500, 0.001);
     await waitFor("complete");
     expect(provisionals(messages).map(({ transcript, revision, speechEpoch }) => [transcript, revision, speechEpoch])).toEqual([
-      ["First clause,", 1, 0],
-      ["First clause, second clause,", 2, 1],
+      ["First clause explains the migration approach,", 1, 0],
+      ["First clause explains the migration approach, second clause covers the deployment strategy,", 2, 1],
     ]);
     expect(logs()).not.toContain("First clause");
   });
 
   it("keeps the emitted old-epoch snapshot but cancels its pending grace when speech resumes", async () => {
-    const whisper = createWhisper(["Second sentence.", "More."]);
+    const whisper = createWhisper(["Second sentence explains the initial migration approach.", "More production details follow here today."]);
     const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 2_500, incompleteGraceMs: 2_500, prepareAfterMs: 900 }));
     const { socket, messages } = await connect();
     await speak(socket, 800, 0.05);
@@ -301,7 +308,7 @@ describe("answer-provisional and captions", () => {
   });
 
   it("sends at most three per answer with increasing revisions", async () => {
-    const whisper = createWhisper(["One.", "Two.", "Three."]);
+    const whisper = createWhisper(["One detail explains the retry policy.", "Two details cover the timeout settings.", "Three details describe the monitoring plan."]);
     const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 200 }));
     const { socket, messages, waitFor } = await connect();
     for (let turn = 0; turn < 3; turn += 1) {
@@ -309,11 +316,11 @@ describe("answer-provisional and captions", () => {
       await speak(socket, 700, 0.001);
     }
     await waitFor("complete", 6_000);
-    expect(provisionals(messages).map((message) => [message.transcript, message.revision, message.speechEpoch])).toEqual([["One.", 1, 0], ["One. Two.", 2, 1], ["One. Two. Three.", 3, 2]]);
+    expect(provisionals(messages).map((message) => [message.transcript, message.revision, message.speechEpoch])).toEqual([["One detail explains the retry policy.", 1, 0], ["One detail explains the retry policy. Two details cover the timeout settings.", 2, 1], ["One detail explains the retry policy. Two details cover the timeout settings. Three details describe the monitoring plan.", 3, 2]]);
   }, 15_000);
 
   it("caps answer preparation at three revisions", async () => {
-    const whisper = createWhisper(["One.", "Two.", "Three."]);
+    const whisper = createWhisper(["One detail explains the retry policy.", "Two details cover the timeout settings.", "Three details describe the monitoring plan."]);
     const { connect } = await startServer(whisper.service, incremental({ answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 200, maxPrepares: 3 }));
     const { socket, messages, waitFor } = await connect();
     for (let turn = 0; turn < 3; turn += 1) {
@@ -325,7 +332,7 @@ describe("answer-provisional and captions", () => {
   }, 15_000);
 
   it("sends no captions without the start flag", async () => {
-    const whisper = createWhisper(["No caption please."]);
+    const whisper = createWhisper(["No caption should appear for this answer."]);
     const { connect } = await startServer(whisper.service, incremental());
     const { socket, messages, waitFor } = await connect({ captions: false });
     await speak(socket, 800, 0.05);
@@ -786,7 +793,7 @@ describe("semantic end of answer", () => {
 
   it("keeps the last revisions in reserve: no mid-speech snapshot and no replacement at a maximum of 2", async () => {
     const service: AnswerCompletionService = { isComplete: async () => false, assess: async () => ({ complete: false, candidateCompatibility: "COVERED" }) };
-    const { connect } = await startServer(createWhisper(["First clause,", "second clause,"]).service, options(service, {
+    const { connect } = await startServer(createWhisper(["First clause explains the migration approach,", "second clause covers the deployment strategy,"]).service, options(service, {
       maxPrepares: 2, prepareAfterSpeechMs: 400, incrementalWhisper: { maxSegmentMs: 500 }, answerGraceMs: 1_500, incompleteGraceMs: 1_500, prepareAfterMs: 0,
     }));
     const { socket, messages, waitFor } = await connect({ question });
@@ -1004,14 +1011,14 @@ describe("semantic end of answer", () => {
 
   it("calls the classifier at most twice per answer", async () => {
     const fake = classifier(async () => false);
-    const { connect } = await startServer(createWhisper(["One.", "Two.", "Three."]).service, options(fake.service, { answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 200 }));
+    const { connect } = await startServer(createWhisper(["One detail explains the retry policy.", "Two details cover the timeout settings.", "Three details describe the monitoring plan."]).service, options(fake.service, { answerGraceMs: 1_800, incompleteGraceMs: 1_800, prepareAfterMs: 200 }));
     const { socket, waitFor } = await connect({ question });
     for (let turn = 0; turn < 3; turn += 1) {
       await speak(socket, 600, 0.05);
       await speak(socket, 700, 0.001);
     }
     await waitFor("complete", 6_000);
-    expect(fake.calls.map((call) => call.answer)).toEqual(["One.", "One. Two."]);
+    expect(fake.calls.map((call) => call.answer)).toEqual(["One detail explains the retry policy.", "One detail explains the retry policy. Two details cover the timeout settings."]);
   }, 15_000);
 });
 

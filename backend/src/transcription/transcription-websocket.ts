@@ -223,6 +223,11 @@ export function looksUnfinished(transcript: string): boolean {
   return trailingConnectors.has(lastWord);
 }
 
+/** Unicode words in a committed answer; punctuation and whitespace do not count. */
+export function answerWordCount(transcript: string): number {
+  return transcript.match(/[\p{L}\p{N}]+(?:'[\p{L}]+)?/gu)?.length ?? 0;
+}
+
 /** Server-side streaming settings: incremental Whisper tuning and the answer-end orchestration. */
 export type StreamingOptions = {
   /** Incremental Whisper tuning (tests and rare overrides). */
@@ -231,6 +236,10 @@ export type StreamingOptions = {
   answerGraceMs: number;
   /** Grace after a turn that looks unfinished (no final punctuation or a trailing connector); defaults to answerGraceMs. */
   incompleteGraceMs?: number;
+  /** Longer grace while the committed answer is too short to safely treat as an answer. */
+  shortAnswerGraceMs?: number;
+  /** Minimum committed transcript words required for automatic answer completion. Defaults to 6. */
+  minAnswerWords?: number;
   /** Local VAD silence that counts as a turn end and a segment cut (default 800). */
   pauseMs?: number;
   /**
@@ -270,6 +279,22 @@ export type StreamingOptions = {
   /** Upper bound for ending a turn at a pause (`endTurn`). */
   flushTimeoutMs?: number;
 };
+
+/** Select the pause grace from committed text; this value is used only as a duration, never logged with text. */
+export function answerEndGraceMs(transcript: string, options: Pick<StreamingOptions, "answerGraceMs" | "incompleteGraceMs" | "shortAnswerGraceMs" | "minAnswerWords">): number {
+  const minimumWords = options.minAnswerWords ?? 6;
+  if (answerWordCount(transcript) < minimumWords) return options.shortAnswerGraceMs ?? 10_000;
+  return looksUnfinished(transcript) ? (options.incompleteGraceMs ?? options.answerGraceMs) : options.answerGraceMs;
+}
+
+export function isTooShortForAutomaticCompletion(transcript: string, minimumWords = 6): boolean {
+  return answerWordCount(transcript) < minimumWords;
+}
+
+/** Shared gate for semantic `complete`: short capture fragments and connectors cannot close an answer. */
+export function canAutomaticallyCompleteAnswer(transcript: string, minimumWords = 6): boolean {
+  return !isTooShortForAutomaticCompletion(transcript, minimumWords) && !endsWithConnector(transcript);
+}
 
 /**
  * Engine requested by the client in `start`. Whisper (incremental) is the only engine: `ink-2` and `cartesia` come from
@@ -609,8 +634,8 @@ export function attachTranscriptionWebSocket(
         semanticVerdict = outcome.kind ?? (outcome.complete ? "complete" : "incomplete");
         semanticCheckAborted = false;
         if (!outcome.complete) return;
-        // A transcript ending on a connector ("and", "because") is never trusted as finished, whatever the verdict.
-        if (endsWithConnector(transcript)) return;
+        // A short committed transcript or one ending on a connector is never trusted as finished, whatever the verdict.
+        if (!canAutomaticallyCompleteAnswer(transcript, streaming?.minAnswerWords ?? 6)) return;
         const finishIfStillQuiet = () => {
           semanticHoldTimer = null;
           const current = sessionId ? sessions.get(sessionId) : undefined;
@@ -1185,14 +1210,17 @@ export function attachTranscriptionWebSocket(
                 sendPauseProvisionalSnapshot();
                 // Runs in parallel with the pause's completion check; the two never share a request.
                 runPlannedCoverageCheck(streamSession?.committedText() || turnTranscript);
-                const graceMs = looksUnfinished(turnTranscript) ? (streaming.incompleteGraceMs ?? streaming.answerGraceMs) : streaming.answerGraceMs;
+                // Use committed text, not just the tail: Whisper can return a short tail after a longer first segment.
+                const committedTranscript = streamSession?.committedText() || turnTranscript;
+                const graceMs = answerEndGraceMs(committedTranscript, streaming);
                 // Local-VAD turns arrive after their segment was transcribed: time grace and prepare from the pause, not from now.
                 const elapsedMs = info?.silenceStartedAt !== undefined ? Math.max(0, Date.now() - info.silenceStartedAt) : 0;
                 const prepareAfterMs = streaming.prepareAfterMs ?? 0;
                 const maxPrepares = streaming.maxPrepares ?? maxSpeculativeRevisions;
                 const canPrepare = preparesSent < maxPrepares;
                 const maxSemanticChecks = streaming.maxSemanticChecks ?? 2;
-                const canCheckSemantically = interviewerQuestion !== null && Boolean(streaming.answerCompletion) && semanticChecks < maxSemanticChecks;
+                const canCheckSemantically = interviewerQuestion !== null && Boolean(streaming.answerCompletion) && semanticChecks < maxSemanticChecks
+                  && !isTooShortForAutomaticCompletion(committedTranscript, streaming.minAnswerWords ?? 6);
                 const semanticAfterMs = streaming.semanticCheckAfterMs ?? prepareAfterMs;
                 const silenceStartedAt = info?.silenceStartedAt ?? Date.now();
                 const minSilenceMs = streaming.semanticCompleteMinSilenceMs ?? 0;
@@ -1207,7 +1235,8 @@ export function attachTranscriptionWebSocket(
                   const current = sessionId ? sessions.get(sessionId) : undefined;
                   if (finalRequested || finishing || !streamSession || streamSession.failed || streamSession.turnActive || !current?.vad.hasSpeech) return;
                   const transcript = streamSession.committedText();
-                  if (!transcript || transcript === lastSemanticText || interviewerQuestion === null || !streaming.answerCompletion || semanticChecks >= maxSemanticChecks) {
+                  if (!transcript || transcript === lastSemanticText || interviewerQuestion === null || !streaming.answerCompletion || semanticChecks >= maxSemanticChecks
+                    || isTooShortForAutomaticCompletion(transcript, streaming.minAnswerWords ?? 6)) {
                     if (transcript) standaloneCompatibility();
                     return;
                   }

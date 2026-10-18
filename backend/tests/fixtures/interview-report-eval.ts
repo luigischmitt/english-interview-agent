@@ -108,7 +108,7 @@ export const interviewReportEvalFixtures = [
     name: "grammar feedback includes a grounded correction and limited evidence status",
     input: {
       roleContext,
-      turns: [{ sequenceNumber: 1, question: "How does the service behave?", answer: "He don't check the cache." }],
+      turns: [{ sequenceNumber: 1, question: "How does the service behave?", answer: "He don't check the cache in production." }],
     } satisfies InterviewReportInput,
     providerOutput: {
       ...emptyReport,

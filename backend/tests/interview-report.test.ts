@@ -19,7 +19,7 @@ const input: InterviewReportInput = {
   roleContext: { targetRole: "Backend Engineer", seniority: "mid-level", focus: "technical-depth" },
   turns: [
     { sequenceNumber: 2, question: "How would you improve reliability?", answer: "I would add timeouts and bounded retries." },
-    { sequenceNumber: 4, question: "How do you monitor it?", answer: "We monitor errors and latency." },
+    { sequenceNumber: 4, question: "How do you monitor it?", answer: "We monitor errors and latency in production." },
   ],
 };
 const jobDirection = { targetRole: "Backend Engineer", suggestedSeniority: "mid-level" as const, mainInterviewEmphasis: "Reliability in production.", priorityCompetencies: ["resilience", "observability"], productTeamContext: "A small platform team supporting customer-facing services." };
