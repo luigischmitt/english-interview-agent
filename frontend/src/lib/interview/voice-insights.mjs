@@ -21,6 +21,33 @@ export const voiceMetricCopy = {
   },
 };
 
+const voiceLessonCopy = {
+  accuracy: {
+    techniques: [
+      "Termine as consoantes finais sem acrescentar uma vogal.",
+      "Em verbos com -ed, mantenha o final dentro do ritmo da palavra.",
+      "Compare o th e o i curto/longo devagar antes de usar a frase inteira.",
+    ],
+    example: { text: "I worked with the team.", emphasis: ["worked"] },
+  },
+  fluency: {
+    techniques: [
+      "Fale em blocos de sentido, não palavra por palavra.",
+      "Faça a pausa entre ideias, nunca no meio delas.",
+      "Troque muletas por uma pausa curta e mantenha um ritmo estável.",
+    ],
+    example: { text: "I led the project and shared the results.", emphasis: ["project", "results"] },
+  },
+  prosody: {
+    techniques: [
+      "Destaque a palavra que carrega a ideia principal.",
+      "Suba ou desça levemente o tom para mostrar contraste e o fim de uma ideia.",
+      "Agrupe as palavras em blocos de sentido antes de falar.",
+    ],
+    example: { text: "The result was reliable.", emphasis: ["reliable"] },
+  },
+};
+
 const isText = (value) => typeof value === "string" && value.trim().length > 0;
 const isScore = (value) => Number.isFinite(value) && value >= 0 && value <= 100;
 const timeOf = (record) => {
@@ -110,6 +137,14 @@ function accuracyTips(records) {
   return [...families.slice(0, examples.length ? 2 : 3).map((family) => family.tip), ...(examples.length ? [{ key: "Palavras suas para praticar: {words}.", values: { words: examples.map((word) => `“${word}”`).join(", ") } }] : [])];
 }
 
+function accuracyPersonalizedTips(records) {
+  const families = buildPronunciationInsights(records).families.slice(0, 2);
+  return families.filter((family) => family.examples.length).map((family) => ({
+    key: "Na família {family}, seus exemplos são {words}.",
+    values: { family: family.label, words: family.examples.slice(0, 3).map((word) => `“${word}”`).join(", ") },
+  }));
+}
+
 function latestDelivery(record) {
   const answers = record?.feedback?.azureSummary?.answers;
   if (!Array.isArray(answers)) return [];
@@ -131,21 +166,57 @@ function rhythmTips(record) {
   return tips.slice(0, 3).length ? tips.slice(0, 3) : ["Ainda não há dados de ritmo suficientes para indicar um exercício específico."];
 }
 
+function rhythmPersonalizedTips(record) {
+  const delivery = latestDelivery(record);
+  const wpm = average(delivery.map((entry) => entry.wordsPerMinute).filter(Number.isFinite));
+  const fillers = [...new Set(delivery.flatMap((entry) => entry.fillers && typeof entry.fillers === "object" ? Object.keys(entry.fillers).filter((word) => isText(word) && entry.fillers[word] > 0).map((word) => word.trim()) : []))].slice(0, 3);
+  const tips = [];
+  if (wpm !== null) tips.push({ key: "Seu ritmo recente foi de {wpm} palavras por minuto nas respostas avaliadas.", values: { wpm: Math.round(wpm).toString() } });
+  if (fillers.length) tips.push({ key: "Seus preenchimentos mais frequentes foram {fillers}.", values: { fillers: fillers.map((word) => `“${word}”`).join(", ") } });
+  return tips.slice(0, 2);
+}
+
 function prosodyTips(records) {
   const phrases = phrasesFor(records, "prosody");
   const words = [...new Set(phrases.flatMap((phrase) => phrase.problemWords.filter((word) => word.prosodyErrors.length).map((word) => word.word)))].slice(0, 3);
   const errors = phrases.flatMap((phrase) => phrase.problemWords.flatMap((word) => word.prosodyErrors));
   const tips = [];
-  if (words.length) tips.push({ key: "Destaque a palavra principal da ideia, especialmente em {words}.", values: { words: words.map((word) => `“${word}”`).join(", ") } });
-  if (errors.includes("Monotone") || phrases.some((phrase) => phrase.issue === "intonation")) tips.push("Suba ou desça levemente o tom na palavra que carrega o resultado, a decisão ou o contraste.");
-  if (errors.some((error) => error === "UnexpectedBreak" || error === "MissingBreak")) tips.push("Divida frases longas em blocos de sentido e faça a pausa entre os blocos, não dentro deles.");
+  if (words.length && (errors.includes("Monotone") || phrases.some((phrase) => phrase.issue === "intonation"))) tips.push({ key: "A entonação ficou mais plana em {words}.", values: { words: words.map((word) => `“${word}”`).join(", ") } });
+  if (words.length && errors.some((error) => error === "UnexpectedBreak" || error === "MissingBreak")) tips.push({ key: "Houve pausas inesperadas perto de {words}.", values: { words: words.map((word) => `“${word}”`).join(", ") } });
   return tips.slice(0, 3).length ? tips.slice(0, 3) : ["Ainda não há sinais de entonação suficientes para indicar um exercício específico."];
+}
+
+function prosodyPersonalizedTips(records) {
+  const phrases = phrasesFor(records, "prosody");
+  const words = [...new Set(phrases.flatMap((phrase) => phrase.problemWords.filter((word) => word.prosodyErrors.length).map((word) => word.word)))].slice(0, 3);
+  const errors = phrases.flatMap((phrase) => phrase.problemWords.flatMap((word) => word.prosodyErrors));
+  const tips = [];
+  if (words.length) tips.push({ key: "Suas palavras com sinais de prosódia são {words}.", values: { words: words.map((word) => `“${word}”`).join(", ") } });
+  const flatPhraseCount = phrases.filter((phrase) => phrase.issue === "intonation" || phrase.problemWords.some((word) => word.prosodyErrors.includes("Monotone"))).length;
+  if (flatPhraseCount) tips.push({ key: "Em {count} frases suas a entonação ficou plana.", values: { count: flatPhraseCount } });
+  if (errors.some((error) => error === "UnexpectedBreak" || error === "MissingBreak") && words.length) {
+    tips.push({ key: "Pausas inesperadas apareceram perto de {words}.", values: { words: words.map((word) => `“${word}”`).join(", ") } });
+  }
+  return tips.slice(0, 2);
 }
 
 function tipsFor(metric, records, latest) {
   if (metric === "accuracy") return accuracyTips(records);
   if (metric === "fluency") return rhythmTips(latest);
   return prosodyTips(records);
+}
+
+/** Calm, data-safe learn content for the voice screen. Personal lines exist only when session evidence supports them. */
+export function buildVoiceLesson(input, metric = "accuracy") {
+  const records = (Array.isArray(input) ? input : []).slice().sort((first, second) => timeOf(second) - timeOf(first));
+  const key = voiceMetrics.includes(metric) ? metric : "accuracy";
+  const latest = records.find((record) => voiceMetrics.some((item) => metricOf(record, item).value !== null)) ?? null;
+  const personalized = key === "accuracy"
+    ? accuracyPersonalizedTips(records)
+    : key === "fluency"
+      ? rhythmPersonalizedTips(latest)
+      : prosodyPersonalizedTips(records);
+  return { key, ...voiceMetricCopy[key], ...voiceLessonCopy[key], personalized };
 }
 
 /** Builds a cautious, persisted-data-only practice plan for the voice screen. */
