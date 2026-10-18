@@ -136,6 +136,6 @@ test("encodes a browser-ready 16-bit mono WAV and bounds local attempts", () => 
   const values = new Map();
   const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
   const attempt = { scores: { accuracy: 80, fluency: 70, prosody: 60 }, words: [], createdAt: "2026-04-01" };
-  for (let index = 0; index < 6; index += 1) savePracticeAttempt(storage, "sentence", { ...attempt, createdAt: `2026-04-0${index + 1}` });
-  assert.equal(readPracticeAttempts(storage).sentence.length, 4);
+  for (let index = 0; index < 8; index += 1) savePracticeAttempt(storage, "sentence", { ...attempt, createdAt: `2026-04-0${index + 1}` });
+  assert.equal(readPracticeAttempts(storage).sentence.length, 6);
 });

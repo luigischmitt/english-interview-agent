@@ -21,7 +21,7 @@
 .vv-practice-now { margin-top: 0.75rem; padding-left: 0; }
 .vv-empty { display: grid; justify-items: start; gap: 0.875rem; }
 .vv-training { padding: clamp(1.25rem, 3vw, 2rem); }
-.vv-training-top, .vv-training-actions, .vv-word-actions, .vv-before-now > div { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.vv-training-top, .vv-training-actions, .vv-word-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .vv-training-top { color: var(--ds-text-2); }
 .vv-training-sentence { max-width: 42ch; margin-top: 1.5rem; color: var(--ds-ink); font-size: clamp(1.25rem, 2vw, 1.625rem); font-weight: 500; letter-spacing: -0.018em; line-height: 1.45; overflow-wrap: anywhere; }
 .vv-problem-word { text-decoration-line: underline; text-decoration-color: var(--ds-green); text-decoration-thickness: 1.5px; text-underline-offset: 0.22em; }
@@ -30,13 +30,26 @@
 .vv-training-primary-actions .ds-btn { min-height: 2.75rem; }
 @media (min-width: 640px) { .vv-training-actions, .vv-training-primary-actions { flex-wrap: nowrap; } }
 .vv-next-sentence { margin-left: auto; }
-.vv-before-now { display: grid; gap: 0.75rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--ds-line); }
-.vv-before-now > div { align-items: flex-start; justify-content: flex-start; }
-.vv-before-now > div > span { width: 3.25rem; flex: none; color: var(--ds-text-2); font-size: 0.8125rem; line-height: 1.5; }
-.vv-attempt { min-width: 0; }
-.vv-attempt-scores { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.vv-attempt-scores span { padding: 0.125rem 0.45rem; border-radius: var(--ds-r-pill); background: var(--ds-field); color: var(--ds-text-2); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
-.vv-attempt-scores b { color: var(--ds-ink); }
+.vv-status { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; color: var(--ds-text-2); }
+.vv-rec-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--ds-danger-solid); animation: vv-pulse 1.2s ease-in-out infinite; }
+@keyframes vv-pulse { 50% { opacity: 0.3; } }
+.vv-result { display: grid; gap: 0.875rem; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--ds-line); }
+.vv-result-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; }
+.vv-result-head .ds-label span { color: var(--ds-text-2); font-weight: 500; }
+.vv-scores { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+.vv-score { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 0.25rem 0.5rem; border-radius: var(--ds-r-lg); background: var(--ds-field); padding: 0.75rem 0.875rem; }
+.vv-score[data-focus="true"] { background: var(--ds-tint); }
+.vv-score-name { grid-column: 1 / -1; color: var(--ds-text-2); font-size: 0.8125rem; font-weight: 600; }
+.vv-score-value { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.vv-score-delta { justify-self: start; border-radius: var(--ds-r-pill); padding: 0.0625rem 0.4375rem; background: var(--ds-track); color: var(--ds-text-2); font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.vv-score-delta[data-direction="up"] { background: var(--ds-surface); color: var(--ds-green-deep); }
+.vv-score-delta[data-direction="down"] { background: var(--ds-warning-tint); color: var(--ds-warning); }
+.vv-score-bar { grid-column: 1 / -1; display: block; height: 0.3125rem; margin-top: 0.25rem; border-radius: var(--ds-r-pill); background: var(--ds-track); overflow: hidden; }
+.vv-score-bar > i { display: block; height: 100%; border-radius: inherit; background: var(--ds-green); transition: width 600ms var(--ease-out); }
+.vv-same { border-radius: var(--ds-r-lg); background: var(--ds-warning-tint); padding: 0.625rem 0.875rem; color: var(--ds-warning); }
+.vv-history b { color: var(--ds-ink); font-variant-numeric: tabular-nums; }
+@media (max-width: 479px) { .vv-score { padding: 0.625rem; } .vv-score-value { font-size: 1.375rem; } .vv-score-name { font-size: 0.75rem; } }
+@media (prefers-reduced-motion: reduce) { .vv-rec-dot { animation: none; } .vv-score-bar > i { transition: none; } }
 .vv-attempt-words { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.625rem; color: var(--ds-text-2); font-size: 0.8125rem; }
 .vv-words { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .vv-word { display: grid; gap: 0.875rem; min-width: 0; padding: 1rem; }
