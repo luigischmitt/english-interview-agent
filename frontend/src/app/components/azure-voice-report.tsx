@@ -1,6 +1,7 @@
 import { t } from "@/lib/locale";
 import { azureMetricReliability, type AzureMetricSummary, type AzureReportDimension } from "@/lib/interview/report-metrics.mjs";
 import { answerCountLabel, azureMetricCopy, azureReliabilityCopy, azureReportIntro, coverageHelp } from "@/lib/interview/report-metric-copy.mjs";
+import { voiceDeliveryInterpretation, voiceMetricInterpretation } from "@/lib/interview/voice-report-insights.mjs";
 import "./interview-report.css";
 
 const dimensions: AzureReportDimension[] = ["accuracy", "fluency", "prosody"];
@@ -18,16 +19,13 @@ function Metric({ dimension, metric }: { dimension: AzureReportDimension; metric
       <p className="rp-hint mt-1">{answerCountLabel(metric.sampleCount)}</p>
       {limited && <p className="rp-reliability">{t(azureReliabilityCopy[reliability])}</p>}
       <p className="rp-hint mt-2">{t(help)}</p>
+      <p className="rp-metric-insight">{t(voiceMetricInterpretation(dimension, metric))}</p>
     </div>
   );
 }
 
 export function AzureVoiceReport({ summary, coverage, step, title = "Sinais vocais" }: { summary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; step?: number; title?: string }) {
-  const deliveryAnswers = summary.answers?.filter((answer) => answer.delivery?.wordsPerMinute !== undefined) ?? [];
-  const averageWpm = deliveryAnswers.length ? Math.round(deliveryAnswers.reduce((sum, answer) => sum + (answer.delivery?.wordsPerMinute ?? 0), 0) / deliveryAnswers.length) : null;
-  const fillerCount = summary.answers?.reduce((sum, answer) => sum + (answer.delivery?.fillerCount ?? 0), 0) ?? 0;
-  const averagePauses = deliveryAnswers.length ? Math.round(deliveryAnswers.reduce((sum, answer) => sum + (answer.delivery?.pauseCount ?? 0), 0) / deliveryAnswers.length) : null;
-  const averageLongPause = deliveryAnswers.length ? Math.round(deliveryAnswers.reduce((sum, answer) => sum + (answer.delivery?.longestPauseMs ?? 0), 0) / deliveryAnswers.length / 100) / 10 : null;
+  const delivery = voiceDeliveryInterpretation(summary.answers);
   return (
     <section className="ds-card rp-card" aria-labelledby="voice-report-title">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -38,8 +36,12 @@ export function AzureVoiceReport({ summary, coverage, step, title = "Sinais voca
       <dl className="rp-metrics">
         {dimensions.map((dimension) => <Metric key={dimension} dimension={dimension} metric={summary[dimension]} />)}
       </dl>
-      {summary.answers?.length && (averageWpm !== null || fillerCount > 0 || averagePauses !== null) ? <p className="rp-session-delivery">{averageWpm !== null ? <>{t("Médias por resposta: ")}{averageWpm} {t("palavras/min")}</> : t("Médias por resposta")}{averagePauses !== null ? <> · {averagePauses} {t("pausas")}</> : null}{averageLongPause !== null && averageLongPause >= 1 ? <> · {t("pausa mais longa de ")}{averageLongPause} {t("s")}</> : null}{fillerCount > 0 ? <> · {fillerCount} {t("hesitações na sessão")}</> : null}</p> : null}
+      {delivery && <div className="rp-delivery">
+        <p className="rp-session-delivery">{t("Médias por resposta: ")}{delivery.wordsPerMinute} {t("palavras/min")} · {delivery.pauseCount} {t("pausas")}{delivery.longestPauseMs >= 1_000 ? <> · {t("pausa mais longa de ")}{Math.round(delivery.longestPauseMs / 100) / 10} {t("s")}</> : null}{delivery.fillerCount > 0 ? <> · {delivery.fillerCount} {t("hesitações na sessão")}</> : null}</p>
+        <p className="rp-delivery-insight">{delivery.insights.map((item, index) => <span key={item.key}>{index > 0 ? " " : ""}{t(item.key, item.values)}</span>)}</p>
+      </div>}
       <p className="rp-hint mt-4">{t("Cobertura: ")}{coverage.available} {t("de ")}{coverage.total} {t("respostas com sinais disponíveis.")}{coverage.pending ? ` ${coverage.pending} ${t("avaliação(ões) ainda em processamento; a conclusão da sessão não espera por elas.")}` : ""} {t(coverageHelp)}</p>
+      <a className="ds-btn ds-btn-cta-green rp-voice-training" href="/dashboard?view=voice">{t("Treinar minha voz")}</a>
     </section>
   );
 }

@@ -4,5 +4,5 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ v
   const params = await searchParams;
   const first = (value?: string | string[]) => (Array.isArray(value) ? value[0] : value);
   const view = first(params.view);
-  return <HomeClient initialView={view === "interview-setup" ? "interview-setup" : "home"} />;
+  return <HomeClient initialView={view === "interview-setup" || view === "voice" ? view : "home"} />;
 }

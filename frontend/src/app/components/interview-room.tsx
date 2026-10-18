@@ -1435,8 +1435,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const resumePractice = isResumePractice(config);
   const seniorityLabel = config.seniority === "junior" ? t("Júnior") : config.seniority === "mid-level" ? t("Pleno") : config.seniority === "senior" ? t("Sênior") : "Staff / Lead";
   const focusLabel = t(config.focus === "technical-depth" ? "Profundidade técnica" : config.focus === "communication" ? "Comunicação e clareza" : config.focus === "behavioral" ? "Respostas comportamentais" : "Prática equilibrada");
-  const persistenceLabel = persistenceState === "saved" ? "sessão salva na conta" : persistenceState === "local" ? "salva apenas no estado local da sessão; sincronização pendente" : "salvando na conta…";
-  const reportCaption = reportState.status === "pending" ? "Montando seu relatório final…" : reportState.status === "unavailable" ? "O relatório detalhado não ficou disponível para esta sessão." : "Relatório da prática";
+  const persistenceLabel = persistenceState === "saved" ? "Sessão salva na conta" : persistenceState === "local" ? "Sessão salva neste navegador; sincronização pendente" : "Salvando sessão na conta…";
   const capturedReportTurns = pairInterviewTurns(reportTurns);
   const isOpeningQuestion = currentIndex === 0 && questionSequenceNumber === 1 && !followUpUsed;
   const interviewerFallbackText = phase === "introducing" && isOpeningQuestion ? openingUtterance : currentUtterance;
@@ -1563,7 +1562,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             reportState={reportState}
             progressRecords={progressRecords}
             currentInterviewId={sessionId ?? undefined}
-            reportCaption={reportCaption}
             turns={capturedReportTurns}
             azureSummary={currentAzureSummary}
             coverage={coverage}

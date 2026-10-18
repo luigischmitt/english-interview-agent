@@ -17,6 +17,12 @@ import "./interview-report.css";
 
 export type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
 type Turns = ReturnType<typeof pairInterviewTurns>;
+const reportLoadingSteps = [
+  "Revisando a transcrição das suas respostas",
+  "Analisando conteúdo técnico",
+  "Analisando seu inglês",
+  "Juntando os sinais da sua voz",
+];
 
 function AnswerCard({ turn, result, ordinal }: { turn: Turns[number]; result: InterviewReportResult; ordinal: number }) {
   const [expanded, setExpanded] = useState(false);
@@ -267,11 +273,17 @@ function ReadyReport({
   );
 }
 
-export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, reportCaption, turns, azureSummary, coverage, onLeave, progressRecords, currentInterviewId, historical = false }: {
-  config: InterviewConfig; elapsed: string; totalClock: string; answerCount: number; persistenceLabel: string; persistenceMessage: string | null; feedbackSyncMessage: string | null; reportState: ReportState; progressRecords: ProgressRecord[]; currentInterviewId?: string; historical?: boolean; reportCaption: string; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onLeave: () => void;
+export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, turns, azureSummary, coverage, onLeave, progressRecords, currentInterviewId, historical = false }: {
+  config: InterviewConfig; elapsed: string; totalClock: string; answerCount: number; persistenceLabel: string; persistenceMessage: string | null; feedbackSyncMessage: string | null; reportState: ReportState; progressRecords: ProgressRecord[]; currentInterviewId?: string; historical?: boolean; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onLeave: () => void;
 }): ReactNode {
   const [loadedTurns, setLoadedTurns] = useState<Turns>(turns);
   const [loadingTurns, setLoadingTurns] = useState(historical && turns.length === 0 && Boolean(currentInterviewId));
+  const [loadingStep, setLoadingStep] = useState(0);
+  useEffect(() => {
+    if (reportState.status !== "pending") return;
+    const interval = window.setInterval(() => setLoadingStep((step) => (step + 1) % reportLoadingSteps.length), 3_500);
+    return () => window.clearInterval(interval);
+  }, [reportState.status]);
   useEffect(() => {
     if (!historical || turns.length || !currentInterviewId) return;
     let active = true;
@@ -296,7 +308,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
           {t("Seu relatório de entrevista")}
         </h1>
         <p className="ds-body mt-3 max-w-[60ch]">
-          {t(persistenceLabel)}. {t("As respostas foram transcritas; trechos disponíveis podem ser reproduzidos neste relatório.")}
+          {t(persistenceLabel)}. {t("Suas respostas foram transcritas.")}
         </p>
         <dl className="rp-facts">
           <div>
@@ -331,9 +343,8 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
         {reportState.status === "pending" ? (
           <div className="ds-card rp-card rp-pending" role="status">
             <div className="rp-bar" aria-hidden="true" />
-            <p className="ds-body mt-3">
-              {t(reportCaption)}. {t("A análise não avalia seu sotaque.")}
-            </p>
+            <p className="rp-loading-step mt-3" key={loadingStep}>{t(reportLoadingSteps[loadingStep])}</p>
+            <p className="rp-hint mt-2">{t("Leva cerca de 30 segundos. Mantenha esta página aberta enquanto montamos o relatório.")}</p>
           </div>
         ) : reportState.status === "unavailable" ? (
           <div className="rp-stack">
@@ -361,8 +372,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
         ) : null}
       </div>
       <div className="rp-foot">
-        <p className="rp-hint">{persistenceLabel}</p>
-        <button type="button" className="ds-btn ds-btn-cta-green rp-back" onClick={onLeave}>{t(historical ? "Voltar ao Progresso " : "Voltar ao dashboard ")}
+        <button type="button" className={`ds-btn ${reportState.status === "pending" ? "ds-btn-quiet" : "ds-btn-cta-green"} rp-back`} onClick={onLeave}>{t(historical ? "Voltar ao Progresso " : "Voltar ao dashboard ")}
           <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
         </button>
       </div>

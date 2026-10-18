@@ -31,7 +31,7 @@ const timeOf = (record) => {
   return 0;
 };
 const dateOf = (record) => timeOf(record) ? new Date(timeOf(record)).toISOString() : null;
-const levelFor = (value) => value === null ? "unavailable" : value >= 80 ? "good" : value >= 60 ? "attention" : "focus";
+export const voiceScoreLevel = (value) => value === null ? "unavailable" : value >= 80 ? "good" : value >= 60 ? "attention" : "focus";
 const reliable = (reliability) => reliability === "ok";
 
 function metricOf(record, key) {
@@ -168,7 +168,7 @@ export function buildVoiceInsights(input) {
       rawValue: current.value,
       reliability: current.reliability,
       previousAverage,
-      level: levelFor(current.value),
+      level: voiceScoreLevel(current.value),
       tips: tipsFor(key, records, latest),
       phrases: phrasesFor(records, key),
     };
