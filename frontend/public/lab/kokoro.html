@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Entoa · teste Kokoro</title>
+  <style>
+    :root { color: #0e2a1f; background: #f3f4ee; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px 16px 40px; }
+    main { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 1.45rem; margin: 0 0 4px; }
+    h2 { font-size: 1.05rem; margin: 0 0 10px; }
+    p { line-height: 1.45; }
+    .muted, small { color: #496057; }
+    .panel { border: 1px solid #c9d0c9; border-radius: 10px; background: #fbfcf8; padding: 14px; margin: 16px 0; }
+    dl { margin: 0; display: grid; grid-template-columns: minmax(105px, 32%) 1fr; gap: 7px 10px; font-size: .9rem; }
+    dt { font-weight: 650; }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    .buttons { display: grid; grid-template-columns: 1fr; gap: 9px; }
+    button, select, textarea { font: inherit; border-radius: 7px; border: 1px solid #7e9286; }
+    button { min-height: 44px; padding: 9px 13px; cursor: pointer; color: white; background: #1f6b45; border-color: #1f6b45; font-weight: 650; text-align: left; }
+    button.secondary { color: #0e2a1f; background: transparent; border-color: #7e9286; }
+    button:disabled { cursor: not-allowed; opacity: .52; }
+    select, textarea { width: 100%; min-height: 44px; background: white; color: #0e2a1f; padding: 9px; }
+    textarea { min-height: 88px; resize: vertical; }
+    label { display: block; font-weight: 650; margin: 12px 0 6px; }
+    progress { width: 100%; height: 12px; accent-color: #1f6b45; }
+    #status { min-height: 24px; margin-top: 10px; font-size: .92rem; }
+    #status.error { color: #a71919; font-weight: 650; }
+    .table-wrap { overflow-x: auto; margin-top: 10px; }
+    table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: .82rem; }
+    th, td { padding: 8px 7px; border-bottom: 1px solid #d3d9d3; text-align: left; white-space: nowrap; }
+    th { font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
+    #summary { font-size: .9rem; margin: 11px 0 0; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 9px; }
+    @media (min-width: 540px) { .buttons { grid-template-columns: repeat(3, 1fr); } .row { grid-template-columns: 1fr auto; align-items: end; } .row button { min-width: 160px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Teste Kokoro no navegador</h1>
+    <p class="muted">Spike interno para medir carregamento e fala local. No primeiro carregamento, os arquivos são baixados; nos próximos, o cache do navegador normalmente ajuda.</p>
+
+    <section class="panel" aria-labelledby="environment-title">
+      <h2 id="environment-title">Ambiente</h2>
+      <dl id="environment"><dt>Coletando…</dt><dd></dd></dl>
+    </section>
+
+    <section class="panel" aria-labelledby="model-title">
+      <h2 id="model-title">Modelo</h2>
+      <div class="buttons" id="config-buttons">
+        <button type="button" data-dtype="q8" data-device="wasm">q8 · WASM</button>
+        <button type="button" data-dtype="q8" data-device="webgpu">q8 · WebGPU</button>
+        <button type="button" data-dtype="fp32" data-device="webgpu">fp32 · WebGPU</button>
+      </div>
+      <p id="webgpu-note" class="muted" hidden>WebGPU não está disponível neste navegador; as opções WebGPU foram desativadas.</p>
+      <p id="load-label" class="muted">Escolha uma configuração para carregar o modelo.</p>
+      <progress id="load-progress" value="0" max="1" hidden></progress>
+      <div id="status" role="status" aria-live="polite"></div>
+
+      <label for="voice">Voz</label>
+      <select id="voice">
+        <option value="am_michael" selected>am_michael</option>
+        <option value="am_adam">am_adam</option>
+        <option value="af_heart">af_heart</option>
+        <option value="af_bella">af_bella</option>
+        <option value="bf_emma">bf_emma</option>
+        <option value="bm_george">bm_george</option>
+      </select>
+      <label for="run-test">Entrevista de teste</label>
+      <button id="run-test" type="button" disabled>Rodar teste</button>
+    </section>
+
+    <section class="panel" aria-labelledby="custom-title">
+      <h2 id="custom-title">Teste sua frase</h2>
+      <div class="row">
+        <div><textarea id="custom-text" placeholder="Escreva uma frase em inglês para ouvir…" maxlength="1000"></textarea></div>
+        <button id="run-custom" type="button" disabled>Falar frase</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="results-title">
+      <h2 id="results-title">Resultados</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Config.</th><th>Voz</th><th>Linha</th><th>Caracteres</th><th>Geração</th><th>Áudio</th><th>RTF</th></tr></thead>
+          <tbody id="results-body"><tr id="empty-row"><td colspan="7">Ainda não há medições.</td></tr></tbody>
+        </table>
+      </div>
+      <p id="summary">Resumo: aguardando um teste.</p>
+      <button id="copy-results" class="secondary" type="button">Copiar resultados</button>
+    </section>
+  </main>
+
+  <script type="module">
+    import { KokoroTTS } from "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm";
+
+    const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+    const LINES = [
+      "Thanks for sharing that.",
+      "Can you tell me about a time you disagreed with a teammate on a technical decision?",
+      "That makes sense. How did you measure whether the change actually improved latency for your users?"
+    ];
+    const state = { tts: null, config: null, loadMs: null, loads: [], firstAudioMs: null, results: [], errors: [], environment: {}, audioContext: null, busy: false };
+    const $ = (id) => document.getElementById(id);
+    const fmt = (value, digits = 0) => Number.isFinite(value) ? value.toFixed(digits) : "—";
+    const configName = (config) => config ? `${config.dtype} · ${config.device.toUpperCase()}` : "—";
+
+    function setStatus(message = "", isError = false) {
+      const node = $("status");
+      node.textContent = message;
+      node.classList.toggle("error", isError);
+    }
+
+    function showError(error) {
+      const message = error?.message || String(error);
+      state.errors.push({ at: new Date().toISOString(), message });
+      setStatus(`Erro: ${message}`, true);
+    }
+
+    async function ensureAudioContext() {
+      if (!state.audioContext) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) throw new Error("AudioContext não é suportado neste navegador.");
+        state.audioContext = new AudioContextClass();
+      }
+      if (state.audioContext.state !== "running") await state.audioContext.resume();
+      return state.audioContext;
+    }
+
+    // On iOS, create/resume the sole context during the first gesture.
+    document.addEventListener("pointerdown", () => { ensureAudioContext().catch(showError); }, { once: true, capture: true });
+
+    function appendEnvironment(label, value) {
+      const dl = $("environment");
+      const dt = document.createElement("dt");
+      const dd = document.createElement("dd");
+      dt.textContent = label;
+      dd.textContent = value;
+      dl.append(dt, dd);
+    }
+
+    async function inspectEnvironment() {
+      const dl = $("environment");
+      dl.replaceChildren();
+      const gpuPresent = !!navigator.gpu;
+      state.environment = {
+        userAgent: navigator.userAgent,
+        webgpu: gpuPresent,
+        deviceMemoryGB: navigator.deviceMemory ?? null,
+        hardwareConcurrency: navigator.hardwareConcurrency ?? null,
+        crossOriginIsolated: window.crossOriginIsolated
+      };
+      appendEnvironment("User agent", navigator.userAgent);
+      appendEnvironment("navigator.gpu", gpuPresent ? "presente" : "ausente");
+      appendEnvironment("Memória do aparelho", navigator.deviceMemory ? `${navigator.deviceMemory} GB` : "não disponível");
+      appendEnvironment("Threads lógicas", navigator.hardwareConcurrency ?? "não disponível");
+      appendEnvironment("crossOriginIsolated", String(window.crossOriginIsolated));
+      if (!gpuPresent) {
+        document.querySelectorAll('[data-device="webgpu"]').forEach((button) => { button.disabled = true; });
+        $("webgpu-note").hidden = false;
+        return;
+      }
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) throw new Error("Nenhum adaptador WebGPU foi retornado.");
+        let info = adapter.info;
+        if (!info && adapter.requestAdapterInfo) info = await adapter.requestAdapterInfo();
+        const mb = (bytes) => Number.isFinite(bytes) ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : "não disponível";
+        state.environment.adapter = {
+          vendor: info?.vendor ?? null,
+          architecture: info?.architecture ?? null,
+          maxBufferSize: adapter.limits.maxBufferSize ?? null,
+          maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize ?? null
+        };
+        appendEnvironment("GPU", [info?.vendor, info?.architecture].filter(Boolean).join(" · ") || "adaptador encontrado (detalhes indisponíveis)");
+        appendEnvironment("maxBufferSize", mb(adapter.limits.maxBufferSize));
+        appendEnvironment("maxStorageBufferBindingSize", mb(adapter.limits.maxStorageBufferBindingSize));
+      } catch (error) {
+        state.environment.adapterError = error?.message || String(error);
+        appendEnvironment("GPU", `Não foi possível consultar: ${state.environment.adapterError}`);
+      }
+    }
+
+    function setBusy(busy) {
+      state.busy = busy;
+      document.querySelectorAll("#config-buttons button").forEach((button) => {
+        button.disabled = busy || (button.dataset.device === "webgpu" && !navigator.gpu);
+      });
+      $("run-test").disabled = busy || !state.tts;
+      $("run-custom").disabled = busy || !state.tts;
+    }
+
+    async function forgetModel() {
+      if (state.tts?.dispose) await state.tts.dispose();
+      state.tts = null;
+      state.config = null;
+    }
+
+    async function loadModel(config) {
+      setBusy(true);
+      setStatus("");
+      $("load-progress").hidden = false;
+      $("load-progress").value = 0;
+      $("load-progress").max = 1;
+      $("load-label").textContent = `Carregando ${configName(config)}…`;
+      const files = new Map();
+      const startedAt = performance.now();
+      try {
+        await forgetModel();
+        const progressCallback = (event) => {
+          if (event?.status !== "progress") return;
+          const key = event.file || event.name || event.url || "modelo";
+          const previous = files.get(key) || { loaded: 0, total: 0 };
+          files.set(key, { loaded: Math.max(previous.loaded, Number(event.loaded) || 0), total: Math.max(previous.total, Number(event.total) || 0) });
+          const totals = [...files.values()].reduce((sum, file) => ({ loaded: sum.loaded + file.loaded, total: sum.total + file.total }), { loaded: 0, total: 0 });
+          if (totals.total > 0) {
+            $("load-progress").max = totals.total;
+            $("load-progress").value = Math.min(totals.loaded, totals.total);
+            $("load-label").textContent = `Carregando ${configName(config)}: ${(totals.loaded / 1024 / 1024).toFixed(1)} / ${(totals.total / 1024 / 1024).toFixed(1)} MB`;
+          }
+        };
+        state.tts = await KokoroTTS.from_pretrained(MODEL_ID, { dtype: config.dtype, device: config.device, progress_callback: progressCallback });
+        state.config = config;
+        state.loadMs = performance.now() - startedAt;
+        state.loads.push({ config: configName(config), loadMs: state.loadMs, at: new Date().toISOString() });
+        $("load-label").textContent = `${configName(config)} pronto em ${fmt(state.loadMs)} ms.`;
+        setStatus("Modelo pronto. Você pode rodar o teste.");
+      } catch (error) {
+        state.tts = null;
+        state.config = null;
+        $("load-label").textContent = "O modelo não foi carregado.";
+        showError(error);
+      } finally {
+        $("load-progress").hidden = true;
+        setBusy(false);
+      }
+    }
+
+    function play(audio, samplingRate) {
+      const context = state.audioContext;
+      const buffer = context.createBuffer(1, audio.length, samplingRate);
+      buffer.copyToChannel(audio, 0);
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      const done = new Promise((resolve) => { source.onended = resolve; });
+      source.start();
+      return { startedAt: performance.now(), done };
+    }
+
+    function addResult({ line, text, generationMs, audioMs }) {
+      const rtf = audioMs ? generationMs / audioMs : NaN;
+      const result = { config: configName(state.config), voice: $("voice").value, line, chars: text.length, generationMs, audioMs, rtf, text };
+      state.results.push(result);
+      $("empty-row")?.remove();
+      const tr = document.createElement("tr");
+      [result.config, result.voice, line, result.chars, `${fmt(generationMs)} ms`, `${fmt(audioMs)} ms`, fmt(rtf, 3)].forEach((value) => {
+        const td = document.createElement("td"); td.textContent = value; tr.append(td);
+      });
+      $("results-body").append(tr);
+      return result;
+    }
+
+    function updateSummary() {
+      const batch = state.results.filter((result) => result.config === configName(state.config));
+      const meanRtf = batch.length ? batch.reduce((sum, result) => sum + result.rtf, 0) / batch.length : NaN;
+      $("summary").textContent = `Resumo: carga ${fmt(state.loadMs)} ms · primeira fala ${fmt(state.firstAudioMs)} ms · RTF médio ${fmt(meanRtf, 3)}`;
+    }
+
+    async function speak(text, line, testStartedAt = null) {
+      const generatedAt = performance.now();
+      const output = await state.tts.generate(text, { voice: $("voice").value });
+      const generationMs = performance.now() - generatedAt;
+      const audioMs = (output.audio.length / output.sampling_rate) * 1000;
+      const playback = play(output.audio, output.sampling_rate);
+      if (testStartedAt !== null && state.firstAudioMs === null) state.firstAudioMs = playback.startedAt - testStartedAt;
+      addResult({ line, text, generationMs, audioMs });
+      await playback.done;
+    }
+
+    async function runInterview() {
+      if (!state.tts || state.busy) return;
+      setBusy(true);
+      setStatus("Sintetizando a entrevista…");
+      state.firstAudioMs = null;
+      const startedAt = performance.now();
+      try {
+        await ensureAudioContext();
+        for (let index = 0; index < LINES.length; index += 1) await speak(LINES[index], index + 1, startedAt);
+        updateSummary();
+        setStatus("Teste concluído.");
+      } catch (error) {
+        updateSummary();
+        showError(error);
+      } finally { setBusy(false); }
+    }
+
+    async function runCustom() {
+      const text = $("custom-text").value.trim();
+      if (!text || !state.tts || state.busy) return;
+      setBusy(true);
+      try {
+        await ensureAudioContext();
+        setStatus("Sintetizando sua frase…");
+        await speak(text, "livre");
+        updateSummary();
+        setStatus("Frase concluída.");
+      } catch (error) { showError(error); } finally { setBusy(false); }
+    }
+
+    async function copyResults() {
+      const report = { exportedAt: new Date().toISOString(), modelId: MODEL_ID, environment: state.environment, loads: state.loads, loadMs: state.loadMs, firstAudioMs: state.firstAudioMs, results: state.results, errors: state.errors };
+      const text = JSON.stringify(report, null, 2);
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus("Resultados copiados.");
+      } catch (error) {
+        showError(new Error(`Não foi possível copiar automaticamente. ${error?.message || error}`));
+      }
+    }
+
+    document.querySelectorAll("#config-buttons button").forEach((button) => button.addEventListener("click", () => loadModel({ dtype: button.dataset.dtype, device: button.dataset.device })));
+    $("run-test").addEventListener("click", runInterview);
+    $("run-custom").addEventListener("click", runCustom);
+    $("copy-results").addEventListener("click", copyResults);
+    inspectEnvironment();
+  </script>
+</body>
+</html>
