@@ -9,9 +9,9 @@ export const defaultResumeDirectionTimeoutMs = 30_000;
 /** A second, provider-excluding resume attempt starts in parallel when the first has not answered after this long. */
 // Healthy resume analyses take ~10.5–14.5 s, so a 13 s hedge rarely duplicates a healthy call and still leaves ~17 s of the 30 s budget.
 export const defaultResumeDirectionHedgeAfterMs = 13_000;
-/** Per-answer analysis is background work; measured provider responses need more than six seconds. */
-export const defaultInterviewTurnAnalysisTimeoutMs = 12_000;
-export const maxInterviewTurnAnalysisTimeoutMs = 12_000;
+/** Per-answer analysis is background work and must accommodate slow provider responses. */
+export const defaultInterviewTurnAnalysisTimeoutMs = 22_000;
+export const maxInterviewTurnAnalysisTimeoutMs = 22_000;
 export const defaultInterviewConsolidationTimeoutMs = 25_000;
 
 export type ThinkingConfig = {

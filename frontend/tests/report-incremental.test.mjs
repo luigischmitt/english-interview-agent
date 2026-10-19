@@ -88,7 +88,7 @@ const flow = (overrides) => {
 test("all analyses ready consolidates directly", async () => {
   const { calls, run } = flow({});
   const out = await run();
-  assert.deepEqual(out, { result: "consolidated", path: "incremental", missingAtEnd: 0, recoveredAtEnd: 0, turns: [analysis(1), analysis(2)] });
+  assert.deepEqual(out, { result: "consolidated", path: "incremental", missingAtEnd: 0, recoveredAtEnd: 0, turns: [analysis(1), analysis(2)], missingSequenceNumbers: [] });
   assert.deepEqual(calls.analyze, []); assert.equal(calls.full, 0);
 });
 
@@ -101,11 +101,20 @@ test("missing at end is recovered in parallel and consolidated in turn order", a
   assert.equal(calls.full, 0);
 });
 
-test("more than half missing skips the final attempts and uses the full report", async () => {
+test("all four missing analyses are recovered before consolidation", async () => {
+  const { calls, run } = flow({ turns: [t(1), t(2), t(3), t(4)], settled: new Map() });
+  const out = await run();
+  assert.equal(out.path, "incremental"); assert.equal(out.recoveredAtEnd, 4);
+  assert.deepEqual(calls.analyze.sort(), [1, 2, 3, 4]);
+  assert.deepEqual(calls.list.map((entry) => entry.sequenceNumber), [1, 2, 3, 4]);
+  assert.deepEqual(out.missingSequenceNumbers, []);
+});
+
+test("more than half missing is recovered before consolidation", async () => {
   const { calls, run } = flow({ turns: [t(1), t(2), t(3)], settled: Promise.resolve(new Map([[2, analysis(2)]])) });
   const out = await run();
-  assert.equal(out.path, "fallback"); assert.equal(out.result, "full"); assert.equal(out.missingAtEnd, 2);
-  assert.deepEqual(calls.analyze, []); assert.equal(calls.consolidate, 0);
+  assert.equal(out.path, "incremental"); assert.equal(out.missingAtEnd, 2);
+  assert.deepEqual(calls.analyze.sort(), [1, 3]); assert.equal(calls.consolidate, 1);
 });
 
 test("still missing after final attempt falls back to full report", async () => {
@@ -113,6 +122,7 @@ test("still missing after final attempt falls back to full report", async () => 
   const out = await run();
   assert.equal(out.path, "fallback"); assert.equal(out.result, "full"); assert.equal(out.missingAtEnd, 1);
   assert.equal(calls.consolidate, 0);
+  assert.deepEqual(out.missingSequenceNumbers, [2]);
 });
 
 test("final attempt is bounded by its deadline", async () => {
@@ -134,13 +144,13 @@ test("abort at the end skips the final attempts", async () => {
   assert.deepEqual(calls.analyze, []);
 });
 
-test("the end-of-interview recovery deadline is 30 s, matching the backend turn analysis timeout", () => {
+test("the end-of-interview recovery deadline is 30 s, above the backend turn analysis timeout", () => {
   assert.equal(finalTurnAnalysisMs, 30_000);
 });
 
-test("a turn that already failed its automatic retry is not re-sent at the end and goes straight to the fallback", async () => {
-  const { calls, run } = flow({ turns: [t(1), t(2), t(3)], settled: new Map([[1, analysis(1)], [2, analysis(2)]]), exhausted: new Set([3]) });
+test("a turn that already failed its automatic retry is re-sent at the end", async () => {
+  const { calls, run } = flow({ turns: [t(1), t(2), t(3)], settled: new Map([[1, analysis(1)], [2, analysis(2)]]) });
   const out = await run();
-  assert.equal(out.path, "fallback"); assert.equal(out.result, "full");
-  assert.deepEqual(calls.analyze, []); assert.equal(calls.consolidate, 0);
+  assert.equal(out.path, "incremental");
+  assert.deepEqual(calls.analyze, [3]); assert.equal(calls.consolidate, 1);
 });

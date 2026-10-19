@@ -1,5 +1,5 @@
 /** Time allowed at the end of the interview for background turn analyses to settle. */
-export const turnAnalysisWaitMs = 12_000;
+export const turnAnalysisWaitMs = 25_000;
 export const reviewedTranscriptWaitMs = 15_000;
 
 /** Prefer the reviewed answer for analysis, but let the interview finish promptly if review is delayed. */
@@ -106,16 +106,13 @@ export function missingSequenceNumbers(turns, analysesBySequence) {
  * consolidation fails does it fall back to the full report.
  * Returns { result, path, missingAtEnd, recoveredAtEnd }.
  */
-export async function resolveReportAtEnd({ turns, settled, analyze, consolidate, fullReport, finalAttemptMs = finalTurnAnalysisMs, signal, exhausted = new Set(), onEvent = () => {} }) {
+export async function resolveReportAtEnd({ turns, settled, analyze, consolidate, fullReport, finalAttemptMs = finalTurnAnalysisMs, signal, onEvent = () => {} }) {
   const analyses = new Map(await settled);
-  const allMissing = missingSequenceNumbers(turns, analyses);
-  const missingAtEnd = allMissing.length;
-  // A turn that already failed its automatic retry is not sent a third time: a bad turn costs at most one retry.
-  const missing = allMissing.filter((sequenceNumber) => !exhausted.has(sequenceNumber));
+  const missing = missingSequenceNumbers(turns, analyses);
+  const missingAtEnd = missing.length;
   let recoveredAtEnd = 0;
 
-  // When more than half of the analyses are missing the provider is likely struggling; one full-report call beats N retries.
-  if (missing.length > 0 && missing.length === missingAtEnd && missingAtEnd * 2 <= turns.length && !signal?.aborted) {
+  if (missing.length > 0 && !signal?.aborted) {
     const byKey = new Map(turns.map((turn) => [turn.sequenceNumber, turn]));
     await Promise.all(missing.map(async (sequenceNumber) => {
       const controller = new AbortController();
@@ -149,5 +146,12 @@ export async function resolveReportAtEnd({ turns, settled, analyze, consolidate,
     onEvent("incremental_skipped", { missingAtEnd, recoveredAtEnd, stillMissing: stillMissing.length });
   }
   if (!result) result = await fullReport();
-  return { result, path, missingAtEnd, recoveredAtEnd, turns: turns.map((turn) => analyses.get(turn.sequenceNumber)).filter(Boolean) };
+  return {
+    result,
+    path,
+    missingAtEnd,
+    recoveredAtEnd,
+    turns: turns.map((turn) => analyses.get(turn.sequenceNumber)).filter(Boolean),
+    missingSequenceNumbers: stillMissing,
+  };
 }
