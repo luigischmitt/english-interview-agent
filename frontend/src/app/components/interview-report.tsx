@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getCurrentLocale, t } from "@/lib/locale";
-import { ArrowLeft, ArrowUpRight, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { answerOrdinalForSequence, pairInterviewTurns, type InterviewReportResult } from "@/lib/interview/report";
 import type { AzureMetricSummary } from "@/lib/interview/report-metrics.mjs";
 import type { InterviewConfig } from "@/lib/interview/types";
@@ -11,7 +11,7 @@ import { RESUME_PRACTICE_LABEL } from "@/lib/interview/resume-neutral.mjs";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { findingsForAnswer } from "@/lib/interview/report-response.mjs";
 import { deriveOverviewTiles, groupPatternsByType } from "@/lib/interview/report-overview.mjs";
-import { buildReportDeltas, diffReportWords } from "@/lib/interview/report-presentation.mjs";
+import { analysisCoverageNotice, buildReportDeltas, diffReportWords, displayInterviewerTakeaway, displayTechnicalFindings, isCompleteSentence } from "@/lib/interview/report-presentation.mjs";
 import { AzureVoiceReport } from "./azure-voice-report";
 import "./interview-report.css";
 
@@ -64,8 +64,8 @@ function AnswerCard({ turn, result, ordinal }: { turn: Turns[number]; result: In
             <div className="rp-pattern" key={`${pattern.type}-${index}`}>
               <p lang="en" className="rp-quote">{t("Você disse: “")}{pattern.evidence}{t("”")}</p>
               <p className="rp-rephrase-text" lang="en">{t("Mais natural: “")}{pattern.rephrasedExample}{t("”")}</p>
-              <p className="rp-hint mt-1">{pattern.suggestion}</p>
-              {pattern.why && <p className="rp-hint mt-1">{t("Por que acontece: ")}{pattern.why}</p>}
+              {isCompleteSentence(pattern.suggestion) && <p className="rp-hint mt-1">{pattern.suggestion}</p>}
+              {isCompleteSentence(pattern.why) && <p className="rp-hint mt-1">{t("Por que acontece: ")}{pattern.why}</p>}
             </div>
           ))}
         </section>
@@ -128,14 +128,18 @@ function ReadyReport({
   const visiblePatterns = showAllPatterns ? allPatterns : allPatterns.slice(0, 4);
   const patternCount = allPatterns.length;
   const deltas = buildReportDeltas(result, azureSummary, progressRecords, currentInterviewId, answerCount);
+  const initialTakeaway = displayInterviewerTakeaway(result.interviewerTakeaway);
+  const technical = displayTechnicalFindings(result.technicalContent.strengths, result.technicalContent.gaps, initialTakeaway.concern ? [{ explanation: initialTakeaway.concern }] : []);
+  const takeaway = displayInterviewerTakeaway(result.interviewerTakeaway, technical.gaps);
+  const coverageNotice = analysisCoverageNotice(result.analysisCoverage, reference);
 
   return (
     <div className="rp-stack rp-ready">
-      {(result.interviewerTakeaway?.remember?.trim() || result.interviewerTakeaway?.concern?.trim()) && <section className="rp-section" aria-labelledby="perceived-title">
+      {(takeaway.remember || takeaway.concern) && <section className="rp-section" aria-labelledby="perceived-title">
         <SectionHeading id="perceived-title" title="Como você foi percebido" description="O que pode ficar na memória depois da conversa." />
         <div className="rp-perception-grid">
-          {result.interviewerTakeaway?.remember?.trim() && <article className="ds-card rp-card rp-perception" data-tone="remember"><h3 className="ds-label">{t("O que o entrevistador vai lembrar")}</h3><p>{result.interviewerTakeaway.remember}</p></article>}
-          {result.interviewerTakeaway?.concern?.trim() && <article className="ds-card rp-card rp-perception" data-tone="concern"><h3 className="ds-label">{t("O que pode pesar contra")}</h3><p>{result.interviewerTakeaway.concern}</p></article>}
+          {takeaway.remember && <article className="ds-card rp-card rp-perception" data-tone="remember"><h3 className="ds-label">{t("O que o entrevistador vai lembrar")}</h3><p>{takeaway.remember}</p></article>}
+          {takeaway.concern && <article className="ds-card rp-card rp-perception" data-tone="concern"><h3 className="ds-label">{t("O que pode pesar contra")}</h3><p>{takeaway.concern}</p></article>}
         </div>
       </section>}
       <section className="rp-section" aria-labelledby="overview-title">
@@ -145,7 +149,7 @@ function ReadyReport({
           description="Um panorama do conteúdo, do inglês e da sua voz nesta entrevista."
         />
         <div className="ds-card rp-card">
-          {result.technicalContent.summary?.trim() && (
+          {isCompleteSentence(result.technicalContent.summary) && (
             <p className="rp-summary">{result.technicalContent.summary}</p>
           )}
           <div className="rp-overview-grid">
@@ -158,7 +162,8 @@ function ReadyReport({
             ))}
           </div>
         </div>
-        {deltas.length > 0 && <section className="rp-deltas" aria-label={t("Desde a última entrevista")}><h3 className="rp-subtitle">{t("Desde a última entrevista")}</h3>{deltas.map((delta) => <p key={delta.label} data-change={delta.change}><ArrowRight className="size-4" aria-hidden="true" /><span>{t(delta.label)} ({delta.before} → {delta.after})</span></p>)}</section>}
+        {coverageNotice && <p className="rp-coverage-note" role="status">{t(coverageNotice)}</p>}
+        {deltas.length > 0 && <section className="rp-deltas" aria-label={t("Desde a última entrevista")}><h3 className="rp-subtitle">{t("Desde a última entrevista")}</h3>{deltas.map((delta) => <p key={delta.label} data-change={delta.change}>{t(delta.label)}</p>)}</section>}
       </section>
       <section className="rp-section" id="english-section" aria-labelledby="english-title">
         <SectionHeading
@@ -185,8 +190,8 @@ function ReadyReport({
                 <br />
                 {diffReportWords(pattern.evidence ?? "", pattern.rephrasedExample ?? "").revised.map((part, partIndex) => part.changed ? <mark className="rp-diff-new" key={partIndex}>{part.text}</mark> : <span key={partIndex}>{part.text}</span>)}
               </p>
-              <p className="rp-hint mt-2">{pattern.suggestion}</p>
-              {pattern.why && (
+              {isCompleteSentence(pattern.suggestion) && <p className="rp-hint mt-2">{pattern.suggestion}</p>}
+              {isCompleteSentence(pattern.why) && (
                 <p className="rp-hint mt-1">{t("Por que acontece: ")}{pattern.why}</p>
               )}
               <p className="rp-phrase-ref">{t("Resposta ")}{reference(pattern.sequenceNumber)}</p>
@@ -204,31 +209,31 @@ function ReadyReport({
           </button>
         )}
       </section>
-      <section className="rp-section" id="technical-section" aria-labelledby="technical-title">
+      {(technical.strengths.length > 0 || technical.gaps.length > 0) && <section className="rp-section" id="technical-section" aria-labelledby="technical-title">
         <SectionHeading
           id="technical-title"
           title="Conteúdo técnico"
           description="O que suas respostas demonstraram e o que poderia ficar mais explícito."
         />
         <div className="ds-card rp-card rp-cols">
-          <section>
+          {technical.strengths.length > 0 && <section>
             <h3 className="rp-subtitle">{t("O que funcionou")}</h3>
-            {result.technicalContent.strengths.map((item, index) => (
+            {technical.strengths.map((item, index) => (
               <p className="rp-answer-finding" key={index}>
                 {item.explanation} <span className="rp-phrase-ref">{t("Resposta ")}{reference(item.sequenceNumber)}</span>
               </p>
             ))}
-          </section>
-          <section>
+          </section>}
+          {technical.gaps.length > 0 && <section>
             <h3 className="rp-subtitle">{t("O que faltou")}</h3>
-            {result.technicalContent.gaps.map((item, index) => (
+            {technical.gaps.map((item, index) => (
               <p className="rp-answer-finding" key={index}>
                 {item.explanation} <span className="rp-phrase-ref">{t("Resposta ")}{reference(item.sequenceNumber)}</span>
               </p>
             ))}
-          </section>
+          </section>}
         </div>
-      </section>
+      </section>}
       <section className="rp-section">
         <SectionHeading
           id="priorities-title"

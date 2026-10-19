@@ -133,6 +133,11 @@ describe("per-turn analysis service", () => {
     };
     const valid = await check(why);
     expect(valid.englishPatterns[0]?.why).toBe(why);
+    const truncated = await check("Em portugu");
+    expect(truncated.englishPatterns[0]).toBeDefined();
+    expect(truncated.englishPatterns[0]).not.toHaveProperty("why");
+    const fragment = await check("O presente simples.");
+    expect(fragment.englishPatterns[0]).not.toHaveProperty("why");
     const tooLong = await check("A".repeat(171));
     expect(tooLong.englishPatterns[0]).toBeDefined();
     expect(tooLong.englishPatterns[0]).not.toHaveProperty("why");

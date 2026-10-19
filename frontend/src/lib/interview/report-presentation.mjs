@@ -27,38 +27,102 @@ const average = (values) => values.length ? values.reduce((sum, value) => sum + 
 const analysisOf = (record) => record?.feedback?.status === "ready" && record.feedback.analysis && typeof record.feedback.analysis === "object" ? record.feedback.analysis : null;
 const answersOf = (record) => record?.feedback?.azureSummary?.answers ?? [];
 
+/** A report explanation must look like a finished sentence before we show it. */
+export function isCompleteSentence(value) {
+  if (typeof value !== "string") return false;
+  const text = value.trim();
+  if (!text || /(?:\.{2,}|…|[—–,:;-])\s*["'”’)]*$/u.test(text)) return false;
+  return /[^\s.!?][.!?]["'”’)]*$/u.test(text);
+}
+
+const normalizePoint = (value) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/gu, "").toLocaleLowerCase("pt-BR").replace(/[^a-z0-9]+/gu, " ").trim();
+
+const pointTokens = (value) => normalizePoint(value).split(" ").filter((word) => word.length > 2)
+  .map((word) => word.replace(/(?:ando|endo|indo|acao|coes|ou|ar|er|ir|ado|ada|ido|ida)$/u, ""));
+
+function samePoint(first, second) {
+  const left = new Set(pointTokens(first));
+  const right = new Set(pointTokens(second));
+  if (!left.size || !right.size) return normalizePoint(first) === normalizePoint(second);
+  let shared = 0;
+  for (const word of left) if (right.has(word)) shared += 1;
+  return shared / Math.min(left.size, right.size) >= 0.7;
+}
+
+/** Keep gaps over matching strengths so the report never makes the same point in opposing columns. */
+export function displayTechnicalFindings(strengths = [], gaps = [], otherNegativeFindings = []) {
+  const visibleGaps = gaps.filter((item) => isCompleteSentence(item?.explanation));
+  const negativeFindings = [...visibleGaps, ...otherNegativeFindings];
+  return {
+    strengths: strengths.filter((item) => isCompleteSentence(item?.explanation)
+      && !negativeFindings.some((gap) => samePoint(item.explanation, gap?.explanation) || samePoint(item.evidence, gap?.evidence))),
+    gaps: visibleGaps,
+  };
+}
+
+export function displayInterviewerTakeaway(takeaway, otherNegativeFindings = []) {
+  const concern = isCompleteSentence(takeaway?.concern) ? takeaway.concern.trim() : null;
+  const negativeFindings = concern ? [{ explanation: concern }, ...otherNegativeFindings] : otherNegativeFindings;
+  const remember = isCompleteSentence(takeaway?.remember) && !negativeFindings.some((item) => samePoint(takeaway.remember, item?.explanation)) ? takeaway.remember.trim() : null;
+  return { remember, concern };
+}
+
+export function hasIncompleteAnalysisCoverage(report) {
+  const coverage = report?.analysisCoverage;
+  return Number.isFinite(coverage?.analyzedTurnCount) && Number.isFinite(coverage?.totalTurnCount)
+    && coverage.totalTurnCount > 0 && coverage.analyzedTurnCount < coverage.totalTurnCount;
+}
+
+/** State exactly which answers are missing, without implying the report covers them. */
+export function analysisCoverageNotice(coverage, ordinalForSequence = (sequenceNumber) => sequenceNumber) {
+  if (!hasIncompleteAnalysisCoverage({ analysisCoverage: coverage })) return null;
+  const missing = Array.isArray(coverage.missingSequenceNumbers) ? coverage.missingSequenceNumbers
+    .filter((sequenceNumber) => Number.isSafeInteger(sequenceNumber))
+    .map((sequenceNumber) => ordinalForSequence(sequenceNumber) ?? sequenceNumber) : [];
+  if (missing.length === 1) return `Não conseguimos analisar a resposta ${missing[0]}. Os pontos abaixo cobrem as outras respostas.`;
+  if (missing.length > 1) return `Não conseguimos analisar as respostas ${missing.join(" e ")}. Os pontos abaixo cobrem as outras respostas.`;
+  return "Nem todas as respostas puderam ser analisadas. Os pontos abaixo cobrem as outras respostas.";
+}
+
+const rateCopy = (name, oldValue, newValue) => {
+  const same = Math.abs(oldValue - newValue) < 0.05;
+  const direction = same ? `${name} iguais` : newValue < oldValue ? `Menos ${name.toLocaleLowerCase()}` : `Mais ${name.toLocaleLowerCase()}`;
+  return { label: same ? `${direction}: ${formatNumber(newValue)}` : `${direction}: ${formatNumber(oldValue)} → ${formatNumber(newValue)}`, before: formatNumber(oldValue), after: formatNumber(newValue), change: same ? "same" : newValue < oldValue ? "better" : "worse" };
+};
+const formatNumber = (value) => value.toFixed(1).replace(/\.0$/, "").replace(".", ",");
+
 /** Compare this ready report with the newest previous completed report. */
 export function buildReportDeltas(current, currentAzure, records = [], currentInterviewId, currentAnswerCount = 0) {
   const previous = records.filter((record) => record.id !== currentInterviewId && record.status === "completed" && analysisOf(record))
     .sort((a, b) => Date.parse(b.completedAt ?? b.createdAt) - Date.parse(a.completedAt ?? a.createdAt))[0];
   if (!previous) return [];
   const before = analysisOf(previous);
+  if (hasIncompleteAnalysisCoverage(current) || hasIncompleteAnalysisCoverage(before)) return [];
   const countPatterns = (analysis) => analysis.turns?.reduce((sum, turn) => sum + (turn.englishPatterns?.length ?? 0), 0) ?? analysis.englishCommunication?.patterns?.length ?? 0;
   const countGaps = (analysis) => analysis.turns?.reduce((sum, turn) => sum + (turn.technicalGaps?.length ?? 0), 0) ?? analysis.technicalContent?.gaps?.length ?? 0;
   const currentAnswersCount = Math.max(1, currentAnswerCount);
   const previousAnswersCount = Math.max(1, previous.answerCount ?? 0);
   const deltas = [];
-  const add = (label, oldValue, newValue, lowerIsBetter = true, digits = 1) => {
+  const addRate = (label, oldValue, newValue) => {
     if (!Number.isFinite(oldValue) || !Number.isFinite(newValue)) return;
-    const change = Math.abs(oldValue - newValue) < 0.05 ? "same" : (newValue < oldValue) === lowerIsBetter ? "better" : "worse";
-    deltas.push({ label, before: oldValue.toFixed(digits).replace(".", ","), after: newValue.toFixed(digits).replace(".", ","), change });
+    deltas.push(rateCopy(label, oldValue, newValue));
   };
-  add("Erros de inglês por resposta", countPatterns(before) / previousAnswersCount, countPatterns(current) / currentAnswersCount);
-  add("Lacunas técnicas por resposta", countGaps(before) / previousAnswersCount, countGaps(current) / currentAnswersCount);
+  addRate("Erros de inglês por resposta", countPatterns(before) / previousAnswersCount, countPatterns(current) / currentAnswersCount);
+  addRate("Lacunas técnicas por resposta", countGaps(before) / previousAnswersCount, countGaps(current) / currentAnswersCount);
   const oldWpm = average(answersOf(previous).map((answer) => metric(answer.delivery?.wordsPerMinute)).filter((value) => value !== null));
   const newWpm = average((currentAzure.answers ?? []).map((answer) => metric(answer.delivery?.wordsPerMinute)).filter((value) => value !== null));
   const oldAccuracy = previous.feedback?.azureSummary?.accuracy?.mean;
   const newAccuracy = currentAzure.accuracy?.mean;
-  if (oldWpm !== null && newWpm !== null && Number.isFinite(oldAccuracy) && Number.isFinite(newAccuracy)) {
-    const pacePart = (value) => `${Math.round(value)} wpm`;
-    const accuracyPart = (value) => `${Math.round(value)}%`;
-    deltas.push({ label: "Ritmo e precisão da pronúncia", before: `${pacePart(oldWpm)} · ${accuracyPart(oldAccuracy)}`, after: `${pacePart(newWpm)} · ${accuracyPart(newAccuracy)}`, change: Math.abs(newAccuracy - oldAccuracy) < 0.05 ? "same" : newAccuracy > oldAccuracy ? "better" : "worse" });
-  } else if (oldWpm !== null && newWpm !== null) {
-    add("Ritmo médio", oldWpm, newWpm, false, 0);
-  } else if (Number.isFinite(oldAccuracy) && Number.isFinite(newAccuracy)) {
-    add("Precisão do inglês", oldAccuracy, newAccuracy, false, 0);
+  if (oldWpm !== null && newWpm !== null && Math.abs(newWpm - oldWpm) >= 5) {
+    const direction = newWpm > oldWpm ? "Fala mais rápida" : "Fala mais pausada";
+    deltas.push({ label: `${direction}: ${Math.round(oldWpm)} → ${Math.round(newWpm)} palavras por minuto`, before: String(Math.round(oldWpm)), after: String(Math.round(newWpm)), change: "same" });
   }
-  return deltas.slice(0, 3);
+  if (Number.isFinite(oldAccuracy) && Number.isFinite(newAccuracy)) {
+    const same = Math.abs(newAccuracy - oldAccuracy) < 1;
+    const direction = same ? "Precisão da pronúncia igual" : newAccuracy > oldAccuracy ? "Precisão da pronúncia maior" : "Precisão da pronúncia menor";
+    deltas.push({ label: same ? `${direction}: ${Math.round(newAccuracy)}%` : `${direction}: ${Math.round(oldAccuracy)}% → ${Math.round(newAccuracy)}%`, before: `${Math.round(oldAccuracy)}%`, after: `${Math.round(newAccuracy)}%`, change: same ? "same" : newAccuracy > oldAccuracy ? "better" : "worse" });
+  }
+  return deltas;
 }
 
 const phonemeTips = [
