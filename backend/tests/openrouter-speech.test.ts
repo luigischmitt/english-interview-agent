@@ -168,7 +168,7 @@ describe("openrouter speech hedging", () => {
     await vi.advanceTimersByTimeAsync(400);
     calls[0]?.resolve(ok("a"));
     const result = await pending;
-    expect(result.diagnostics).toEqual({ hedge: "not_needed" });
+    expect(result.diagnostics).toEqual({ hedge: "not_needed", upstream: "DeepInfra" });
     await vi.advanceTimersByTimeAsync(5_000);
     expect(calls).toHaveLength(1);
   });
@@ -197,7 +197,7 @@ describe("openrouter speech hedging", () => {
     calls[1]?.resolve(ok("hedge audio"));
     const result = await pending;
     expect(result.audio.toString()).toBe("hedge audio");
-    expect(result.diagnostics).toEqual({ hedge: "hedge_won" });
+    expect(result.diagnostics).toEqual({ hedge: "hedge_won", upstream: "Together" });
     expect(calls[0]?.signal.aborted).toBe(true);
   });
 
@@ -208,7 +208,7 @@ describe("openrouter speech hedging", () => {
     await vi.advanceTimersByTimeAsync(1_600);
     calls[0]?.resolve(ok("primary audio"));
     const result = await pending;
-    expect(result.diagnostics).toEqual({ hedge: "primary_won" });
+    expect(result.diagnostics).toEqual({ hedge: "primary_won", upstream: "DeepInfra" });
     expect(calls[1]?.signal.aborted).toBe(true);
   });
 
@@ -223,7 +223,7 @@ describe("openrouter speech hedging", () => {
     calls[1]?.resolve(ok("fallback"));
     const result = await pending;
     expect(result.audio.toString()).toBe("fallback");
-    expect(result.diagnostics).toEqual({ hedge: "hedge_won" });
+    expect(result.diagnostics).toEqual({ hedge: "hedge_won", upstream: "Together" });
   });
 
   it("keeps waiting for the hedge when only the primary failed, and treats empty audio as a failure", async () => {

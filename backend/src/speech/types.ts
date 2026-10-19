@@ -10,7 +10,12 @@ export type SpeechSynthesisRequest = {
 export type HedgeOutcome = "not_needed" | "primary_won" | "hedge_won" | "both_failed";
 
 // Content-free details a provider may report for logging.
-export type SpeechDiagnostics = { hedge?: HedgeOutcome; voiceSource?: "kokoro" | "azure" | "openrouter" };
+export type SpeechDiagnostics = {
+  hedge?: HedgeOutcome;
+  voiceSource?: "kokoro" | "azure" | "openrouter";
+  /** OpenRouter upstream that produced the Kokoro audio, when applicable. */
+  upstream?: "DeepInfra" | "Together";
+};
 
 export type SynthesizedSpeech = {
   audio: Buffer;

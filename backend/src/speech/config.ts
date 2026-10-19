@@ -38,8 +38,8 @@ function parseHedgeAfterMs(value: string | undefined): number {
   return parsed;
 }
 
-function parseHybridHedgeAfterMs(value: string | undefined): number {
-  if (value === undefined || value.trim() === "") return 2_500;
+function parseHybridHedgeAfterMs(value: string | undefined, fallback = 2_500): number {
+  if (value === undefined || value.trim() === "") return fallback;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0 || parsed > 30_000) {
     throw new Error("HYBRID_SPEECH_HEDGE_AFTER_MS must be an integer between 0 and 30000.");
@@ -102,7 +102,9 @@ export function loadSpeechConfig(environment = process.env): SpeechConfig {
       if (openRouterVoice.includes("+")) {
         throw new Error("OPENROUTER_SPEECH_VOICE cannot be a voice blend; use a single voice such as 'am_echo'.");
       }
-      hybridConfig = { hedgeAfterMs: parseHybridHedgeAfterMs(environment.HYBRID_SPEECH_HEDGE_AFTER_MS), openRouterVoice };
+      // OpenRouter's own Together hedge runs first. Azure has a different voice, so it only joins after that race has
+      // had enough time to finish (or immediately after both OpenRouter attempts fail).
+      hybridConfig = { hedgeAfterMs: parseHybridHedgeAfterMs(environment.HYBRID_SPEECH_HEDGE_AFTER_MS, provider === "openrouter-azure" ? 5_000 : 2_500), openRouterVoice };
     } else if (interviewerVoice.includes("+")) {
       throw new Error("OPENROUTER_SPEECH_VOICE / INTERVIEWER_VOICE cannot be a voice blend with SPEECH_PROVIDER 'openrouter'; use a single voice such as 'am_michael'.");
     }

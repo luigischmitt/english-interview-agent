@@ -4,6 +4,7 @@ import { loadSpeechConfig } from "../src/speech/config.js";
 import { createSpeechProvider } from "../src/speech/create-speech-provider.js";
 import { SpeechProviderUnavailableError } from "../src/speech/errors.js";
 import { HybridSpeechProvider } from "../src/speech/hybrid-speech-provider.js";
+import { OpenRouterSpeechProvider } from "../src/speech/openrouter-speech-provider.js";
 import type { SpeechProvider, SpeechSynthesisRequest, SynthesizedSpeech } from "../src/speech/types.js";
 
 const req: SpeechSynthesisRequest = { text: `A & B < C > "D" 'E'`, voice: "en-US-BrianNeural", speed: 0.85, format: "mp3" };
@@ -95,8 +96,37 @@ describe("Azure TTS", () => {
     expect(() => loadSpeechConfig(env)).toThrow(/AZURE_SPEECH_KEY/);
     expect(() => loadSpeechConfig({ ...env, AZURE_SPEECH_KEY: "x" })).toThrow(/AZURE_SPEECH_REGION/);
     const config = loadSpeechConfig({ ...env, AZURE_SPEECH_KEY: "x", AZURE_SPEECH_REGION: "brazilsouth" });
-    expect(config).toMatchObject({ provider: "openrouter-azure", interviewerVoice: "en-US-AndrewNeural", hybrid: { hedgeAfterMs: 2_500, openRouterVoice: "am_echo" } });
+    expect(config).toMatchObject({ provider: "openrouter-azure", interviewerVoice: "en-US-AndrewNeural", hybrid: { hedgeAfterMs: 5_000, openRouterVoice: "am_echo" } });
     expect(createSpeechProvider(config).name).toBe("hybrid");
+  });
+
+  it("tries Together before Azure in the OpenRouter Azure timeline", async () => {
+    vi.useFakeTimers();
+    const upstreams: string[] = [];
+    const openRouter = new OpenRouterSpeechProvider({
+      apiKey: "key", url: "https://openrouter.test/audio", model: "m", timeoutMs: 10_000, hedgeAfterMs: 2_500,
+      fetchImplementation: ((_input: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        upstreams.push((JSON.parse(String(init?.body)) as { provider: { order: string[] } }).provider.order[0]!);
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      })) as typeof fetch,
+    });
+    const azureCalls: SpeechSynthesisRequest[] = [];
+    const azure: SpeechProvider = { name: "azure", health: async () => ({ status: "ready" }), synthesize: async (request) => { azureCalls.push(request); return new Promise(() => undefined); } };
+    const hybrid = new HybridSpeechProvider({ primary: openRouter, secondary: azure, primaryVoice: "am_echo", primarySource: "openrouter", secondaryVoice: "en-US-AndrewNeural", secondarySource: "azure", timeoutMs: 10_000, hedgeAfterMs: 5_000 });
+    const controller = new AbortController();
+    const pending = hybrid.synthesize(req, controller.signal);
+
+    await vi.advanceTimersByTimeAsync(2_499);
+    expect(upstreams).toEqual(["DeepInfra"]);
+    expect(azureCalls).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(upstreams).toEqual(["DeepInfra", "Together"]);
+    await vi.advanceTimersByTimeAsync(2_499);
+    expect(azureCalls).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(azureCalls).toHaveLength(1);
+    controller.abort(new Error("done"));
+    await expect(pending).rejects.toThrow("done");
   });
 
   it("uses OpenRouter first and only starts Azure after the hedge delay", async () => {

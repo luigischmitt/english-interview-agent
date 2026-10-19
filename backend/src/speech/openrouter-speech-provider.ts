@@ -69,7 +69,7 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
         controllers[winner === "primary" ? "hedge" : "primary"].abort(new Error("Another speech request answered first."));
         const hedge = winner === "hedge" ? "hedge_won" : hedgeStarted ? "primary_won" : "not_needed";
         this.log(JSON.stringify({ event: "speech_usage", provider: "openrouter", chars: request.text.length, durationMs: Math.max(0, Date.now() - startedAt) }));
-        finish(() => resolve({ ...speech, diagnostics: { hedge } }));
+        finish(() => resolve({ ...speech, diagnostics: { ...speech.diagnostics, hedge, upstream: winner === "primary" ? "DeepInfra" : "Together" } }));
       };
       const failBoth = () => finish(() => reject(this.withDiagnostics(primaryError, "both_failed")));
 
