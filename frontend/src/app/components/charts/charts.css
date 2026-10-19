@@ -51,11 +51,12 @@
 .pr-point { stroke: var(--ds-surface); stroke-width: 1.5; transition: opacity 300ms ease calc(750ms + var(--k, 0) * 60ms); }
 .pr-point[data-group="english"] { fill: var(--ds-green); }
 .pr-point[data-group="voice"] { fill: var(--ds-ink); }
-.pr-label { cursor: default; transition: opacity 350ms ease calc(900ms + var(--k, 0) * 60ms); }
+.pr-label { cursor: pointer; transition: opacity 350ms ease calc(900ms + var(--k, 0) * 60ms); }
 .pr-label-name { fill: var(--ds-text-2); font-size: 12px; font-weight: 600; }
 .pr-label-value { fill: var(--ds-ink); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pr-label[data-active="true"] .pr-label-name { fill: var(--ds-green-deep); }
-.pr-hit { fill: transparent; }
+.pr-hit { fill: transparent; cursor: pointer; }
+.pr-hit:focus-visible { outline: none; stroke: var(--ds-green); stroke-width: 2; }
 
 [data-inview="false"] .pr-shape { transform: scale(0.3); opacity: 0; transition: none; }
 [data-inview="false"] .pr-point, [data-inview="false"] .pr-label { opacity: 0; transition: none; }

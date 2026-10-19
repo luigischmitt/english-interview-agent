@@ -84,9 +84,7 @@ function radarItems(insights: ProgressInsights): (RadarItem & { explain: string 
       label: type === "STRUCTURE" ? dimension.label : dimension.fullLabel,
       value: dimension.value,
       display: `${Math.round(dimension.value)}%`,
-      explain: `${t(patternExplainer[type])} ${getCurrentLocale() === "en"
-        ? `${Math.round((dimension.value / 100) * insights.analyzedAnswers)} of ${insights.analyzedAnswers} answers without this error.`
-        : `${Math.round((dimension.value / 100) * insights.analyzedAnswers)} de ${insights.analyzedAnswers} respostas sem esse erro.`}`,
+      explain: t(patternExplainer[type]),
     };
   });
 }
@@ -99,13 +97,11 @@ function radarEmptyMessage(insights: ProgressInsights) {
 
 function ProfileView({ insights }: { insights: ProgressInsights }) {
   const items = useMemo(() => radarItems(insights), [insights]);
-  const english = items.filter((item) => item.group === "english");
-  const voice = items.filter((item) => item.group === "voice");
-  const strongest = [...items].sort((a, b) => b.value - a.value)[0] ?? null;
   const weakest = [...items].sort((a, b) => a.value - b.value)[0] ?? null;
   const [picked, setPicked] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const activeKey = hovered ?? picked ?? weakest?.key ?? null;
+  const selectedKey = picked ?? weakest?.key ?? null;
   const active = items.find((item) => item.key === activeKey) ?? null;
 
   if (items.length < 3) {
@@ -118,49 +114,22 @@ function ProfileView({ insights }: { insights: ProgressInsights }) {
   }
 
   const summary = items.map((item) => `${item.label} ${item.display}`).join(", ");
-  const cell = (item: RadarItem & { explain: string }, index: number) => (
-    <button
-      key={item.key}
-      type="button"
-      className="pg-dim"
-      aria-pressed={activeKey === item.key}
-      style={{ ...stagger(index), "--w": `${Math.max(2, Math.min(100, item.value))}%` } as CSSProperties}
-      onClick={() => setPicked(item.key)}
-      onFocus={() => setPicked(item.key)}
-      onMouseEnter={() => setHovered(item.key)}
-      onMouseLeave={() => setHovered(null)}
-    >
-      <span className="pg-dim-v">{Math.round(item.value)}{item.group === "english" && <small>%</small>}</span>
-      <span className="pg-dim-bar" data-group={item.group}><i /></span>
-      <span className="pg-dim-l">{item.label}</span>
-    </button>
-  );
-
   return (
     <>
       <div className="pg-profile">
         <div className="pg-radar">
-          <ProfileRadar items={items} active={activeKey} onActive={setHovered} label={`${t("Seu perfil")}: ${summary}.`} />
+          <ProfileRadar
+            items={items}
+            active={activeKey}
+            selected={selectedKey}
+            onActive={setHovered}
+            onSelect={setPicked}
+            label={`${t("Seu perfil")}: ${summary}.`}
+          />
         </div>
         <div className="pg-profile-side">
-          {strongest && <div><p className="pg-side-k">{t("Ponto forte")}</p><p className="pg-side-v">{strongest.label} <span data-tone="good">{strongest.display}</span></p></div>}
-          {weakest && weakest.key !== strongest?.key && <div><p className="pg-side-k">{t("Ponto de atenção")}</p><p className="pg-side-v">{weakest.label} <span data-tone="attention">{weakest.display}</span></p></div>}
           {active && <p className="pg-side-detail" aria-live="polite"><strong>{active.label}.</strong> {active.explain}</p>}
         </div>
-      </div>
-      <div className="pg-dims">
-        {english.length > 0 && (
-          <div role="group" aria-label={t("Seu inglês")}>
-            <p className="pg-dims-h"><i data-group="english" aria-hidden="true" />{t("Seu inglês")} <span>{t("% das respostas sem esse erro")}</span></p>
-            <div className="pg-dims-cells" data-count={english.length}>{english.map((item, index) => cell(item, index))}</div>
-          </div>
-        )}
-        {voice.length > 0 && (
-          <div role="group" aria-label={t("Sua voz")}>
-            <p className="pg-dims-h"><i data-group="voice" aria-hidden="true" />{t("Sua voz")} <span>{t("nota do Azure, de 0 a 100")}</span></p>
-            <div className="pg-dims-cells" data-count={voice.length}>{voice.map((item, index) => cell(item, english.length + index))}</div>
-          </div>
-        )}
       </div>
       <p className="pg-dims-note">{t("Baseado em ")}{plural(insights.analyzedAnswers, "resposta analisada", "respostas analisadas")} {t("de ")}{plural(insights.analyzedSessions, "prática", "práticas")}{t(". Isto não é uma medida do seu nível de inglês.")}</p>
     </>

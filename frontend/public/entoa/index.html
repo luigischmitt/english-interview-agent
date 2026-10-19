@@ -269,12 +269,7 @@ main{overflow-x:clip}
 .rep-title{margin-top:.9rem;font-family:var(--serif);font-size:1.7rem;line-height:1.05;letter-spacing:-.02em}
 .rep-how{margin-top:.7rem;color:var(--text2);font-size:.9rem;line-height:1.45;max-width:30ch}
 .rep-how b{color:var(--ink);font-weight:600}
-.rep-sum{display:grid;gap:.7rem;margin-top:1.2rem}
-.rep-sum div{display:grid;gap:.1rem}
-.rep-sum b{font-size:1.05rem;font-weight:600}
-.rep-sum b span{color:var(--green-deep);font-variant-numeric:tabular-nums}
-.rep-sum .att b span{color:var(--warm)}
-.radar{position:relative;display:flex;justify-content:center;min-width:0}
+.radar{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
 .radar svg{width:100%;max-width:440px;height:auto;overflow:visible}
 .radar .ring{fill:none;stroke:rgba(14,42,31,.13);stroke-dasharray:3 4}
 .radar .ring.out{stroke-dasharray:none;stroke:rgba(14,42,31,.16)}
@@ -287,38 +282,20 @@ main{overflow-x:clip}
 .rep.in .radar .pt{opacity:1;transition:opacity .3s ease calc(.75s + var(--k)*60ms)}
 .radar .pt.on{stroke:var(--surface);stroke-width:2}
 .radar .lab{opacity:0;transition:opacity .35s ease}
+.radar .lab{cursor:pointer}
 .rep.in .radar .lab{opacity:1;transition:opacity .35s ease calc(.9s + var(--k)*60ms)}
 .radar .ln{fill:var(--text2);font:600 12px var(--sans)}
 .radar .lv{fill:var(--ink);font:700 17px var(--sans);font-variant-numeric:tabular-nums}
 .radar .lab.on .ln{fill:var(--green-deep)}
 .radar .hit{fill:transparent;cursor:pointer}
+.radar .hit:focus-visible{outline:none;stroke:var(--green);stroke-width:2}
 .rep-fix{font-family:var(--serif);font-size:1.6rem;line-height:1.3;margin-top:.4rem}
 .rep-fix s{color:var(--err);text-decoration-color:#c9694a;text-decoration-thickness:1.5px}
 .rep-fix strong{font-weight:600;color:var(--green-deep);background:rgba(31,107,69,.12);border-radius:.3em;padding:.05em .25em}
 .rep-meta{color:var(--text2);font-size:.92rem;margin-top:.35rem}
-.dims{display:grid;gap:.9rem;padding:1rem .75rem 1.1rem;background:var(--field)}
-@media(min-width:860px){.dims{grid-template-columns:minmax(0,4fr) minmax(0,3fr);gap:1.4rem;padding:1.2rem 1.6rem 1.3rem}}
-.dg-h{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .5rem;padding:0 .4rem .5rem;font-size:.8rem;font-weight:700}
-.dg-h span{font-weight:500;color:var(--text2)}
-.dg-h i{width:9px;height:9px;border-radius:50%;background:var(--green)}
-.dg-h i.v{border-radius:2px;transform:rotate(45deg);background:var(--ink)}
-.dg-cells{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
-@media(min-width:560px){.dg-cells{grid-template-columns:repeat(4,minmax(0,1fr))}.dg-cells.v{grid-template-columns:repeat(3,minmax(0,1fr))}}
-.dim{display:flex;flex-direction:column;gap:.3rem;border:0;background:none;text-align:left;border-radius:14px;padding:.7rem .8rem;transition:background .16s,box-shadow .16s}
-.dim.on{background:var(--surface);box-shadow:var(--shadow)}
-.dim:focus-visible{outline:2px solid var(--green);outline-offset:2px}
-.dim b{font-size:1.5rem;font-weight:600;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-.dim b small{font-size:.8rem;font-weight:500;color:var(--text2);margin-left:.1rem}
-.dim.on b{color:var(--green-deep)}
-.dim .dbar{height:5px;border-radius:99px;background:var(--track);overflow:hidden}
-.dim .dbar i{display:block;height:100%;width:0;border-radius:inherit;background:var(--green);transition:width .9s var(--ease) calc(.4s + var(--k)*60ms)}
-.dg-cells.v .dim .dbar i{background:var(--ink)}
-.rep.in .dim .dbar i{width:var(--w)}
-.dim span{font-size:.8rem;color:var(--text2);line-height:1.25}
-.dim-detail{min-height:2.9em;padding:.2rem 1.5rem 1.2rem;background:var(--field);color:var(--text2);font-size:.9rem;line-height:1.45}
-.dim-detail b{color:var(--ink);font-weight:600}
-@media(min-width:860px){.dim-detail{padding:0 2.4rem 1.4rem}}
-@media(prefers-reduced-motion:reduce){.radar .poly{transform:none;opacity:1}.radar .pt,.radar .lab{opacity:1}.dim .dbar i{width:var(--w)}.radar .poly,.radar .pt,.radar .lab,.dim .dbar i,.rep.in .radar .poly,.rep.in .radar .pt,.rep.in .radar .lab,.rep.in .dim .dbar i{transition:none}}
+#dimDetail{max-width:34ch}
+#dimDetail strong{color:var(--ink);font-weight:600}
+@media(prefers-reduced-motion:reduce){.radar .poly{transform:none;opacity:1}.radar .pt,.radar .lab{opacity:1}.radar .poly,.radar .pt,.radar .lab,.rep.in .radar .poly,.rep.in .radar .pt,.rep.in .radar .lab{transition:none}}
 
 .compact{padding:clamp(40px,5vw,72px) 0}
 /* ===== você × nativo ===== */
@@ -454,13 +431,10 @@ main{overflow-x:clip}
           <p class="rep-role">Backend Engineer · Sênior</p>
           <p class="rep-title">Seu perfil depois de 6 entrevistas</p>
           <p class="rep-how">Cada ponta é uma parte da sua fala. <b>Quanto mais perto da borda, melhor.</b></p>
-          <div class="rep-sum">
-            <div><p class="rep-k">Ponto forte</p><b>Falsos cognatos <span>95%</span></b></div>
-            <div class="att"><p class="rep-k">Ponto de atenção</p><b>Gramática <span>70%</span></b></div>
-          </div>
         </div>
         <div class="radar">
-          <svg viewBox="-62 -22 424 344" id="radar" role="img" aria-label="Radar de exemplo: gramática 70%, escolha de palavras 85%, falsos cognatos 95% e estrutura 80% das respostas sem erro; precisão 84, ritmo 78 e prosódia 72 de 100"></svg>
+          <svg viewBox="-62 -22 424 344" id="radar" role="group" aria-label="Perfil de exemplo. Cada ponto pode ser selecionado para ver o que a dimensão mede."></svg>
+          <p class="rep-meta" id="dimDetail" aria-live="polite"></p>
         </div>
         <div>
           <p class="rep-k">Ponto principal do inglês</p>
@@ -468,11 +442,6 @@ main{overflow-x:clip}
           <p class="rep-meta">Experiência em uma área pede <em>in</em>.</p>
         </div>
       </div>
-      <div class="dims">
-        <div><p class="dg-h"><i></i>Seu inglês <span>% das respostas sem esse erro</span></p><div class="dg-cells" id="dimsEn"></div></div>
-        <div><p class="dg-h"><i class="v"></i>Sua voz <span>nota do Azure, de 0 a 100</span></p><div class="dg-cells v" id="dimsVoz"></div></div>
-      </div>
-      <p class="dim-detail" id="dimDetail" aria-live="polite"></p>
     </div>
   </div>
 </section>
@@ -837,7 +806,7 @@ AWS e observabilidade</div></div>
   /* ================= relatório: radar do perfil ================= */
   const NS='http://www.w3.org/2000/svg',mk=(tag,at)=>{const e=document.createElementNS(NS,tag);for(const k in at)e.setAttribute(k,at[k]);return e};
   const DIM=[
-    ['Gramática',70,'en','Tempo verbal, artigos e preposições. 7 de cada 10 respostas saíram sem erro de gramática.'],
+    ['Gramática',70,'en','Tempo verbal, artigos e preposições.'],
     ['Escolha de palavras',85,'en','Usar a palavra que um nativo usaria naquele contexto.'],
     ['Falsos cognatos',95,'en','Palavras que parecem português e enganam, como <em>actually</em> e <em>pretend</em>.'],
     ['Estrutura',80,'en','Se a resposta tem começo, meio e fim fáceis de seguir.'],
@@ -846,10 +815,10 @@ AWS e observabilidade</div></div>
     ['Prosódia',72,'v','Entonação e acento das palavras, a “melodia” da frase.']];
   const C=150,R=112,N=DIM.length,ang=i=>-Math.PI/2+i*Math.PI*2/N,rpt=(i,r)=>[C+r*Math.cos(ang(i)),C+r*Math.sin(ang(i))];
   const poly=f=>DIM.map((d,i)=>rpt(i,R*f(d)).map(n=>n.toFixed(1)).join(',')).join(' ');
-  const radar=$('#radar'),detail=$('#dimDetail'),cellsEn=$('#dimsEn'),cellsVoz=$('#dimsVoz');
+  const radar=$('#radar'),detail=$('#dimDetail');
   [1,.75,.5,.25].forEach(f=>radar.appendChild(mk('polygon',{class:f===1?'ring out':'ring',points:poly(()=>f)})));
   [50,100].forEach(v=>{const t=mk('text',{class:'ringv',x:C+4,y:C-R*v/100+11});t.textContent=v;radar.appendChild(t)});
-  const axes=[],pts=[],labs=[],cells=[];
+  const axes=[],pts=[],labs=[],hits=[];
   DIM.forEach((d,i)=>{const a=rpt(i,R);const l=mk('line',{class:'axis',x1:C,y1:C,x2:a[0].toFixed(1),y2:a[1].toFixed(1)});radar.appendChild(l);axes.push(l)});
   radar.appendChild(mk('polygon',{class:'poly',points:poly(d=>d[1]/100)}));
   DIM.forEach((d,i)=>{
@@ -861,18 +830,21 @@ AWS e observabilidade</div></div>
     const tn=mk('text',{class:'ln',x:lx.toFixed(1),y:(ly+dy).toFixed(1),'text-anchor':anchor});tn.textContent=d[0];
     const tv=mk('text',{class:'lv',x:lx.toFixed(1),y:(ly+dy+18).toFixed(1),'text-anchor':anchor});tv.textContent=d[2]==='en'?d[1]+'%':d[1];
     g.append(tn,tv);radar.appendChild(g);labs.push(g);
-    const hit=mk('circle',{class:'hit',cx:x,cy:y,r:16});radar.appendChild(hit);
-    const cell=document.createElement('button');cell.type='button';cell.className='dim';cell.style.cssText=`${k};--w:${d[1]}%`;
-    cell.innerHTML=`<b>${d[1]}${d[2]==='en'?'<small>%</small>':''}</b><span class="dbar"><i></i></span><span>${d[0]}</span>`;
-    (d[2]==='en'?cellsEn:cellsVoz).appendChild(cell);cells.push(cell);
-    [hit,g,cell].forEach(el=>{el.addEventListener('pointerenter',()=>hl(i));el.addEventListener('pointerleave',()=>hl(-1))});
-    cell.addEventListener('focus',()=>hl(i));cell.addEventListener('click',()=>{pinned=i;hl(i)});
+    const metric=d[2]==='en'?`${d[1]}% das respostas sem erro`:`${d[1]} de 100`;
+    const hit=mk('circle',{class:'hit',cx:x,cy:y,r:16,role:'button',tabindex:'0','aria-label':`${d[0]}: ${metric}`,'aria-pressed':'false'});
+    radar.appendChild(hit);hits.push(hit);
+    g.addEventListener('pointerenter',()=>hl(i));g.addEventListener('pointerleave',()=>hl(-1));
+    g.addEventListener('click',()=>{pinned=i;hl(i)});
+    hit.addEventListener('pointerenter',()=>hl(i));hit.addEventListener('pointerleave',()=>hl(-1));
+    hit.addEventListener('focus',()=>hl(i));
+    hit.addEventListener('click',()=>{pinned=i;hl(i)});
+    hit.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pinned=i;hl(i)}});
   });
   let pinned=0;
   function hl(k){const on=k<0?pinned:k;
     axes.forEach((a,i)=>a.classList.toggle('on',i===on));pts.forEach((p,i)=>p.classList.toggle('on',i===on));
-    labs.forEach((l,i)=>l.classList.toggle('on',i===on));cells.forEach((c,i)=>c.classList.toggle('on',i===on));
-    detail.innerHTML=`<b>${DIM[on][0]}.</b> ${DIM[on][3]}`}
+    labs.forEach((l,i)=>l.classList.toggle('on',i===on));hits.forEach((h,i)=>h.setAttribute('aria-pressed',String(i===pinned)));
+    detail.innerHTML=`<strong>${DIM[on][0]}.</strong> ${DIM[on][3]}`}
   hl(-1);
   // Plays when the card is really in view (not when only its top edge peeks into the first screen) and replays on return.
   new IntersectionObserver(es=>es.forEach(e=>{const rep=e.target;
