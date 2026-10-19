@@ -60,7 +60,7 @@ section{padding:clamp(44px,6vw,80px) 0}
 .brand img{width:26px}
 @media(hover:hover){.nav-links a:hover{color:var(--ink)}}
 .nav .btn{min-height:40px;padding:0 1.1rem;font-size:.9rem;color:var(--cream)}
-@media(max-width:720px){.nav .wrap{grid-template-columns:auto 1fr}.nav-links{display:none}.brand{font-size:.8rem}.brand img{width:22px}.nav .btn{padding:0 .8rem;font-size:.82rem;white-space:nowrap}}
+@media(max-width:720px){.nav .wrap{grid-template-columns:minmax(0,1fr) auto;gap:.75rem}.nav-links{display:none}.brand{font-size:.8rem}.brand img{width:22px}.nav .btn{padding:0 .8rem;font-size:.82rem;white-space:nowrap}}
 
 /* hero: plain background, fills the first screen so the report card below appears only on scroll;
    a strip of the forest stays visible at the bottom as an invitation to scroll */
@@ -149,8 +149,7 @@ main{overflow-x:clip}
 @media(max-width:700px){.stage{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:520px){.sg.grid2 span{white-space:normal;line-height:1.2;padding:.45rem .3rem;font-size:.7rem}}
 @media(max-width:440px){.live{display:none}.mt-sub{max-width:44vw}.bar .rb[aria-label="Pular pergunta"]{display:none}.rb.end{padding:0 10px;font-size:.78rem}}
-@media(max-width:400px){.nav-act .btn.soft{display:none}}
-@media(max-width:440px){.cta-row{flex-direction:column;align-items:center}.cta-row .btn{width:min(100%,300px)}}
+@media(max-width:440px){.nav-act .btn.soft{display:none}.nav .btn{padding-inline:.7rem;font-size:.78rem}.cta-row{flex-direction:column;align-items:center;width:100%}.cta-row .btn{width:min(100%,300px);max-width:100%;white-space:normal;text-align:center}}
 .tile{position:relative;border-radius:20px;background:var(--surface);overflow:hidden;box-shadow:0 0 0 1px rgba(14,42,31,.08),var(--shadow);display:flex;flex-direction:column;min-height:0;isolation:isolate}
 .tile::after{content:"";position:absolute;inset:0;border-radius:inherit;border:3px solid var(--green);opacity:0;pointer-events:none;z-index:3}
 .tile.int.talk::after{animation:ringp 1.3s var(--ease-io) infinite alternate}
@@ -260,7 +259,8 @@ main{overflow-x:clip}
 .stage-art{position:absolute;inset:0;z-index:-1;pointer-events:none;
   mask-image:linear-gradient(to bottom,transparent,#000 32px,#000 calc(100% - 32px),transparent);-webkit-mask-image:linear-gradient(to bottom,transparent,#000 32px,#000 calc(100% - 32px),transparent)}
 .stage-art img{width:100%;height:100%;object-fit:cover;object-position:center 70%;opacity:.9}
-@media(max-width:640px){.stage-art{top:auto;height:55%}.stage-art img{object-position:30% 100%}}
+/* The decorative forest crop competes with the report on narrow screens. Keep it on desktop. */
+@media(max-width:767px){.stage-art{display:none}}
 .rep{max-width:1000px;margin-inline:auto;background:var(--surface);border-radius:28px;overflow:hidden;box-shadow:0 2px 4px rgba(14,42,31,.05),0 40px 80px -36px rgba(14,42,31,.5)}
 .rep-top{display:grid;gap:1.4rem;padding:1.5rem}
 @media(min-width:860px){.rep-top{grid-template-columns:minmax(0,.85fr) minmax(0,1.5fr) minmax(0,.85fr);gap:1.2rem;padding:2.2rem 2.4rem 1.6rem;align-items:center}}
@@ -424,7 +424,7 @@ main{overflow-x:clip}
 
 <!-- RELATÓRIO sobre a mata (gráfico do site atual, com menos texto) -->
 <section id="relatorio" class="rstage" aria-label="Exemplo de relatório">
-  <div class="stage-art" aria-hidden="true"><img src="/landing/hero-mata.png" alt="" width="1536" height="1024" fetchpriority="high"></div>
+  <div class="stage-art" aria-hidden="true"><img src="/landing/hero-mata.webp" alt="" width="1536" height="1024" loading="lazy" decoding="async"></div>
   <div class="wrap">
     <div class="rep" id="rep">
       <div class="rep-top">
@@ -524,7 +524,7 @@ AWS e observabilidade</div></div>
             </div>
             <div class="stage">
               <div class="tile int" id="tInt">
-                <div class="avwall"><img src="/landing/tucano.png" alt=""></div>
+                <div class="avwall"><img src="/landing/tucano-320.webp" alt="" width="320" height="365" loading="lazy" decoding="async"></div>
                 <p class="cap" id="cap" lang="en"></p>
                 <div class="nm"><span class="bars"><i></i><i></i><i></i></span>Entrevistador</div>
               </div>
@@ -622,7 +622,7 @@ AWS e observabilidade</div></div>
     </div>
   </div>
   <div class="endart">
-    <img class="end-img" src="/landing/footer-mata-alpha.png" alt="" width="2172" height="724" loading="lazy">
+    <img class="end-img" src="/landing/footer-mata-alpha.webp" alt="" width="2172" height="724" loading="lazy" decoding="async">
     <div class="wrap end-cta rv">
       <h2>Descubra como seu inglês soa para quem vai te contratar.</h2>
       <a class="btn" href="/signup" data-cta>Experimentar grátis <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>

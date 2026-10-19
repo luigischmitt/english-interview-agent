@@ -68,7 +68,7 @@
 .mt-timer[data-over="true"] strong { color: var(--mt-over-text); }
 .mt-progress { position: absolute; inset-inline: 4px; bottom: 0; width: auto; display: block; height: 2px; appearance: none; border: 0; background: var(--mt-chip); overflow: hidden; border-radius: 9999px; }
 .mt-progress::-webkit-progress-bar { background: var(--mt-chip); }
-.mt-progress::-webkit-progress-value { background: var(--mt-accent); transition: width 600ms var(--ease-out); }
+.mt-progress::-webkit-progress-value { background: var(--mt-accent); }
 .mt-progress::-moz-progress-bar { background: var(--mt-accent); }
 @media (min-width: 640px) {
   .mt-sub, .mt-save-text, .mt-timer-rest { display: inline; }
@@ -248,7 +248,11 @@
 
 .mt-btn-end { width: auto; padding-inline: 16px; background: var(--mt-danger); color: var(--ds-on-danger); font-size: 0.875rem; font-weight: 600; }
 @media (hover: hover) and (pointer: fine) { .mt-btn-end:hover:not(:disabled) { background: var(--mt-danger-hover); } }
-@media (max-width: 479.98px) { .mt-btn-end { width: 56px; padding-inline: 0; } .mt-btn-end span { display: none; } }
+@media (max-width: 479.98px) {
+  .mt-bar { gap: 3px; padding: 4px; }
+  .mt-btn-end { width: 44px; padding-inline: 0; }
+  .mt-btn-end span { display: none; }
+}
 
 /* Tooltips (hover/keyboard only; every control also has an aria-label). */
 @media (hover: hover) and (pointer: fine) {

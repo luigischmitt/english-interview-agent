@@ -4,8 +4,8 @@
  * Prefix: `shl-`. Unlayered like design-system.css, so it wins over Tailwind utilities where noted.
  */
 
-/* Height of the fixed mobile nav (pt 0.5rem + track 3.5rem + bottom padding). Screens with their own fixed bar sit above it. */
-:root { --shl-bottom-nav-h: calc(4rem + max(0.5rem, env(safe-area-inset-bottom))); }
+/* Height of the fixed mobile nav (top padding + two-line-safe track + bottom safe-area padding). */
+:root { --shl-bottom-nav-h: calc(4.25rem + max(0.5rem, env(safe-area-inset-bottom))); }
 
 /* ---- Sidebar (desktop). Tinted ground, no hard border; the active item rides on one sliding thumb. ---- */
 .shl-sidebar { background: var(--ds-sidebar); box-shadow: 1px 0 0 var(--ds-line); }
@@ -117,6 +117,7 @@
   color: var(--ds-text-2);
   transition: color var(--ds-dur-fast) ease, transform var(--ds-dur-press) var(--ease-out);
 }
+.shl-mobile-item > span { max-width: 100%; overflow-wrap: anywhere; text-align: center; }
 .shl-mobile-item:active { transform: scale(0.97); }
 .shl-mobile-item[aria-current="page"] { color: var(--ds-ink); font-weight: 600; }
 .shl-mobile-item[aria-current="page"] svg { color: var(--ds-green); }
@@ -163,8 +164,7 @@
 .shl-home-primary { width: auto; margin-top: 2rem; padding-inline: 1.5rem; }
 .shl-home-signature { display: flex; align-items: center; gap: 0.5rem; margin-top: 1.25rem; color: var(--ds-text-2); font-size: 0.75rem; font-weight: 600; }
 .shl-home-signature svg { color: var(--ds-brand-warm); }
-.shl-home-hero-art { position: absolute; z-index: -1; top: 2%; right: -24%; width: min(76vw, 54rem); height: min(76vw, 48rem); pointer-events: none; will-change: transform; }
-.shl-hero-forest { object-fit: contain; object-position: right center; opacity: var(--ds-forest-opacity); filter: var(--ds-forest-filter); pointer-events: none; mask-image: linear-gradient(90deg, transparent 4%, var(--ds-ink) 36%, var(--ds-ink) 76%, transparent 100%), linear-gradient(180deg, transparent 0%, var(--ds-ink) 12%, var(--ds-ink) 70%, transparent 100%), radial-gradient(ellipse 88% 82% at 54% 50%, var(--ds-ink) 48%, transparent 100%), radial-gradient(ellipse 88% 82% at 62% 55%, black 45%, transparent 78%); mask-composite: intersect; -webkit-mask-image: linear-gradient(90deg, transparent 4%, var(--ds-ink) 36%, var(--ds-ink) 76%, transparent 100%), linear-gradient(180deg, transparent 0%, var(--ds-ink) 12%, var(--ds-ink) 70%, transparent 100%), radial-gradient(ellipse 88% 82% at 54% 50%, var(--ds-ink) 48%, transparent 100%), radial-gradient(ellipse 88% 82% at 62% 55%, black 45%, transparent 78%); -webkit-mask-composite: source-in; }
+.shl-home-hero-art { display: none; position: absolute; z-index: -1; top: 2%; right: -24%; width: min(76vw, 54rem); height: min(76vw, 48rem); pointer-events: none; will-change: transform; }
 .shl-home-flow, .shl-home-how { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: clamp(3rem, 7vw, 6rem) 0; box-shadow: inset 0 1px 0 var(--ds-line); }
 .shl-home-hero + .shl-home-flow, .shl-home-hero + .shl-home-how { box-shadow: none; }
 .shl-home-label, .shl-home-flow-label h2 { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -190,7 +190,7 @@
 .shl-home-week-l { color: var(--ds-text-2); font-size: 0.625rem; white-space: nowrap; }
 .shl-home-caption { margin-top: 0.625rem; color: var(--ds-text-2); font-size: 0.75rem; }
 .shl-home-voice-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; max-width: 34rem; }
-.shl-home-voice-metrics dt { display: flex; align-items: center; gap: 0.375rem; color: var(--ds-text-2); font-size: 0.8125rem; font-weight: 600; }
+.shl-home-voice-metrics dt { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; color: var(--ds-text-2); font-size: 0.8125rem; font-weight: 600; }
 .shl-home-voice-metrics em { color: var(--ds-green-deep); font-size: 0.625rem; font-style: normal; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
 .shl-home-voice-metrics dd { margin-top: 0.25rem; font-family: var(--font-display); font-size: clamp(2.75rem, 2.2rem + 2vw, 3.75rem); letter-spacing: -0.04em; line-height: 0.9; font-variant-numeric: tabular-nums; }
 .shl-home-voice-metrics [data-focus="true"] dd { color: var(--ds-green); }
@@ -206,6 +206,7 @@
 .shl-home [data-reveal] > :nth-child(2) { transition-delay: 80ms; }
 .shl-home [data-reveal] > :nth-child(3) { transition-delay: 160ms; }
 @media (min-width: 768px) {
+  .shl-home-hero-art { display: block; background: url("/landing/hero-mata.webp") right center / contain no-repeat; opacity: var(--ds-forest-opacity); filter: var(--ds-forest-filter); mask-image: linear-gradient(90deg, transparent 4%, var(--ds-ink) 36%, var(--ds-ink) 76%, transparent 100%), linear-gradient(180deg, transparent 0%, var(--ds-ink) 12%, var(--ds-ink) 70%, transparent 100%), radial-gradient(ellipse 88% 82% at 54% 50%, var(--ds-ink) 48%, transparent 100%), radial-gradient(ellipse 88% 82% at 62% 55%, black 45%, transparent 78%); mask-composite: intersect; -webkit-mask-image: linear-gradient(90deg, transparent 4%, var(--ds-ink) 36%, var(--ds-ink) 76%, transparent 100%), linear-gradient(180deg, transparent 0%, var(--ds-ink) 12%, var(--ds-ink) 70%, transparent 100%), radial-gradient(ellipse 88% 82% at 54% 50%, var(--ds-ink) 48%, transparent 100%), radial-gradient(ellipse 88% 82% at 62% 55%, black 45%, transparent 78%); -webkit-mask-composite: source-in; }
   .shl-home-hero { min-height: min(32rem, calc(100svh - 8rem)); }
   .shl-home-hero-art { top: -2%; right: -20%; width: min(68vw, 58rem); height: min(68vw, 52rem); }
   .shl-home-flow, .shl-home-how { grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 2rem; }
@@ -216,16 +217,20 @@
 }
 @media (min-width: 1024px) {
   .shl-home-hero-art { top: 50%; right: 0; width: min(62%, 52rem); height: auto; aspect-ratio: 3 / 2; translate: 0 -50%; }
-  .shl-hero-forest { object-fit: cover; }
 }
 @media (max-width: 1023.98px) {
   .shl-home-hero { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; padding-bottom: 2rem; }
   .shl-home-hero-copy { display: contents; }
-  .shl-home-hero-art { position: relative; z-index: 0; inset: auto; grid-row: 5; width: 100%; height: clamp(14rem, 34vw, 18rem); margin-top: 1.5rem; will-change: auto; }
+  .shl-home-hero-art { position: relative; z-index: 0; inset: auto; grid-row: 5; width: 100%; height: clamp(14rem, 34vw, 18rem); margin-top: 1.5rem; will-change: auto; background-position: center 58%; background-size: cover; }
   .shl-home-signature { grid-row: 6; }
-  .shl-hero-forest { object-fit: cover; object-position: center 58%; mask-image: linear-gradient(180deg, transparent 0%, black 18%, black 82%, transparent 100%); mask-composite: intersect; -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 18%, black 82%, transparent 100%); -webkit-mask-composite: source-in; }
+  .shl-home-hero-art { mask-image: linear-gradient(180deg, transparent 0%, black 18%, black 82%, transparent 100%); mask-composite: intersect; -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 18%, black 82%, transparent 100%); -webkit-mask-composite: source-in; }
 }
-@media (max-width: 639px) { .shl-home-hero-art { height: clamp(13.75rem, 60vw, 16.25rem); margin-top: 1.25rem; } }
+@media (min-width: 640px) and (max-width: 767.98px) { .shl-home-hero-art { height: clamp(14rem, 34vw, 18rem); margin-top: 1.5rem; } }
+@media (max-width: 767.98px) {
+  .shl-home-hero-art { display: none; }
+  .shl-home-primary { width: 100%; justify-content: center; }
+  .shl-mobile-item { min-height: 3.25rem; font-size: 0.625rem; }
+}
 @media (hover: hover) and (pointer: fine) { .shl-home-link:hover { color: var(--ds-green-deep); } .shl-home-link:hover .ds-arrow { transform: translate(2px, -2px); } }
 @media (prefers-reduced-motion: reduce) { .shl-home [data-reveal] > *, .shl-home-week-track > i { transition: none; } .shl-home-hero-art { transform: none !important; } }
 

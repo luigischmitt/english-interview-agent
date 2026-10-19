@@ -113,7 +113,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`flex items-center gap-2.5 ${compact ? "justify-center" : ""}`}>
       <Image
-        src="/landing/tucano.png"
+        src="/landing/tucano-mark.webp"
         alt=""
         width={26}
         height={30}
@@ -263,7 +263,7 @@ function Navigation({
                 className="shl-mobile-item"
               >
                 <Icon className="size-[1.125rem]" aria-hidden="true" />
-                {label}
+                <span>{label}</span>
               </button>
             </li>
             );
@@ -388,16 +388,7 @@ function HomeView({
             <Leaf className="size-3.5" aria-hidden="true" /> {t("Feito no Brasil, para vaga lá fora")}
           </p>
         </div>
-        <div ref={artRef} className="shl-home-hero-art" aria-hidden="true">
-          <Image
-            src="/landing/hero-mata.png"
-            alt=""
-            fill
-            sizes="(max-width: 767px) 100vw, 50vw"
-            priority
-            className="shl-hero-forest"
-          />
-        </div>
+        <div ref={artRef} className="shl-home-hero-art" aria-hidden="true" />
       </section>
 
       {isLoading ? (

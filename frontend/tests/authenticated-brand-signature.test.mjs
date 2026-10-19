@@ -58,12 +58,14 @@ test("the warm bird accent keeps 3:1 contrast on light and dark app surfaces", (
 test("authenticated Home carries its Brazilian signature and retains its optimized forest detail", () => {
   assert.match(home, /Feito no Brasil, para vaga lá fora/u);
   assert.doesNotMatch(home, /data-home-item=/u);
-  assert.match(home, /src="\/landing\/hero-mata\.png"[\s\S]+alt=""[\s\S]+fill[\s\S]+priority/u);
+  assert.match(home, /className="shl-home-hero-art" aria-hidden="true"/u);
+  assert.doesNotMatch(home, /src="\/landing\/hero-mata/u);
   assert.doesNotMatch(home, /ds-card shl-home/u);
   assert.match(shell, /\.shl-nav-item\[aria-current="page"\] svg \{ color: var\(--ds-green\); \}/u);
   assert.match(shell, /\.shl-mobile-item\[aria-current="page"\] svg \{ color: var\(--ds-green\); \}/u);
   assert.doesNotMatch(shell, /data-home-item="true"\]\[aria-current="page"\]/u);
-  assert.match(shell, /\.shl-hero-forest[\s\S]+pointer-events: none/u);
+  assert.match(shell, /\.shl-home-hero-art \{ display: none;[^}]+pointer-events: none/u);
+  assert.match(shell, /@media \(min-width: 768px\) \{[\s\S]+\.shl-home-hero-art \{[^}]+hero-mata\.webp/u);
 });
 
 test("setup and true first-use progress marks remain decorative", () => {
