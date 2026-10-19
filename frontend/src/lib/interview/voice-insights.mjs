@@ -408,6 +408,72 @@ function reportCandidates(records) {
   return candidates;
 }
 
+function normalizedPracticeText(text) {
+  return typeof text === "string"
+    ? text.normalize("NFKC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("en-US")
+    : "";
+}
+
+/**
+ * Small, evidence-only queue for repeating the English corrections and the
+ * lowest-scored recorded phrases. Recurrence wins over recency so the queue
+ * stays focused on patterns instead of one-off slips.
+ */
+export function buildVoiceTrainingPhrases(input) {
+  const records = (Array.isArray(input) ? input : []).slice().sort((first, second) => timeOf(second) - timeOf(first));
+  const grouped = new Map();
+  const add = (candidate) => {
+    const key = normalizedPracticeText(candidate.referenceText);
+    if (!key) return;
+    const current = grouped.get(key);
+    if (!current) {
+      grouped.set(key, { ...candidate, id: `training:${key}`, recurrence: 1 });
+      return;
+    }
+    current.recurrence += 1;
+    const attentionWords = [...new Set([...current.attentionWords, ...candidate.attentionWords])];
+    if (candidate.time > current.time) {
+      const correction = current.source === "english" ? { source: current.source, saidText: current.saidText } : {};
+      Object.assign(current, candidate, correction, { recurrence: current.recurrence, beforeAccuracy: candidate.beforeAccuracy ?? current.beforeAccuracy, attentionWords });
+    } else {
+      if (current.beforeAccuracy === null && candidate.beforeAccuracy !== null) current.beforeAccuracy = candidate.beforeAccuracy;
+      if (candidate.source === "english" && current.source !== "english") Object.assign(current, { source: candidate.source, saidText: candidate.saidText });
+      current.attentionWords = attentionWords;
+    }
+  };
+
+  for (const record of records) {
+    const patterns = record?.feedback?.status === "ready" ? record.feedback?.analysis?.englishCommunication?.patterns : [];
+    for (const pattern of Array.isArray(patterns) ? patterns : []) {
+      const referenceText = cleanPracticeSentence(pattern?.rephrasedExample);
+      const saidText = isText(pattern?.evidence) ? pattern.evidence.trim() : null;
+      if (!referenceText || !saidText) continue;
+      add({ referenceText, saidText, source: "english", time: timeOf(record), date: dateOf(record), beforeAccuracy: null, attentionWords: [] });
+    }
+    for (const answer of record?.feedback?.azureSummary?.answers ?? []) {
+      for (const phrase of answer?.phrases ?? []) {
+        const referenceText = cleanPracticeSentence(phrase?.text);
+        const problemWords = Array.isArray(phrase?.problemWords) ? phrase.problemWords.filter((word) => isText(word?.word) && isScore(word?.score) && word.score < lowWordScore) : [];
+        const score = isScore(phrase?.score) ? phrase.score : null;
+        if (!referenceText || (!problemWords.length && !(score !== null && score < lowWordScore))) continue;
+        add({
+          referenceText,
+          saidText: referenceText,
+          source: "pronunciation",
+          time: timeOf(record),
+          date: dateOf(record),
+          beforeAccuracy: score,
+          attentionWords: problemWords.map((word) => word.word.trim()),
+        });
+      }
+    }
+  }
+
+  return [...grouped.values()]
+    .sort((first, second) => second.recurrence - first.recurrence || second.time - first.time || (first.beforeAccuracy ?? 101) - (second.beforeAccuracy ?? 101) || first.referenceText.localeCompare(second.referenceText))
+    .slice(0, 5);
+}
+
 function evidencePhraseCandidates(records, metric) {
   return phrasesFor(records, metric).map((phrase) => ({
     id: `phrase:${phrase.interviewId}:${phrase.answerNumber}:${phrase.phraseIndex}`,

@@ -1,7 +1,7 @@
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { buildPracticeWordList, buildVoiceEvolution, buildVoiceInsights, buildVoiceLesson, buildVoicePracticePlan, encodeWav16Mono, likelyTranscriptionArtifact, normalizePracticeSentenceCapitalization, readPracticeAttempts, savePracticeAttempt } from "../src/lib/interview/voice-insights.mjs";
+import { buildPracticeWordList, buildVoiceEvolution, buildVoiceInsights, buildVoiceLesson, buildVoicePracticePlan, buildVoiceTrainingPhrases, encodeWav16Mono, likelyTranscriptionArtifact, normalizePracticeSentenceCapitalization, readPracticeAttempts, savePracticeAttempt } from "../src/lib/interview/voice-insights.mjs";
 
 const metric = (mean, totalDurationMs = 25_000) => ({ mean, sampleCount: 1, totalDurationMs });
 const record = (id, completedAt, scores, answers = []) => ({ id, completedAt, createdAt: completedAt, feedback: { status: "ready", azureSummary: { accuracy: metric(scores.accuracy), fluency: metric(scores.fluency), prosody: metric(scores.prosody), answers } } });
@@ -106,6 +106,40 @@ test("creates a stable daily practice plan from corrected report sentences befor
   assert.equal(first.sentences[2].source, "answer");
   assert.equal(likelyTranscriptionArtifact("um I led the platform"), true);
   assert.equal(likelyTranscriptionArtifact("I built a service service for customers."), true);
+});
+
+test("prioritizes recurring corrected phrases, then recent saved pronunciation evidence", () => {
+  const older = record("older", "2026-07-01", { accuracy: 70, fluency: 70, prosody: 70 }, [{ sequenceNumber: 1, phrases: [
+    phrase(0, "I led the migration for our global customers.", "pronunciation", [{ word: "migration", score: 48, prosodyErrors: [] }], 54),
+  ] }]);
+  older.feedback.analysis = { englishCommunication: { patterns: [{ evidence: "I leaded the migration for our global customers.", rephrasedExample: "I led the migration for our global customers." }] } };
+  const recent = record("recent", "2026-09-01", { accuracy: 70, fluency: 70, prosody: 70 }, [{ sequenceNumber: 1, phrases: [
+    phrase(0, "We improved reliability for all customer requests.", "pronunciation", [{ word: "reliability", score: 42, prosodyErrors: [] }], 49),
+  ] }]);
+  recent.feedback.analysis = { englishCommunication: { patterns: [{ evidence: "I leaded the migration for our global customers.", rephrasedExample: "I led the migration for our global customers." }] } };
+
+  const phrases = buildVoiceTrainingPhrases([recent, older]);
+  assert.equal(phrases.length, 2);
+  assert.deepEqual(phrases.map((item) => [item.referenceText, item.recurrence]), [
+    ["I led the migration for our global customers.", 3],
+    ["We improved reliability for all customer requests.", 1],
+  ]);
+  assert.equal(phrases[0].saidText, "I leaded the migration for our global customers.");
+  assert.equal(phrases[0].beforeAccuracy, 54);
+  assert.deepEqual(phrases[1].attentionWords, ["reliability"]);
+});
+
+test("uses recency as the tie-breaker for equally recurring phrases", () => {
+  const old = record("old", "2026-07-01", { accuracy: 70, fluency: 70, prosody: 70 }, [{ sequenceNumber: 1, phrases: [
+    phrase(0, "I documented the service behavior for new engineers.", "pronunciation", [{ word: "documented", score: 44, prosodyErrors: [] }], 50),
+  ] }]);
+  const recent = record("recent", "2026-09-01", { accuracy: 70, fluency: 70, prosody: 70 }, [{ sequenceNumber: 1, phrases: [
+    phrase(0, "We monitored the request latency during the migration.", "pronunciation", [{ word: "latency", score: 44, prosodyErrors: [] }], 50),
+  ] }]);
+  assert.deepEqual(buildVoiceTrainingPhrases([old, recent]).map((item) => item.referenceText), [
+    "We monitored the request latency during the migration.",
+    "I documented the service behavior for new engineers.",
+  ]);
 });
 
 test("groups useful low-scored words and keeps only reliable evolution values", () => {
