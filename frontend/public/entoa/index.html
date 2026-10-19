@@ -259,8 +259,8 @@ main{overflow-x:clip}
 .stage-art{position:absolute;inset:0;z-index:-1;pointer-events:none;
   mask-image:linear-gradient(to bottom,transparent,#000 32px,#000 calc(100% - 32px),transparent);-webkit-mask-image:linear-gradient(to bottom,transparent,#000 32px,#000 calc(100% - 32px),transparent)}
 .stage-art img{width:100%;height:100%;object-fit:cover;object-position:center 70%;opacity:.9}
-/* Keep the report anchored in the forest on phones, with a quieter crop behind the card. */
-@media(max-width:767px){.stage-art img{object-position:42% center;opacity:.7}}
+/* Keep the report anchored in the forest on phones: center the clearing behind the radar, with a quieter crop. */
+@media(max-width:767px){.stage-art img{object-position:center;opacity:.7}}
 .rep{max-width:1000px;margin-inline:auto;background:var(--surface);border-radius:28px;overflow:hidden;box-shadow:0 2px 4px rgba(14,42,31,.05),0 40px 80px -36px rgba(14,42,31,.5)}
 .rep-top{display:grid;gap:1.4rem;padding:1.5rem}
 @media(min-width:860px){.rep-top{grid-template-columns:minmax(0,.85fr) minmax(0,1.5fr) minmax(0,.85fr);gap:1.2rem;padding:2.2rem 2.4rem 1.6rem;align-items:center}}
