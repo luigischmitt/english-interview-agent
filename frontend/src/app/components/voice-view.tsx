@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArrowRight, AudioLines, LoaderCircle, Mic, Play, Square, Volume2 } from "lucide-react";
 
 import { authorizedFetch } from "@/lib/auth/backend-auth";
@@ -8,9 +8,9 @@ import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { readStoredInterviewerSpeechSpeed } from "@/lib/interview/interviewer-speech-speed.mjs";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import { stopMediaStreamTracks } from "@/lib/interview/session-policy.mjs";
-import { fetchSpeechBlob } from "@/lib/interview/speech-playback.mjs";
+import { fetchSpeechBlob, playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech } from "@/lib/interview/speech-playback.mjs";
 import { readStoredInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
-import { buildVoiceInsights, buildVoiceLesson, buildVoicePracticePlan, buildVoiceTrainingPhrases, encodeWav16Mono, readPracticeAttempts, savePracticeAttempt, type VoiceMetricKey, type VoicePracticeAttempt, type VoiceTip } from "@/lib/interview/voice-insights.mjs";
+import { buildVoiceInsights, buildVoiceLesson, buildVoicePracticePlan, buildVoiceTrainingPhrases, encodeWav16Mono, normalizePracticeSpokenText, readPracticeAttempts, savePracticeAttempt, type VoiceMetricKey, type VoicePracticeAttempt, type VoiceTip } from "@/lib/interview/voice-insights.mjs";
 import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { useLocale } from "@/lib/locale";
 
@@ -85,6 +85,11 @@ function AttemptResult({ attempts, focus, beforeAccuracy = null }: { attempts: V
 }
 
 type Capture = { stream: MediaStream; context: AudioContext; source: MediaStreamAudioSourceNode; node: AudioWorkletNode; sink: GainNode; frames: Float32Array[]; timer: number; target: string; text: string };
+type SpeechPreview = { blob: Blob; url: string };
+
+function speechPreviewKey(text: string, voice: string | undefined, speed: number) {
+  return JSON.stringify([text, voice ?? "", speed]);
+}
 
 export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
   const { t } = useLocale();
@@ -96,14 +101,23 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
   const [selectedSentenceId, setSelectedSentenceId] = useState<string | null>(null);
   const [selectedMetric, setSelectedMetric] = useState<VoiceMetricKey | null>(null);
   const [activeCapture, setActiveCapture] = useState<string | null>(null);
+  const [startingCapture, setStartingCapture] = useState<string | null>(null);
   const [assessing, setAssessing] = useState<string | null>(null);
+  const [loadingSpeech, setLoadingSpeech] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<"sentence" | "word">("sentence");
   const [attempts, setAttempts] = useState<Record<string, VoicePracticeAttempt[]>>(() => typeof window === "undefined" ? {} : readPracticeAttempts(window.localStorage));
   // Keep the entry history fixed for this visit so saving a result cannot reorder the active queue.
   const [practiceHistoryAtOpen] = useState(attempts);
   const captureRef = useRef<Capture | null>(null);
+  const captureContextRef = useRef<AudioContext | null>(null);
+  const captureWorkletReadyRef = useRef<Promise<AudioContext> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const speechPreviewCacheRef = useRef(new Map<string, SpeechPreview>());
+  const speechPreviewFlightsRef = useRef(new Map<string, Promise<SpeechPreview>>());
+  const speechPrewarmsRef = useRef<Array<{ cancel: () => void }>>([]);
+  const spokenPlaybackRef = useRef<{ cancel: () => void } | null>(null);
+  const isMountedRef = useRef(true);
   const trainingRef = useRef<HTMLElement | null>(null);
   const insights = useMemo(() => buildVoiceInsights(records), [records]);
   const activeMetric = selectedMetric ?? insights.focus ?? "accuracy";
@@ -124,17 +138,84 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
     return () => { active = false; };
   }, [cached, reload]);
 
+  const speechPreferences = useCallback(() => ({
+    voice: readStoredInterviewerVoice(window.localStorage),
+    speed: readStoredInterviewerSpeechSpeed(window.localStorage),
+  }), []);
+  const loadSpeechPreview = useCallback((text: string) => {
+    const { voice, speed } = speechPreferences();
+    const key = speechPreviewKey(text, voice, speed);
+    const cachedPreview = speechPreviewCacheRef.current.get(key);
+    if (cachedPreview) return Promise.resolve(cachedPreview);
+    const inFlight = speechPreviewFlightsRef.current.get(key);
+    if (inFlight) return inFlight;
+    const promise = fetchSpeechBlob(text, { endpoint: speechEndpoint, fetcher: authorizedFetch, voice, speed }).then((blob) => {
+      const preview = { blob, url: URL.createObjectURL(blob) };
+      if (!isMountedRef.current) {
+        URL.revokeObjectURL(preview.url);
+        throw new DOMException("Voice view unmounted", "AbortError");
+      }
+      speechPreviewCacheRef.current.set(key, preview);
+      return preview;
+    }).finally(() => speechPreviewFlightsRef.current.delete(key));
+    speechPreviewFlightsRef.current.set(key, promise);
+    return promise;
+  }, [speechPreferences]);
+
+  useEffect(() => () => { isMountedRef.current = false; }, []);
+
   const playText = async (text: string) => {
     setMessage(null);
+    const { voice, speed } = speechPreferences();
+    const key = speechPreviewKey(text, voice, speed);
+    setLoadingSpeech(key);
     try {
-      const blob = await fetchSpeechBlob(text, { endpoint: speechEndpoint, fetcher: authorizedFetch, voice: readStoredInterviewerVoice(window.localStorage), speed: readStoredInterviewerSpeechSpeed(window.localStorage) });
+      const segments = splitInterviewerSpeech(text);
       audioRef.current?.pause();
-      const audio = new Audio(URL.createObjectURL(blob));
+      spokenPlaybackRef.current?.cancel();
+      if (segments.length > 1 || text.length > 120) {
+        const playback = playInterviewerSegments(segments, {
+          endpoint: speechEndpoint, fetcher: authorizedFetch, voice, speed,
+          onPlaybackStarted: () => setLoadingSpeech((current) => current === key ? null : current),
+        });
+        spokenPlaybackRef.current = playback;
+        const result = await playback.promise;
+        if (result.status === "unavailable") setMessage(t("Não foi possível reproduzir o áudio agora."));
+        return;
+      }
+      const preview = await loadSpeechPreview(text);
+      const audio = new Audio(preview.url);
       audioRef.current = audio;
-      audio.onended = audio.onerror = () => URL.revokeObjectURL(audio.src);
+      audio.onplaying = () => setLoadingSpeech((current) => current === key ? null : current);
       await audio.play();
     } catch { setMessage(t("Não foi possível reproduzir o áudio agora.")); }
+    finally { setLoadingSpeech((current) => current === key ? null : current); }
   };
+
+  const isSpeechLoading = (text: string) => {
+    const { voice, speed } = speechPreferences();
+    return loadingSpeech === speechPreviewKey(text, voice, speed);
+  };
+
+  useEffect(() => {
+    const nextSentence = trainingPhrases[(currentSentenceIndex + 1) % trainingPhrases.length];
+    const texts = [sentence?.referenceText, nextSentence?.referenceText, lesson.example.text].filter((text): text is string => Boolean(text));
+    const seen = new Set<string>();
+    for (const text of texts) {
+      if (seen.has(text)) continue;
+      seen.add(text);
+      const segments = splitInterviewerSpeech(text);
+      if (segments.length > 1 || text.length > 120) {
+        const { voice, speed } = speechPreferences();
+        const prewarm = prewarmInterviewerSpeech(segments, { endpoint: speechEndpoint, fetcher: authorizedFetch, voice, speed, retainMs: 60_000 });
+        speechPrewarmsRef.current.push(prewarm);
+        void prewarm.promise;
+      } else void loadSpeechPreview(text).catch(() => undefined);
+    }
+    return () => {
+      for (const prewarm of speechPrewarmsRef.current.splice(0)) prewarm.cancel();
+    };
+  }, [currentSentenceIndex, lesson.example.text, loadSpeechPreview, sentence?.referenceText, speechPreferences, trainingPhrases]);
 
   const assess = async (target: string, text: string, samples: Float32Array[]) => {
     setAssessing(target); setMessage(null);
@@ -163,7 +244,6 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
     window.clearTimeout(capture.timer);
     try { capture.source.disconnect(); capture.node.disconnect(); capture.sink.disconnect(); } catch { /* Already disconnected. */ }
     stopMediaStreamTracks(capture.stream);
-    await capture.context.close().catch(() => {});
     setActiveCapture(null);
     if (submit && capture.frames.length) await assess(capture.target, capture.text, capture.frames);
   }
@@ -172,10 +252,16 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
     if (captureRef.current) return;
     setMessage(null);
     setMessageTarget(target.startsWith("word:") ? "word" : "sentence");
+    setStartingCapture(target);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-      const context = new AudioContext();
-      await context.audioWorklet.addModule("/pcm-capture-processor.js");
+      const context = await (captureWorkletReadyRef.current ??= (async () => {
+        const prepared = captureContextRef.current ?? new AudioContext();
+        captureContextRef.current = prepared;
+        await prepared.audioWorklet.addModule("/pcm-capture-processor.js");
+        return prepared;
+      })());
+      await context.resume();
       const source = context.createMediaStreamSource(stream);
       const node = new AudioWorkletNode(context, "pcm-capture-processor", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
       const sink = context.createGain(); sink.gain.value = 0;
@@ -188,7 +274,7 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
     } catch (reason) {
       const denied = reason instanceof DOMException && reason.name === "NotAllowedError";
       setMessage(t(denied ? "Permita o uso do microfone para gravar seu treino." : "Não foi possível abrir o microfone agora. Tente novamente."));
-    }
+    } finally { setStartingCapture(null); }
   };
 
   useEffect(() => () => {
@@ -197,9 +283,12 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
       window.clearTimeout(capture.timer);
       try { capture.source.disconnect(); capture.node.disconnect(); capture.sink.disconnect(); } catch { /* Already disconnected. */ }
       stopMediaStreamTracks(capture.stream);
-      void capture.context.close().catch(() => {});
     }
+    void captureContextRef.current?.close().catch(() => {});
     audioRef.current?.pause();
+    spokenPlaybackRef.current?.cancel();
+    for (const prewarm of speechPrewarmsRef.current.splice(0)) prewarm.cancel();
+    for (const preview of speechPreviewCacheRef.current.values()) URL.revokeObjectURL(preview.url);
   }, []);
   const retry = () => { setIsLoading(true); setError(false); setReload((value) => value + 1); };
   const nextSentence = () => {
@@ -207,7 +296,17 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
     const nextIndex = (currentSentenceIndex + 1) % trainingPhrases.length;
     setSelectedSentenceId(trainingPhrases[nextIndex].id);
   };
-  const practiceNow = () => trainingRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  const scrollTrainingIntoView = useCallback(() => {
+    const training = trainingRef.current;
+    if (!training) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const tallCard = training.getBoundingClientRect().height > window.innerHeight - 80;
+    training.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: tallCard ? "start" : "center" });
+  }, []);
+  useEffect(() => {
+    if (selectedSentenceId) requestAnimationFrame(scrollTrainingIntoView);
+  }, [scrollTrainingIntoView, selectedSentenceId]);
+  const practiceNow = scrollTrainingIntoView;
 
   return <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14 lg:pb-16">
     <PageIntro
@@ -254,18 +353,22 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
                 onChange={(value) => { setSelectedMetric(value as VoiceMetricKey); setSelectedSentenceId(null); }}
                 className="grid-cols-3 w-full sm:w-[24rem]"
               />
-              <p className="vv-lesson-measure ds-body">{t(lesson.measure)}</p>
-              <div className="vv-lesson-detail">
+              <div className="vv-lesson-card ds-card">
+              <p className="vv-lesson-measure">{t(lesson.measure)}</p>
+              <div className="vv-lesson-grid">
+              <div className="vv-lesson-detail vv-techniques">
                 <h3 className="ds-label">{t("O que fazer")}</h3>
-                <ul>{lesson.techniques.map((technique) => <li key={technique}>{t(technique)}</li>)}</ul>
+                <ol>{lesson.techniques.map((technique, index) => <li key={technique}><span className="vv-step" aria-hidden="true">{index + 1}</span><span>{t(technique)}</span></li>)}</ol>
               </div>
-              {lesson.personalized.length > 0 && <div className="vv-lesson-detail">
-                <h3 className="ds-label">{t("No seu caso")}</h3>
+              {lesson.personalized.length > 0 && <div className="vv-lesson-detail vv-personalized">
+                <h3 className="ds-label">{t("Para você")}</h3>
                 <ul>{lesson.personalized.map((tip, index) => <li key={typeof tip === "string" ? tip : `${tip.key}-${index}`}>{translateTip(t, tip)}</li>)}</ul>
               </div>}
+              </div>
               <div className="vv-lesson-example">
-                <h3 className="ds-label">{t("Exemplo")}</h3><p lang="en"><LessonExample text={lesson.example.text} emphasis={lesson.example.emphasis} /></p>
-                <button type="button" className="ds-btn ds-btn-quiet" onClick={() => void playText(lesson.example.text)} disabled={activeCapture !== null || assessing !== null}><Volume2 className="size-4" aria-hidden="true" />{t("Ouvir")}</button>
+                <div><h3 className="ds-label">{t("Exemplo")}</h3><p lang="en"><LessonExample text={lesson.example.text} emphasis={lesson.example.emphasis} /></p></div>
+                <button type="button" className="ds-btn ds-btn-quiet" onClick={() => void playText(lesson.example.text)} disabled={activeCapture !== null || isSpeechLoading(lesson.example.text)}>{isSpeechLoading(lesson.example.text) ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Volume2 className="size-4" aria-hidden="true" />}{t("Ouvir")}</button>
+              </div>
               </div>
               <button type="button" className="ds-btn ds-btn-quiet vv-practice-now" onClick={practiceNow}>{t("Praticar agora")}<ArrowRight className="size-4 ds-arrow" aria-hidden="true" /></button>
             </section>
@@ -281,18 +384,18 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
                 <p className="vv-training-sentence" lang="en"><HighlightedText text={sentence.referenceText} words={sentence.attentionWords} /></p>
                 <div className="vv-training-actions">
                   <div className="vv-training-primary-actions">
-                    <button type="button" className="ds-btn ds-btn-soft" onClick={() => void playText(sentence.referenceText)} disabled={activeCapture !== null || assessing !== null}><Volume2 className="size-4" aria-hidden="true" />{t("Ouvir")}</button>
-                    {activeCapture === sentence.id ? <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => void stopRecording()}><Square className="size-4 fill-current" aria-hidden="true" />{t("Parar")}</button> : <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => void startRecording(sentence.id, sentence.referenceText)} disabled={activeCapture !== null || assessing !== null}><Mic className="size-4" aria-hidden="true" />{assessing === sentence.id && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}{t("Gravar")}</button>}
+                    <button type="button" className="ds-btn ds-btn-soft" onClick={() => void playText(sentence.referenceText)} disabled={activeCapture !== null || isSpeechLoading(sentence.referenceText)}>{isSpeechLoading(sentence.referenceText) ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Volume2 className="size-4" aria-hidden="true" />}{t("Ouvir")}</button>
+                    {activeCapture === sentence.id ? <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => void stopRecording()}><Square className="size-4 fill-current" aria-hidden="true" />{t("Parar")}</button> : <button type="button" className="ds-btn ds-btn-cta-green" onClick={() => void startRecording(sentence.id, sentence.referenceText)} disabled={startingCapture !== null || activeCapture !== null || assessing !== null}>{startingCapture === sentence.id || assessing === sentence.id ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Mic className="size-4" aria-hidden="true" />}{t("Gravar")}</button>}
                   </div>
                   <button type="button" className="ds-btn ds-btn-quiet vv-next-sentence" onClick={nextSentence} disabled={activeCapture !== null || trainingPhrases.length < 2}>{t("Próxima frase")}<ArrowRight className="size-4 ds-arrow" aria-hidden="true" /></button>
                 </div>
-                {activeCapture === sentence.id ? <p className="vv-status ds-small" role="status"><span className="vv-rec-dot" aria-hidden="true" />{t("Gravando. Leia a frase e toque em Parar.")}</p> : assessing === sentence.id ? <p className="vv-status ds-small" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t("Avaliando sua gravação…")}</p> : null}
+                {startingCapture === sentence.id ? <p className="vv-status ds-small" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t("Preparando o microfone…")}</p> : activeCapture === sentence.id ? <p className="vv-status ds-small" role="status"><span className="vv-rec-dot" aria-hidden="true" />{t("Gravando. Leia a frase e toque em Parar.")}</p> : assessing === sentence.id ? <p className="vv-status ds-small" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t("Avaliando sua gravação…")}</p> : null}
                 {message && messageTarget !== "word" && <p className="vv-message mt-4" role="alert">{message}</p>}
                 <p className="vv-local-note ds-small">{t("Histórico local: mostramos as últimas tentativas desta frase neste navegador.")}</p>
                 {attempts[sentence.id]?.length ? <AttemptResult attempts={attempts[sentence.id]} focus={activeMetric} beforeAccuracy={sentence.beforeAccuracy} /> : <p className="ds-body mt-4">{t("Ouça a forma correta e grave uma tentativa para ver as palavras avaliadas.")}</p>}
               </article> : <p className="ds-body mt-3">{t("Quando o relatório encontrar uma correção ou a análise de voz sinalizar uma frase, ela aparecerá aqui.")}</p>}
             </section>
-            <section className="vv-section" aria-labelledby="work-words"><h2 id="work-words" className="ds-h2">{t("Suas palavras de trabalho")}</h2>{plan.words.length ? <div className="vv-words">{plan.words.map((word) => { const key = `word:${word.word}`; const latest = attempts[key]?.at(-1); return <article className="vv-word ds-card" key={word.word}><p lang="en" className="vv-word-name">{word.word}</p><div className="vv-word-actions"><button type="button" className="ds-btn ds-btn-quiet" onClick={() => void playText(word.word)} disabled={activeCapture !== null || assessing !== null}><Volume2 className="size-4" aria-hidden="true" />{t("Ouvir")}</button>{activeCapture === key ? <button type="button" className="ds-btn ds-btn-soft" onClick={() => void stopRecording()}><Square className="size-4 fill-current" aria-hidden="true" />{t("Parar")}</button> : <button type="button" className="ds-btn ds-btn-soft" onClick={() => void startRecording(key, word.word)} disabled={activeCapture !== null || assessing !== null}><Mic className="size-4" aria-hidden="true" />{t("Gravar")}</button>}</div>{latest && <p className="vv-word-score">{t("Precisão")}: {formatMetric(latest.scores.accuracy)}</p>}</article>; })}</div> : <p className="ds-body mt-3">{t("Quando uma palavra relevante aparecer em mais entrevistas, ela fica disponível aqui.")}</p>}</section>
+            <section className="vv-section" aria-labelledby="work-words"><h2 id="work-words" className="ds-h2">{t("Suas palavras de trabalho")}</h2>{plan.words.length ? <div className="vv-words">{plan.words.map((word) => { const key = `word:${word.word}`; const text = normalizePracticeSpokenText(word.word); const latest = attempts[key]?.at(-1); return <article className="vv-word ds-card" key={word.word}><p lang="en" className="vv-word-name">{text}</p><div className="vv-word-actions"><button type="button" className="ds-btn ds-btn-quiet" onClick={() => void playText(text)} disabled={activeCapture !== null || isSpeechLoading(text)}>{isSpeechLoading(text) ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Volume2 className="size-4" aria-hidden="true" />}{t("Ouvir")}</button>{activeCapture === key ? <button type="button" className="ds-btn ds-btn-soft" onClick={() => void stopRecording()}><Square className="size-4 fill-current" aria-hidden="true" />{t("Parar")}</button> : <button type="button" className="ds-btn ds-btn-soft" onClick={() => void startRecording(key, text)} disabled={startingCapture !== null || activeCapture !== null || assessing !== null}>{startingCapture === key ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Mic className="size-4" aria-hidden="true" />}{t("Gravar")}</button>}</div>{latest && <p className="vv-word-score">{t("Precisão")}: {formatMetric(latest.scores.accuracy)}</p>}</article>; })}</div> : <p className="ds-body mt-3">{t("Quando uma palavra relevante aparecer em mais entrevistas, ela fica disponível aqui.")}</p>}</section>
             <section className="vv-section" aria-labelledby="voice-evolution"><h2 id="voice-evolution" className="ds-h2">{t("Evolução")}</h2><div className="vv-evolution ds-card">{insights.metrics.map((metric) => { const points = plan.evolution[metric.key]; const delta = points.length > 1 ? Math.round(points.at(-1)!.value - points[0].value) : 0; return <div className="vv-evolution-row" key={metric.key}><div className="vv-evolution-label"><span className="ds-label">{t(metric.label)}</span>{delta !== 0 && <span className="vv-evolution-delta">{t("{delta} desde a primeira", { delta: `${delta > 0 ? "+" : ""}${delta}` })}</span>}</div>{points.length ? <div className="vv-evolution-series">{points.map((point, index) => <div className="vv-evolution-point" key={point.id}><span className="vv-evolution-value">{index === points.length - 1 ? Math.round(point.value) : ""}</span><span className="vv-evolution-bar" data-latest={index === points.length - 1} style={{ "--vv-value": `${point.value}%` } as CSSProperties} aria-label={t("{metric}: {value} em {date}", { metric: metric.label, value: Math.round(point.value), date: point.date ? new Date(point.date).toLocaleDateString() : t("data não disponível") })}><span /></span></div>)}</div> : <span className="ds-body">{t("Dados confiáveis ainda não disponíveis.")}</span>}</div>; })}</div></section>
             {message && messageTarget === "word" && <p className="vv-message" role="alert">{message}</p>}
           </div>}
