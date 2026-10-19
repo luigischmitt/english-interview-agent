@@ -340,11 +340,11 @@ describe("final interview report service", () => {
     const counts = report.evidenceReview;
 
     expect(report.technicalContent.strengths).toHaveLength(5);
-    expect(report.technicalContent.gaps).toHaveLength(4);
+    expect(report.technicalContent.gaps).toHaveLength(0);
     expect(report.englishCommunication.patterns).toHaveLength(3);
     expect(report.priorities).toHaveLength(3);
     expect(counts?.technicalStrengths).toMatchObject({ candidates: 9, accepted: 5, rejected: 4, rejectionReasons: { limit: 4 } });
-    expect(counts?.technicalGaps).toMatchObject({ candidates: 9, accepted: 4, rejected: 5, rejectionReasons: { limit: 5 } });
+    expect(counts?.technicalGaps).toMatchObject({ candidates: 9, accepted: 0, rejected: 9, rejectionReasons: { duplicate: 4, limit: 5 } });
     expect(counts?.englishPatterns).toMatchObject({ candidates: 10, accepted: 3, rejected: 7, rejectionReasons: { limit: 7 } });
     expect(counts?.priorities).toMatchObject({ candidates: 4, accepted: 3, rejected: 1, rejectionReasons: { limit: 1 } });
     for (const category of Object.values(counts ?? {})) {

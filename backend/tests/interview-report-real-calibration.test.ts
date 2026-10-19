@@ -125,10 +125,28 @@ describe("real report calibration", () => {
 
   it("accepts interviewer takeaways only when localized", () => {
     const validTakeaway = { remember: "Você explicou decisões técnicas concretas com clareza.", concern: "Você poderia detalhar melhor como monitorou o resultado em produção." };
-    const valid = report({ interviewerTakeaway: validTakeaway });
+    const matchingGap = gap(2, "I did it to facilitated", "Você não explicou como monitorou o resultado em produção.");
+    const valid = report({ technicalContent: { summary: "Você descreveu o projeto.", strengths: [], gaps: [matchingGap] }, interviewerTakeaway: validTakeaway });
     expect(valid.report?.interviewerTakeaway).toEqual(validTakeaway);
-    const invalid = report({ interviewerTakeaway: { remember: "The candidate explained the concrete technical decision clearly.", concern: validTakeaway.concern } });
+    const invalid = report({ technicalContent: { summary: "Você descreveu o projeto.", strengths: [], gaps: [matchingGap] }, interviewerTakeaway: { remember: "The candidate explained the concrete technical decision clearly.", concern: validTakeaway.concern } });
     expect(invalid.report).not.toHaveProperty("interviewerTakeaway");
+  });
+
+  it("does not keep a concern without the corresponding technical gap or a duplicated strength", () => {
+    const evidence = "I did it to facilitated";
+    const result = report({
+      technicalContent: {
+        summary: "Você descreveu o projeto.",
+        strengths: [gap(2, evidence, "Você explicou como usou imagens sintéticas no projeto.")],
+        gaps: [gap(2, evidence, "Você não explicou a fidelidade das imagens sintéticas.")],
+      },
+      interviewerTakeaway: {
+        remember: "Você explicou como usou imagens sintéticas no projeto.",
+        concern: "Você poderia detalhar melhor a fidelidade das imagens sintéticas.",
+      },
+    });
+    expect(result.report?.technicalContent.gaps).toEqual([]);
+    expect(result.report).not.toHaveProperty("interviewerTakeaway");
   });
 
 });
