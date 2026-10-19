@@ -67,6 +67,14 @@ Switch to Azure without rebuilding:
 gcloud run services update english-interview-backend --region us-east1 --update-env-vars SPEECH_PROVIDER=azure-openrouter,AZURE_TTS_VOICE=en-US-AndrewNeural
 ```
 
+Switch to OpenRouter Kokoro first without rebuilding:
+
+```bash
+gcloud run services update english-interview-backend --region us-east1 --update-env-vars SPEECH_PROVIDER=openrouter-azure
+```
+
+OpenRouter Kokoro is first (~US$0.62/1M chars, p50 ~1 s measured 2026-10-19), with Azure as fallback after 2.5 s or on failure.
+
 Switch back to Kokoro without rebuilding:
 
 ```bash

@@ -8,6 +8,19 @@ import { OpenRouterSpeechProvider } from "./openrouter-speech-provider.js";
 import type { SpeechProvider } from "./types.js";
 
 export function createSpeechProvider(config: SpeechConfig): SpeechProvider {
+  if (config.provider === "openrouter-azure") {
+    if (!config.azure || !config.openRouter || !config.hybrid) throw new Error("OpenRouter Azure hybrid speech configuration is missing.");
+    return new HybridSpeechProvider({
+      primary: new OpenRouterSpeechProvider({ apiKey: config.openRouter.apiKey, url: config.openRouter.url, model: config.openRouter.model, timeoutMs: config.kokoroTimeoutMs, hedgeAfterMs: config.openRouter.hedgeAfterMs }),
+      secondary: new AzureSpeechProvider(config.azure),
+      primaryVoice: config.hybrid.openRouterVoice,
+      primarySource: "openrouter",
+      secondaryVoice: config.azure.voice,
+      secondarySource: "azure",
+      timeoutMs: Math.max(config.azure.timeoutMs, config.kokoroTimeoutMs),
+      hedgeAfterMs: config.hybrid.hedgeAfterMs,
+    });
+  }
   if (config.provider === "azure-openrouter") {
     if (!config.azure || !config.openRouter || !config.hybrid) throw new Error("Azure hybrid speech configuration is missing.");
     return new HybridSpeechProvider({
