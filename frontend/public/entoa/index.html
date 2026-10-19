@@ -275,7 +275,9 @@ main{overflow-x:clip}
 .rep-read li{display:grid;grid-template-columns:14px minmax(0,1fr);align-items:baseline;gap:.55rem}
 .rep-read b{color:var(--ink);font-weight:600}
 .rep-read i{justify-self:center;width:8px;height:8px;border-radius:50%;background:var(--green);transform:translateY(-1px)}
-.rep-read i.v{border-radius:1.5px;background:var(--ink);transform:translateY(-1px) rotate(45deg) scale(.9)}
+.rep-read i.v{border-radius:1.5px;background:var(--warm);transform:translateY(-1px) rotate(45deg) scale(.9)}
+.rep-read .en b{color:var(--green)}
+.rep-read .v+span b{color:var(--warm)}
 .rep-note{margin-top:.75rem;color:var(--text2);font-size:.88rem;line-height:1.4;max-width:30ch}
 .radar{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
 .radar svg{width:100%;max-width:440px;height:auto;overflow:visible}
@@ -291,9 +293,13 @@ main{overflow-x:clip}
 .radar .lab{opacity:0;transition:opacity .35s ease}
 .radar .lab{cursor:pointer}
 .rep.in .radar .lab{opacity:1;transition:opacity .35s ease calc(.9s + var(--k)*60ms)}
-.radar .ln{fill:var(--text2);font:600 12px var(--sans)}
+.radar .ln{font:600 12px var(--sans)}
 .radar .lv{fill:var(--ink);font:700 17px var(--sans);font-variant-numeric:tabular-nums}
 .radar .lab.on .ln{fill:var(--green-deep)}
+/* English and voice read as two groups: green circles vs warm diamonds, names in the same colour. */
+.radar .ln{fill:var(--green)}
+.radar .lab.v .ln,.radar .lab.v.on .ln{fill:var(--warm)}
+.radar .axis.v.on{stroke:var(--warm)}
 .radar .hit{fill:transparent;cursor:pointer}
 .radar .hit:focus-visible{outline:none;stroke:var(--green);stroke-width:2}
 .rep-fix{font-family:var(--serif);font-size:1.6rem;line-height:1.3;margin-top:.4rem}
@@ -441,7 +447,7 @@ main{overflow-x:clip}
           <p class="rep-role">Backend Engineer · Sênior</p>
           <p class="rep-title">Seu perfil depois de 6 entrevistas</p>
           <ul class="rep-read">
-            <li><i></i><span><b>Inglês:</b> % das respostas sem erro</span></li>
+            <li class="en"><i></i><span><b>Inglês:</b> % das respostas sem erro</span></li>
             <li><i class="v"></i><span><b>Voz:</b> nota de 0 a 100</span></li>
           </ul>
           <p class="rep-note">Mais perto da borda é melhor. Escolha um ponto para ver o que ele mede.</p>
@@ -833,14 +839,14 @@ AWS e observabilidade</div></div>
   DIM.forEach(d=>{const s=document.createElement('p');s.setAttribute('aria-hidden','true');s.innerHTML=`<strong>${d[0]}:</strong> ${d[3]}`;$('#dimBox').appendChild(s)});
   [1,.75,.5,.25].forEach(f=>radar.appendChild(mk('polygon',{class:f===1?'ring out':'ring',points:poly(()=>f)})));
   const axes=[],pts=[],labs=[],hits=[];
-  DIM.forEach((d,i)=>{const a=rpt(i,R);const l=mk('line',{class:'axis',x1:C,y1:C,x2:a[0].toFixed(1),y2:a[1].toFixed(1)});radar.appendChild(l);axes.push(l)});
+  DIM.forEach((d,i)=>{const a=rpt(i,R);const l=mk('line',{class:d[2]==='v'?'axis v':'axis',x1:C,y1:C,x2:a[0].toFixed(1),y2:a[1].toFixed(1)});radar.appendChild(l);axes.push(l)});
   radar.appendChild(mk('polygon',{class:'poly',points:poly(d=>d[1]/100)}));
   DIM.forEach((d,i)=>{
     const [x,y]=rpt(i,R*d[1]/100),k=`--k:${i}`;
-    const pt=d[2]==='v'?mk('rect',{class:'pt',x:x-4,y:y-4,width:8,height:8,rx:1.5,fill:'#0e2a1f',transform:`rotate(45 ${x} ${y})`,style:k}):mk('circle',{class:'pt',cx:x,cy:y,r:4.5,fill:'#1f6b45',style:k});
+    const pt=d[2]==='v'?mk('rect',{class:'pt',x:x-4,y:y-4,width:8,height:8,rx:1.5,fill:'#ae6b30',transform:`rotate(45 ${x} ${y})`,style:k}):mk('circle',{class:'pt',cx:x,cy:y,r:4.5,fill:'#1f6b45',style:k});
     radar.appendChild(pt);pts.push(pt);
     const [lx,ly]=rpt(i,R+22),c=Math.cos(ang(i)),anchor=Math.abs(c)<.2?'middle':c>0?'start':'end';
-    const g=mk('g',{class:'lab',style:k}),dy=Math.sin(ang(i))<-.5?-14:Math.sin(ang(i))>.5?6:-4;
+    const g=mk('g',{class:d[2]==='v'?'lab v':'lab',style:k}),dy=Math.sin(ang(i))<-.5?-14:Math.sin(ang(i))>.5?6:-4;
     const tn=mk('text',{class:'ln',x:lx.toFixed(1),y:(ly+dy).toFixed(1),'text-anchor':anchor});tn.textContent=d[0];
     const tv=mk('text',{class:'lv',x:lx.toFixed(1),y:(ly+dy+18).toFixed(1),'text-anchor':anchor});tv.textContent=d[2]==='en'?d[1]+'%':d[1];
     g.append(tn,tv);radar.appendChild(g);labs.push(g);
