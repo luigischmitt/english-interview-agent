@@ -1,8 +1,7 @@
 /*
  * Progress screen. Prefix `pg-`. Tokens and primitives from globals.css / design-system.css.
- * Every [data-reveal] section animates in when it enters the viewport and resets when it leaves (useReplayReveal),
- * so the entrance replays on the way back. Content is only hidden while data-inview is explicitly "false", and every
- * movement is removed under prefers-reduced-motion.
+ * Every [data-reveal] section animates once when it first enters the viewport. Revealed content stays visible while a
+ * historical report temporarily replaces this screen. Movement is removed under prefers-reduced-motion.
  */
 .pg-page { display: grid; gap: clamp(2.5rem, 5vw, 4rem); min-width: 0; }
 .pg-note { border-radius: var(--ds-r-lg); background: var(--ds-field); padding: 0.75rem 1rem; font-size: 0.8125rem; line-height: 1.5; color: var(--ds-text-2); }
@@ -60,10 +59,6 @@
 @media (min-width: 900px) { .pg-section-head { grid-template-columns: minmax(0, 1fr) auto; align-items: end; } }
 .pg-section-title { font-family: var(--font-display); font-size: clamp(1.75rem, 1.4rem + 1.2vw, 2.25rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.05; }
 .pg-section-sub { max-width: 60ch; margin-top: 0.5rem; color: var(--ds-text-2); font-size: 0.9375rem; line-height: 1.55; }
-.pg-section-aside { display: grid; justify-items: start; max-width: 18rem; color: var(--ds-text-2); font-size: 0.8125rem; line-height: 1.4; }
-@media (min-width: 900px) { .pg-section-aside { justify-items: end; text-align: right; } }
-.pg-aside-value { color: var(--ds-ink); font-size: 2rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.pg-aside-was { margin-top: 0.25rem; font-size: 0.75rem; }
 
 /* ---- English patterns ---- */
 .pg-patterns { display: grid; margin: 0; padding: 0; list-style: none; }
@@ -138,7 +133,7 @@
 .pg-row-meta { display: flex; flex-wrap: wrap; gap: 0.375rem; }
 @media (hover: hover) and (pointer: fine) { .pg-row:hover { background: var(--ds-hover-wash-faint); } }
 
-/* ---- Replayable entrances ---- */
+/* ---- One-time entrances ---- */
 .pg-metric, .pg-pattern, .pg-topic { transition: opacity 450ms var(--ease-out) calc(120ms + var(--i, 0) * 80ms), transform 450ms var(--ease-out) calc(120ms + var(--i, 0) * 80ms); }
 [data-inview="false"] .pg-metric, [data-inview="false"] .pg-pattern, [data-inview="false"] .pg-topic { opacity: 0; transform: translateY(10px); transition: none; }
 [data-inview="false"] .pg-meter > i { transform: scaleX(0); transition: none; }

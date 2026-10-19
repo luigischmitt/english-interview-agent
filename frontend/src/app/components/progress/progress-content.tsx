@@ -84,7 +84,7 @@ function radarItems(insights: ProgressInsights): (RadarItem & { explain: string 
       label: type === "STRUCTURE" ? dimension.label : dimension.fullLabel,
       value: dimension.value,
       display: `${Math.round(dimension.value)}%`,
-      explain: t(patternExplainer[type]),
+      explain: dimension.detail,
     };
   });
 }
@@ -209,20 +209,27 @@ const patternExplainer: Record<PatternType, string> = {
   STRUCTURE: "A ordem das partes da frase ou da resposta, que deixa a ideia mais difícil de seguir.",
 };
 
+const patternIssueLabel: Record<PatternType, string> = {
+  GRAMMAR: "Erros de gramática",
+  WORD_CHOICE: "Escolhas de palavras a revisar",
+  FALSE_COGNATE: "Falsos cognatos encontrados",
+  STRUCTURE: "Problemas de estrutura",
+};
+
 const trendCopy = {
   up: { text: "aparecendo mais", Icon: ArrowUpRight },
   down: { text: "aparecendo menos", Icon: ArrowDownRight },
   steady: { text: "estável", Icon: ArrowRight },
 } as const;
 
-type PatternRow = { type: PatternType; label: string; share: number | null; affected: number | null; error: ProgressCommonError | null };
+type PatternRow = { type: PatternType; share: number | null; affected: number | null; error: ProgressCommonError | null };
 
 function patternRows(insights: ProgressInsights): PatternRow[] {
   const total = insights.analyzedAnswers;
   const rows: PatternRow[] = insights.commonErrors.map((error) => {
     const dimension = insights.dimensions.find((item) => item.kind === "pattern" && item.key === error.type);
     const share = dimension ? Math.max(0, Math.round(100 - dimension.value)) : null;
-    return { type: error.type, label: error.label, share, affected: share !== null ? Math.round((share / 100) * total) : null, error };
+    return { type: error.type, share, affected: share !== null ? Math.round((share / 100) * total) : null, error };
   });
   return rows.sort((a, b) => (b.share ?? 0) - (a.share ?? 0) || (b.error?.count ?? 0) - (a.error?.count ?? 0));
 }
@@ -238,14 +245,14 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
     <li className="pg-pattern" style={stagger(index)}>
       <div className="pg-pattern-main">
         <div className="pg-pattern-text">
-          <h3 className="pg-pattern-name">{t(row.label)}</h3>
+          <h3 className="pg-pattern-name">{t(patternIssueLabel[row.type])}</h3>
           <p className="pg-pattern-what">{t(patternExplainer[row.type])}</p>
         </div>
         <div className="pg-pattern-stat">
           {row.share !== null ? (
             <>
               <p className="pg-pattern-share">{share}<small>%</small></p>
-              <p className="pg-pattern-of">{getCurrentLocale() === "en" ? `of answers (${row.affected} of ${total})` : `das respostas (${row.affected} de ${total})`}</p>
+              <p className="pg-pattern-of">{getCurrentLocale() === "en" ? `of answers had this issue (${row.affected} of ${total})` : `das respostas tiveram esse erro (${row.affected} de ${total})`}</p>
             </>
           ) : (
             <p className="pg-pattern-of">{plural(row.error?.count ?? 0, "ocorrência", "ocorrências")}</p>
@@ -253,7 +260,7 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
         </div>
       </div>
       {row.share !== null && (
-        <div className="pg-meter" role="img" aria-label={getCurrentLocale() === "en" ? `Appeared in ${share}% of answers` : `Apareceu em ${share}% das respostas`}>
+        <div className="pg-meter" role="img" aria-label={getCurrentLocale() === "en" ? `This issue appeared in ${share}% of answers` : `Este erro apareceu em ${share}% das respostas`}>
           <i style={{ width: `${Math.max(share, 2)}%` }} />
         </div>
       )}
@@ -296,23 +303,13 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
 
 export function EnglishPatterns({ insights }: { insights: ProgressInsights }) {
   const rows = patternRows(insights);
-  const perAnswer = insights.series.patterns;
-  const latest = perAnswer[perAnswer.length - 1];
-  const first = perAnswer[0];
   return (
     <section aria-labelledby="pg-english" className="pg-section" data-reveal>
       <div className="pg-section-head">
         <div>
-          <h2 id="pg-english" className="pg-section-title">{t("Seu inglês nas respostas")}</h2>
-          <p className="pg-section-sub">{t("Os tipos de erro que seus relatórios apontaram e em quantas respostas cada um apareceu. Quanto menor a barra, melhor. Erros de transcrição não entram.")}</p>
+          <h2 id="pg-english" className="pg-section-title">{t("Erros de inglês nas respostas")}</h2>
+          <p className="pg-section-sub">{t("Cada porcentagem mostra quantas respostas tiveram aquele tipo de erro. Quanto menor, melhor. Erros de transcrição não entram.")}</p>
         </div>
-        {latest && first && perAnswer.length >= 2 && (
-          <p className="pg-section-aside">
-            <span className="pg-aside-value">{latest.value.toLocaleString(getCurrentLocale() === "en" ? "en-US" : "pt-BR")}</span>
-            {t(" erros por resposta na última entrevista")}
-            <span className="pg-aside-was">{t("na 1ª: ")}{first.value.toLocaleString(getCurrentLocale() === "en" ? "en-US" : "pt-BR")}</span>
-          </p>
-        )}
       </div>
       {rows.length === 0 ? (
         <p className="pg-note">
@@ -476,7 +473,7 @@ export function SessionHistory({ sessions, onOpenReport }: { sessions: ProgressS
 
 export function ProgressContent({ insights, onOpenReport }: { insights: ProgressInsights; onOpenReport?: (sessionId: string) => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  useReplayReveal(rootRef, [insights]);
+  useReplayReveal(rootRef, [insights], { once: true });
   return (
     <div ref={rootRef} className="pg-page mt-8 lg:mt-10">
       <ProgressHero insights={insights} />
