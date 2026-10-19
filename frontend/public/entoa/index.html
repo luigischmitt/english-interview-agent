@@ -1235,7 +1235,10 @@ AWS e observabilidade</div></div>
     raf=(!reduce&&heroVisible)?requestAnimationFrame(draw):0;
   }
   let pinf=0;
-  if(!reduce){new IntersectionObserver(es=>es.forEach(e=>{heroVisible=e.isIntersecting;if(heroVisible&&!raf){last=performance.now();raf=requestAnimationFrame(draw)}}),{threshold:0}).observe(hero);raf=requestAnimationFrame(draw)}
+  // once the hero has fully left the screen, coming back replays the whole entrance (letters, stutter, underline, CTAs, wave stall)
+  let heroLeft=false;
+  const replayHero=()=>{const r=document.documentElement;r.classList.remove('hx');void r.offsetWidth;r.classList.add('hx');pinT=0};
+  if(!reduce){new IntersectionObserver(es=>es.forEach(e=>{heroVisible=e.isIntersecting;if(!heroVisible){heroLeft=true;return}if(heroLeft){heroLeft=false;replayHero()}if(!raf){last=performance.now();raf=requestAnimationFrame(draw)}}),{threshold:0}).observe(hero);raf=requestAnimationFrame(draw)}
   else{T=2.6;draw(performance.now())}
 
   /* ===== reveal: everything plays by itself when it comes into view and replays after it has fully left ===== */
