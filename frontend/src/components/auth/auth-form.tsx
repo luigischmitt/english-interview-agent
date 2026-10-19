@@ -34,25 +34,21 @@ type AuthMode = "login" | "signup" | "forgot-password" | "update-password";
 
 const copy = {
   login: {
-    eyebrow: "Acesse sua conta",
     title: "Continue sua prática.",
     description: "Entre para retomar suas entrevistas e ver seu histórico.",
     submit: "Entrar",
   },
   signup: {
-    eyebrow: "Crie sua conta",
     title: "Comece a praticar entrevistas.",
     description: "Guarde suas sessões e pratique quando quiser.",
     submit: "Criar conta",
   },
   "forgot-password": {
-    eyebrow: "Recuperação de conta",
     title: "Redefina sua senha.",
     description: "Enviaremos um link seguro para redefinir sua senha.",
     submit: "Enviar link de recuperação",
   },
   "update-password": {
-    eyebrow: "Nova senha",
     title: "Crie uma nova senha.",
     description: "Use pelo menos oito caracteres para proteger sua conta.",
     submit: "Atualizar senha",
@@ -172,7 +168,6 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
         <div className="au-card ds-card ds-enter">
           <div className="au-stack">
             <div className="ds-enter" style={stagger(1)}>
-              <p className="au-eyebrow">{details.eyebrow}</p>
               <h1 className="au-title">{details.title}</h1>
               <p className="au-desc">{details.description}</p>
             </div>

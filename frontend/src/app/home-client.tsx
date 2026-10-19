@@ -11,7 +11,6 @@ import {
   Gauge,
   Leaf,
   LineChart,
-  MicVocal,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
@@ -372,9 +371,6 @@ function HomeView({
     <main ref={homeRef} id="main-content" className={`${pageMain} shl-home`}>
       <section className="shl-home-hero" aria-labelledby="home-title">
         <div className="shl-home-hero-copy">
-          <p className="shl-home-kicker">
-            <MicVocal className="size-4" aria-hidden="true" /> {t("Vamos praticar?")}
-          </p>
           <h1 id="home-title" className="shl-home-title">
             {t("Sua próxima entrevista começa aqui.")}
           </h1>

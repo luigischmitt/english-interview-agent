@@ -303,7 +303,6 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
           {getCurrentLocale() === "en" ? "Back to Progress" : t("Voltar ao Progresso")}
         </button>}
       <header className="rp-hero ds-enter">
-        <p className="rp-eyebrow">{t("Prática concluída")}</p>
         <h1 id="interview-complete-title" className="font-display text-balance rp-title">
           {t("Seu relatório de entrevista")}
         </h1>

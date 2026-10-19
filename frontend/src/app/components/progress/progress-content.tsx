@@ -169,13 +169,10 @@ function VoiceTrendView({ insights }: { insights: ProgressInsights }) {
 
 export function ProgressHero({ insights }: { insights: ProgressInsights }) {
   const [view, setView] = useState<"profile" | "trend">("profile");
-  const role = [insights.latestRole || t("Prática de entrevista"), seniorityLabel(insights.latestSeniority)].filter(Boolean).join(" · ");
-
   return (
     <section className="pg-hero" aria-labelledby="pg-hero-title" data-reveal>
       <div className="pg-hero-head">
         <div>
-          <p className="pg-kicker">{role}</p>
           <h2 id="pg-hero-title" className="pg-hero-title">{t(view === "profile" ? "Seu perfil de entrevista" : "Sua voz, entrevista a entrevista")}</h2>
           <p className="pg-hero-sub">{t(view === "profile"
             ? "Cada ponta do gráfico é uma parte da sua fala. Quanto mais perto da borda, melhor."
