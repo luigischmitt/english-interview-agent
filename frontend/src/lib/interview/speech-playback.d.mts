@@ -113,4 +113,4 @@ export function fetchSpeechBlob(text: string, options: SpeechPlaybackOptions): P
 export function clearRetainedSpeechBlobs(): void;
 export function resetSpeechFlights(): void;
 
-export function warmUpInterviewerSpeech(endpoint: string, fetcher: (input: string, init?: RequestInit) => Promise<unknown>): void;
+export function warmUpInterviewerSpeech(endpoint: string, fetcher: (input: string, init?: RequestInit) => Promise<unknown>, preferences?: { voice?: string; speed?: number }): void;

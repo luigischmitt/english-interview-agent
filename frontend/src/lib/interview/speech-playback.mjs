@@ -800,9 +800,10 @@ export function prewarmInterviewerSpeech(segments, options) {
 }
 
 /** Best-effort wake-up of a scale-to-zero voice backend (POST <speech endpoint>/warmup); errors are ignored. */
-export function warmUpInterviewerSpeech(endpoint, fetcher) {
+export function warmUpInterviewerSpeech(endpoint, fetcher, preferences) {
   try {
-    Promise.resolve(fetcher(`${endpoint}/warmup`, { method: "POST" })).catch(() => undefined);
+    const body = preferences ? JSON.stringify({ voice: preferences.voice, speed: preferences.speed }) : undefined;
+    Promise.resolve(fetcher(`${endpoint}/warmup`, { method: "POST", ...(body ? { headers: { "content-type": "application/json" }, body } : {}) })).catch(() => undefined);
   } catch {
     // Warm-up must never affect the interview.
   }

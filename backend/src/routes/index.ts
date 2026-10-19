@@ -34,7 +34,7 @@ export function createApiRouter(provider: SpeechProvider, config: SpeechConfig, 
   apiRouter.use("/formulations", formulationRouter);
   apiRouter.use("/client-events", createClientEventsRouter(clientEventLogger));
   apiRouter.use("/admin", createAdminRouter(adminUsageService, adminUserIds));
-  apiRouter.use("/speech", createSpeechRouter(provider, config, speechServices.cache));
+  apiRouter.use("/speech", createSpeechRouter(provider, config, speechServices.cache, speechServices.prefetcher));
 
   return apiRouter;
 }

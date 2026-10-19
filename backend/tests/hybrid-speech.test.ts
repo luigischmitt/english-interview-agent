@@ -228,6 +228,15 @@ describe("hybrid speech race", () => {
 });
 
 describe("hybrid warmup", () => {
+  it("forwards connection warming to children that support it", () => {
+    const primary = { ...controllable("kokoro").provider, warmConnection: vi.fn() };
+    const secondary = { ...controllable("openrouter").provider, warmConnection: vi.fn(() => { throw new Error("down"); }) };
+    const provider = new HybridSpeechProvider({ ...hybrid().provider["options"], primary, secondary });
+    expect(() => provider.warmConnection()).not.toThrow();
+    expect(primary.warmConnection).toHaveBeenCalledTimes(1);
+    expect(secondary.warmConnection).toHaveBeenCalledTimes(1);
+  });
+
   it("dedupes in-flight and rate-limits to once per 60 s", async () => {
     let now = 0;
     let release!: () => void;

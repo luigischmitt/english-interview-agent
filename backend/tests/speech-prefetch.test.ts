@@ -356,4 +356,39 @@ describe("static phrase prefetch", () => {
     expect(calls).toBe(staticSpeechTexts().length);
     expect(events).not.toContain("prefetch_dropped");
   });
+
+  it("warms static phrases for the requested voice and speed before answering, then reuses cache hits", async () => {
+    const prior = process.env.SPEECH_PREFETCH_STATIC;
+    process.env.SPEECH_PREFETCH_STATIC = "0";
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const calls: SpeechSynthesisRequest[] = [];
+    const provider: SpeechProvider = {
+      name: "openrouter",
+      health: async () => ({ status: "ready" }),
+      async synthesize(request) { calls.push(request); await gate; return { audio: Buffer.from("a"), contentType: "audio/mpeg" }; },
+    };
+    const config: SpeechConfig = { provider: "openrouter", kokoroBaseUrl: "http://x", kokoroTimeoutMs: 1_000, interviewerVoice: "am_echo", defaultSpeed: 1, format: "mp3", cache: { ttlMs: 60_000, staticTtlMs: 60_000, prefetch: true, prefetchChunks: 1 } };
+    try {
+      const app = createApp({ speechConfig: config, speechProvider: provider, accessTokenVerifier: null, thinkingService: null, reportService: null, jobDirectionService: null });
+      let answered = false;
+      const pending = request(app).post("/api/v1/speech/warmup").send({ voice: "bf_emma", speed: 1.2 }).then((response) => { answered = true; return response; });
+      for (let attempt = 0; attempt < 10 && calls.length === 0; attempt += 1) await tick();
+      expect(calls).toHaveLength(3);
+      expect(answered).toBe(false);
+      release();
+      expect((await pending).status).toBe(202);
+      expect(calls).toHaveLength(staticSpeechTexts().length);
+      expect(calls.every((call) => call.voice === "bf_emma" && call.speed === 1.2)).toBe(true);
+
+      expect((await request(app).post("/api/v1/speech/warmup").send({ voice: "not-a-voice", speed: 5 })).status).toBe(202);
+      expect(calls.slice(staticSpeechTexts().length).every((call) => call.voice === "am_echo" && call.speed === 1)).toBe(true);
+      const afterDefault = calls.length;
+      expect((await request(app).post("/api/v1/speech/warmup").send({ voice: "not-a-voice", speed: 5 })).status).toBe(202);
+      expect(calls).toHaveLength(afterDefault);
+    } finally {
+      if (prior === undefined) delete process.env.SPEECH_PREFETCH_STATIC;
+      else process.env.SPEECH_PREFETCH_STATIC = prior;
+    }
+  });
 });

@@ -80,14 +80,30 @@ export class InterviewerSpeechPrefetcher {
     cache.prefetch({ text: normalizeTextForSpeech(text.trim()), voice: resolvedVoice, speed: resolvedSpeed, format });
   }
 
+  /** Synthesizes the fixed phrases for a selectable voice and speed, joining cache work already in flight. */
+  async prefetchStaticFor(voice?: unknown, requestedSpeed?: unknown, options: { concurrency: number; deadlineMs?: number } = { concurrency: 1 }): Promise<void> {
+    const { cache, speed, format } = this.options;
+    const resolvedVoice = this.options.voice.includes("Neural") ? resolveVoice(voice, this.options.voice) : resolveKokoroVoice(voice, this.options.voice);
+    const resolvedSpeed = typeof requestedSpeed === "number" && Number.isFinite(requestedSpeed) && requestedSpeed >= 0.25 && requestedSpeed <= 4 ? requestedSpeed : speed;
+    const texts = staticSpeechTexts();
+    let next = 0;
+    const work = async () => {
+      for (;;) {
+        const text = texts[next++];
+        if (!text) return;
+        try { await cache.synthesize({ text, voice: resolvedVoice, speed: resolvedSpeed, format }); } catch { /* A missing phrase is synthesized on demand later. */ }
+      }
+    };
+    const complete = Promise.all(Array.from({ length: Math.min(Math.max(1, options.concurrency), texts.length) }, work)).then(() => undefined);
+    if (!options.deadlineMs || options.deadlineMs <= 0) { await complete; return; }
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([complete, new Promise<void>((resolve) => { timeout = setTimeout(resolve, options.deadlineMs); })]);
+    if (timeout) clearTimeout(timeout);
+  }
+
   /** Synthesizes the fixed phrases once so the instant acknowledgements and the closing line are ready before they are needed. */
   /** One at a time, outside the speculative in-flight cap, so startup never drops a phrase or competes with a live turn. */
   async prefetchStatic(): Promise<void> {
-    const { cache, speed, format } = this.options;
-    for (const text of staticSpeechTexts()) {
-      try {
-        await cache.synthesize({ text: normalizeTextForSpeech(text.trim()), voice: this.options.voice, speed, format });
-      } catch { /* A missing phrase is synthesized on demand later. */ }
-    }
+    await this.prefetchStaticFor(undefined, undefined, { concurrency: 1 });
   }
 }
