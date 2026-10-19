@@ -1,7 +1,7 @@
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { buildPracticeWordList, buildVoiceEvolution, buildVoiceInsights, buildVoiceLesson, buildVoicePracticePlan, buildVoiceTrainingPhrases, encodeWav16Mono, likelyTranscriptionArtifact, normalizePracticeSentenceCapitalization, readPracticeAttempts, savePracticeAttempt } from "../src/lib/interview/voice-insights.mjs";
+import { buildPracticeWordList, buildVoiceEvolution, buildVoiceInsights, buildVoiceLesson, buildVoicePracticePlan, buildVoiceTrainingPhrases, encodeWav16Mono, likelyTranscriptionArtifact, normalizePracticeSentenceCapitalization, normalizePracticeSpokenText, readPracticeAttempts, savePracticeAttempt } from "../src/lib/interview/voice-insights.mjs";
 
 const metric = (mean, totalDurationMs = 25_000) => ({ mean, sampleCount: 1, totalDurationMs });
 const record = (id, completedAt, scores, answers = []) => ({ id, completedAt, createdAt: completedAt, feedback: { status: "ready", azureSummary: { accuracy: metric(scores.accuracy), fluency: metric(scores.fluency), prosody: metric(scores.prosody), answers } } });
@@ -174,11 +174,11 @@ test("changes the practice queue and highlighted words with the selected voice f
   const rhythm = buildVoicePracticePlan([item], { focus: "fluency" });
   assert.equal(accuracy.focus, "accuracy");
   assert.equal(accuracy.specificEvidence, true);
-  assert.equal(accuracy.sentences[0].text, "I explained the architecture to our engineering team");
+  assert.equal(accuracy.sentences[0].text, "I explained the architecture to our engineering team.");
   assert.deepEqual(accuracy.sentences[0].attentionWords, ["architecture"]);
-  assert.equal(prosody.sentences[0].text, "The service remained reliable during peak traffic");
+  assert.equal(prosody.sentences[0].text, "The service remained reliable during peak traffic.");
   assert.deepEqual(prosody.sentences[0].attentionWords, ["reliable"]);
-  assert.equal(rhythm.sentences[0].text, "We reduced the deployment time for every release");
+  assert.equal(rhythm.sentences[0].text, "We reduced the deployment time for every release.");
   assert.deepEqual(rhythm.sentences[0].attentionWords, ["deployment"]);
   assert.equal(prosody.sentences[0].answerNumber, 1);
   assert.equal(prosody.sentences[0].date, "2026-09-12T00:00:00.000Z");
@@ -243,6 +243,8 @@ test("normalizes mid-sentence capitalization while preserving I, products, and a
   assert.equal(normalizePracticeSentenceCapitalization("I am building a Machine learning model with Python, React, Gemini, WhatsApp, Meta and UFPB."), "I am building a machine learning model with Python, React, Gemini, WhatsApp, Meta and UFPB.");
   assert.equal(normalizePracticeSentenceCapitalization("The interviewer asked what I do. I'm building systems, I've led teams, I'd improve reliability, and I'll share the results."), "The interviewer asked what I do. I'm building systems, I've led teams, I'd improve reliability, and I'll share the results.");
   assert.equal(normalizePracticeSentenceCapitalization("I’m building a scalable platform for our customers."), "I’m building a scalable platform for our customers.");
+  assert.equal(normalizePracticeSentenceCapitalization("i built an API for React"), "I built an API for React.");
+  assert.equal(normalizePracticeSpokenText("i build an api for a customer"), "I build an api for a customer");
 });
 
 test("encodes a browser-ready 16-bit mono WAV and bounds local attempts", () => {

@@ -289,15 +289,28 @@ function cleanPracticeSentence(text) {
   return normalizePracticeSentenceCapitalization(value);
 }
 
-/** Keeps the sentence natural for practice without flattening known products or acronyms. */
+/** Keeps a corrected practice sentence natural, complete and ready to be spoken. */
 export function normalizePracticeSentenceCapitalization(text) {
+  const value = typeof text === "string" ? text.replace(/\s+/gu, " ").trim() : "";
+  let wordIndex = 0;
+  const normalized = value.replace(/[\p{L}][\p{L}'’-]*/gu, (word) => {
+    const isFirstWord = wordIndex++ === 0;
+    const isAcronym = word.length > 1 && word === word.toLocaleUpperCase("en-US");
+    if (isFirstWord) return `${word.slice(0, 1).toLocaleUpperCase("en-US")}${word.slice(1)}`;
+    if (word === "I" || /^I['’](?:m|ve|d|ll)$/iu.test(word) || isAcronym || sentenceProperNouns.has(word)) return word;
+    return /^[A-Z]/u.test(word) ? word.toLocaleLowerCase("en-US") : word;
+  });
+  return normalized && !/[.!?…][”")\]]?$/u.test(normalized) ? `${normalized}.` : normalized;
+}
+
+/** Preserves what the candidate said, only making its opening readable in the practice card. */
+export function normalizePracticeSpokenText(text) {
   const value = typeof text === "string" ? text.replace(/\s+/gu, " ").trim() : "";
   let wordIndex = 0;
   return value.replace(/[\p{L}][\p{L}'’-]*/gu, (word) => {
     const isFirstWord = wordIndex++ === 0;
-    const isAcronym = word.length > 1 && word === word.toLocaleUpperCase("en-US");
-    if (isFirstWord || word === "I" || /^I['’](?:m|ve|d|ll)$/iu.test(word) || isAcronym || sentenceProperNouns.has(word)) return word;
-    return /^[A-Z]/u.test(word) ? word.toLocaleLowerCase("en-US") : word;
+    if (word.toLocaleLowerCase("en-US") === "i") return "I";
+    return isFirstWord ? `${word.slice(0, 1).toLocaleUpperCase("en-US")}${word.slice(1)}` : word;
   });
 }
 
@@ -446,7 +459,7 @@ export function buildVoiceTrainingPhrases(input) {
     const patterns = record?.feedback?.status === "ready" ? record.feedback?.analysis?.englishCommunication?.patterns : [];
     for (const pattern of Array.isArray(patterns) ? patterns : []) {
       const referenceText = cleanPracticeSentence(pattern?.rephrasedExample);
-      const saidText = isText(pattern?.evidence) ? pattern.evidence.trim() : null;
+      const saidText = isText(pattern?.evidence) ? normalizePracticeSpokenText(pattern.evidence) : null;
       if (!referenceText || !saidText) continue;
       add({ referenceText, saidText, source: "english", time: timeOf(record), date: dateOf(record), beforeAccuracy: null, attentionWords: [] });
     }

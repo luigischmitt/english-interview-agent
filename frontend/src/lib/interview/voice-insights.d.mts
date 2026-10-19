@@ -16,6 +16,7 @@ export type VoiceTrainingPhrase = { id: string; referenceText: string; saidText:
 export type VoicePracticeAttempt = { scores: { accuracy: number | null; fluency: number | null; prosody: number | null }; words: Array<{ word: string; accuracyScore: number | null; errorType: string | null }>; createdAt: string };
 export function likelyTranscriptionArtifact(text: unknown): boolean;
 export function normalizePracticeSentenceCapitalization(text: unknown): string;
+export function normalizePracticeSpokenText(text: unknown): string;
 export function buildPracticeWordList(records: ProgressRecord[]): VoicePracticeWord[];
 export function buildVoiceEvolution(records: ProgressRecord[]): Record<VoiceMetricKey, Array<{ id: string; date: string | null; value: number }>>;
 export function buildVoicePracticePlan(records: ProgressRecord[], options?: { now?: Date; focus?: VoiceMetricKey; attempts?: Record<string, VoicePracticeAttempt[]> }): { focus: VoiceMetricKey; specificEvidence: boolean; sentences: VoicePracticeSentence[]; words: VoicePracticeWord[]; evolution: ReturnType<typeof buildVoiceEvolution>; day: string };
