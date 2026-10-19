@@ -14,8 +14,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Entoa — treine sua entrevista em inglês",
+  title: "Entoa",
   description: "Entrevista em inglês para dev brasileiro mirando vaga na gringa. No fim, um relatório do seu inglês sob pressão.",
+  openGraph: { title: "Entoa" },
+  twitter: { title: "Entoa" },
 };
 
 // viewport-fit=cover lets the page paint under the notch/home indicator (safe areas are padded back with env()); the
