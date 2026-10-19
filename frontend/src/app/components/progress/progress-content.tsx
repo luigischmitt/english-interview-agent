@@ -128,7 +128,15 @@ function ProfileView({ insights }: { insights: ProgressInsights }) {
           />
         </div>
         <div className="pg-profile-side">
-          {active && <p className="pg-side-detail" aria-live="polite"><strong>{active.label}.</strong> {active.explain}</p>}
+          <ul className="pg-radar-legend">
+            <li className="pg-radar-legend-english"><i aria-hidden="true" /><span><strong>{t("Inglês:")}</strong> {t("% das respostas sem erro")}</span></li>
+            <li className="pg-radar-legend-voice"><i aria-hidden="true" /><span><strong>{t("Voz:")}</strong> {t("nota de 0 a 100")}</span></li>
+          </ul>
+          <p className="pg-radar-note">{t("Mais perto da borda é melhor. Escolha um ponto para ver o que ele mede.")}</p>
+          <div className="pg-side-details">
+            {active && <p className="pg-side-detail pg-side-detail-active" aria-live="polite"><strong>{active.label}.</strong> {active.explain}</p>}
+            {items.map((item) => <p key={item.key} className="pg-side-detail pg-side-detail-size" aria-hidden="true"><strong>{item.label}.</strong> {item.explain}</p>)}
+          </div>
         </div>
       </div>
       <p className="pg-dims-note">{t("Baseado em ")}{plural(insights.analyzedAnswers, "resposta analisada", "respostas analisadas")} {t("de ")}{plural(insights.analyzedSessions, "prática", "práticas")}{t(". Isto não é uma medida do seu nível de inglês.")}</p>

@@ -19,7 +19,7 @@ function point(index: number, total: number, radius: number) {
 /**
  * Profile radar: every axis goes from 0 (center) to 100 (edge), so English patterns (% of answers without the error)
  * and Azure voice scores (0–100) share one scale. Each axis is labeled with its name and value, so nothing depends on
- * hover; English points are circles and voice points diamonds. Entrance replays through an ancestor [data-reveal].
+ * hover; English points are green circles and voice points warm diamonds. Entrance replays through an ancestor [data-reveal].
  */
 export function ProfileRadar({ items, active, selected, onActive, onSelect, label }: {
   items: RadarItem[];
@@ -36,10 +36,9 @@ export function ProfileRadar({ items, active, selected, onActive, onSelect, labe
   return (
     <svg viewBox="-66 -24 432 348" className="pr-svg" role="group" aria-label={label} onMouseLeave={() => onActive(null)}>
       {[1, 0.75, 0.5, 0.25].map((fraction) => <polygon key={fraction} className="pr-ring" data-outer={fraction === 1} points={ring(fraction)} />)}
-      {[50, 100].map((value) => <text key={value} className="pr-ring-value" x={CENTER + 4} y={CENTER - (RADIUS * value) / 100 + 11}>{value}</text>)}
       {items.map((item, i) => {
         const edge = point(i, total, RADIUS);
-        return <line key={item.key} className="pr-axis" data-active={active === item.key} x1={CENTER} y1={CENTER} x2={edge.x} y2={edge.y} />;
+        return <line key={item.key} className="pr-axis" data-group={item.group} data-active={active === item.key} x1={CENTER} y1={CENTER} x2={edge.x} y2={edge.y} />;
       })}
       <polygon className="pr-shape" points={shape} />
       {items.map((item, i) => {
@@ -62,6 +61,7 @@ export function ProfileRadar({ items, active, selected, onActive, onSelect, labe
           <g
             key={item.key}
             className="pr-label"
+            data-group={item.group}
             data-active={active === item.key}
             style={{ "--k": i } as React.CSSProperties}
             onMouseEnter={() => onActive(item.key)}

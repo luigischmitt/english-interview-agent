@@ -37,23 +37,24 @@
 }
 
 /*
- * Profile radar. Prefix `pr-`. Green circles = English patterns, ink diamonds = voice scores (shape + color).
+ * Profile radar. Prefix `pr-`. Green circles = English patterns, warm diamonds = voice scores (shape + color).
  * Same one-time reveal contract as the trend chart.
  */
 .pr-svg { display: block; width: 100%; max-width: 30rem; height: auto; margin-inline: auto; overflow: visible; }
 .pr-ring { fill: none; stroke: var(--ds-chart-ring); stroke-dasharray: 3 4; }
 .pr-ring[data-outer="true"] { stroke-dasharray: none; }
-.pr-ring-value { fill: var(--ds-text-2); font-size: 9px; font-weight: 500; }
 .pr-axis { stroke: var(--ds-chart-axis); stroke-width: 1; transition: stroke var(--ds-dur-fast) ease; }
 .pr-axis[data-active="true"] { stroke: var(--ds-green); stroke-width: 1.5; }
+.pr-axis[data-group="voice"][data-active="true"] { stroke: var(--ds-brand-warm); }
 .pr-shape { fill: color-mix(in srgb, var(--ds-green) 16%, transparent); stroke: var(--ds-green); stroke-width: 2; stroke-linejoin: round; transform-origin: 150px 150px; transition: transform 900ms var(--ease-out) 150ms, opacity 400ms ease 150ms; }
 .pr-point { stroke: var(--ds-surface); stroke-width: 1.5; transition: opacity 300ms ease calc(750ms + var(--k, 0) * 60ms); }
 .pr-point[data-group="english"] { fill: var(--ds-green); }
-.pr-point[data-group="voice"] { fill: var(--ds-ink); }
+.pr-point[data-group="voice"] { fill: var(--ds-brand-warm); }
 .pr-label { cursor: pointer; transition: opacity 350ms ease calc(900ms + var(--k, 0) * 60ms); }
-.pr-label-name { fill: var(--ds-text-2); font-size: 12px; font-weight: 600; }
+.pr-label-name { fill: var(--ds-green); font-size: 12px; font-weight: 600; }
 .pr-label-value { fill: var(--ds-ink); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pr-label[data-active="true"] .pr-label-name { fill: var(--ds-green-deep); }
+.pr-label[data-group="voice"] .pr-label-name, .pr-label[data-group="voice"][data-active="true"] .pr-label-name { fill: var(--ds-brand-warm); }
 .pr-hit { fill: transparent; cursor: pointer; }
 .pr-hit:focus-visible { outline: none; stroke: var(--ds-green); stroke-width: 2; }
 
