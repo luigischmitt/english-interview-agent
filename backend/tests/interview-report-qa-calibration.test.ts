@@ -44,4 +44,14 @@ describe("QA analyst calibration", () => {
     }), { roleContext, turns: qaTurns } as InterviewReportInput);
     expect(result.report?.englishCommunication.patterns).toEqual([]);
   });
+
+  it("does not turn a valid narrative relative clause into a present-tense correction", () => {
+    const narrativeTurns = [{ sequenceNumber: 1, question: "What was the biggest challenge in that project?", answer: "The biggest challenge that I faced is to find reliable synthetic images." }];
+    const result = evaluateInterviewReportProviderOutput(JSON.stringify({
+      technicalContent: { summary: "Você descreveu o desafio do projeto.", strengths: [], gaps: [] },
+      englishCommunication: { clarity: "CLEAR", patterns: [{ type: "GRAMMAR", sequenceNumber: 1, evidence: "The biggest challenge that I faced is to find", suggestion: "Use o presente simples para descrever o desafio atual.", rephrasedExample: "The biggest challenge I face is to find reliable synthetic images." }] },
+      priorities: [],
+    }), { roleContext, turns: narrativeTurns } as InterviewReportInput);
+    expect(result.report?.englishCommunication.patterns).toEqual([]);
+  });
 });

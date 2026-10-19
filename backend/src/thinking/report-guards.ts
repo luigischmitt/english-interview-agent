@@ -226,6 +226,26 @@ export function isRephraseUnchanged(excerpt: string, rephrased: string): boolean
   return normalize(excerpt) === normalize(rephrased);
 }
 
+/** Removing the optional relative pronoun in "the project that I led" is a style preference, not a correction. */
+export function isOptionalRelativeThatRemoval(excerpt: string, rephrased: string): boolean {
+  const { removed, added } = diffTokens(tokenize(excerpt), tokenize(rephrased));
+  if (removed.length !== 1 || removed[0]?.lower !== "that" || added.length !== 0) return false;
+  return /\b[\p{L}]+(?:\s+[\p{L}]+){0,3}\s+that\s+(?:i|you|he|she|we|they|who)\b/iu.test(excerpt);
+}
+
+/**
+ * In a relative clause about a completed project, past and present can both be valid depending on
+ * the intended framing. Without an explicit time marker, changing only that tense is stylistic.
+ */
+export function isUnjustifiedNarrativePastToPresent(edit: EnglishEditAnalysis, excerpt: string): boolean {
+  const pastToPresent = edit.formChanges.length === 1
+    && /ed$/u.test(edit.formChanges[0]!.from.lower)
+    && !/ed$/u.test(edit.formChanges[0]!.to.lower);
+  const onlyOptionalThat = edit.removedFunction.every((token) => token.lower === "that") && edit.addedFunction.length === 0;
+  const explicitTimeMarker = /\b(?:yesterday|last\s+(?:week|month|year)|\d+\s+(?:days?|weeks?|months?|years?)\s+ago|in\s+\d{4})\b/iu.test(excerpt);
+  return pastToPresent && onlyOptionalThat && edit.removedContent.length === 0 && edit.addedNew.length === 0 && !explicitTimeMarker;
+}
+
 const contractionSuffixes: Record<string, string> = { ve: "have", m: "am", re: "are", ll: "will" };
 const pronounsBeforeIs = new Set(["it", "that", "what", "there", "he", "she", "here", "who", "where", "how", "this"]);
 const negativeStems: Record<string, string> = { don: "do", doesn: "does", didn: "did", isn: "is", aren: "are", wasn: "was", weren: "were", haven: "have", hasn: "has", hadn: "had", couldn: "could", wouldn: "would", shouldn: "should", won: "will", can: "can" };
