@@ -443,92 +443,80 @@ main{overflow-x:clip}
 .hx .hero .cta-row{animation:up .8s var(--ease) .95s both}
 .w{display:inline-block;white-space:nowrap}
 
-/* --- scroll-linked effects: letters form, things fly into place, strokes draw; progress comes from scroll position, so they replay both ways --- */
-.sp{position:fixed;inset:0 0 auto 0;height:3px;z-index:30;pointer-events:none}
-.sp i{display:block;height:100%;background:var(--green);transform-origin:0 50%;transform:scaleX(var(--sp,0))}
-.fx .ch{display:inline-block;opacity:var(--q,0);transform:translateY(calc((1 - var(--q,0)) * .5em))}
-.fx [data-fly]{opacity:var(--fo,0);transform:translate3d(calc(var(--sg,0) * 64px * var(--m,1) * var(--rem,1)),calc(var(--up,0) * 44px * var(--rem,1)),0)}
+/* --- reveal system: everything forms when it comes into view, plays by itself, and replays after it has left the screen --- */
+.fx .ch{display:inline-block;opacity:0}
+.fx .pl .ch{opacity:1;animation:hch .7s var(--ease) calc(var(--d,0s) + var(--i) * var(--cs,17ms)) backwards}
 .sec-head{text-align:center;max-width:780px;margin:0 auto}
 .sec-head h2{margin-inline:auto;max-width:22ch}
 .sec-head .lead{margin:.6rem auto 0;max-width:46ch}
 
-/* --- VOZ: "Sua voz" shown working --- */
-.voz{position:relative;isolation:isolate;overflow:hidden;overflow:clip;padding:clamp(64px,8vw,120px) 0}
-.voz-grid{display:grid;gap:clamp(1.6rem,4vw,3.5rem);align-items:center}
-@media(min-width:900px){.voz-grid{grid-template-columns:minmax(0,5fr) minmax(0,6fr)}}
-.voz h2{max-width:14ch}
-.vm-list{list-style:none;padding:0;margin:1.5rem 0 0;display:grid;gap:.9rem}
-.vm-list li{display:grid;grid-template-columns:5.6rem minmax(0,1fr);gap:.8rem;align-items:baseline;font-size:.98rem}
-.vm-list b{font-weight:600;font-size:.74rem;letter-spacing:.08em;text-transform:uppercase}
-.vcard{position:relative;background:var(--surface);color:var(--ink);border-radius:28px;padding:clamp(1.1rem,2.4vw,1.8rem);box-shadow:0 0 0 1px rgba(14,42,31,.1),0 2px 6px rgba(14,42,31,.08),0 40px 80px -30px rgba(0,0,0,.6);min-width:0}
-.vc-body{transition:opacity .45s var(--ease)}
-.vc-top{display:flex;justify-content:space-between;align-items:center;gap:1rem}
-.vc-k{font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text2)}
-.vc-att{display:flex;align-items:center;gap:.5rem;margin-top:1.1rem;font-size:.78rem;font-weight:600;color:var(--text2)}
-.vc-att i{width:8px;height:8px;border-radius:50%;background:var(--track);transition:background .3s}
-.vc-att i.on{background:var(--green)}
-.vc-att span{margin-left:.2rem;transition:opacity .2s}
-.vc-phrase{font-family:var(--serif);font-size:clamp(1.65rem,3.3vw,2.25rem);line-height:1.22;margin:.55rem 0 .2rem;letter-spacing:-.01em}
-.vw{border-radius:.26em;padding:0 .06em;margin:0 -.06em;transition:background .35s,box-shadow .35s,color .35s}
-.vw.say{background:var(--tint);color:var(--green-deep)}
-.vw.flag{background:var(--err-tint);box-shadow:inset 0 -2px 0 #c9694a;color:var(--err)}
-.vw.fixed{background:var(--tint);box-shadow:inset 0 -2px 0 rgba(31,107,69,.5);color:var(--green-deep)}
-.vc-leg{min-height:1.2rem;font-size:.78rem;color:var(--text2);display:flex;gap:1rem;flex-wrap:wrap;opacity:0;transition:opacity .3s}
-.vc-leg.on{opacity:1}
-.vc-leg span::before{content:"";display:inline-block;width:.7rem;height:.7rem;border-radius:3px;margin-right:.4rem;vertical-align:-1px;background:var(--err-tint);box-shadow:inset 0 -2px 0 #c9694a,inset 0 0 0 1px rgba(201,105,74,.3)}
-.vc-leg span.ok::before{background:var(--tint);box-shadow:inset 0 -2px 0 rgba(31,107,69,.5)}
-.vc-btns{display:flex;align-items:center;gap:.6rem;margin-top:1rem;flex-wrap:wrap}
-.vbtn{display:inline-flex;align-items:center;gap:.5rem;padding:.62rem 1.15rem;border-radius:99px;background:var(--field);font-weight:600;font-size:.9rem;box-shadow:inset 0 0 0 1px rgba(14,42,31,.07);transition:transform .14s var(--ease),background .25s,color .25s,box-shadow .25s}
-.vbtn.press{transform:scale(.94)}
-.vbtn.on{background:var(--tint);color:var(--green-deep);box-shadow:inset 0 0 0 1.5px rgba(31,107,69,.4)}
-.vbtn.rec{background:var(--green);color:var(--cream);box-shadow:none}
-.vbtn.rec.on{background:var(--danger);color:#fff}
-.vbtn.rec .dot{width:9px;height:9px;border-radius:50%;background:currentColor}
-.vbtn.rec.on .dot{animation:pulse 1s infinite}
-.vstat{font-size:.82rem;color:var(--text2);font-variant-numeric:tabular-nums;min-width:0}
-.vwave{display:flex;align-items:center;justify-content:space-between;gap:2px;height:56px;margin-top:.9rem;padding:0 .2rem;border-radius:14px;background:var(--field)}
-.vwave i{display:block;flex:1 1 0;min-width:2px;max-width:5px;height:5px;border-radius:3px;background:var(--green);opacity:.35;transition:opacity .25s}
-.vwave.live i{opacity:.9}
-.vwave.hear i{background:var(--green-deep);opacity:.75}
-.vms{display:grid;gap:.85rem;margin-top:1.2rem;padding-top:1.2rem;border-top:1px solid rgba(14,42,31,.08)}
-.vm{display:grid;grid-template-columns:5.2rem minmax(0,1fr) 2.2rem 2.9rem;align-items:center;gap:.7rem;font-size:.86rem}
-.vm-n{font-weight:600}
-.vm-bar{position:relative;height:9px;border-radius:99px;background:var(--track);overflow:visible}
-.vm-bar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--green);width:0}
-.vm-bar .prev{position:absolute;top:-4px;bottom:-4px;width:2px;border-radius:2px;background:var(--ink);opacity:0;transition:opacity .4s;left:0}
-.vm-bar .prev.on{opacity:.55}
-.vm-v{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
-.vm-d{font-style:normal;font-size:.74rem;font-weight:700;color:var(--green-deep);background:var(--tint);border-radius:99px;padding:.1rem .45rem;text-align:center;opacity:0;transform:scale(.7);transition:opacity .3s,transform .4s var(--ease)}
-.vm-d.on{opacity:1;transform:none}
-@media(max-width:480px){.vm{grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"n v d" "b b b";row-gap:.35rem}.vm-n{grid-area:n}.vm-v{grid-area:v}.vm-d{grid-area:d}.vm-bar{grid-area:b}.vm-d{min-width:2.6rem}}
-.vc-cmp{margin-top:1rem;font-size:.78rem;color:var(--text2);min-height:1.1rem}
+/* --- VOZ: typographic animation (no app window) --- */
 .badge.ex{background:var(--tint)}
-/* ---- voz: a light frosted-glass app window (same glass as the footer panel) on cream ---- */
-.voz{background:var(--cream);padding:clamp(72px,9vw,130px) 0}
-@media(min-width:900px){.voz-grid{grid-template-columns:minmax(0,4.2fr) minmax(0,7fr)}}
-.vm-list li span{color:var(--text2)}
-.vm-list b{color:var(--green)}
-.vcard-wrap{position:relative;isolation:isolate;min-width:0}
-.vcard{--field:rgba(255,255,255,.5);--track:rgba(30,30,28,.1);background:rgba(224,225,221,.58);-webkit-backdrop-filter:blur(24px) saturate(1.5);backdrop-filter:blur(24px) saturate(1.5);border:1px solid rgba(255,255,255,.85);padding:0;overflow:hidden;border-radius:26px;position:relative;
+.voz{position:relative;isolation:isolate;background:var(--cream);padding:clamp(64px,8vw,120px) 0}
+.vz{position:relative;isolation:isolate;max-width:980px;margin-inline:auto;text-align:center;border-radius:32px;padding:clamp(1.6rem,4vw,3.2rem) clamp(1rem,4vw,3rem);overflow:hidden;
+  background:rgba(224,225,221,.6);-webkit-backdrop-filter:blur(22px) saturate(1.5);backdrop-filter:blur(22px) saturate(1.5);border:1px solid rgba(255,255,255,.85);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 1px 2px rgba(30,30,28,.07),0 8px 18px -8px rgba(30,30,28,.2),0 40px 70px -34px rgba(30,30,28,.34)}
-.vcard::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(to bottom,rgba(255,255,255,.5),rgba(255,255,255,0) 55%)}
-.vcard>*{position:relative;z-index:1}
-.vc-chrome{display:flex;align-items:center;gap:6px;height:40px;padding:0 15px;background:rgba(255,255,255,.34);border-bottom:1px solid rgba(30,30,28,.07)}
-.vc-chrome i{width:10px;height:10px;border-radius:50%;background:rgba(30,30,28,.16)}
-.vc-chrome span{margin:0 auto;font-size:.74rem;color:var(--text2)}
-.vc-body{padding:clamp(1.1rem,2.4vw,1.8rem)}
-.vc-phrase{font-size:clamp(1.9rem,3.8vw,2.9rem);margin-top:.7rem}
-.vbtn{background:rgba(255,255,255,.62);box-shadow:inset 0 0 0 1px rgba(30,30,28,.08),0 1px 2px rgba(30,30,28,.06)}
-.vbtn.on{background:var(--tint);box-shadow:inset 0 0 0 1.5px rgba(31,107,69,.4)}
-.vbtn.rec{background:var(--green);color:var(--cream);box-shadow:0 6px 14px -8px rgba(31,107,69,.8)}
-.vbtn.rec.on{background:var(--danger);color:#fff}
-.vwave{height:84px;background:rgba(255,255,255,.5);box-shadow:inset 0 0 0 1px rgba(30,30,28,.05)}
-.vcard .badge.ex{background:rgba(255,255,255,.7)}
-.vcard .vms{border-top-color:rgba(30,30,28,.08)}
-.vwave i{max-width:6px}
-.vm-bar{background:rgba(30,30,28,.1)}
-.vm-d{background:rgba(255,255,255,.7);box-shadow:inset 0 0 0 1px rgba(31,107,69,.2)}
-.vc-cmp{color:var(--text2)}
+.vz::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(to bottom,rgba(255,255,255,.55),rgba(255,255,255,0) 55%)}
+.vz h2{max-width:17ch;margin:.8rem auto .5rem}
+.vz .lead{margin:0 auto;max-width:44ch}
+.vz-stage{margin-top:clamp(1.4rem,3vw,2.4rem)}
+.vz-phrase{font-family:var(--serif);font-size:clamp(1.9rem,5.4vw,3.7rem);line-height:1.12;letter-spacing:-.02em;max-width:20ch;margin:0 auto;text-wrap:balance}
+.vz-w{display:inline-block;position:relative;color:var(--green-deep);transition:color .5s var(--ease)}
+.vz-w .sw{bottom:-.06em;height:.26em}
+.vz-wave{display:block;width:100%;height:76px;margin-top:.7rem;overflow:visible}
+.vz-wave path{fill:none;stroke:var(--green);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:0}
+.vz-wave .b{opacity:0;stroke:var(--danger)}
+.vz-att{font-size:.78rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);margin-top:.2rem}
+.vz-m{list-style:none;padding:0;margin:clamp(1.2rem,3vw,1.8rem) 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(.5rem,2vw,1.1rem)}
+.vz-m li{background:rgba(255,255,255,.5);box-shadow:inset 0 0 0 1px rgba(30,30,28,.05);border-radius:18px;padding:clamp(.7rem,2vw,1.1rem);display:grid;gap:.35rem;justify-items:center;align-content:start}
+.vz-n{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--green)}
+.vz-nv{display:flex;align-items:baseline;justify-content:center;gap:.4rem;flex-wrap:wrap}
+.vz-v{font-size:clamp(1.8rem,4vw,2.6rem);font-weight:600;line-height:1;font-variant-numeric:tabular-nums;color:var(--green-deep);transition:color .5s var(--ease)}
+.vz-d{font-style:normal;font-size:.74rem;font-weight:700;color:var(--green-deep);background:rgba(255,255,255,.8);box-shadow:inset 0 0 0 1px rgba(31,107,69,.22);border-radius:99px;padding:.1rem .5rem}
+.vz-bar{display:block;width:100%;height:6px;border-radius:9px;background:rgba(30,30,28,.1);overflow:hidden}
+.vz-bar i{display:block;height:100%;width:var(--p,84%);background:var(--green);border-radius:inherit}
+.vz-ds{font-size:.8rem;color:var(--text2);line-height:1.35}
+@media(max-width:560px){.vz-ds{display:none}}
+
+/* initial states only when motion is on; the markup itself is the finished picture */
+.fx .vz .lead{opacity:0}
+.fx .vz.pl .lead{animation:up .8s var(--ease) .7s both}
+.fx .vz-w{color:inherit}
+.fx .vz-w .sw{clip-path:inset(-30% 100% -30% 0);transition:clip-path .8s var(--ease)}
+.fx .vz.s1 .vz-w{color:var(--danger);animation:stut .6s steps(1,end) 2,wob 1.2s var(--ease)}
+.fx .vz.fix .vz-w{color:var(--green-deep);animation:none}
+.fx .vz.fix .vz-w .sw{clip-path:inset(-30% -5% -30% -5%)}
+@keyframes wob{0%,100%{transform:none}15%{transform:translateX(-.03em) skewX(-4deg)}35%{transform:translateX(.04em) skewX(3deg)}55%{transform:translateX(-.02em)}75%{transform:translateX(.015em)}}
+.fx .vz-wave path{stroke-dashoffset:1;transition:stroke-dashoffset .9s var(--ease),opacity .45s,stroke .4s}
+.fx .vz.wa .a{stroke-dashoffset:0}
+.fx .vz.s1 .b{opacity:1;stroke-dashoffset:0;transition-duration:.8s,.2s,.2s}
+.fx .vz.fix .b{opacity:0;stroke-dashoffset:0}
+.fx .vz.fix .b2,.fx .vz.fix .c{stroke-dashoffset:0}
+.fx .vz.fix .c{transition-delay:.35s}
+.fx .vz-att{opacity:0;transition:opacity .5s}
+.fx .vz.s1 .vz-att{opacity:1}
+.fx .vz-m li{opacity:0;transform:translateY(16px);filter:blur(6px)}
+.fx .vz.s1 .vz-m li{opacity:1;transform:none;filter:blur(0);transition:opacity .7s var(--ease) calc(var(--k) * .12s),transform .8s var(--ease) calc(var(--k) * .12s),filter .7s var(--ease) calc(var(--k) * .12s)}
+.fx .vz:not(.fix) .vz-v{color:var(--warm)}
+.fx .vz-d{opacity:0;transform:scale(.3)}
+.fx .vz.chip .vz-d{opacity:1;transform:none;transition:opacity .25s calc(var(--k) * .13s),transform .6s cubic-bezier(.34,1.56,.64,1) calc(var(--k) * .13s)}
+
+/* --- EXTRA: cursinho comparison, on the forest engraving --- */
+.cursec{position:relative;isolation:isolate;overflow:hidden;padding:clamp(72px,9vw,132px) 0}
+.cursec-art{position:absolute;inset:0;z-index:-1;pointer-events:none;-webkit-mask-image:linear-gradient(to bottom,transparent,#000 48px,#000 calc(100% - 48px),transparent);mask-image:linear-gradient(to bottom,transparent,#000 48px,#000 calc(100% - 48px),transparent)}
+.cursec-art img{width:100%;height:100%;object-fit:cover;object-position:center 40%;transform:scaleX(-1);opacity:.95}
+.cursec .vs-head{width:fit-content;max-width:100%;margin-inline:auto;padding:clamp(1.1rem,3vw,1.8rem) clamp(1.2rem,4vw,2.8rem);border-radius:28px;position:relative;isolation:isolate;
+  background:rgba(224,225,221,.62);-webkit-backdrop-filter:blur(22px) saturate(1.5);backdrop-filter:blur(22px) saturate(1.5);border:1px solid rgba(255,255,255,.85);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 1px 2px rgba(30,30,28,.07),0 18px 40px -22px rgba(30,30,28,.4)}
+.cursec .vs-head h2{margin:0 auto .5rem}
+.cursec .vs-head .lead{margin-bottom:0}
+@keyframes cell{from{opacity:0;transform:translateY(14px);filter:blur(6px)}to{opacity:1;transform:none;filter:blur(0)}}
+@keyframes entoa{from{opacity:0;transform:translateX(24px) scale(.97);filter:blur(8px);background-color:transparent}60%{filter:blur(0)}}
+.fx .vs-wrap .vs thead th,.fx .vs-wrap .vs tbody tr>*{opacity:0}
+.fx .vs-wrap.pl .vs thead th{opacity:1;animation:cell .7s var(--ease) .1s backwards}
+.fx .vs-wrap.pl .vs tbody tr>*{opacity:1;animation:cell .8s var(--ease) calc(.3s + var(--r) * .24s) backwards}
+.fx .vs-wrap.pl .vs thead th:last-child{animation:entoa 1s var(--ease) 1.7s backwards}
+.fx .vs-wrap.pl .vs tbody td:last-child{animation:entoa 1s var(--ease) calc(1.8s + var(--r) * .15s) backwards}
 
 /* --- EXTRA: cursinho comparison --- */
 html[data-extra="0"] #cursinho{display:none}
@@ -559,25 +547,42 @@ html[data-extra="0"] #cursinho{display:none}
   .vs tbody tr+tr>th{border-top:1px solid rgba(14,42,31,.07)}
 }
 
-/* --- FAQ: opaque cards on the engraving, read clearly (a = deep green, b = white) --- */
+/* --- FAQ: white cards on cream; they fly in from far away, lock into the stack, then their questions form --- */
 .faqs{position:relative;isolation:isolate;overflow:hidden;padding:clamp(64px,8vw,110px) 0 clamp(48px,6vw,80px)}
-.faqs-art{position:absolute;inset:0;z-index:-1;pointer-events:none;-webkit-mask-image:linear-gradient(to bottom,transparent,#000 40px,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to bottom,transparent,#000 40px,#000 calc(100% - 40px),transparent)}
-.faqs-art img{width:100%;height:100%;object-fit:cover;object-position:center 40%;transform:scaleX(-1);opacity:.95}
+.faqs::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(60% 55% at 50% 0,rgba(31,107,69,.07),transparent 72%)}
 .faq-sec{text-align:center}
-.faq-sec h2{margin-bottom:0;text-shadow:0 0 24px var(--cream),0 0 10px var(--cream),0 0 3px var(--cream)}
-@media(max-width:767px){.faq-sec h2{display:inline-block;padding:.12em .7em .2em;background:rgba(243,244,238,.86);border-radius:999px;text-shadow:none}}
 .faqs .faq{display:grid;gap:.7rem;margin:1.8rem auto 0;max-width:780px;text-align:left}
-.faqs .qa{border-radius:22px;box-shadow:0 2px 4px rgba(14,42,31,.12),0 18px 36px -18px rgba(14,42,31,.6)}
+.faqs .qa{border-radius:22px;box-shadow:0 2px 4px rgba(14,42,31,.1),0 18px 36px -20px rgba(14,42,31,.45);background:var(--surface);color:var(--ink);transition:box-shadow .3s}
 .faqs .q-btn{min-height:64px;font-size:1.02rem;border-radius:22px;padding:0 1.4rem}
 .faqs .a p{padding:0 1.4rem 1.3rem;max-width:60ch}
-.faqs .qa{background:var(--surface);color:var(--ink)}
-@media(hover:hover){.faqs .qa{transition:box-shadow .3s}.fx .qa[data-fly]{transform:translate3d(calc(var(--sg,0) * 90px * var(--m,1) * var(--rem,1)),0,0) rotate(calc(var(--sg,0) * -4deg * var(--rem,1)))}
 .q-btn .qt{pointer-events:none}
+.faqs .qa:nth-child(1){--fx:-64vw;--fy:-40px;--fr:-16deg}
+.faqs .qa:nth-child(2){--fx:64vw;--fy:30px;--fr:14deg}
+.faqs .qa:nth-child(3){--fx:0px;--fy:75vh;--fr:-7deg}
+.faqs .qa:nth-child(4){--fx:70vw;--fy:-50px;--fr:11deg}
+.faqs .qa:nth-child(5){--fx:-70vw;--fy:40px;--fr:-12deg}
+@keyframes qfly{
+  0%{opacity:0;transform:translate3d(var(--fx),var(--fy),0) rotate(var(--fr)) scale(.85);filter:blur(12px)}
+  35%{opacity:1}
+  72%{transform:translate3d(0,5px,0) rotate(calc(var(--fr) * -.05));filter:blur(0)}
+  100%{opacity:1;transform:none;filter:blur(0)}}
+.fx .pl .faq .qa{animation:qfly 1.15s cubic-bezier(.22,.8,.3,1) calc(.15s + var(--k) * .17s) backwards}
+
+/* --- você × nativo, with motion: strikes are drawn one by one, then the corrections light up --- */
+.fx .drow:first-child .seg:not(.ok){color:inherit;text-decoration:none;transition:color .45s var(--ease)}
+.fx .drow:first-child .seg:not(.ok) .w{padding-right:.3em;margin-right:-.3em;background:linear-gradient(#c9694a,#c9694a) 0 58%/0 1.5px no-repeat;transition:background-size .4s var(--ease) calc(var(--wi,0) * 90ms)}
+.fx .drow:first-child .seg.bad:not(.ok){color:var(--err)}
+.fx .drow:first-child .seg.bad:not(.ok) .w{background-size:100% 1.5px}
+.fx .drow:first-child .seg.on:not(.ok) .w{background-size:0 1.5px}
+.fx .drow+.drow .seg:not(.lit){background:transparent;box-shadow:none;color:inherit}
+.fx .drow+.drow .seg{transition:background .6s var(--ease),box-shadow .6s var(--ease),color .6s}
+.fx .drow>span{opacity:0}
+.fx .diff.pl .drow>span{animation:up .7s var(--ease) .1s backwards;opacity:1}
+.fx .diff.pl .drow+.drow>span{animation-delay:3.2s}
 </style>
 </head>
 <body>
 
-<div class="sp" aria-hidden="true"><i></i></div>
 <header class="nav">
   <div class="wrap">
     <a class="brand" href="#"><img src="/landing/tucano-mark.webp" alt="" width="26" height="30"> <span class="wordmark">Entoa</span></a>
@@ -655,9 +660,9 @@ h.setAttribute('aria-label','Você sabe a resposta. Em inglês, ela trava.');var
       <h2 data-split>Seu conteúdo é bom. O inglês esconde.</h2>
       <p class="lead">Em vermelho, o erro. Em verde, como um nativo diria.</p>
     </div>
-    <div class="diff rv" id="diff" lang="en">
-      <div class="drow"><span>Você</span><p>I have five years <button class="seg" data-d="0">experience on</button> backend and <button class="seg" data-d="1">I am working</button> with Go since 2021.</p></div>
-      <div class="drow"><span>Nativo</span><p>I have five years <button class="seg" data-d="0">of experience in</button> backend and <button class="seg" data-d="1">I’ve been working</button> with Go since 2021.</p></div>
+    <div class="diff rv" id="diff" lang="en" data-at=".3">
+      <div class="drow"><span>Você</span><p data-split="in" style="--d:.2s;--cs:14ms">I have five years <button class="seg" data-d="0">experience on</button> backend and <button class="seg" data-d="1">I am working</button> with Go since 2021.</p></div>
+      <div class="drow"><span>Nativo</span><p data-split="in" style="--d:3.3s;--cs:14ms">I have five years <button class="seg" data-d="0">of experience in</button> backend and <button class="seg" data-d="1">I’ve been working</button> with Go since 2021.</p></div>
     </div>
   </div>
 </section>
@@ -669,7 +674,7 @@ h.setAttribute('aria-label','Você sabe a resposta. Em inglês, ela trava.');var
       <h2 data-split>Veja uma entrevista do começo ao fim.</h2>
     </div>
 
-    <div class="d-wrap rv">
+    <div class="d-wrap rv" data-once>
       <div class="win" id="screen" role="img" aria-label="Animação do produto: a IA analisa a descrição da vaga, a sala de entrevista por voz com legendas e o relatório final">
         <div class="chrome"><i></i><i></i><i></i><span>Entoa · entrevista</span></div>
         <div class="scenes" id="scenes">
@@ -803,62 +808,45 @@ AWS e observabilidade</div></div>
   </div>
 </section>
 
-<!-- VOZ: "Sua voz" shown working (variants ?voz=a|b) -->
+<!-- VOZ: typographic animation -->
 <section id="voz" class="voz" aria-labelledby="vozT">
-    <div class="wrap voz-grid">
-    <div class="voz-copy">
-      <h2 id="vozT" data-split>Depois do relatório, treine a sua voz.</h2>
+  <div class="wrap">
+    <div class="vz rv" id="vz" data-at=".25">
+      <span class="badge ex"><i></i>Exemplo</span>
+      <h2 id="vozT" data-split="in">Depois do relatório, treine a sua voz.</h2>
       <p class="lead">Repita as suas próprias frases, ouça a forma certa e veja cada tentativa melhorar.</p>
-      <ul class="vm-list">
-        <li><b>Precisão</b><span>Clareza de cada som e palavra.</span></li>
-        <li><b>Ritmo</b><span>Pausas, hesitações e velocidade.</span></li>
-        <li><b>Prosódia</b><span>Entonação e acento das palavras.</span></li>
-      </ul>
-    </div>
-    <div class="vcard-wrap" data-fly="up">
-
-    <div class="vcard" id="vcard" role="img" aria-label="Exemplo animado: você ouve a frase, grava, vê as notas de Precisão, Ritmo e Prosódia e as palavras para repetir. Na segunda tentativa as notas sobem em relação à primeira.">
-      <div class="vc-chrome" aria-hidden="true"><i></i><i></i><i></i><span>Entoa · Sua voz</span></div>
-      <div class="vc-body" id="vBody" aria-hidden="true">
-        <div class="vc-top"><span class="vc-k">Sua voz</span><span class="badge ex"><i></i>Exemplo</span></div>
-        <div class="vc-att"><i id="vA1" class="on"></i><i id="vA2"></i><span id="vAtt">Tentativa 1</span></div>
-        <p class="vc-phrase" id="vPhrase" lang="en"></p>
-        <div class="vc-leg" id="vLeg"><span id="vLegF">Palavra para repetir</span></div>
-        <div class="vc-btns">
-          <span class="vbtn" id="vListen"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9zM16.500 8.500a5 5 0 0 1 0 7M19 6a8.500 8.500 0 0 1 0 12"/></svg>Ouvir</span>
-          <span class="vbtn rec" id="vRec"><i class="dot"></i><span id="vRecTxt">Gravar</span></span>
-          <span class="vstat" id="vStat"></span>
-        </div>
-        <div class="vwave" id="vWave"></div>
-        <div class="vms" id="vms">
-          <div class="vm"><span class="vm-n">Precisão</span><div class="vm-bar"><i class="prev"></i><i class="fill"></i></div><b class="vm-v">0</b><em class="vm-d"></em></div>
-          <div class="vm"><span class="vm-n">Ritmo</span><div class="vm-bar"><i class="prev"></i><i class="fill"></i></div><b class="vm-v">0</b><em class="vm-d"></em></div>
-          <div class="vm"><span class="vm-n">Prosódia</span><div class="vm-bar"><i class="prev"></i><i class="fill"></i></div><b class="vm-v">0</b><em class="vm-d"></em></div>
-        </div>
-        <p class="vc-cmp" id="vCmp"></p>
+      <div class="vz-stage" id="vzStage" role="img" aria-label="Exemplo animado: na frase I have five years of experience in backend, a palavra experience trava na primeira tentativa e sai clara na segunda. As notas sobem: Precisão de 72 para 84, Ritmo de 68 para 77 e Prosódia de 61 para 70.">
+        <p class="vz-phrase" lang="en" data-split="in" data-cs="26" style="--d:1.2s;--cs:26ms">I have five years of <span class="vz-w" id="vzWord">experience<svg class="sw" viewBox="0 0 120 12" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M2 8 C 28 2, 62 12, 118 4"/></svg></span> in backend.</p>
+        <svg class="vz-wave" id="vzWave" aria-hidden="true"><path class="a" pathLength="1"/><path class="b" pathLength="1"/><path class="b2" pathLength="1"/><path class="c" pathLength="1"/></svg>
+        <p class="vz-att" id="vzAtt">Tentativa 2</p>
+        <ul class="vz-m" id="vzM">
+          <li style="--k:0"><span class="vz-n">Precisão</span><div class="vz-nv"><b class="vz-v">84</b><em class="vz-d">+12</em></div><span class="vz-bar"><i style="--p:84%"></i></span><span class="vz-ds">Clareza de cada som e palavra.</span></li>
+          <li style="--k:1"><span class="vz-n">Ritmo</span><div class="vz-nv"><b class="vz-v">77</b><em class="vz-d">+9</em></div><span class="vz-bar"><i style="--p:77%"></i></span><span class="vz-ds">Pausas, hesitações e velocidade.</span></li>
+          <li style="--k:2"><span class="vz-n">Prosódia</span><div class="vz-nv"><b class="vz-v">70</b><em class="vz-d">+9</em></div><span class="vz-bar"><i style="--p:70%"></i></span><span class="vz-ds">Entonação e acento das palavras.</span></li>
+        </ul>
       </div>
-    </div>
     </div>
   </div>
 </section>
 
 <!-- EXTRA: cursinho (hide with ?extra=0) -->
-<section id="cursinho" class="alt compact">
+<section id="cursinho" class="cursec">
+  <picture class="cursec-art" aria-hidden="true"><source media="(max-width:767px)" srcset="/landing/hero-mata-mobile.webp"><img src="/landing/hero-mata.webp" srcset="/landing/hero-mata-1152.webp 1152w, /landing/hero-mata.webp 1536w" sizes="100vw" alt="" width="1536" height="1024" loading="lazy" decoding="async"></picture>
   <div class="wrap">
     <div class="vs-head">
       <h2 data-split>Por que não um cursinho de inglês?</h2>
-      <p class="lead rv">Cursinho ensina inglês. Aqui você ensaia a sua entrevista.</p>
+      <p class="lead">Cursinho ensina inglês. Aqui você ensaia a sua entrevista.</p>
     </div>
-    <div class="vs-wrap">
+    <div class="vs-wrap" data-stage data-at=".25">
     <table class="vs">
       <caption>Comparação entre um cursinho de inglês e o Entoa</caption>
       <thead><tr><th scope="col"><span class="sr">Critério</span></th><th scope="col">Cursinho</th><th scope="col">Entoa</th></tr></thead>
       <tbody>
-        <tr><th scope="row">O que você treina</th><td data-l="Cursinho">Inglês em geral, o mesmo conteúdo para toda a turma.</td><td data-l="Entoa">A entrevista da sua vaga, com perguntas sobre o seu cargo.</td></tr>
-        <tr><th scope="row">Quando</th><td data-l="Cursinho">No horário da turma.</td><td data-l="Entoa">Quando você quiser, em 5 a 25 minutos.</td></tr>
-        <tr><th scope="row">Feedback</th><td data-l="Cursinho">Depende de o professor ter tempo para cada aluno.</td><td data-l="Entoa">Relatório com cada erro seu, a frase corrigida e a regra.</td></tr>
-        <tr><th scope="row">Depois</th><td data-l="Cursinho">Você segue o cronograma do curso.</td><td data-l="Entoa">Você treina só o que errou, sem repetir o que já sabe.</td></tr>
-        <tr><th scope="row">Custo</th><td data-l="Cursinho">Mensalidade.</td><td data-l="Entoa">Grátis por enquanto.</td></tr>
+        <tr style="--r:0"><th scope="row">O que você treina</th><td data-l="Cursinho">Inglês em geral, o mesmo conteúdo para toda a turma.</td><td data-l="Entoa">A entrevista da sua vaga, com perguntas sobre o seu cargo.</td></tr>
+        <tr style="--r:1"><th scope="row">Quando</th><td data-l="Cursinho">No horário da turma.</td><td data-l="Entoa">Quando você quiser, em 5 a 25 minutos.</td></tr>
+        <tr style="--r:2"><th scope="row">Feedback</th><td data-l="Cursinho">Depende de o professor ter tempo para cada aluno.</td><td data-l="Entoa">Relatório com cada erro seu, a frase corrigida e a regra.</td></tr>
+        <tr style="--r:3"><th scope="row">Depois</th><td data-l="Cursinho">Você segue o cronograma do curso.</td><td data-l="Entoa">Você treina só o que errou, sem repetir o que já sabe.</td></tr>
+        <tr style="--r:4"><th scope="row">Custo</th><td data-l="Cursinho">Mensalidade.</td><td data-l="Entoa">Grátis por enquanto.</td></tr>
       </tbody>
     </table>
     </div>
@@ -869,23 +857,22 @@ AWS e observabilidade</div></div>
 <!-- FINAL: FAQ in the dark green block; closing call and footer on the forest art -->
 <section class="final">
   <div class="faqs" id="faqs">
-    <picture class="faqs-art" aria-hidden="true"><source media="(max-width:767px)" srcset="/landing/hero-mata-mobile.webp"><img src="/landing/hero-mata.webp" srcset="/landing/hero-mata-1152.webp 1152w, /landing/hero-mata.webp 1536w" sizes="100vw" alt="" width="1536" height="1024" loading="lazy" decoding="async"></picture>
-    <div class="wrap faqs-in">
+    <div class="wrap faqs-in" data-stage data-at=".3">
       <div class="faq-sec">
-        <h2 data-split>Antes de começar.</h2>
+        <h2 data-split="in">Antes de começar.</h2>
       </div>
       <div class="faq" id="faq">
-        <div class="qa" data-fly="left" data-i="0"><button class="q-btn" aria-expanded="false" aria-controls="a1" id="b1"><span class="qt" data-split data-i="0">Preciso falar inglês perfeito?</span></button><div class="a" id="a1" role="region" aria-labelledby="b1"><div><p>Não. O objetivo é ser entendido com clareza e confiança. Sotaque brasileiro não é defeito.</p></div></div></div>
-        <div class="qa" data-fly="right" data-i="1"><button class="q-btn" aria-expanded="false" aria-controls="a2" id="b2"><span class="qt" data-split data-i="1">O que o relatório mostra?</span></button><div class="a" id="a2" role="region" aria-labelledby="b2"><div><p>Seus principais erros com a frase corrigida e a regra, a pontuação da fala e o que estudar primeiro.</p></div></div></div>
-        <div class="qa" data-fly="left" data-i="2"><button class="q-btn" aria-expanded="false" aria-controls="a3" id="b3"><span class="qt" data-split data-i="2">Quanto custa?</span></button><div class="a" id="a3" role="region" aria-labelledby="b3"><div><p>Por enquanto é grátis. Ainda não existe plano pago.</p></div></div></div>
-        <div class="qa" data-fly="right" data-i="3"><button class="q-btn" aria-expanded="false" aria-controls="a4" id="b4"><span class="qt" data-split data-i="3">É só para quem trabalha com tecnologia?</span></button><div class="a" id="a4" role="region" aria-labelledby="b4"><div><p>É feito para dev brasileiro mirando vaga na gringa.</p></div></div></div>
-        <div class="qa" data-fly="left" data-i="4"><button class="q-btn" aria-expanded="false" aria-controls="a5" id="b5"><span class="qt" data-split data-i="4">Preciso de microfone?</span></button><div class="a" id="a5" role="region" aria-labelledby="b5"><div><p>Sim, você responde falando. Há um teste de microfone antes de começar.</p></div></div></div>
+        <div class="qa" style="--k:0"><button class="q-btn" aria-expanded="false" aria-controls="a1" id="b1"><span class="qt" data-split="in" style="--d:0.75s;--cs:18ms">Preciso falar inglês perfeito?</span></button><div class="a" id="a1" role="region" aria-labelledby="b1"><div><p>Não. O objetivo é ser entendido com clareza e confiança. Sotaque brasileiro não é defeito.</p></div></div></div>
+        <div class="qa" style="--k:1"><button class="q-btn" aria-expanded="false" aria-controls="a2" id="b2"><span class="qt" data-split="in" style="--d:0.92s;--cs:18ms">O que o relatório mostra?</span></button><div class="a" id="a2" role="region" aria-labelledby="b2"><div><p>Seus principais erros com a frase corrigida e a regra, a pontuação da fala e o que estudar primeiro.</p></div></div></div>
+        <div class="qa" style="--k:2"><button class="q-btn" aria-expanded="false" aria-controls="a3" id="b3"><span class="qt" data-split="in" style="--d:1.09s;--cs:18ms">Quanto custa?</span></button><div class="a" id="a3" role="region" aria-labelledby="b3"><div><p>Por enquanto é grátis. Ainda não existe plano pago.</p></div></div></div>
+        <div class="qa" style="--k:3"><button class="q-btn" aria-expanded="false" aria-controls="a4" id="b4"><span class="qt" data-split="in" style="--d:1.26s;--cs:18ms">É só para quem trabalha com tecnologia?</span></button><div class="a" id="a4" role="region" aria-labelledby="b4"><div><p>É feito para dev brasileiro mirando vaga na gringa.</p></div></div></div>
+        <div class="qa" style="--k:4"><button class="q-btn" aria-expanded="false" aria-controls="a5" id="b5"><span class="qt" data-split="in" style="--d:1.43s;--cs:18ms">Preciso de microfone?</span></button><div class="a" id="a5" role="region" aria-labelledby="b5"><div><p>Sim, você responde falando. Há um teste de microfone antes de começar.</p></div></div></div>
       </div>
     </div>
   </div>
   <div class="endart">
     <img class="end-img" src="/landing/footer-mata-alpha.webp" srcset="/landing/footer-mata-alpha-828.webp 828w, /landing/footer-mata-alpha-1400.webp 1400w, /landing/footer-mata-alpha.webp 2172w" sizes="100vw" alt="" width="2172" height="724" loading="lazy" decoding="async">
-    <div class="wrap end-cta rv">
+    <div class="wrap end-cta rv" data-once>
       <h2>Descubra como seu inglês soa para quem vai te contratar.</h2>
       <a class="btn" href="/signup" data-cta>Experimentar grátis <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </div>
@@ -905,10 +892,6 @@ AWS e observabilidade</div></div>
   const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const redraw=(el,c)=>{el.classList.remove(c);void el.offsetWidth;el.classList.add(c)};
-
-  /* reveal */
-  const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
-  $$('.rv').forEach(el=>io.observe(el));
 
   /* ================= DEMO: timeline driven by a single clock ================= */
   const SPEED=2.1,DUR=75, CH=[0,25.5,63.5];
@@ -1249,121 +1232,103 @@ AWS e observabilidade</div></div>
     ctx.save();ctx.globalCompositeOperation='destination-out';ctx.translate(EL.cx,EL.cy+(scrollY?0:0));ctx.scale(EL.rx,EL.ry);
     const mg=ctx.createRadialGradient(0,0,0,0,0,1);mg.addColorStop(0,'rgba(0,0,0,1)');mg.addColorStop(.5,'rgba(0,0,0,.95)');mg.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=mg;ctx.fillRect(-1,-1,2,2);ctx.restore();}
-    // soft light that follows the pointer, drawn behind everything
-    if(pinf>.01){ctx.save();ctx.globalCompositeOperation='destination-over';const g=ctx.createRadialGradient(X,Y,0,X,Y,260);g.addColorStop(0,'rgba(143,209,171,'+(.5*pinf*fade).toFixed(3)+')');g.addColorStop(1,'rgba(143,209,171,0)');ctx.fillStyle=g;ctx.fillRect(Math.max(0,X-260),Math.max(0,Y-260),520,520);ctx.restore()}
     raf=(!reduce&&heroVisible)?requestAnimationFrame(draw):0;
   }
   let pinf=0;
   if(!reduce){new IntersectionObserver(es=>es.forEach(e=>{heroVisible=e.isIntersecting;if(heroVisible&&!raf){last=performance.now();raf=requestAnimationFrame(draw)}}),{threshold:0}).observe(hero);raf=requestAnimationFrame(draw)}
   else{T=2.6;draw(performance.now())}
 
-  /* ===== scroll effects ===== */
+  /* ===== reveal: everything plays by itself when it comes into view and replays after it has fully left ===== */
+  const HOOKS={};
+  const vz=$('#vz');
+  /* --- voz: wave drawn from the real position of the hard word --- */
+  function buildWave(){
+    const svg=$('#vzWave'),word=$('#vzWord');if(!svg||!word)return;
+    const sr=svg.getBoundingClientRect(),wr=word.getBoundingClientRect();
+    const W=Math.max(200,Math.round(sr.width)),H=76,m=H/2;
+    svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    const x0=clamp(wr.left-sr.left,16,W-80),x1=clamp(wr.right-sr.left,x0+60,W-16);
+    const env=x=>Math.pow(Math.sin(Math.PI*clamp(x/W)),.7);
+    const f=x=>Math.sin(x*.045)*.55+Math.sin(x*.11+1.3)*.35+Math.sin(x*.27+.4)*.2;
+    const sm=t=>t*t*(3-2*t);
+    const seg=(a,b,amp,ta,tb)=>{let d='';for(let x=a;x<=b+.1;x+=3){const k=(ta?sm(clamp((x-a)/28)):1)*(tb?sm(clamp((b-x)/28)):1);const y=m-amp*env(x)*f(x)*k;d+=(d?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)}return d};
+    const hs=[0,-5,0,0,-22,22,0,0,-16,13,0,0,-4,0];
+    let jag='';hs.forEach((h,i)=>{const x=x0+(x1-x0)*i/(hs.length-1);jag+=(i?'L':'M')+x.toFixed(1)+' '+(m+h).toFixed(1)});
+    $('.a',svg).setAttribute('d',seg(0,x0,28,false,true));
+    $('.b',svg).setAttribute('d',jag);
+    $('.b2',svg).setAttribute('d',seg(x0,x1,28,true,true));
+    $('.c',svg).setAttribute('d',seg(x1,W,28,true,false));
+  }
+  if(vz){
+    buildWave();addEventListener('resize',buildWave);if(document.fonts)document.fonts.ready.then(buildWave);addEventListener('load',buildWave);
+  }
   if(!reduce){
     root.classList.add('fx');
+    /* letters: words stay unbroken, every letter forms in sequence (headings keep an aria-label; elsewhere the text stays readable) */
     function split(h){
-      h.setAttribute('aria-label',h.textContent.replace(/\s+/g,' ').trim());
-      const chars=[];
+      const hd=/^H[1-6]$/.test(h.tagName);
+      if(hd)h.setAttribute('aria-label',h.textContent.replace(/\s+/g,' ').trim());
+      let i=0;
       (function walk(n){[...n.childNodes].forEach(c=>{
         if(c.nodeType===3){const f=document.createDocumentFragment();
           c.textContent.split(/(\s+)/).forEach(t=>{if(!t)return;
             if(/^\s+$/.test(t)){f.appendChild(document.createTextNode(' '));return}
-            const w=document.createElement('span');w.className='w';w.setAttribute('aria-hidden','true');
-            [...t].forEach(ch=>{const k=document.createElement('span');k.className='ch';k.textContent=ch;w.appendChild(k);chars.push(k)});f.appendChild(w)});
+            const w=document.createElement('span');w.className='w';if(hd)w.setAttribute('aria-hidden','true');
+            [...t].forEach(ch=>{const k=document.createElement('span');k.className='ch';k.style.setProperty('--i',i++);k.textContent=ch;w.appendChild(k)});f.appendChild(w)});
           n.replaceChild(f,c)}
         else if(c.nodeType===1&&c.tagName!=='svg')walk(c)})})(h);
-      return chars;
     }
-    const items=[];
-    $$('[data-split]').forEach(h=>items.push({k:'split',el:h,ch:split(h),last:-1}));
-    $$('[data-fly]').forEach(el=>items.push({k:'fly',el,last:-1}));
-    const bar=$('.sp i'),inner=$('.hero-inner');
-    let vh=innerHeight,tick=false;
-    const P=(top,a,b)=>clamp((vh*a-top)/(vh*(a-b)));
-    function update(){
-      tick=false;vh=innerHeight;
-      root.style.setProperty('--sp',clamp(scrollY/Math.max(1,root.scrollHeight-vh)).toFixed(4));
-      root.style.setProperty('--m',innerWidth<640?.4:1);
-      const rects=items.map(it=>it.el.getBoundingClientRect());
-      items.forEach((it,i)=>{
-        const r=rects[i],off=(+it.el.dataset.i||0)*.03,hasI=it.el.dataset.i!==undefined;
-        if(it.k==='split'){
-          const vv=hasI?P(r.top,.98-off,.74-off):P(r.top,.93,.55),n=it.ch.length,key=Math.round(vv*1000);
-          if(key===it.last)return;it.last=key;
-          it.ch.forEach((c,j)=>c.style.setProperty('--q',(clamp(vv*(n+6)-j,0,6)/6).toFixed(3)));
-        }else{
-          const vv=ease(P(r.top,1-off,.76-off)),key=Math.round(vv*1000);
-          if(key===it.last)return;it.last=key;
-          const d=it.el.dataset.fly,e=it.el.style;
-          e.setProperty('--fo',vv.toFixed(3));e.setProperty('--rem',(1-vv).toFixed(3));
-          e.setProperty('--sg',d==='left'?-1:d==='right'?1:0);e.setProperty('--up',d==='up'?1:0);
-        }
-      });
+    $$('[data-split]').forEach(split);
+    buildWave();
+
+    /* timers per stage, cleared when the stage resets */
+    const timers=new Map();
+    const T=(el,ms,fn)=>{const l=timers.get(el)||[];l.push(setTimeout(fn,ms));timers.set(el,l)};
+    const clearT=el=>{(timers.get(el)||[]).forEach(clearTimeout);timers.set(el,[])};
+
+    /* --- você × nativo: the wrong parts are struck one after another, then the corrections light up --- */
+    const diff=$('#diff');
+    if(diff){
+      const r1=$$('.drow:first-child .seg:not(.ok)',diff),r2=$$('.drow+.drow .seg',diff);
+      $$('.drow:first-child .seg',diff).forEach(sg=>$$('.w',sg).forEach((w,i)=>w.style.setProperty('--wi',i)));
+      HOOKS.diff={
+        on(){T(diff,2100,()=>r1[0]&&r1[0].classList.add('bad'));T(diff,2800,()=>r1[1]&&r1[1].classList.add('bad'));
+             T(diff,5300,()=>r2[0]&&r2[0].classList.add('lit'));T(diff,5850,()=>r2[1]&&r2[1].classList.add('lit'))},
+        off(){clearT(diff);$$('.seg',diff).forEach(b=>b.classList.remove('bad','lit'))}};
     }
-    const req=()=>{if(!tick){tick=true;requestAnimationFrame(update)}};
-    addEventListener('scroll',req,{passive:true});addEventListener('resize',req);addEventListener('load',req);
-    update();
+
+    /* --- voz: the phrase forms, "experience" stutters in red, resolves to green, the scores count up --- */
+    if(vz){
+      const MET=[[72,84],[68,77],[61,70]],lis=$$('#vzM li'),att=$('#vzAtt');
+      let gen=0;
+      const put=(i,v)=>{const li=lis[i];$('.vz-v',li).textContent=Math.round(v);$('.vz-bar i',li).style.setProperty('--p',v.toFixed(1)+'%')};
+      const count=(i,a,b,ms)=>{const g=gen,t0=performance.now();(function f(n){if(g!==gen)return;const k=clamp((n-t0)/ms);put(i,a+(b-a)*ease(k));if(k<1)requestAnimationFrame(f)})(t0)};
+      const add=c=>vz.classList.add(c);
+      HOOKS.vz={
+        on(){buildWave();gen++;att.textContent='Tentativa 1';lis.forEach((_,i)=>put(i,0));
+          T(vz,1900,()=>add('wa'));
+          T(vz,2600,()=>{add('s1');lis.forEach((_,i)=>count(i,0,MET[i][0],1000))});
+          T(vz,4300,()=>{add('fix');att.textContent='Tentativa 2'});
+          T(vz,4500,()=>lis.forEach((_,i)=>count(i,MET[i][0],MET[i][1],1100)));
+          T(vz,5500,()=>add('chip'))},
+        off(){clearT(vz);gen++;['wa','s1','fix','chip'].forEach(c=>vz.classList.remove(c))}};
+      lis.forEach((_,i)=>put(i,0));
+    }
+
+    /* --- observers: one decides when something starts (a bit inside the screen), one when it has fully left --- */
+    const targets=$$('.rv,[data-stage],[data-split]:not([data-split="in"]),#diff,#vz');
+    const uniq=[...new Set(targets)];
+    const start=el=>{if(el.classList.contains('pl'))return;el.classList.add('pl');if(el.classList.contains('rv'))el.classList.add('in');const h=HOOKS[el.id];h&&h.on()};
+    const stop=el=>{if(!el.classList.contains('pl')||el.hasAttribute('data-once'))return;el.classList.remove('pl','in');const h=HOOKS[el.id];h&&h.off()};
+    const th=[];for(let i=0;i<=20;i++)th.push(i/20);
+    const ioOn=new IntersectionObserver(es=>es.forEach(e=>{
+      const el=e.target,need=Math.min(e.boundingClientRect.height*(+el.dataset.at||.5),innerHeight*.3);
+      if(e.isIntersecting&&e.intersectionRect.height>=need-1)start(el);
+    }),{threshold:th,rootMargin:'0px 0px -8% 0px'});
+    const ioOff=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting)stop(e.target)}),{threshold:0});
+    uniq.forEach(el=>{ioOn.observe(el);ioOff.observe(el)});
   }
 
-  /* ===== voz: the "Sua voz" mock, one clock, only while in view ===== */
-  const card=$('#vcard');
-  if(card){
-    const W=['I','have','five','years','of','experience','in','backend.'];
-    const ph=$('#vPhrase');W.forEach((x,i)=>{const s=document.createElement('span');s.className='vw';s.textContent=x;s.dataset.i=i;ph.appendChild(s);ph.appendChild(document.createTextNode(' '))});
-    const ws=$$('.vw',ph),FLAG1=[3,5,7],FLAG2=[5];
-    const wave=$('#vWave');const NB=44,bars=[];for(let i=0;i<NB;i++){const b=document.createElement('i');wave.appendChild(b);bars.push(b)}
-    const E={listen:$('#vListen'),rec:$('#vRec'),recTxt:$('#vRecTxt'),stat:$('#vStat'),att:$('#vAtt'),a1:$('#vA1'),a2:$('#vA2'),leg:$('#vLeg'),cmp:$('#vCmp'),body:$('#vBody'),legF:$('#vLegF')};
-    const ms=$$('.vm',$('#vms')).map(el=>({fill:$('.fill',el),prev:$('.prev',el),val:$('.vm-v',el),d:$('.vm-d',el)}));
-    const A1=[72,68,61],A2=[84,77,70],D=18;
-    const memo=new Map();const set=(k,fn,val)=>{if(memo.get(k)!==val){memo.set(k,val);fn(val)}};
-    const cls=(el,c,on)=>set(el.id+c+(el.dataset.i||''),v=>el.classList.toggle(c,v),!!on);
-    const win=(t,a,b)=>t>=a&&t<b;
-    function render(t){
-      const fade=t<.45?clamp(t/.45):t>D-.5?clamp((D-t)/.5):1;
-      set('op',v=>E.body.style.opacity=v,fade.toFixed(2));
-      const lis=win(t,.9,3.6),rec1=win(t,4.4,7.4),rec2=win(t,11,13.6),ana1=win(t,7.4,8.3),ana2=win(t,13.6,14.4),rec=rec1||rec2;
-      cls(E.listen,'on',lis);cls(E.listen,'press',win(t,.8,1));cls(E.rec,'on',rec);cls(E.rec,'press',win(t,4.3,4.5)||win(t,10.9,11.1));
-      set('rt',v=>E.recTxt.textContent=v,rec?'Gravando':'Gravar');
-      // sweep over the phrase while the model voice plays
-      const sw=lis?Math.floor(clamp((t-1)/2.4)*W.length):-1;
-      const flags=t>=8.5&&t<14.4?FLAG1:t>=14.7?FLAG2:[];
-      const fixed=t>=14.7?[3,7]:[];
-      ws.forEach((w,i)=>{cls(w,'say',lis&&i<=sw);cls(w,'flag',flags.includes(i));cls(w,'fixed',fixed.includes(i))});
-      // wave
-      const mode=lis?'hear':rec?'live':'';
-      set('wm',m=>{wave.classList.toggle('live',m==='live');wave.classList.toggle('hear',m==='hear')},mode);
-      bars.forEach((b,i)=>{
-        let hh=5;
-        if(mode){const x=i/NB,e=Math.sin(Math.PI*clamp(x*1.05))**.7;
-          hh=6+ (mode==='live'?46:38)*e*Math.abs(Math.sin(t*(mode==='live'?9:6)+i*.55)*.6+Math.sin(t*3.1+i*1.3)*.4)}
-        set('b'+i,v=>b.style.height=v+'px',Math.round(hh));
-      });
-      // status
-      let st='';
-      if(lis)st='Ouvindo a forma certa';else if(rec1)st=fmt(t-4.4);else if(rec2)st=fmt(t-11);else if(ana1||ana2)st='Analisando…';
-      set('st',v=>E.stat.textContent=v,st);
-      // attempts
-      const att2=t>=10.6;
-      set('at',v=>{E.att.textContent=v?'Tentativa 2':'Tentativa 1';E.a2.classList.toggle('on',v)},att2);
-      // metrics
-      const p1=ease(clamp((t-8.3)/1.3)),p2=ease(clamp((t-14.4)/1.3));
-      ms.forEach((m,i)=>{
-        const val=t<14.4?A1[i]*p1:A1[i]+(A2[i]-A1[i])*p2;
-        set('f'+i,v=>{m.fill.style.width=v+'%';m.val.textContent=Math.round(v)},val.toFixed(1));
-        set('p'+i,v=>{m.prev.style.left=A1[i]+'%';m.prev.classList.toggle('on',v);},t>=14.4);
-        set('d'+i,v=>{m.d.textContent=v?'+'+(A2[i]-A1[i]):'';m.d.classList.toggle('on',v)},t>=15.4);
-      });
-      set('lg',v=>E.leg.classList.toggle('on',v),t>=8.6);
-      set('lgt',v=>E.legF.textContent=v,t>=14.7?'Ainda para repetir':'Palavras para repetir');
-      set('cm',v=>E.cmp.textContent=v,t>=15.4?'Comparado com a tentativa 1: as três notas subiram.':t>=8.6&&t<10.6?'Grave de novo e compare com esta tentativa.':'');
-    }
-    const fmt=s=>'0:'+String(Math.floor(clamp(s,0,59))).padStart(2,'0');
-    let t=reduce?15.8:0,inV=false,last=0;
-    new IntersectionObserver(es=>es.forEach(e=>{inV=e.isIntersecting}),{threshold:.35}).observe(card);
-    function frame(now){const dt=Math.min(.1,(now-last)/1000);last=now;
-      if(!reduce&&inV){t+=dt;if(t>=D)t=0}
-      render(t);requestAnimationFrame(frame)}
-    render(t);if(!reduce)requestAnimationFrame(n=>{last=n;requestAnimationFrame(frame)});
-  }
 
   /* ===== radar: replay on every re-entry (threshold list lets it reset once mostly out of view) ===== */
   /* handled in the main script */
