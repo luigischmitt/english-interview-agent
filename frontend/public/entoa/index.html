@@ -276,7 +276,6 @@ main{overflow-x:clip}
 .radar svg{width:100%;max-width:440px;height:auto;overflow:visible}
 .radar .ring{fill:none;stroke:rgba(14,42,31,.13);stroke-dasharray:3 4}
 .radar .ring.out{stroke-dasharray:none;stroke:rgba(14,42,31,.16)}
-.radar .ringv{fill:var(--text2);font:500 9px var(--sans);opacity:.8}
 .radar .axis{stroke:rgba(14,42,31,.08)}
 .radar .axis.on{stroke:var(--green);stroke-width:1.5}
 .radar .poly{fill:rgba(31,107,69,.16);stroke:var(--green);stroke-width:2;stroke-linejoin:round;transform-origin:150px 150px;transform:scale(.3);opacity:0;transition:transform .9s var(--ease) .15s,opacity .4s ease .15s}
@@ -296,8 +295,15 @@ main{overflow-x:clip}
 .rep-fix s{color:var(--err);text-decoration-color:#c9694a;text-decoration-thickness:1.5px}
 .rep-fix strong{font-weight:600;color:var(--green-deep);background:rgba(31,107,69,.12);border-radius:.3em;padding:.05em .25em}
 .rep-meta{color:var(--text2);font-size:.92rem;margin-top:.35rem}
-#dimDetail{max-width:34ch}
-#dimDetail strong{color:var(--ink);font-weight:600}
+/* Every explanation sits in the same grid cell, so the box keeps the height of the longest one and nothing jumps. */
+.dim-box{display:grid;max-width:34ch;margin-top:.35rem}
+.dim-box>*{grid-area:1/1;margin:0}
+.dim-box [aria-hidden]{visibility:hidden}
+.dim-box strong{color:var(--ink);font-weight:600}
+.rep-key{display:flex;flex-wrap:wrap;justify-content:center;gap:.35rem 1rem;margin-top:.2rem;font-size:.78rem;color:var(--text2)}
+.rep-key span{display:inline-flex;align-items:center;gap:.4rem}
+.rep-key i{width:8px;height:8px;border-radius:50%;background:var(--green)}
+.rep-key i.v{border-radius:1.5px;background:var(--ink);transform:rotate(45deg) scale(.9)}
 @media(prefers-reduced-motion:reduce){.radar .poly{transform:none;opacity:1}.radar .pt,.radar .lab{opacity:1}.radar .poly,.radar .pt,.radar .lab,.rep.in .radar .poly,.rep.in .radar .pt,.rep.in .radar .lab{transition:none}}
 
 .compact{padding:clamp(40px,5vw,72px) 0}
@@ -437,7 +443,8 @@ main{overflow-x:clip}
         </div>
         <div class="radar">
           <svg viewBox="-62 -22 424 344" id="radar" role="group" aria-label="Perfil de exemplo. Cada ponto pode ser selecionado para ver o que a dimensão mede."></svg>
-          <p class="rep-meta" id="dimDetail" aria-live="polite"></p>
+          <p class="rep-key"><span><i></i>Inglês</span><span><i class="v"></i>Voz</span><span>Selecione um ponto</span></p>
+          <div class="dim-box rep-meta" id="dimBox"><p id="dimDetail" aria-live="polite"></p></div>
         </div>
         <div>
           <p class="rep-k">Ponto principal do inglês</p>
@@ -809,18 +816,18 @@ AWS e observabilidade</div></div>
   /* ================= relatório: radar do perfil ================= */
   const NS='http://www.w3.org/2000/svg',mk=(tag,at)=>{const e=document.createElementNS(NS,tag);for(const k in at)e.setAttribute(k,at[k]);return e};
   const DIM=[
-    ['Gramática',70,'en','Tempo verbal, artigos e preposições.'],
-    ['Escolha de palavras',85,'en','Usar a palavra que um nativo usaria naquele contexto.'],
-    ['Falsos cognatos',95,'en','Palavras que parecem português e enganam, como <em>actually</em> e <em>pretend</em>.'],
-    ['Estrutura',80,'en','Se a resposta tem começo, meio e fim fáceis de seguir.'],
-    ['Precisão',84,'v','Quão claro cada som e cada palavra saiu.'],
-    ['Ritmo',78,'v','Pausas, hesitações e velocidade: se a fala flui sem travar.'],
-    ['Prosódia',72,'v','Entonação e acento das palavras, a “melodia” da frase.']];
+    ['Gramática',70,'en','70% das respostas sem erro de tempo verbal, artigo ou preposição.'],
+    ['Escolha de palavras',85,'en','85% das respostas com a palavra que um nativo usaria.'],
+    ['Falsos cognatos',95,'en','95% das respostas sem cair em palavras como <em>actually</em> e <em>pretend</em>.'],
+    ['Estrutura',80,'en','80% das respostas com começo, meio e fim fáceis de seguir.'],
+    ['Precisão',84,'v','84 de 100 na clareza de cada som e palavra.'],
+    ['Ritmo',78,'v','78 de 100 em fluidez: pausas, hesitações e velocidade.'],
+    ['Prosódia',72,'v','72 de 100 em entonação e acento das palavras.']];
   const C=150,R=112,N=DIM.length,ang=i=>-Math.PI/2+i*Math.PI*2/N,rpt=(i,r)=>[C+r*Math.cos(ang(i)),C+r*Math.sin(ang(i))];
   const poly=f=>DIM.map((d,i)=>rpt(i,R*f(d)).map(n=>n.toFixed(1)).join(',')).join(' ');
   const radar=$('#radar'),detail=$('#dimDetail');
+  DIM.forEach(d=>{const s=document.createElement('p');s.setAttribute('aria-hidden','true');s.innerHTML=`<strong>${d[0]}:</strong> ${d[3]}`;$('#dimBox').appendChild(s)});
   [1,.75,.5,.25].forEach(f=>radar.appendChild(mk('polygon',{class:f===1?'ring out':'ring',points:poly(()=>f)})));
-  [50,100].forEach(v=>{const t=mk('text',{class:'ringv',x:C+4,y:C-R*v/100+11});t.textContent=v;radar.appendChild(t)});
   const axes=[],pts=[],labs=[],hits=[];
   DIM.forEach((d,i)=>{const a=rpt(i,R);const l=mk('line',{class:'axis',x1:C,y1:C,x2:a[0].toFixed(1),y2:a[1].toFixed(1)});radar.appendChild(l);axes.push(l)});
   radar.appendChild(mk('polygon',{class:'poly',points:poly(d=>d[1]/100)}));
@@ -847,7 +854,7 @@ AWS e observabilidade</div></div>
   function hl(k){const on=k<0?pinned:k;
     axes.forEach((a,i)=>a.classList.toggle('on',i===on));pts.forEach((p,i)=>p.classList.toggle('on',i===on));
     labs.forEach((l,i)=>l.classList.toggle('on',i===on));hits.forEach((h,i)=>h.setAttribute('aria-pressed',String(i===pinned)));
-    detail.innerHTML=`<strong>${DIM[on][0]}.</strong> ${DIM[on][3]}`}
+    detail.innerHTML=`<strong>${DIM[on][0]}:</strong> ${DIM[on][3]}`}
   hl(-1);
   // Plays when the card is really in view (not when only its top edge peeks into the first screen) and replays on return.
   new IntersectionObserver(es=>es.forEach(e=>{const rep=e.target;

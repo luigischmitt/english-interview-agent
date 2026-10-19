@@ -29,6 +29,7 @@ test("public report shows the radar and correction example without a repeated di
   assert.match(landing, /hit\.addEventListener\('click'/);
   assert.match(landing, /hit\.addEventListener\('keydown'/);
   assert.match(landing, /g\.addEventListener\('click'/);
-  assert.match(landing, /detail\.innerHTML=`<strong>\$\{DIM\[on\]\[0\]\}\.<\/strong> \$\{DIM\[on\]\[3\]\}`/);
+  assert.match(landing, /detail\.innerHTML=`<strong>\$\{DIM\[on\]\[0\]\}:<\/strong> \$\{DIM\[on\]\[3\]\}`/);
+  assert.match(landing, /\.dim-box>\*\{grid-area:1\/1/);
   assert.doesNotMatch(landing, /rep-sum|dg-cells|dimsEn|dimsVoz|class="dims"/);
 });
