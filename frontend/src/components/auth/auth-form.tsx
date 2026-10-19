@@ -166,7 +166,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
     <main className="au-page antialiased">
       <section className="au-shell">
         <Link href="/" className="au-brand ds-fade-in">
-          <Image src="/landing/tucano.png" alt="" width={30} height={34} priority />
+          <Image src="/landing/tucano-mark.webp" alt="" width={30} height={34} priority />
           <span style={{ fontFamily: "var(--font-display)", fontSize: "1.35rem", fontWeight: 400 }}>Entoa</span>
         </Link>
         <div className="au-card ds-card ds-enter">

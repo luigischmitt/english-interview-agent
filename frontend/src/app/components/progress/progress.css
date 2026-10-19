@@ -35,9 +35,20 @@
   .pg-metric { padding: 0.75rem; }
   .pg-metric-label { font-size: 0.75rem; gap: 0.375rem; }
   .pg-metric-value { font-size: 2rem; }
-  .pg-metric-value small { display: none; }
+  .pg-metric-value small { font-size: 0.75rem; }
   .pg-change { font-size: 0.6875rem; }
-  .pg-focus, .pg-metric-measure, .pg-change-text { display: none; }
+  .pg-focus { font-size: 0.625rem; }
+  .pg-metric-measure { font-size: 0.75rem; }
+}
+@media (max-width: 559px) {
+  .pg-metrics { grid-template-columns: minmax(0, 1fr); gap: 0.625rem; }
+  .pg-metric { grid-template-columns: minmax(0, 1fr) auto; column-gap: 1rem; align-items: center; padding: 0.875rem 1rem; }
+  .pg-metric-label, .pg-metric-measure { grid-column: 1; }
+  .pg-metric-value { grid-column: 2; grid-row: 1; margin-top: 0; font-size: 2rem; }
+  .pg-metric-value small { display: inline; }
+  .pg-change { grid-column: 2; grid-row: 2; justify-self: end; }
+  .pg-metric-measure { margin-top: 0.25rem; }
+  .pg-focus { margin-left: 0.125rem; }
 }
 .pg-view-switch { width: 100%; max-width: 22rem; }
 
