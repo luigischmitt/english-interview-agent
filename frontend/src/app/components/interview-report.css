@@ -124,9 +124,10 @@
 .rp-perception[data-tone="concern"] { box-shadow: inset 3px 0 0 var(--ds-warning), var(--ds-shadow-card); }
 .rp-perception p { margin-top: 0.5rem; font-size: 0.9375rem; line-height: 1.55; }
 .rp-deltas { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--ds-line); }
-.rp-deltas > p { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; color: var(--ds-text-2); font-size: 0.8125rem; }
+.rp-deltas > p { margin-top: 0.5rem; color: var(--ds-text-2); font-size: 0.8125rem; }
 .rp-deltas > p[data-change="better"] { color: var(--ds-green-deep); }
 .rp-deltas > p[data-change="worse"] { color: var(--ds-warning); }
+.rp-coverage-note { margin-top: 1rem; border-left: 2px solid var(--ds-warning); padding-left: 0.75rem; color: var(--ds-text-2); font-size: 0.8125rem; line-height: 1.5; }
 .rp-pattern-eyebrow { display: inline-flex; align-items: center; gap: 0.45rem; }
 .rp-pattern-eyebrow::before { content: ""; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--ds-green); }
 .rp-pattern-eyebrow[data-type="GRAMMAR"]::before { background: var(--ds-green); }

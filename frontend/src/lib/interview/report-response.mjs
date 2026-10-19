@@ -1,9 +1,15 @@
 /** Match each per-answer finding to its answer, with legacy flat-list fallback. */
+import { displayTechnicalFindings } from "./report-presentation.mjs";
+
 export function findingsForAnswer(result, sequenceNumber) {
   const turn = result.turns?.find((item) => item.sequenceNumber === sequenceNumber);
+  const technical = displayTechnicalFindings(
+    turn?.technicalStrengths ?? result.technicalContent.strengths.filter((item) => item.sequenceNumber === sequenceNumber),
+    turn?.technicalGaps ?? result.technicalContent.gaps.filter((item) => item.sequenceNumber === sequenceNumber),
+  );
   return {
-    strengths: turn?.technicalStrengths ?? result.technicalContent.strengths.filter((item) => item.sequenceNumber === sequenceNumber),
-    gaps: turn?.technicalGaps ?? result.technicalContent.gaps.filter((item) => item.sequenceNumber === sequenceNumber),
+    strengths: technical.strengths,
+    gaps: technical.gaps,
     patterns: turn?.englishPatterns ?? result.englishCommunication.patterns.filter((item) => item.sequenceNumber === sequenceNumber),
   };
 }
