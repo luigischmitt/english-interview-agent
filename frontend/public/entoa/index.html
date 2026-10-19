@@ -270,8 +270,13 @@ main{overflow-x:clip}
 .rep-role{margin-top:.7rem;font-weight:600;font-size:1.05rem}
 .rep-k{font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text2)}
 .rep-title{margin-top:.9rem;font-family:var(--serif);font-size:1.7rem;line-height:1.05;letter-spacing:-.02em}
-.rep-how{margin-top:.7rem;color:var(--text2);font-size:.9rem;line-height:1.45;max-width:30ch}
-.rep-how b{color:var(--ink);font-weight:600}
+/* How to read the radar: what each marker measures, then which direction is better. */
+.rep-read{display:grid;gap:.55rem;margin:1rem 0 0;padding:0;list-style:none;color:var(--text2);font-size:.88rem;line-height:1.35;max-width:30ch}
+.rep-read li{display:grid;grid-template-columns:14px minmax(0,1fr);align-items:baseline;gap:.55rem}
+.rep-read b{color:var(--ink);font-weight:600}
+.rep-read i{justify-self:center;width:8px;height:8px;border-radius:50%;background:var(--green);transform:translateY(-1px)}
+.rep-read i.v{border-radius:1.5px;background:var(--ink);transform:translateY(-1px) rotate(45deg) scale(.9)}
+.rep-note{margin-top:.75rem;color:var(--text2);font-size:.88rem;line-height:1.4;max-width:30ch}
 .radar{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
 .radar svg{width:100%;max-width:440px;height:auto;overflow:visible}
 .radar .ring{fill:none;stroke:rgba(14,42,31,.13);stroke-dasharray:3 4}
@@ -300,10 +305,6 @@ main{overflow-x:clip}
 .dim-box>*{grid-area:1/1;margin:0}
 .dim-box [aria-hidden]{visibility:hidden}
 .dim-box strong{color:var(--ink);font-weight:600}
-.rep-key{display:flex;flex-wrap:wrap;justify-content:center;gap:.35rem 1rem;margin-top:.2rem;font-size:.78rem;color:var(--text2)}
-.rep-key span{display:inline-flex;align-items:center;gap:.4rem}
-.rep-key i{width:8px;height:8px;border-radius:50%;background:var(--green)}
-.rep-key i.v{border-radius:1.5px;background:var(--ink);transform:rotate(45deg) scale(.9)}
 @media(prefers-reduced-motion:reduce){.radar .poly{transform:none;opacity:1}.radar .pt,.radar .lab{opacity:1}.radar .poly,.radar .pt,.radar .lab,.rep.in .radar .poly,.rep.in .radar .pt,.rep.in .radar .lab{transition:none}}
 
 .compact{padding:clamp(40px,5vw,72px) 0}
@@ -439,11 +440,14 @@ main{overflow-x:clip}
           <span class="badge"><i></i>Exemplo</span>
           <p class="rep-role">Backend Engineer · Sênior</p>
           <p class="rep-title">Seu perfil depois de 6 entrevistas</p>
-          <p class="rep-how">Cada ponta é uma parte da sua fala. <b>Quanto mais perto da borda, melhor.</b></p>
+          <ul class="rep-read">
+            <li><i></i><span><b>Inglês:</b> % das respostas sem erro</span></li>
+            <li><i class="v"></i><span><b>Voz:</b> nota de 0 a 100</span></li>
+          </ul>
+          <p class="rep-note">Mais perto da borda é melhor. Escolha um ponto para ver o que ele mede.</p>
         </div>
         <div class="radar">
           <svg viewBox="-62 -22 424 344" id="radar" role="group" aria-label="Perfil de exemplo. Cada ponto pode ser selecionado para ver o que a dimensão mede."></svg>
-          <p class="rep-key"><span><i></i>Inglês</span><span><i class="v"></i>Voz</span><span>Selecione um ponto</span></p>
           <div class="dim-box rep-meta" id="dimBox"><p id="dimDetail" aria-live="polite"></p></div>
         </div>
         <div>
