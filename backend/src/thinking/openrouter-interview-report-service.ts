@@ -440,7 +440,8 @@ function validatePatternCandidates(items: unknown[], answerFor: AnswerLookup, co
     if (!answer || !evidence || isNearEmptyAnswer(answer)) { counts.rejectionReasons.mismatch += 1; return []; }
     if (likelyTranscriptionArtifact(evidence)) { counts.rejectionReasons.artifact += 1; return []; }
     const suggestion = localizedField(normalizeFeedbackSentence(item.suggestion, 200, 4), locale);
-    const why = localizedField(normalizeFeedbackSentence(item.why, 170, 1), locale);
+    // A why without final punctuation was cut by the provider ("Em portugu"); never repair it into a sentence.
+    const why = typeof item.why === "string" && /[.!?]["'”’)]*$/u.test(item.why.trim()) ? localizedField(normalizeFeedbackSentence(item.why, 170, 4), locale) : undefined;
     const rephrasedExample = normalizeFeedbackSentence(item.rephrasedExample, 200, 3);
     if (!suggestion || !rephrasedExample || isRephraseUnchanged(evidence, rephrasedExample) || isUngrammaticalRephrase(rephrasedExample) || isIdiomaticOnRewritten(evidence, rephrasedExample)) { counts.rejectionReasons.invalidFormat += 1; return []; }
     // The "correction" replaces or invents content words: a mis-heard name or garbled phrase, not a candidate error.

@@ -87,7 +87,7 @@ export function analysisCoverageNotice(coverage, ordinalForSequence = (sequenceN
 const rateCopy = (name, oldValue, newValue) => {
   const same = Math.abs(oldValue - newValue) < 0.05;
   const direction = same ? `${name} iguais` : newValue < oldValue ? `Menos ${name.toLocaleLowerCase()}` : `Mais ${name.toLocaleLowerCase()}`;
-  return { label: `${direction}: ${formatNumber(oldValue)} → ${formatNumber(newValue)}`, before: formatNumber(oldValue), after: formatNumber(newValue), change: same ? "same" : newValue < oldValue ? "better" : "worse" };
+  return { label: same ? `${direction}: ${formatNumber(newValue)}` : `${direction}: ${formatNumber(oldValue)} → ${formatNumber(newValue)}`, before: formatNumber(oldValue), after: formatNumber(newValue), change: same ? "same" : newValue < oldValue ? "better" : "worse" };
 };
 const formatNumber = (value) => value.toFixed(1).replace(/\.0$/, "").replace(".", ",");
 
@@ -120,7 +120,7 @@ export function buildReportDeltas(current, currentAzure, records = [], currentIn
   if (Number.isFinite(oldAccuracy) && Number.isFinite(newAccuracy)) {
     const same = Math.abs(newAccuracy - oldAccuracy) < 1;
     const direction = same ? "Precisão da pronúncia igual" : newAccuracy > oldAccuracy ? "Precisão da pronúncia maior" : "Precisão da pronúncia menor";
-    deltas.push({ label: `${direction}: ${Math.round(oldAccuracy)}% → ${Math.round(newAccuracy)}%`, before: `${Math.round(oldAccuracy)}%`, after: `${Math.round(newAccuracy)}%`, change: same ? "same" : newAccuracy > oldAccuracy ? "better" : "worse" });
+    deltas.push({ label: same ? `${direction}: ${Math.round(newAccuracy)}%` : `${direction}: ${Math.round(oldAccuracy)}% → ${Math.round(newAccuracy)}%`, before: `${Math.round(oldAccuracy)}%`, after: `${Math.round(newAccuracy)}%`, change: same ? "same" : newAccuracy > oldAccuracy ? "better" : "worse" });
   }
   return deltas;
 }
