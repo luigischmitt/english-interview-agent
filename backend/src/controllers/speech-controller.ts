@@ -36,6 +36,7 @@ function logSpeechTiming(status: "ok" | "error" | "aborted", provider: string, s
     event: "speech_synthesis_timing", status, provider, durationMs: Math.max(0, Math.round(Date.now() - start)), textLength,
     ...(diagnostics?.hedge ? { hedge: diagnostics.hedge } : {}),
     ...(diagnostics?.voiceSource ? { voiceSource: diagnostics.voiceSource } : {}),
+    ...(diagnostics?.upstream ? { upstream: diagnostics.upstream } : {}),
     ...(cache ? { cache: cache.source, prefetched: cache.prefetched } : {}),
     ...(cache?.leadMs !== undefined ? { leadMs: Math.round(cache.leadMs), savedMs } : {}),
     ...(cache?.synthesisMs !== undefined ? { synthesisMs: Math.round(cache.synthesisMs) } : {}),

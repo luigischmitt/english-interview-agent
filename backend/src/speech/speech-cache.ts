@@ -27,6 +27,8 @@ export type SpeechCacheOptions = {
   maxBytes?: number;
   /** Speculative (prefetch) syntheses allowed in flight at once; extra ones are dropped, never queued. */
   maxPrefetchInFlight?: number;
+  /** Return false for audio that must be delivered once but never retained or reused. */
+  shouldCache?: (speech: SynthesizedSpeech, request: SpeechSynthesisRequest) => boolean;
   now?: () => number;
   /** Content-free events (no text). */
   onEvent?: (event: SpeechCacheEvent) => void;
@@ -145,6 +147,10 @@ export class SpeechCache {
     entry.promise.then(
       (speech) => {
         if (this.entries.get(key) !== entry) { speech.audio.fill(0); return; }
+        if (this.options.shouldCache && !this.options.shouldCache(speech, request)) {
+          this.entries.delete(key);
+          return;
+        }
         entry.speech = speech;
         entry.finishedAt = this.now();
         entry.bytes = speech.audio.length;

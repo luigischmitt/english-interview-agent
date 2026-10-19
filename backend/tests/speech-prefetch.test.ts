@@ -5,6 +5,7 @@ import { loadSpeechConfig, type SpeechConfig } from "../src/speech/config.js";
 import { CLOSING_FALLBACK_REACTIONS, composeAcknowledgedQuestion, composeInterviewClosing, groupInterviewerSentences, INTERVIEW_CLOSINGS, INTERVIEW_ENDED_CLOSINGS, interviewerChunkTexts, isAcknowledgeableAnswer, splitInterviewerSpeech, stripLeadingAcknowledgement } from "../src/speech/interviewer-chunking.js";
 import { InterviewerSpeechPrefetcher, staticSpeechTexts } from "../src/speech/interviewer-prefetcher.js";
 import { SpeechCache, speechCacheKey } from "../src/speech/speech-cache.js";
+import { createSpeechServices } from "../src/speech/speech-services.js";
 import { normalizeTextForSpeech } from "../src/speech/text-normalization.js";
 import type { SpeechProvider, SpeechSynthesisRequest, SynthesizedSpeech } from "../src/speech/types.js";
 // The client module is the source of truth for chunking; the server port must produce the same texts.
@@ -106,6 +107,34 @@ describe("speech cache", () => {
     await small.synthesize({ ...base, text: "aaaaaaaaaaaa" });
     await small.synthesize({ ...base, text: "bbbbbbbbbbbb" });
     expect(small.size).toBe(1);
+  });
+
+  it("never retains Azure fallback audio for fixed phrases or ordinary speech", async () => {
+    const calls: string[] = [];
+    const provider: SpeechProvider = {
+      name: "hybrid",
+      health: async () => ({ status: "ready" }),
+      synthesize: async (request) => {
+        calls.push(request.text);
+        return { audio: Buffer.from("azure"), contentType: "audio/mpeg", diagnostics: { voiceSource: "azure", hedge: "hedge_won" } };
+      },
+    };
+    const config: SpeechConfig = {
+      provider: "openrouter-azure", kokoroBaseUrl: "http://x", kokoroTimeoutMs: 1_000, interviewerVoice: "en-US-AndrewNeural", defaultSpeed: 1, format: "mp3",
+      cache: { ttlMs: 60_000, staticTtlMs: 600_000, prefetch: false, prefetchChunks: 1 },
+    };
+    const cache = createSpeechServices(provider, config, { prefetchStaticOnStart: false }).cache!;
+    const fixed = { ...base, text: "Okay." };
+    const ordinary = { ...base, text: "What did you ship?" };
+
+    cache.prefetch(fixed);
+    await tick();
+    expect(cache.size).toBe(0);
+    expect((await cache.synthesize(fixed)).source).toBe("miss");
+    expect((await cache.synthesize(ordinary)).source).toBe("miss");
+    expect((await cache.synthesize(ordinary)).source).toBe("miss");
+    expect(calls).toEqual([fixed.text, fixed.text, ordinary.text, ordinary.text]);
+    expect(cache.size).toBe(0);
   });
 
   it("does not let a discarded prepared decision block a different request or the same one later", async () => {
