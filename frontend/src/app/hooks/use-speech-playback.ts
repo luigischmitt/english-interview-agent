@@ -6,6 +6,8 @@ import { reportAudioDiagnostic } from "@/lib/interview/audio-diagnostics";
 import { installAudioUnlockOnFirstGesture, setAudioUnlockObserver, unlockSharedAudio } from "@/lib/interview/audio-unlock.mjs";
 import { createAcknowledgementPlayer } from "@/lib/interview/acknowledgement.mjs";
 import { playInterviewerSegments, prewarmInterviewerSpeech, splitInterviewerSpeech, warmUpInterviewerSpeech, type SpeechPlayback, type SpeechPlaybackOptions } from "@/lib/interview/speech-playback.mjs";
+import { readStoredInterviewerVoice } from "@/lib/interview/voice-picker.mjs";
+import { readStoredInterviewerSpeechSpeed } from "@/lib/interview/interviewer-speech-speed.mjs";
 
 export type SpeechTimingEvent = "synthesis-started" | "synthesis-completed" | "playback-started";
 
@@ -20,7 +22,7 @@ const speechEndpoint = `${backendBaseUrl}/api/v1/speech`;
  */
 export function useSpeechWarmup(attempt = 0) {
   useEffect(() => {
-    warmUpInterviewerSpeech(speechEndpoint, authorizedFetch);
+    warmUpInterviewerSpeech(speechEndpoint, authorizedFetch, { voice: readStoredInterviewerVoice(window.localStorage), speed: readStoredInterviewerSpeechSpeed(window.localStorage) });
     installAudioUnlockOnFirstGesture();
     setAudioUnlockObserver((info) => reportAudioDiagnostic({ kind: "unlock", ...info }));
     return () => setAudioUnlockObserver(null);

@@ -5,6 +5,7 @@ import { resolveKokoroVoice, resolveVoice } from "../speech/voices.js";
 import { SpeechProviderUnavailableError } from "../speech/errors.js";
 import type { SpeechConfig } from "../speech/config.js";
 import type { SpeechCache, SpeechCacheResult } from "../speech/speech-cache.js";
+import type { InterviewerSpeechPrefetcher } from "../speech/interviewer-prefetcher.js";
 import type { SpeechDiagnostics, SpeechProvider, VoiceStatus } from "../speech/types.js";
 
 const maxTextLength = 2_000;
@@ -41,7 +42,7 @@ function logSpeechTiming(status: "ok" | "error" | "aborted", provider: string, s
   }));
 }
 
-export function createSpeechController(provider: SpeechProvider, config: SpeechConfig, cache: SpeechCache | null = null) {
+export function createSpeechController(provider: SpeechProvider, config: SpeechConfig, cache: SpeechCache | null = null, prefetcher: InterviewerSpeechPrefetcher | null = null) {
   const synthesize: RequestHandler = async (request, response) => {
     const body = request.body as SpeechBody;
     const text = typeof body?.text === "string" ? body.text.trim() : "";
@@ -174,14 +175,14 @@ export function createSpeechController(provider: SpeechProvider, config: SpeechC
     }
   };
 
-  // Wakes a scale-to-zero provider; providers without warmup answer 204.
-  const warmup: RequestHandler = (_request, response) => {
-    if (!provider.warmup) {
-      response.status(204).end();
-      return;
+  // Wakes a scale-to-zero provider and fills static phrases while the request keeps CPU allocated.
+  const warmup: RequestHandler = async (request, response) => {
+    const body = request.body as Pick<SpeechBody, "voice" | "speed">;
+    try { provider.warmup?.(); } catch { /* Warm-up is best effort. */ }
+    if (cache && prefetcher && config.provider !== "fake") {
+      try { await prefetcher.prefetchStaticFor(body?.voice, body?.speed, { concurrency: 3, deadlineMs: 30_000 }); } catch { /* Warm-up is best effort. */ }
     }
-    try { provider.warmup(); } catch { /* Warm-up is best effort. */ }
-    response.status(202).end();
+    response.status(provider.warmup || (cache && prefetcher && config.provider !== "fake") ? 202 : 204).end();
   };
 
   // Cached readiness of the interviewer voice; never blocks on the provider.

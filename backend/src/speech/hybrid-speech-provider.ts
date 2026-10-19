@@ -134,6 +134,12 @@ export class HybridSpeechProvider implements SpeechProvider {
     this.probe(this.options.warmupIntervalMs ?? 60_000);
   }
 
+  warmConnection(): void {
+    for (const provider of [this.options.primary, this.options.secondary]) {
+      try { (provider as SpeechProvider & { warmConnection?: () => void }).warmConnection?.(); } catch { /* Best effort. */ }
+    }
+  }
+
   /** Cached readiness of the primary voice; polling may trigger a throttled background probe. */
   voiceStatus(): VoiceStatus {
     if (!this.options.warmupRequest) return "ready";
