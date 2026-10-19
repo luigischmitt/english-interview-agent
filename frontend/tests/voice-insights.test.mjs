@@ -1,10 +1,17 @@
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { buildPracticeWordList, buildVoiceEvolution, buildVoiceInsights, buildVoiceLesson, buildVoicePracticePlan, encodeWav16Mono, likelyTranscriptionArtifact, normalizePracticeSentenceCapitalization, readPracticeAttempts, savePracticeAttempt } from "../src/lib/interview/voice-insights.mjs";
 
 const metric = (mean, totalDurationMs = 25_000) => ({ mean, sampleCount: 1, totalDurationMs });
 const record = (id, completedAt, scores, answers = []) => ({ id, completedAt, createdAt: completedAt, feedback: { status: "ready", azureSummary: { accuracy: metric(scores.accuracy), fluency: metric(scores.fluency), prosody: metric(scores.prosody), answers } } });
 const phrase = (phraseIndex, text, issue, problemWords = [], score = 70) => ({ phraseIndex, text, issue, problemWords, score });
+
+test("keeps practice ordering based on the history captured when the voice screen opens", () => {
+  const source = readFileSync(new URL("../src/app/components/voice-view.tsx", import.meta.url), "utf8");
+  assert.match(source, /const \[practiceHistoryAtOpen\] = useState\(attempts\)/u);
+  assert.match(source, /buildVoicePracticePlan\(records, \{ focus: activeMetric, attempts: practiceHistoryAtOpen \}\), \[records, activeMetric, practiceHistoryAtOpen\]\)/u);
+});
 
 test("uses only reliable values for comparisons and selects the lowest reliable focus", () => {
   const insights = buildVoiceInsights([
@@ -120,6 +127,82 @@ test("only keeps repeated, substantial work words and uses them for sentence att
   const plan = buildVoicePracticePlan([old, recent], { now: new Date("2026-04-02T12:00:00Z") });
   assert.equal(plan.sentences[0].text, "I am building a machine learning model with a database.");
   assert.deepEqual(plan.sentences[0].attentionWords, ["database"]);
+});
+
+test("changes the practice queue and highlighted words with the selected voice focus", () => {
+  const item = record("recent", "2026-09-12", { accuracy: 55, fluency: 65, prosody: 75 }, [{ sequenceNumber: 4, phrases: [
+    phrase(0, "I explained the architecture to our engineering team", "pronunciation", [{ word: "architecture", score: 42, prosodyErrors: [] }], 48),
+    phrase(1, "The service remained reliable during peak traffic", "intonation", [{ word: "reliable", score: 88, prosodyErrors: ["Monotone"] }], 55),
+    phrase(2, "We reduced the deployment time for every release", "pronunciation", [{ word: "deployment", score: 85, prosodyErrors: ["UnexpectedBreak"] }], 70),
+  ] }]);
+  const accuracy = buildVoicePracticePlan([item], { focus: "accuracy" });
+  const prosody = buildVoicePracticePlan([item], { focus: "prosody" });
+  const rhythm = buildVoicePracticePlan([item], { focus: "fluency" });
+  assert.equal(accuracy.focus, "accuracy");
+  assert.equal(accuracy.specificEvidence, true);
+  assert.equal(accuracy.sentences[0].text, "I explained the architecture to our engineering team");
+  assert.deepEqual(accuracy.sentences[0].attentionWords, ["architecture"]);
+  assert.equal(prosody.sentences[0].text, "The service remained reliable during peak traffic");
+  assert.deepEqual(prosody.sentences[0].attentionWords, ["reliable"]);
+  assert.equal(rhythm.sentences[0].text, "We reduced the deployment time for every release");
+  assert.deepEqual(rhythm.sentences[0].attentionWords, ["deployment"]);
+  assert.equal(prosody.sentences[0].answerNumber, 1);
+  assert.equal(prosody.sentences[0].date, "2026-09-12T00:00:00.000Z");
+  assert.match(prosody.sentences[0].id, /^phrase:recent:1:1$/u);
+});
+
+test("prioritizes unpracticed evidence, then recent phrases, and keeps the queue small and stable", () => {
+  const makeRecord = (id, date, phraseText) => record(id, date, { accuracy: 60, fluency: 70, prosody: 80 }, [{ sequenceNumber: 1, phrases: [phrase(0, phraseText, "pronunciation", [{ word: "service", score: 40, prosodyErrors: [] }])] }]);
+  const recent = makeRecord("recent", "2026-09-12", "I improved the service for our global customers");
+  const previous = makeRecord("previous", "2026-08-12", "I stabilized the service for our global customers");
+  const oldest = makeRecord("oldest", "2026-07-12", "I redesigned the service for our global customers");
+  const attempts = { ["phrase:recent:1:0"]: [{ createdAt: "2026-09-13" }] };
+  const first = buildVoicePracticePlan([oldest, recent, previous], { focus: "accuracy", attempts });
+  const second = buildVoicePracticePlan([previous, oldest, recent], { focus: "accuracy", attempts });
+  assert.deepEqual(first.sentences, second.sentences);
+  assert.equal(first.sentences[0].interviewId, "previous");
+  assert.deepEqual(first.sentences.map((sentence) => sentence.interviewId), ["previous", "oldest", "recent"]);
+  assert.ok(first.sentences.length <= 5);
+});
+
+test("clearly marks fallback phrases when the selected focus has no specific evidence", () => {
+  const item = record("recent", "2026-09-12", { accuracy: 70, fluency: 75, prosody: 80 });
+  item.feedback.analysis = { englishCommunication: { patterns: [{ sequenceNumber: 1, rephrasedExample: "I planned and delivered the migration for our global customers." }] } };
+  const plan = buildVoicePracticePlan([item], { focus: "prosody" });
+  assert.equal(plan.focus, "prosody");
+  assert.equal(plan.specificEvidence, false);
+  assert.equal(plan.sentences[0].source, "report");
+  assert.equal(plan.sentences[0].date, "2026-09-12T00:00:00.000Z");
+});
+
+test("uses the coaching thresholds before treating saved answers as rhythm evidence", () => {
+  const deliveries = [
+    ["slow", { wordsPerMinute: 109 }],
+    ["fast", { wordsPerMinute: 166 }],
+    ["slow-boundary", { wordsPerMinute: 110 }],
+    ["fast-boundary", { wordsPerMinute: 165 }],
+    ["long-pause", { longestPauseMs: 1_500 }],
+    ["short-pause", { longestPauseMs: 1_499 }],
+    ["many-pauses", { pauseCount: 4 }],
+    ["few-pauses", { pauseCount: 3 }],
+    ["fillers", { fillers: { um: 1 } }],
+    ["no-fillers", { fillers: { um: 0 } }],
+  ];
+  const records = deliveries.map(([id, delivery], index) => {
+    const answer = { sequenceNumber: 1, delivery, phrases: [] };
+    const item = record(id, `2026-09-${String(index + 1).padStart(2, "0")}`, { accuracy: 70, fluency: 70, prosody: 70 }, [answer]);
+    item.candidateAnswers = [{ sequenceNumber: 1, content: `I organized migration ${index} into smaller steps for our customers.` }];
+    return item;
+  });
+  const plan = buildVoicePracticePlan(records, { focus: "fluency" });
+  assert.equal(plan.specificEvidence, true);
+  assert.deepEqual(new Set(plan.sentences.map((item) => item.interviewId)), new Set(["slow", "fast", "long-pause", "many-pauses", "fillers"]));
+
+  const neutral = records.find((item) => item.id === "slow-boundary");
+  neutral.feedback.azureSummary.answers[0].delivery = { wordsPerMinute: 110, pauseCount: 3, longestPauseMs: 1_499, fillers: { um: 0 } };
+  const fallback = buildVoicePracticePlan([neutral], { focus: "fluency" });
+  assert.equal(fallback.specificEvidence, false);
+  assert.equal(fallback.sentences[0].source, "answer");
 });
 
 test("normalizes mid-sentence capitalization while preserving I, products, and acronyms", () => {

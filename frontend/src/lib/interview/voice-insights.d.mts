@@ -10,14 +10,14 @@ export const voiceMetricCopy: Record<VoiceMetricKey, Pick<VoiceMetricInsight, "l
 export function voiceScoreLevel(value: number | null): "good" | "attention" | "focus" | "unavailable";
 export function buildVoiceLesson(records: ProgressRecord[], metric?: VoiceMetricKey): VoiceLesson;
 export function buildVoiceInsights(records: ProgressRecord[]): { hasVoiceData: boolean; latestDate: string | null; focus: VoiceMetricKey | null; metrics: VoiceMetricInsight[] };
-export type VoicePracticeSentence = { id: string; text: string; source: "report" | "answer"; time: number; attentionWords: string[] };
+export type VoicePracticeSentence = { id: string; text: string; source: "report" | "answer" | "phrase"; time: number; date: string | null; interviewId: string; answerNumber: number | null; phraseIndex?: number; attentionWords: string[]; specificEvidence: boolean; severity: number };
 export type VoicePracticeWord = { word: string; score: number; count: number; worst: number; time: number };
 export type VoicePracticeAttempt = { scores: { accuracy: number | null; fluency: number | null; prosody: number | null }; words: Array<{ word: string; accuracyScore: number | null; errorType: string | null }>; createdAt: string };
 export function likelyTranscriptionArtifact(text: unknown): boolean;
 export function normalizePracticeSentenceCapitalization(text: unknown): string;
 export function buildPracticeWordList(records: ProgressRecord[]): VoicePracticeWord[];
 export function buildVoiceEvolution(records: ProgressRecord[]): Record<VoiceMetricKey, Array<{ id: string; date: string | null; value: number }>>;
-export function buildVoicePracticePlan(records: ProgressRecord[], options?: { now?: Date }): { focus: VoiceMetricKey | null; sentences: VoicePracticeSentence[]; words: VoicePracticeWord[]; evolution: ReturnType<typeof buildVoiceEvolution>; day: string };
+export function buildVoicePracticePlan(records: ProgressRecord[], options?: { now?: Date; focus?: VoiceMetricKey; attempts?: Record<string, VoicePracticeAttempt[]> }): { focus: VoiceMetricKey; specificEvidence: boolean; sentences: VoicePracticeSentence[]; words: VoicePracticeWord[]; evolution: ReturnType<typeof buildVoiceEvolution>; day: string };
 export function encodeWav16Mono(samples: Float32Array | ArrayLike<number>, sampleRate?: number): ArrayBuffer;
 export function readPracticeAttempts(storage: Storage | null | undefined): Record<string, VoicePracticeAttempt[]>;
 export function savePracticeAttempt(storage: Storage | null | undefined, sentenceId: string, attempt: VoicePracticeAttempt): Record<string, VoicePracticeAttempt[]>;

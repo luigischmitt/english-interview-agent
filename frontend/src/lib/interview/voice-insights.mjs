@@ -347,12 +347,6 @@ export function buildPracticeWordList(input) {
     .slice(0, 6);
 }
 
-function hash(value) {
-  let result = 0;
-  for (const character of value) result = ((result << 5) - result + character.charCodeAt(0)) | 0;
-  return result >>> 0;
-}
-
 function dateKey(now = new Date()) {
   return now.toISOString().slice(0, 10);
 }
@@ -361,41 +355,91 @@ function splitAnswerSentences(text) {
   return String(text).match(/[^.!?]+[.!?]+|[^.!?]+$/gu) ?? [];
 }
 
-/** A stable daily queue: verified report rewrites first, then clean complete sentences from saved answers. */
-export function buildVoicePracticePlan(input, { now = new Date() } = {}) {
-  const records = (Array.isArray(input) ? input : []).slice().sort((first, second) => timeOf(second) - timeOf(first));
-  const insights = buildVoiceInsights(records);
-  const focusWords = new Set(buildPracticeWordList(records).map((item) => item.word.toLocaleLowerCase("en-US")));
+const hasRhythmEvidence = (delivery) => {
+  if (!delivery || typeof delivery !== "object") return false;
+  return Number.isFinite(delivery.wordsPerMinute) && (delivery.wordsPerMinute < 110 || delivery.wordsPerMinute > 165)
+    || Number.isFinite(delivery.longestPauseMs) && delivery.longestPauseMs >= 1_500
+    || Number.isFinite(delivery.pauseCount) && delivery.pauseCount >= 4
+    || Object.values(delivery.fillers ?? {}).some((count) => Number.isFinite(count) && count > 0);
+};
+
+function sentenceCandidates(records, source) {
   const candidates = [];
+  const focusWords = source === "fallback" ? new Set(buildPracticeWordList(records).map((item) => item.word.toLocaleLowerCase("en-US"))) : new Set();
   for (const record of records) {
-    const patterns = record?.feedback?.status === "ready" ? record.feedback?.analysis?.englishCommunication?.patterns : [];
-    for (const pattern of Array.isArray(patterns) ? patterns : []) {
-      const text = cleanPracticeSentence(pattern?.rephrasedExample);
-      if (text) candidates.push({ id: `report:${record.id}:${pattern.sequenceNumber ?? 0}:${text.toLocaleLowerCase()}`, text, source: "report", time: timeOf(record) });
-    }
-  }
-  for (const record of records) {
+    const answers = record?.feedback?.azureSummary?.answers;
+    if (!Array.isArray(answers)) continue;
+    const ordinals = answerOrdinals(answers);
     const answerMap = new Map((record.candidateAnswers ?? []).map((answer) => [answer.sequenceNumber, answer.content]));
-    for (const answer of record?.feedback?.azureSummary?.answers ?? []) {
-      const hasLowWord = (answer?.phrases ?? []).some((phrase) => (phrase?.problemWords ?? []).some((word) => isScore(word?.score) && word.score < lowWordScore));
-      if (!hasLowWord) continue;
-      const fullAnswer = answerMap.get(answer.sequenceNumber);
-      for (const part of splitAnswerSentences(fullAnswer)) {
+    for (const answer of answers) {
+      if (source === "rhythm" && !hasRhythmEvidence(answer?.delivery)) continue;
+      const content = answerMap.get(answer?.sequenceNumber);
+      if (!isText(content)) continue;
+      for (const part of splitAnswerSentences(content)) {
         const text = cleanPracticeSentence(part);
-        if (text) candidates.push({ id: `answer:${record.id}:${answer.sequenceNumber}:${text.toLocaleLowerCase()}`, text, source: "answer", time: timeOf(record) });
+        if (text) candidates.push({
+          id: `answer:${record.id}:${answer.sequenceNumber}:${text.toLocaleLowerCase()}`,
+          text, source: "answer", time: timeOf(record), date: dateOf(record),
+          interviewId: record.id, answerNumber: ordinals.get(answer.sequenceNumber) ?? 1,
+          attentionWords: normalizedWords(text).filter((word) => focusWords.has(word)), specificEvidence: source === "rhythm",
+          severity: source === "rhythm" ? 0 : Number.POSITIVE_INFINITY,
+        });
       }
     }
   }
+  return candidates;
+}
+
+function reportCandidates(records) {
+  const candidates = [];
+  for (const record of records) {
+    const ordinals = answerOrdinals(record?.feedback?.azureSummary?.answers ?? []);
+    const patterns = record?.feedback?.status === "ready" ? record.feedback?.analysis?.englishCommunication?.patterns : [];
+    for (const pattern of Array.isArray(patterns) ? patterns : []) {
+      const text = cleanPracticeSentence(pattern?.rephrasedExample);
+      if (text) candidates.push({
+        id: `report:${record.id}:${pattern.sequenceNumber ?? 0}:${text.toLocaleLowerCase()}`,
+        text, source: "report", time: timeOf(record), date: dateOf(record),
+        interviewId: record.id, answerNumber: ordinals.get(pattern.sequenceNumber) ?? null,
+        attentionWords: [], specificEvidence: false, severity: Number.POSITIVE_INFINITY,
+      });
+    }
+  }
+  return candidates;
+}
+
+function evidencePhraseCandidates(records, metric) {
+  return phrasesFor(records, metric).map((phrase) => ({
+    id: `phrase:${phrase.interviewId}:${phrase.answerNumber}:${phrase.phraseIndex}`,
+    text: cleanPracticeSentence(phrase.text), source: "phrase", time: phrase.time,
+    date: phrase.date, interviewId: phrase.interviewId, answerNumber: phrase.answerNumber,
+    phraseIndex: phrase.phraseIndex,
+    attentionWords: phrase.problemWords.filter((word) => metric === "prosody" ? word.prosodyErrors.length > 0 : metric === "fluency" ? word.prosodyErrors.some((error) => error === "UnexpectedBreak" || error === "MissingBreak") : isScore(word.score) && word.score < lowWordScore).map((word) => word.word),
+    specificEvidence: true, severity: phraseSeverity(phrase),
+  })).filter((candidate) => candidate.text);
+}
+
+/** A small, stable queue grounded in saved evidence and ordered by practice history and recency. */
+export function buildVoicePracticePlan(input, { now = new Date(), focus, attempts = {} } = {}) {
+  const records = (Array.isArray(input) ? input : []).slice().sort((first, second) => timeOf(second) - timeOf(first));
+  const insights = buildVoiceInsights(records);
+  const selectedFocus = voiceMetrics.includes(focus) ? focus : insights.focus ?? "accuracy";
+  const fallback = [...reportCandidates(records), ...sentenceCandidates(records, "fallback")];
+  const phraseEvidence = evidencePhraseCandidates(records, selectedFocus);
+  const specific = phraseEvidence.length ? phraseEvidence : selectedFocus === "fluency" ? sentenceCandidates(records, "rhythm") : [];
+  const candidates = specific.length ? specific : fallback;
+  const specificEvidence = specific.length > 0;
+  const practiced = (id) => Array.isArray(attempts?.[id]) && attempts[id].length > 0;
   const seen = new Set();
   const day = dateKey(now);
-  const items = candidates.filter((item) => {
+  const items = candidates.slice().sort((first, second) => Number(practiced(first.id)) - Number(practiced(second.id))
+    || second.time - first.time || first.severity - second.severity || Number(second.source === "report") - Number(first.source === "report") || first.id.localeCompare(second.id)).filter((item) => {
     const key = item.text.toLocaleLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).map((item) => ({ ...item, attentionWords: normalizedWords(item.text).filter((word) => focusWords.has(word)) }))
-    .sort((first, second) => Number(second.source === "report") - Number(first.source === "report") || Number(second.attentionWords.length > 0) - Number(first.attentionWords.length > 0) || second.time - first.time || hash(`${day}:${first.id}`) - hash(`${day}:${second.id}`));
-  return { focus: insights.focus, sentences: items.slice(0, 5), words: buildPracticeWordList(records), evolution: buildVoiceEvolution(records), day };
+  });
+  return { focus: selectedFocus, specificEvidence, sentences: items.slice(0, 5), words: buildPracticeWordList(records), evolution: buildVoiceEvolution(records), day };
 }
 
 /** Reliable interview metrics only, ordered chronologically for a compact history row. */

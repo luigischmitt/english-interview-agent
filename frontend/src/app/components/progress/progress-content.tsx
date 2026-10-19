@@ -4,7 +4,7 @@
 import { getCurrentLocale, t } from "@/lib/locale";
 import { useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, ChevronDown } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { minAnswersForProfile, minSessionsForTrends } from "@/lib/interview/progress-insights.mjs";
 import type {
   PatternType,
@@ -229,7 +229,9 @@ function patternRows(insights: ProgressInsights): PatternRow[] {
 
 function PatternItem({ row, total, index }: { row: PatternRow; total: number; index: number }) {
   const [open, setOpen] = useState(false);
-  const example = row.error?.examples[0];
+  const examples = row.error?.examples ?? [];
+  const [exampleIndex, setExampleIndex] = useState(0);
+  const example = examples[exampleIndex];
   const trend = row.error && row.error.trend !== "unknown" ? trendCopy[row.error.trend] : null;
   const share = row.share ?? 0;
   return (
@@ -268,6 +270,17 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
         <div className="ds-reveal" data-open={open}>
           <div>
             <div className="pg-example">
+              {examples.length > 1 && (
+                <div className="pg-example-nav" role="group" aria-label={t("Navegação dos exemplos")}>
+                  <button type="button" className="pg-example-nav-btn" aria-label={t("Exemplo anterior")} disabled={exampleIndex === 0} onClick={() => setExampleIndex((value) => Math.max(0, value - 1))}>
+                    <ChevronLeft className="size-4" aria-hidden="true" />
+                  </button>
+                  <span className="pg-example-count" aria-live="polite">{getCurrentLocale() === "en" ? `Example ${exampleIndex + 1} of ${examples.length}` : `Exemplo ${exampleIndex + 1} de ${examples.length}`}</span>
+                  <button type="button" className="pg-example-nav-btn" aria-label={t("Próximo exemplo")} disabled={exampleIndex === examples.length - 1} onClick={() => setExampleIndex((value) => Math.min(examples.length - 1, value + 1))}>
+                    <ChevronRight className="size-4" aria-hidden="true" />
+                  </button>
+                </div>
+              )}
               <p className="pg-ex-label">{t("Você disse")}{example.date ? ` · ${formatDate(example.date, false)}` : ""}</p>
               <p className="pg-ex-said" lang="en">{example.evidence}</p>
               <p className="pg-ex-label">{t("Soa melhor")}</p>
@@ -326,13 +339,16 @@ export function EnglishPatterns({ insights }: { insights: ProgressInsights }) {
 
 /* ----------------------------------------------------------- Study topics */
 
-function TopicItem({ topic, index }: { topic: ProgressStudyTopic; index: number }) {
+function TopicItem({ topic, index, primary = false }: { topic: ProgressStudyTopic; index: number; primary?: boolean }) {
+  const focus = topic.focuses[0];
   return (
-    <li className="pg-topic" style={stagger(index)}>
-      <span className="pg-topic-rank" aria-hidden="true">{topic.rank}</span>
+    <li className={`pg-topic${primary ? " pg-topic-primary" : " pg-topic-secondary"}`} style={stagger(index)}>
+      {primary && <span className="pg-topic-rank" aria-hidden="true">{topic.rank}</span>}
       <div className="min-w-0">
-        <p className="pg-topic-kind">{t(topic.kind === "technical" ? "Conteúdo técnico" : "Inglês")} · {getCurrentLocale() === "en" ? `${plural(topic.sessionCount, "prática", "práticas")}` : `em ${plural(topic.sessionCount, "prática", "práticas")}`}</p>
+        <p className="pg-topic-kind">{primary ? t("Foco principal") : t("Outro foco")} · {t(topic.kind === "technical" ? "Conteúdo técnico" : "Inglês")} · {getCurrentLocale() === "en" ? plural(topic.sessionCount, "practice", "practices") : `em ${plural(topic.sessionCount, "prática", "práticas")}`}</p>
         <h3 className="pg-topic-title">{t(topic.title)}</h3>
+        {primary && focus && <p className="pg-topic-evidence"><span>{t("Observado nos relatórios:")}</span> {focus}</p>}
+        <p className="pg-topic-source">{t(topic.exerciseSource === "report" ? "Exercício sugerido no relatório" : "Sugestão de exercício geral")}</p>
         <p className="pg-topic-exercise">{topic.exercise}</p>
       </div>
     </li>
@@ -341,17 +357,26 @@ function TopicItem({ topic, index }: { topic: ProgressStudyTopic; index: number 
 
 export function StudyTopics({ insights }: { insights: ProgressInsights }) {
   const topics = insights.studyTopics.slice(0, 3);
+  const [primary, ...others] = topics;
   return (
     <section aria-labelledby="pg-topics" className="pg-section" data-reveal>
       <div className="pg-section-head">
         <div>
-          <h2 id="pg-topics" className="pg-section-title">{t("O que estudar agora")}</h2>
-          <p className="pg-section-sub">{t("Os três temas que mais se repetem nos seus relatórios recentes, cada um com um exercício.")}</p>
+          <h2 id="pg-topics" className="pg-section-title">{t("Seus focos atuais")}</h2>
+          <p className="pg-section-sub">{t("Focos priorizados pelo que aparece nos seus relatórios. Eles podem mudar quando novas práticas forem analisadas.")}</p>
         </div>
       </div>
       {topics.length === 0
-        ? <p className="pg-note">{t("Os temas de estudo aparecem depois do primeiro relatório pronto, com um exercício para cada um.")}</p>
-        : <ol className="pg-topics">{topics.map((topic, index) => <TopicItem key={topic.id} topic={topic} index={index} />)}</ol>}
+        ? <p className="pg-note">{t("Seus focos aparecem depois que o primeiro relatório fica pronto.")}</p>
+        : <>
+          <ol className="pg-topics pg-topics-primary-list"><TopicItem key={primary.id} topic={primary} index={0} primary /></ol>
+          {others.length > 0 && <div className="pg-topics-others">
+            <h3 className="pg-topics-others-title">{t("Outros focos")}</h3>
+            <ol className="pg-topics">
+              {others.map((topic, index) => <TopicItem key={topic.id} topic={topic} index={index + 1} />)}
+            </ol>
+          </div>}
+        </>}
     </section>
   );
 }
