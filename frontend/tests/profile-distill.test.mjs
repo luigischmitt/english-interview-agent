@@ -5,12 +5,19 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const progress = readFileSync(new URL("src/app/components/progress/progress-content.tsx", root), "utf8");
 const radar = readFileSync(new URL("src/app/components/charts/profile-radar.tsx", root), "utf8");
+const chartStyles = readFileSync(new URL("src/app/components/charts/charts.css", root), "utf8");
 const progressStyles = readFileSync(new URL("src/app/components/progress/progress.css", root), "utf8");
 const landing = readFileSync(new URL("public/entoa/index.html", root), "utf8");
 
 test("Progress keeps one radar for dimension values and a keyboard/touch explanation", () => {
   assert.match(progress, /<ProfileRadar[\s\S]*?onSelect=\{setPicked\}/);
-  assert.match(progress, /pg-side-detail[\s\S]*?aria-live="polite"><strong>\{active\.label\}\.<\/strong> \{active\.explain\}/);
+  assert.match(progress, /pg-radar-legend-english[\s\S]*?Inglês:/);
+  assert.match(progress, /pg-radar-legend-voice[\s\S]*?Voz:/);
+  assert.match(progress, /Mais perto da borda é melhor\. Escolha um ponto para ver o que ele mede\./);
+  assert.match(progress, /pg-side-detail-active" aria-live="polite"><strong>\{active\.label\}\.<\/strong> \{active\.explain\}/);
+  assert.match(progress, /pg-side-detail-size" aria-hidden="true"/);
+  assert.match(progressStyles, /\.pg-side-details \{ display: grid;/);
+  assert.match(progressStyles, /\.pg-side-detail-size \{ visibility: hidden;/);
   assert.doesNotMatch(progress, /pg-dims-cells|pg-side-k|Ponto forte|Ponto de atenção/);
   assert.doesNotMatch(progress, /analyzedAnswers\} answers without this error|respostas sem esse erro/);
   assert.doesNotMatch(progressStyles, /\.pg-dims-cells|\.pg-dim\s/);
@@ -18,6 +25,10 @@ test("Progress keeps one radar for dimension values and a keyboard/touch explana
   assert.match(radar, /onClick=\{\(\) => onSelect\(item\.key\)\}/);
   assert.match(radar, /className="pr-label"[\s\S]*?onClick=\{\(\) => onSelect\(item\.key\)\}/);
   assert.match(radar, /event\.key === "Enter" \|\| event\.key === " "/);
+  assert.doesNotMatch(radar, /pr-ring-value/);
+  assert.match(radar, /data-group=\{item\.group\}/);
+  assert.match(chartStyles, /\.pr-point\[data-group="voice"\] \{ fill: var\(--ds-brand-warm\); \}/);
+  assert.match(progressStyles, /--ds-brand-warm/);
 });
 
 test("public report shows the radar and correction example without a repeated dimension grid", () => {
