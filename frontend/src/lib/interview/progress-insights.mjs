@@ -54,6 +54,18 @@ const topicTitleByTypeEn = {
   FALSE_COGNATE: "Portuguese false cognates",
   STRUCTURE: "Answer structure",
 };
+const cleanPatternCopy = {
+  GRAMMAR: "sem erro de gramática destacado",
+  WORD_CHOICE: "sem erro de escolha de palavras destacado",
+  FALSE_COGNATE: "sem falso cognato destacado",
+  STRUCTURE: "sem problema de estrutura destacado",
+};
+const cleanPatternCopyEn = {
+  GRAMMAR: "without a grammar issue flagged",
+  WORD_CHOICE: "without a word-choice issue flagged",
+  FALSE_COGNATE: "without a false cognate flagged",
+  STRUCTURE: "without a structure issue flagged",
+};
 
 export const minAnswersForProfile = 3;
 export const minSessionsForTrends = 3;
@@ -222,8 +234,8 @@ function buildDimensions(sessions, locale) {
         fullLabel: patternsCopy[type].label,
         value: round((clean / answers) * 100),
         detail: locale === "en"
-          ? `${patternsCopy[type].label} was not flagged in ${clean} of ${answers} answers.`
-          : `${clean} de ${answers} respostas sem ${patternsCopy[type].label.toLowerCase()} destacada(o) no relatório.`,
+          ? `${clean} of ${answers} answers ${cleanPatternCopyEn[type]}.`
+          : `${clean} de ${answers} respostas ${cleanPatternCopy[type]} no relatório.`,
       });
     }
   }

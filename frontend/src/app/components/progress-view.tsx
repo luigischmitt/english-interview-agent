@@ -2,7 +2,7 @@
 
 
 import { useLocale, t } from "@/lib/locale";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Play } from "lucide-react";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import { purgeExpiredAnswerClips } from "@/lib/interview/answer-clips";
@@ -35,6 +35,7 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const progressScrollTop = useRef(0);
 
   useEffect(() => { void purgeExpiredAnswerClips(); }, []);
 
@@ -70,6 +71,16 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
     setIsLoading(true);
     setError(null);
     setAttempt((value) => value + 1);
+  };
+
+  const openHistoricalReport = (sessionId: string) => {
+    progressScrollTop.current = window.scrollY;
+    setSelectedSessionId(sessionId);
+  };
+
+  const closeHistoricalReport = () => {
+    setSelectedSessionId(null);
+    window.requestAnimationFrame(() => window.scrollTo({ top: progressScrollTop.current, behavior: "auto" }));
   };
 
   const startAction = onStart && (
@@ -142,7 +153,7 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
       ) : (
         <>
           <div hidden={!!selectedSession}>
-            <ProgressContent insights={insights} onOpenReport={setSelectedSessionId} />
+            <ProgressContent insights={insights} onOpenReport={openHistoricalReport} />
           </div>
           {selectedSession && historicalReport && historicalConfig && (
             <div className="mt-8 lg:mt-10">
@@ -158,7 +169,7 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
                 turns={[]}
                 azureSummary={historicalAzureSummary}
                 coverage={{ available: historicalAssessmentCount, pending: 0, total: historicalAssessmentCount }}
-                onLeave={() => setSelectedSessionId(null)}
+                onLeave={closeHistoricalReport}
                 progressRecords={records}
                 currentInterviewId={selectedSession.id}
                 historical

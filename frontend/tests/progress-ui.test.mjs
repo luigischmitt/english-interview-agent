@@ -26,3 +26,35 @@ test("current study focus explains its report evidence and exercise source", asy
   assert.match(source, /topic\.exerciseSource === "report" \? "Exercício sugerido no relatório" : "Sugestão de exercício geral"/);
   assert.match(source, /Outros focos/);
 });
+
+test("Progress keeps revealed sections visible and restores the list position after closing a report", async () => {
+  const [reveal, progressView, progressContent] = await Promise.all([
+    readFile(new URL("src/lib/use-replay-reveal.ts", root), "utf8"),
+    readFile(new URL("src/app/components/progress-view.tsx", root), "utf8"),
+    readFile(new URL("src/app/components/progress/progress-content.tsx", root), "utf8"),
+  ]);
+
+  assert.match(reveal, /observer\.unobserve\(entry\.target\)/);
+  assert.match(reveal, /else if \(!entry\.isIntersecting && !once\)/);
+  assert.match(progressContent, /useReplayReveal\(rootRef, \[insights\], \{ once: true \}\)/);
+  assert.match(progressView, /<ProgressContent insights=\{insights\} onOpenReport=\{openHistoricalReport\}/);
+  assert.match(progressView, /progressScrollTop\.current = window\.scrollY/);
+  assert.match(progressView, /window\.requestAnimationFrame\(\(\) => window\.scrollTo\(\{ top: progressScrollTop\.current, behavior: "auto" \}\)\)/);
+});
+
+test("Progress labels error percentages directly and omits the hard-to-read per-answer summary", async () => {
+  const source = await readFile(new URL("src/app/components/progress/progress-content.tsx", root), "utf8");
+
+  assert.match(source, /Erros de inglês nas respostas/);
+  assert.match(source, /Erros de gramática/);
+  assert.match(source, /das respostas tiveram esse erro/);
+  assert.doesNotMatch(source, /erros por resposta na última entrevista/);
+});
+
+test("Voice keeps comparisons in Evolution instead of repeating small figures in every summary card", async () => {
+  const source = await readFile(new URL("src/app/components/voice-view.tsx", root), "utf8");
+
+  assert.match(source, /Visão geral da sua voz/);
+  assert.doesNotMatch(source, /metric\.previousAverage !== null/);
+  assert.match(source, /index === points\.length - 1 \? Math\.round\(point\.value\) : ""/);
+});

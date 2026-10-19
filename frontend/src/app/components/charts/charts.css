@@ -1,7 +1,6 @@
 /*
  * Voice trend chart. Prefix `vt-`. Series colors are --ds-series-* (validated for CVD); text always uses ink tokens.
- * Entrance: lines draw and markers fade in when an ancestor [data-reveal] gets data-inview="true"; they reset when it
- * leaves, so the animation replays. Content is only hidden while data-inview is explicitly "false".
+ * Entrance: lines draw and markers fade in once when an ancestor [data-reveal] gets data-inview="true".
  */
 .vt { display: grid; gap: 1rem; min-width: 0; }
 .vt-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
@@ -39,7 +38,7 @@
 
 /*
  * Profile radar. Prefix `pr-`. Green circles = English patterns, ink diamonds = voice scores (shape + color).
- * Same replay contract as the trend chart: hidden only while an ancestor has data-inview="false".
+ * Same one-time reveal contract as the trend chart.
  */
 .pr-svg { display: block; width: 100%; max-width: 30rem; height: auto; margin-inline: auto; overflow: visible; }
 .pr-ring { fill: none; stroke: var(--ds-chart-ring); stroke-dasharray: 3 4; }
