@@ -16,8 +16,9 @@ type HybridSpeechProviderOptions = {
   secondary: SpeechProvider;
   /** Each provider gets its own voice: Kokoro accepts blends, OpenRouter does not. */
   primaryVoice: string;
-  primarySource?: "kokoro" | "azure";
+  primarySource?: Source;
   secondaryVoice: string;
+  secondarySource?: "openrouter" | "azure";
   timeoutMs: number;
   /** Start the secondary after this delay without primary audio; 0 disables the timed hedge (fast failures still fall back). */
   hedgeAfterMs: number;
@@ -50,10 +51,14 @@ export class HybridSpeechProvider implements SpeechProvider {
 
   async synthesize(request: SpeechSynthesisRequest, signal?: AbortSignal): Promise<SynthesizedSpeech> {
     const { primary, secondary, primaryVoice, secondaryVoice, timeoutMs, hedgeAfterMs } = this.options;
-    const primaryVoiceForRequest = this.options.primarySource === "azure"
+    const primarySource = this.options.primarySource ?? "kokoro";
+    const secondarySource = this.options.secondarySource ?? "openrouter";
+    const primaryVoiceForRequest = primarySource === "azure"
       ? resolveVoice(request.voice, primaryVoice)
       : resolveKokoroVoice(request.voice, primaryVoice);
-    const fallbackVoice = resolveKokoroVoice(request.voice, secondaryVoice);
+    const secondaryVoiceForRequest = secondarySource === "azure"
+      ? resolveVoice(request.voice, secondaryVoice)
+      : resolveKokoroVoice(request.voice, secondaryVoice);
     const controllers = { primary: new AbortController(), secondary: new AbortController() };
     let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
     let overallTimer: ReturnType<typeof setTimeout> | undefined;
@@ -85,10 +90,9 @@ export class HybridSpeechProvider implements SpeechProvider {
       };
       const win = (source: Source, speech: SynthesizedSpeech) => {
         if (settled) return;
-        const primarySource = this.options.primarySource ?? "kokoro";
         controllers[source === primarySource ? "secondary" : "primary"].abort(new Error("Another speech request answered first."));
         if (source === "kokoro") this.lastReadyAt = this.now();
-        const hedge: HedgeOutcome = source === "openrouter" ? "hedge_won" : secondaryStarted ? "primary_won" : "not_needed";
+        const hedge: HedgeOutcome = source === secondarySource ? "hedge_won" : secondaryStarted ? "primary_won" : "not_needed";
         finish(() => resolve({ ...speech, diagnostics: { ...speech.diagnostics, hedge, voiceSource: source } }));
       };
       const run = (provider: SpeechProvider, voice: string, source: Source, attemptSignal: AbortSignal) =>
@@ -101,7 +105,7 @@ export class HybridSpeechProvider implements SpeechProvider {
         if (settled || secondaryStarted) return;
         secondaryStarted = true;
         clearTimeout(hedgeTimer);
-        run(secondary, fallbackVoice, "openrouter", controllers.secondary.signal).catch(() => {
+        run(secondary, secondaryVoiceForRequest, secondarySource, controllers.secondary.signal).catch(() => {
           secondaryFailed = true;
           if (primaryFailed) fail();
         });
@@ -111,7 +115,7 @@ export class HybridSpeechProvider implements SpeechProvider {
       if (signal?.aborted) { onCallerAbort(); return; }
 
       overallTimer = setTimeout(fail, timeoutMs);
-      run(primary, primaryVoiceForRequest, this.options.primarySource ?? "kokoro", controllers.primary.signal).catch(() => {
+      run(primary, primaryVoiceForRequest, primarySource, controllers.primary.signal).catch(() => {
         primaryFailed = true;
         if (settled) return;
         if (!secondaryStarted) startSecondary();

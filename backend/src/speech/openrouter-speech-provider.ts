@@ -16,6 +16,7 @@ type OpenRouterSpeechProviderOptions = {
   // Start a second request on another upstream provider after this delay; 0 disables hedging.
   hedgeAfterMs?: number;
   fetchImplementation?: typeof fetch;
+  log?: (line: string) => void;
 };
 
 export class OpenRouterSpeechProvider implements SpeechProvider {
@@ -27,14 +28,16 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
   private readonly timeoutMs: number;
   private readonly hedgeAfterMs: number;
   private readonly fetchImplementation: typeof fetch;
+  private readonly log: (line: string) => void;
 
-  constructor({ apiKey, url, model, timeoutMs, hedgeAfterMs = 0, fetchImplementation = fetch }: OpenRouterSpeechProviderOptions) {
+  constructor({ apiKey, url, model, timeoutMs, hedgeAfterMs = 0, fetchImplementation = fetch, log = console.info }: OpenRouterSpeechProviderOptions) {
     this.apiKey = apiKey;
     this.url = url;
     this.model = model;
     this.timeoutMs = timeoutMs;
     this.hedgeAfterMs = hedgeAfterMs;
     this.fetchImplementation = fetchImplementation;
+    this.log = log;
   }
 
   // Hedged: DeepInfra first (cheap); if it is slow or fails, Together races it and the first success wins.
@@ -65,6 +68,7 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
         if (settled) return;
         controllers[winner === "primary" ? "hedge" : "primary"].abort(new Error("Another speech request answered first."));
         const hedge = winner === "hedge" ? "hedge_won" : hedgeStarted ? "primary_won" : "not_needed";
+        this.log(JSON.stringify({ event: "speech_usage", provider: "openrouter", chars: request.text.length, durationMs: Math.max(0, Date.now() - startedAt) }));
         finish(() => resolve({ ...speech, diagnostics: { hedge } }));
       };
       const failBoth = () => finish(() => reject(this.withDiagnostics(primaryError, "both_failed")));

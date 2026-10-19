@@ -92,6 +92,16 @@ describe("openrouter speech provider", () => {
     expect(body).toMatchObject({ speed: 1.1 });
   });
 
+  it("logs only character count and duration after successful synthesis", async () => {
+    const log = vi.fn();
+    const speech = new OpenRouterSpeechProvider({ apiKey: "test-key", url, model: "hexgrad/kokoro-82m", timeoutMs: 1_000, log, fetchImplementation: async () => new Response("mp3") });
+    await speech.synthesize(base);
+    const entry = JSON.parse(log.mock.calls[0][0] as string);
+    expect(entry).toMatchObject({ event: "speech_usage", provider: "openrouter", chars: base.text.length });
+    expect(entry).not.toHaveProperty("text");
+    expect(JSON.stringify(entry)).not.toContain(base.text);
+  });
+
   it("maps non-OK responses to a status-only unavailable error", async () => {
     const speech = provider(async () => new Response(`Provider returned 400 for ${secretText}`, { status: 400 }));
     const error = await speech.synthesize({ ...base, text: secretText }).catch((caught) => caught);
