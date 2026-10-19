@@ -11,7 +11,6 @@
 @media (min-width: 768px) { .pg-hero { padding: 2.25rem 2.5rem 2rem; gap: 2rem; } }
 .pg-hero-head { display: grid; gap: 1.5rem; }
 @media (min-width: 900px) { .pg-hero-head { grid-template-columns: minmax(0, 1fr) auto; align-items: end; } }
-.pg-kicker { color: var(--ds-green); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; overflow-wrap: anywhere; }
 .pg-hero-title { margin-top: 0.5rem; font-family: var(--font-display); font-size: clamp(2rem, 1.5rem + 2vw, 2.75rem); font-weight: 400; letter-spacing: -0.025em; line-height: 1.02; text-wrap: balance; }
 .pg-hero-sub { max-width: 54ch; margin-top: 0.75rem; color: var(--ds-text-2); font-size: 0.9375rem; line-height: 1.55; }
 .pg-totals { display: grid; grid-template-columns: repeat(3, auto); gap: 1.5rem; justify-content: start; }
