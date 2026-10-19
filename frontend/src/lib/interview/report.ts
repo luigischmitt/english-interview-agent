@@ -10,6 +10,12 @@ import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments
 export type InterviewReport = {
   /** Optional per-answer analyses; absent on legacy reports or fallback-only reports. */
   turns?: InterviewTurnAnalysis[];
+  /** Per-answer analysis coverage at report generation; omitted by legacy reports. */
+  analysisCoverage?: {
+    analyzedTurnCount: number;
+    totalTurnCount: number;
+    missingSequenceNumbers: number[];
+  };
   locale?: "pt-BR" | "en";
   /** Exact bounded setup snapshot used to direct this report; absent on legacy sessions. */
   jobDirection?: JobDirection;

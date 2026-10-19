@@ -86,5 +86,5 @@ describe("technical relevance filter", () => {
 });
 
 describe("turn analysis deadline", () => {
-  it("caps per-turn provider work at twelve seconds", () => expect(defaultInterviewTurnAnalysisTimeoutMs).toBe(12_000));
+  it("caps per-turn provider work at twenty-two seconds", () => expect(defaultInterviewTurnAnalysisTimeoutMs).toBe(22_000));
 });
