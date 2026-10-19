@@ -21,13 +21,20 @@ function point(index: number, total: number, radius: number) {
  * and Azure voice scores (0–100) share one scale. Each axis is labeled with its name and value, so nothing depends on
  * hover; English points are circles and voice points diamonds. Entrance replays through an ancestor [data-reveal].
  */
-export function ProfileRadar({ items, active, onActive, label }: { items: RadarItem[]; active: string | null; onActive: (key: string | null) => void; label: string }) {
+export function ProfileRadar({ items, active, selected, onActive, onSelect, label }: {
+  items: RadarItem[];
+  active: string | null;
+  selected: string | null;
+  onActive: (key: string | null) => void;
+  onSelect: (key: string) => void;
+  label: string;
+}) {
   const total = items.length;
   const ring = (fraction: number) => items.map((_, i) => { const p = point(i, total, RADIUS * fraction); return `${p.x},${p.y}`; }).join(" ");
   const shape = items.map((item, i) => { const p = point(i, total, (RADIUS * Math.max(0, Math.min(100, item.value))) / 100); return `${p.x},${p.y}`; }).join(" ");
 
   return (
-    <svg viewBox="-66 -24 432 348" className="pr-svg" role="img" aria-label={label} onMouseLeave={() => onActive(null)}>
+    <svg viewBox="-66 -24 432 348" className="pr-svg" role="group" aria-label={label} onMouseLeave={() => onActive(null)}>
       {[1, 0.75, 0.5, 0.25].map((fraction) => <polygon key={fraction} className="pr-ring" data-outer={fraction === 1} points={ring(fraction)} />)}
       {[50, 100].map((value) => <text key={value} className="pr-ring-value" x={CENTER + 4} y={CENTER - (RADIUS * value) / 100 + 11}>{value}</text>)}
       {items.map((item, i) => {
@@ -52,7 +59,14 @@ export function ProfileRadar({ items, active, onActive, label }: { items: RadarI
         const anchor = Math.abs(cos) < 0.2 ? "middle" : cos > 0 ? "start" : "end";
         const dy = sin < -0.5 ? -14 : sin > 0.5 ? 6 : -4;
         return (
-          <g key={item.key} className="pr-label" data-active={active === item.key} style={{ "--k": i } as React.CSSProperties} onMouseEnter={() => onActive(item.key)}>
+          <g
+            key={item.key}
+            className="pr-label"
+            data-active={active === item.key}
+            style={{ "--k": i } as React.CSSProperties}
+            onMouseEnter={() => onActive(item.key)}
+            onClick={() => onSelect(item.key)}
+          >
             <text className="pr-label-name" x={at.x} y={at.y + dy} textAnchor={anchor}>{item.label}</text>
             <text className="pr-label-value" x={at.x} y={at.y + dy + 18} textAnchor={anchor}>{item.display}</text>
           </g>
@@ -60,7 +74,29 @@ export function ProfileRadar({ items, active, onActive, label }: { items: RadarI
       })}
       {items.map((item, i) => {
         const p = point(i, total, (RADIUS * Math.max(0, Math.min(100, item.value))) / 100);
-        return <circle key={item.key} className="pr-hit" cx={p.x} cy={p.y} r={16} onMouseEnter={() => onActive(item.key)} />;
+        return (
+          <circle
+            key={item.key}
+            className="pr-hit"
+            cx={p.x}
+            cy={p.y}
+            r={16}
+            role="button"
+            tabIndex={0}
+            aria-label={`${item.label}: ${item.display}`}
+            aria-pressed={selected === item.key}
+            onMouseEnter={() => onActive(item.key)}
+            onFocus={() => onActive(item.key)}
+            onBlur={() => onActive(null)}
+            onClick={() => onSelect(item.key)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(item.key);
+              }
+            }}
+          />
+        );
       })}
     </svg>
   );
