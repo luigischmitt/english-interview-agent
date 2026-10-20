@@ -134,14 +134,66 @@
 .rp-pattern-eyebrow[data-type="WORD_CHOICE"]::before { background: var(--ds-warning); }
 .rp-pattern-eyebrow[data-type="FALSE_COGNATE"]::before { background: var(--ds-error); }
 .rp-pattern-eyebrow[data-type="STRUCTURE"]::before { background: var(--ds-text-2); }
-/* Corrections: when the card first scrolls into view the strike draws across the wrong words (ink to red), then the fix highlights. */
-.rp-diff-old { -webkit-box-decoration-break: clone; box-decoration-break: clone; color: var(--ds-error); background: linear-gradient(currentColor, currentColor) 0 58% / 100% 1px no-repeat; transition: background-size 300ms var(--ease-out) 260ms, color 300ms ease 260ms; }
-.rp-diff-new { color: var(--ds-green-deep); background: var(--ds-tint); border-radius: 0.2em; padding-inline: 0.08em; transition: background-color 360ms ease 560ms, color 360ms ease 560ms; }
-[data-inview="false"] .rp-diff-old { background-size: 0 1px; color: var(--ds-ink); transition: none; }
-[data-inview="false"] .rp-diff-new { background-color: transparent; color: var(--ds-ink); transition: none; }
 .rp-priority-item { display: flex; gap: 0.875rem; align-items: flex-start; }
 .rp-priority-item .rp-priority-number { flex: 0 0 1.75rem; display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--ds-tint); color: var(--ds-green-deep); font-size: 0.8125rem; font-weight: 700; }
 .rp-priority-item[data-area="ENGLISH_COMMUNICATION"] .rp-priority-number { background: var(--ds-warning-tint); color: var(--ds-warning); }
 .rp-priority-area { display: block; width: fit-content; margin-bottom: 0.25rem; color: var(--ds-text-2); font-size: 0.6875rem; }
 .rp-priority-evidence { display: block; margin-top: 0.25rem; color: var(--ds-text-2); font-size: 0.8125rem; }
-@media (prefers-reduced-motion: reduce) { .rp-diff-old, .rp-diff-new { transition: none; } }
+
+/*
+ * Report motion. Signature: the report "being written". The title forms letter by letter, then each correction card plays the
+ * landing's difference (~2.2s, one card after another, once): "Você disse" appears, the wrong words are struck in red word by word,
+ * "Mais natural" forms and the changed words light up green one by one. Settled state is the default (no animation = final
+ * look), so SSR, no-JS and reduced motion all show the finished correction. Cards are hidden only while data-play="wait".
+ */
+.rp-diff-old { -webkit-box-decoration-break: clone; box-decoration-break: clone; color: var(--ds-error); background: linear-gradient(currentColor, currentColor) 0 60% / 100% 2px no-repeat; }
+.rp-diff-new { color: var(--ds-green-deep); background: linear-gradient(var(--ds-tint), var(--ds-tint)) 0 0 / 100% 100% no-repeat; border-radius: 0.2em; padding-inline: 0.12em; font-weight: 600; }
+
+@keyframes rp-card-in { from { opacity: 0; transform: translateY(22px) scale(0.985); } }
+@keyframes rp-clip-in { from { clip-path: inset(-0.3em 100% -0.3em -0.1em); opacity: 0.2; transform: translateX(-6px); } to { clip-path: inset(-0.3em -0.1em); } }
+@keyframes rp-fade-up { from { opacity: 0; transform: translateY(8px); } }
+@keyframes rp-strike { from { background-size: 0 2px; color: var(--ds-ink); } }
+@keyframes rp-light { from { background-size: 0 100%; color: var(--ds-ink); } }
+
+.rp-pattern-card[data-play="wait"] { opacity: 0; transform: translateY(22px); }
+.rp-pattern-card[data-play="go"] { animation: rp-card-in 520ms var(--ease-out) backwards; }
+.rp-pattern-card[data-play="go"] .rp-said { animation: rp-clip-in 520ms var(--ease-out) 240ms backwards; }
+.rp-pattern-card[data-play="go"] .rp-diff-old { animation: rp-strike 320ms var(--ease-out) calc(800ms + var(--k, 0) * 200ms) backwards; }
+.rp-pattern-card[data-play="go"] .rp-natural { animation: rp-clip-in 620ms var(--ease-out) calc(900ms + var(--ko, 0) * 200ms) backwards; }
+.rp-pattern-card[data-play="go"] .rp-diff-new { animation: rp-light 460ms var(--ease-out) calc(1350ms + var(--ko, 0) * 200ms + var(--k, 0) * 220ms) backwards; }
+.rp-pattern-card[data-play="go"] :is(.rp-hint, .rp-phrase-ref) { animation: rp-fade-up 500ms var(--ease-out) calc(1500ms + var(--ko, 0) * 200ms) backwards; }
+
+/* Como você foi percebido: the two cards arrive from opposite sides. */
+@keyframes rp-from-left { from { opacity: 0; transform: translateX(-44px); } }
+@keyframes rp-from-right { from { opacity: 0; transform: translateX(44px); } }
+.rp-perception-grid { overflow-x: clip; padding-bottom: 2px; }
+.rp-perception.ds-item { animation: rp-from-left 850ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 120ms); }
+.rp-perception.ds-item[data-tone="concern"] { animation-name: rp-from-right; animation-delay: calc(var(--rd, 0ms) + 260ms); }
+
+/* Visão geral: the three tiles are dealt like cards, one after another. */
+@keyframes rp-deal { 0% { opacity: 0; transform: translateY(30px) rotate(-3.5deg) scale(0.94); } 60% { opacity: 1; transform: translateY(-4px) rotate(0.6deg) scale(1.01); } 100% { transform: none; } }
+.rp-overview-tile.ds-item { transform-origin: 0 100%; animation: rp-deal 800ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 150ms + var(--i, 0) * 170ms); }
+
+/* Desde a última entrevista: rows slide in, the arrow points, then the new value lands. */
+@keyframes rp-delta-in { from { opacity: 0; transform: translateX(-14px); } }
+@keyframes rp-arrow { from { opacity: 0; transform: translateX(-10px); } 60% { transform: translateX(3px); } }
+@keyframes rp-to { from { opacity: 0; transform: translateY(6px) scale(0.9); } 60% { transform: translateY(-1px) scale(1.06); } }
+.rp-delta { display: block; }
+.rp-delta.ds-item { animation: rp-delta-in 600ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 300ms + var(--i, 0) * 260ms); }
+.rp-delta-arrow, .rp-delta-to { display: inline-block; font-weight: 700; }
+.rp-delta-arrow { animation: rp-arrow 520ms var(--ease-out) calc(var(--rd, 0ms) + 600ms + var(--i, 0) * 260ms) backwards; }
+.rp-delta-to { animation: rp-to 560ms var(--ease-out) calc(var(--rd, 0ms) + 800ms + var(--i, 0) * 260ms) backwards; }
+[data-inview="false"] :is(.rp-delta-arrow, .rp-delta-to) { animation-play-state: paused; }
+
+/* Voice metrics: the number counts up while its bar fills. */
+.rp-metric-bar { margin-top: 0.625rem; height: 0.3125rem; overflow: hidden; border-radius: var(--ds-r-pill); background: var(--ds-track); }
+.rp-metric-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--ds-green); transform: scaleX(var(--v, 0)); transform-origin: left; }
+.rp-metric[data-limited="true"] .rp-metric-bar > span { background: var(--ds-text-2); opacity: 0.55; }
+.rp-metric-bar > span.ds-grow-x { animation-name: rp-bar-fill; animation-timing-function: cubic-bezier(.23, 1, .32, 1); }
+@keyframes rp-bar-fill { from { transform: scaleX(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-pattern-card[data-play], .rp-pattern-card[data-play] :is(.rp-said, .rp-natural, .rp-diff-old, .rp-diff-new, .rp-hint, .rp-phrase-ref),
+  .rp-perception.ds-item, .rp-overview-tile.ds-item, .rp-delta.ds-item, .rp-delta-arrow, .rp-delta-to, .rp-metric-bar > span { animation: none; }
+  .rp-pattern-card[data-play="wait"] { opacity: 1; transform: none; }
+}

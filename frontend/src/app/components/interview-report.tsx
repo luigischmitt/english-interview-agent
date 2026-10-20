@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { getCurrentLocale, t } from "@/lib/locale";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { answerOrdinalForSequence, pairInterviewTurns, type InterviewReportResult } from "@/lib/interview/report";
@@ -13,6 +13,7 @@ import { findingsForAnswer } from "@/lib/interview/report-response.mjs";
 import { deriveOverviewTiles, groupPatternsByType } from "@/lib/interview/report-overview.mjs";
 import { analysisCoverageNotice, buildReportDeltas, diffReportWords, displayInterviewerTakeaway, displayTechnicalFindings, isCompleteSentence } from "@/lib/interview/report-presentation.mjs";
 import { useReplayReveal } from "@/lib/use-replay-reveal";
+import { SplitTitle } from "@/components/ui/split-title";
 import { AzureVoiceReport } from "./azure-voice-report";
 import "./interview-report.css";
 
@@ -86,6 +87,92 @@ const patternTypeLabels: Record<string, string> = {
   STRUCTURE: "Estrutura",
 };
 
+
+type ReportPattern = ReturnType<typeof groupPatternsByType>[number]["items"][number];
+
+/** One correction card: the wrong words get struck word by word, then the natural sentence forms and its changes light up. */
+function PatternCard({ pattern, reference }: { pattern: ReportPattern; reference: (sequenceNumber: number) => number | null | undefined }) {
+  const diff = diffReportWords(pattern.evidence ?? "", pattern.rephrasedExample ?? "");
+  const oldCount = diff.original.filter((part) => part.changed).length;
+  let oldIndex = 0;
+  let newIndex = 0;
+  return (
+    <article className="ds-card rp-card rp-pattern-card ds-lift" data-pattern-card style={{ "--ko": Math.min(oldCount, 5) } as CSSProperties}>
+      <span className="rp-pattern-eyebrow" data-type={pattern.type}>
+        {t(patternTypeLabels[pattern.type] ?? pattern.type)}
+      </span>
+      <p lang="en" className="rp-said">
+        <span className="rp-quiet-label">{t("Você disse")}</span>
+        <br />
+        {diff.original.map((part, partIndex) => part.changed ? <del className="rp-diff-old" style={{ "--k": Math.min(oldIndex++, 5) } as CSSProperties} key={partIndex}>{part.text}</del> : <span key={partIndex}>{part.text}</span>)}
+      </p>
+      <p lang="en" className="rp-rephrase-text rp-natural">
+        <span className="rp-quiet-label">{t("Mais natural")}</span>
+        <br />
+        {diff.revised.map((part, partIndex) => part.changed ? <mark className="rp-diff-new" style={{ "--k": Math.min(newIndex++, 5) } as CSSProperties} key={partIndex}>{part.text}</mark> : <span key={partIndex}>{part.text}</span>)}
+      </p>
+      {isCompleteSentence(pattern.suggestion) && <p className="rp-hint mt-2">{pattern.suggestion}</p>}
+      {isCompleteSentence(pattern.why) && (
+        <p className="rp-hint mt-1">{t("Por que acontece: ")}{pattern.why}</p>
+      )}
+      <p className="rp-phrase-ref">{t("Resposta ")}{reference(pattern.sequenceNumber)}</p>
+    </article>
+  );
+}
+
+const cardSpacingMs = 1400;
+
+/**
+ * Plays the correction cards one after another, once each, as they come into view. Cards are marked `data-play="wait"` before
+ * paint (hidden), queued when they scroll into view and released `cardSpacingMs` apart so each choreography can be read.
+ * Under reduced motion / without IntersectionObserver nothing is marked and the cards stay visible.
+ */
+function usePatternSequence(listRef: React.RefObject<HTMLElement | null>, deps: readonly unknown[]) {
+  const state = useRef<{ queue: HTMLElement[]; timer: number | null; mountedAt: number }>({ queue: [], timer: null, mountedAt: 0 });
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const current = state.current;
+    if (!list || !("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!current.mountedAt) current.mountedAt = performance.now();
+    const release = () => {
+      const next = current.queue.shift();
+      if (!next) { current.timer = null; return; }
+      next.setAttribute("data-play", "go");
+      current.timer = window.setTimeout(release, cardSpacingMs);
+    };
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        observer.unobserve(entry.target);
+        if (!current.queue.includes(entry.target as HTMLElement)) current.queue.push(entry.target as HTMLElement);
+      }
+      current.queue.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+      if (current.timer === null && current.queue.length) {
+        const lead = performance.now() - current.mountedAt < 1200 ? 700 : 150;
+        current.timer = window.setTimeout(release, lead);
+      }
+    }, { threshold: 0.15, rootMargin: "0px 0px -8% 0px" });
+    list.querySelectorAll<HTMLElement>("[data-pattern-card]").forEach((card) => {
+      if (card.dataset.play === "go" || current.queue.includes(card)) return;
+      card.setAttribute("data-play", "wait");
+      observer.observe(card);
+    });
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  useEffect(() => () => { if (state.current.timer !== null) window.clearTimeout(state.current.timer); }, []);
+}
+
+/** "Antes → depois" rows tick in: the row slides in, the arrow points, then the new value lands. */
+function DeltaRow({ label, change, index }: { label: string; change?: string; index: number }) {
+  const [from, to] = label.split(" → ");
+  return (
+    <p className="rp-delta ds-item" data-change={change} style={{ "--i": index + 3 } as CSSProperties}>
+      {to === undefined ? label : <>{from} <span className="rp-delta-arrow" aria-hidden="true">→</span><span className="sr-only"> → </span> <span className="rp-delta-to">{to}</span></>}
+    </p>
+  );
+}
+
 function SectionHeading({
   title,
   description,
@@ -133,6 +220,8 @@ function ReadyReport({
   const technical = displayTechnicalFindings(result.technicalContent.strengths, result.technicalContent.gaps, initialTakeaway.concern ? [{ explanation: initialTakeaway.concern }] : []);
   const takeaway = displayInterviewerTakeaway(result.interviewerTakeaway, technical.gaps);
   const coverageNotice = analysisCoverageNotice(result.analysisCoverage, reference);
+  const patternListRef = useRef<HTMLDivElement>(null);
+  usePatternSequence(patternListRef, [visiblePatterns.length]);
 
   return (
     <div className="rp-stack rp-ready">
@@ -149,7 +238,7 @@ function ReadyReport({
           title="Visão geral"
           description="Um panorama do conteúdo, do inglês e da sua voz nesta entrevista."
         />
-        <div className="ds-card rp-card">
+        <div className="ds-card rp-card ds-item">
           {isCompleteSentence(result.technicalContent.summary) && (
             <p className="rp-summary">{result.technicalContent.summary}</p>
           )}
@@ -164,7 +253,7 @@ function ReadyReport({
           </div>
         </div>
         {coverageNotice && <p className="rp-coverage-note" role="status">{t(coverageNotice)}</p>}
-        {deltas.length > 0 && <section className="rp-deltas" aria-label={t("Desde a última entrevista")}><h3 className="rp-subtitle">{t("Desde a última entrevista")}</h3>{deltas.map((delta) => <p key={delta.label} data-change={delta.change}>{t(delta.label)}</p>)}</section>}
+        {deltas.length > 0 && <section className="rp-deltas" aria-label={t("Desde a última entrevista")}><h3 className="rp-subtitle">{t("Desde a última entrevista")}</h3>{deltas.map((delta, index) => <DeltaRow key={delta.label} label={t(delta.label)} change={delta.change} index={index} />)}</section>}
       </section>
       <section className="rp-section" id="english-section" aria-labelledby="english-title" data-reveal="group">
         <SectionHeading
@@ -172,31 +261,9 @@ function ReadyReport({
           title="Seu inglês"
           description="Padrões que apareceram nas respostas, agrupados por tipo."
         />
-        <div className="rp-pattern-list ds-stagger">
+        <div className="rp-pattern-list" ref={patternListRef}>
           {visiblePatterns.map((pattern, index) => (
-            <article
-              className="ds-card rp-card rp-pattern-card ds-lift" data-reveal
-              key={`${pattern.type}-${pattern.sequenceNumber}-${index}`}
-            >
-              <span className="rp-pattern-eyebrow" data-type={pattern.type}>
-                {t(patternTypeLabels[pattern.type] ?? pattern.type)}
-              </span>
-              <p lang="en">
-                <span className="rp-quiet-label">{t("Você disse")}</span>
-                <br />
-                {diffReportWords(pattern.evidence ?? "", pattern.rephrasedExample ?? "").original.map((part, partIndex) => part.changed ? <del className="rp-diff-old" key={partIndex}>{part.text}</del> : <span key={partIndex}>{part.text}</span>)}
-              </p>
-              <p lang="en" className="rp-rephrase-text">
-                <span className="rp-quiet-label">{t("Mais natural")}</span>
-                <br />
-                {diffReportWords(pattern.evidence ?? "", pattern.rephrasedExample ?? "").revised.map((part, partIndex) => part.changed ? <mark className="rp-diff-new" key={partIndex}>{part.text}</mark> : <span key={partIndex}>{part.text}</span>)}
-              </p>
-              {isCompleteSentence(pattern.suggestion) && <p className="rp-hint mt-2">{pattern.suggestion}</p>}
-              {isCompleteSentence(pattern.why) && (
-                <p className="rp-hint mt-1">{t("Por que acontece: ")}{pattern.why}</p>
-              )}
-              <p className="rp-phrase-ref">{t("Resposta ")}{reference(pattern.sequenceNumber)}</p>
-            </article>
+            <PatternCard pattern={pattern} reference={reference} key={`${pattern.type}-${pattern.sequenceNumber}-${index}`} />
           ))}
         </div>
         {patternCount > 4 && (
@@ -311,14 +378,14 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
           <ArrowLeft className="size-4" aria-hidden="true" />
           {getCurrentLocale() === "en" ? "Back to Progress" : t("Voltar ao Progresso")}
         </button>}
-      <header className="rp-hero ds-enter">
+      <header className="rp-hero">
         <h1 id="interview-complete-title" className="font-display text-balance rp-title">
-          {t("Seu relatório de entrevista")}
+          <SplitTitle text={t("Seu relatório de entrevista")} rise={0.55} blur={9} duration={950} budget={650} maxStagger={32} />
         </h1>
-        <p className="ds-body mt-3 max-w-[60ch]">
+        <p className="ds-body ds-rise mt-3 max-w-[60ch]" style={{ "--d": "700ms" } as CSSProperties}>
           {t(persistenceLabel)}. {t("Suas respostas foram transcritas.")}
         </p>
-        <dl className="rp-facts">
+        <dl className="rp-facts ds-rise" style={{ "--d": "850ms" } as CSSProperties}>
           <div>
             <dt>{t(config.interviewSource === "resume" ? "Modo" : "Cargo")}</dt>
             <dd>{config.interviewSource === "resume" ? t(headingFacts) : headingFacts}</dd>

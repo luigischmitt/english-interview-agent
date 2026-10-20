@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { t } from "@/lib/locale";
 import { CountUp } from "@/components/ui/count-up";
 import { azureMetricReliability, type AzureMetricSummary, type AzureReportDimension } from "@/lib/interview/report-metrics.mjs";
@@ -17,6 +18,7 @@ function Metric({ dimension, metric }: { dimension: AzureReportDimension; metric
     <div className="rp-metric ds-item" data-limited={limited ? "true" : undefined}>
       <dt className="ds-label">{t(label)}</dt>
       <dd className="rp-metric-value">{showValue && metric.mean !== null ? <><CountUp value={metric.mean} decimals={1} /><span className="rp-metric-unit"> {t("/ 100")}</span></> : "—"}</dd>
+      {showValue && metric.mean !== null && <div className="rp-metric-bar" aria-hidden="true"><span className="ds-grow-x" style={{ "--v": Math.max(0, Math.min(1, metric.mean / 100)) } as CSSProperties} /></div>}
       <p className="rp-hint mt-1">{answerCountLabel(metric.sampleCount)}</p>
       {limited && <p className="rp-reliability">{t(azureReliabilityCopy[reliability])}</p>}
       <p className="rp-hint mt-2">{t(help)}</p>
@@ -34,7 +36,7 @@ export function AzureVoiceReport({ summary, coverage, step, title = "Sinais voca
         <h2 id="voice-report-title" className="ds-h2">{title}</h2>
       </div>
       <p className="rp-hint mt-2">{t(azureReportIntro)}</p>
-      <dl className="rp-metrics ds-stagger">
+      <dl className="rp-metrics ds-stagger" style={{ "--grow-t": "1200ms", "--grow-step": "160ms" } as CSSProperties}>
         {dimensions.map((dimension) => <Metric key={dimension} dimension={dimension} metric={summary[dimension]} />)}
       </dl>
       {delivery && <div className="rp-delivery">
