@@ -158,12 +158,13 @@
 @media (min-width: 700px) { .rp-pattern-card:nth-child(even) { --po: 150ms; } }
 .rp-pattern-card[data-play="wait"] { opacity: 0; transform: translateY(18px); }
 .rp-pattern-card[data-play="go"] { animation: rp-card-in 400ms var(--ease-out) var(--po, 0ms) backwards; }
-.rp-pattern-card[data-play="go"] .rp-said { animation: rp-clip-in 420ms var(--ease-out) calc(var(--po, 0ms) + 200ms) backwards; }
-.rp-pattern-card[data-play="go"] .rp-diff-old { animation: rp-strike 260ms var(--ease-out) calc(var(--po, 0ms) + 600ms + var(--k, 0) * 110ms) backwards; }
-.rp-pattern-card[data-play="go"] .rp-natural { animation: rp-clip-in 480ms var(--ease-out) calc(var(--po, 0ms) + 760ms) backwards; }
-.rp-pattern-card[data-play="go"] .rp-diff-new { animation: rp-light 380ms var(--ease-out) calc(var(--po, 0ms) + 1120ms + var(--k, 0) * 110ms) backwards; }
-.rp-pattern-card[data-play="go"] :is(.rp-hint, .rp-phrase-ref) { animation: rp-fade-up 420ms var(--ease-out) calc(var(--po, 0ms) + 1250ms) backwards; }
+.rp-pattern-card[data-play="go"] .rp-said { animation: rp-clip-in 420ms var(--ease-out) calc(var(--po, 0ms) + 40ms) backwards; }
+.rp-pattern-card[data-play="go"] .rp-diff-old { animation: rp-strike 260ms var(--ease-out) calc(var(--po, 0ms) + 380ms + var(--k, 0) * 110ms) backwards; }
+.rp-pattern-card[data-play="go"] .rp-natural { animation: rp-clip-in 480ms var(--ease-out) calc(var(--po, 0ms) + 520ms) backwards; }
+.rp-pattern-card[data-play="go"] .rp-diff-new { animation: rp-light 380ms var(--ease-out) calc(var(--po, 0ms) + 820ms + var(--k, 0) * 110ms) backwards; }
+.rp-pattern-card[data-play="go"] :is(.rp-hint, .rp-phrase-ref) { animation: rp-fade-up 420ms var(--ease-out) calc(var(--po, 0ms) + 950ms) backwards; }
 
+/* Content arrives with its card (short leads), so a card never sits empty and white before its entrance. */
 /* Como você foi percebido: the two cards fly in from far on opposite sides (landing "qfly"), then lock in with a small overshoot. */
 @keyframes rp-fly {
   0% { opacity: 0; transform: translate3d(var(--fx), var(--fy), 0) rotate(var(--fr)) scale(0.85); filter: blur(12px); }
@@ -178,17 +179,17 @@ html.rp-clip-x { overflow-x: clip; }
 
 /* Visão geral: the three tiles are dealt like cards, one after another. */
 @keyframes rp-deal { 0% { opacity: 0; transform: translateY(30px) rotate(-3.5deg) scale(0.94); } 60% { opacity: 1; transform: translateY(-4px) rotate(0.6deg) scale(1.01); } 100% { transform: none; } }
-.rp-overview-tile.ds-item { transform-origin: 0 100%; animation: rp-deal 800ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 150ms + var(--i, 0) * 170ms); }
+.rp-overview-tile.ds-item { transform-origin: 0 100%; animation: rp-deal 800ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 60ms + var(--i, 0) * 120ms); }
 
 /* Desde a última entrevista: rows slide in, the arrow points, then the new value lands. */
 @keyframes rp-delta-in { from { opacity: 0; transform: translateX(-14px); } }
 @keyframes rp-arrow { from { opacity: 0; transform: translateX(-10px); } 60% { transform: translateX(3px); } }
 @keyframes rp-to { from { opacity: 0; transform: translateY(6px) scale(0.9); } 60% { transform: translateY(-1px) scale(1.06); } }
 .rp-delta { display: block; }
-.rp-delta.ds-item { animation: rp-delta-in 600ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 300ms + var(--i, 0) * 260ms); }
+.rp-delta.ds-item { animation: rp-delta-in 600ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 80ms + var(--i, 0) * 200ms); }
 .rp-delta-arrow, .rp-delta-to { display: inline-block; font-weight: 700; }
-.rp-delta-arrow { animation: rp-arrow 520ms var(--ease-out) calc(var(--rd, 0ms) + 600ms + var(--i, 0) * 260ms) backwards; }
-.rp-delta-to { animation: rp-to 560ms var(--ease-out) calc(var(--rd, 0ms) + 800ms + var(--i, 0) * 260ms) backwards; }
+.rp-delta-arrow { animation: rp-arrow 520ms var(--ease-out) calc(var(--rd, 0ms) + 360ms + var(--i, 0) * 200ms) backwards; }
+.rp-delta-to { animation: rp-to 560ms var(--ease-out) calc(var(--rd, 0ms) + 560ms + var(--i, 0) * 200ms) backwards; }
 [data-inview="false"] :is(.rp-delta-arrow, .rp-delta-to) { animation-play-state: paused; }
 
 /* Voice signals: the cards arrive one after another, each number counts up while its bar fills, then the delivery line sweeps in. */
@@ -200,7 +201,7 @@ html.rp-clip-x { overflow-x: clip; }
 /* in step with MetricNumber in azure-voice-report.tsx (700ms start, 260ms per metric, 2200ms, quadratic ease-out) */
 .rp-metric-bar > span.ds-grow-x { animation: rp-bar-fill 2200ms cubic-bezier(.5, 1, .89, 1) calc(var(--rd, 0ms) + 700ms + var(--i, 0) * 260ms) backwards; }
 @keyframes rp-bar-fill { from { transform: scaleX(0); } }
-.rp-metric.ds-item { animation: rp-metric-in 900ms var(--ease-out) calc(var(--rd, 0ms) + 150ms + var(--i, 0) * 220ms) backwards; }
+.rp-metric.ds-item { animation: rp-metric-in 900ms var(--ease-out) calc(var(--rd, 0ms) + 40ms + var(--i, 0) * 220ms) backwards; }
 .rp-metric > :is(.rp-hint, .rp-reliability, .rp-metric-insight) { animation: rp-fade-up 600ms var(--ease-out) calc(var(--rd, 0ms) + 900ms + var(--i, 0) * 220ms) backwards; }
 .rp-delivery { animation: rp-sweep 900ms var(--ease-out) calc(var(--rd, 0ms) + 1300ms) backwards; }
 .rp-delivery-insight { animation: rp-fade-up 600ms var(--ease-out) calc(var(--rd, 0ms) + 1750ms) backwards; }
@@ -210,10 +211,10 @@ html.rp-clip-x { overflow-x: clip; }
 @keyframes rp-num-drop { 0% { opacity: 0; transform: translateY(-22px) scale(1.7); } 50% { opacity: 1; transform: translateY(2px) scale(0.9); } 74% { transform: scale(1.08); } 100% { transform: none; } }
 @keyframes rp-num-ring { 0% { opacity: 0.55; transform: scale(1); } 100% { opacity: 0; transform: scale(2.1); } }
 @keyframes rp-fade { from { opacity: 0; } }
-.rp-priority-item.ds-item { animation: rp-fade 300ms ease-out calc(var(--rd, 0ms) + 80ms + var(--i, 0) * 380ms) backwards; }
-.rp-priority-item .rp-priority-number { position: relative; animation: rp-num-drop 720ms cubic-bezier(.3, 1.2, .4, 1) calc(var(--rd, 0ms) + 120ms + var(--i, 0) * 380ms) backwards; }
-.rp-priority-item .rp-priority-number::after { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 2px currentColor; opacity: 0; animation: rp-num-ring 700ms var(--ease-out) calc(var(--rd, 0ms) + 560ms + var(--i, 0) * 380ms) backwards; }
-.rp-priority-item > div { animation: rp-fade-up 600ms var(--ease-out) calc(var(--rd, 0ms) + 460ms + var(--i, 0) * 380ms) backwards; }
+.rp-priority-item.ds-item { animation: rp-fade 300ms ease-out calc(var(--rd, 0ms) + var(--i, 0) * 260ms) backwards; }
+.rp-priority-item .rp-priority-number { position: relative; animation: rp-num-drop 720ms cubic-bezier(.3, 1.2, .4, 1) calc(var(--rd, 0ms) + 40ms + var(--i, 0) * 260ms) backwards; }
+.rp-priority-item .rp-priority-number::after { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 2px currentColor; opacity: 0; animation: rp-num-ring 700ms var(--ease-out) calc(var(--rd, 0ms) + 420ms + var(--i, 0) * 260ms) backwards; }
+.rp-priority-item > div { animation: rp-fade-up 600ms var(--ease-out) calc(var(--rd, 0ms) + 200ms + var(--i, 0) * 260ms) backwards; }
 
 /* The shorthands above reset play-state, so every entrance waits (paused) until its section is on screen. */
 [data-inview="false"] :is(.rp-perception.ds-item, .rp-overview-tile.ds-item, .rp-delta.ds-item, .rp-metric.ds-item, .rp-priority-item.ds-item, .rp-metric-bar > span.ds-grow-x, .rp-metric > :is(.rp-hint, .rp-reliability, .rp-metric-insight), .rp-delivery, .rp-delivery-insight, .rp-voice-foot, .rp-priority-number, .rp-priority-item > div) { animation-play-state: paused; }

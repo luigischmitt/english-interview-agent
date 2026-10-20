@@ -42,7 +42,8 @@ export function useCountUp<T extends Element>(value: number, { duration = 1800, 
     const element = ref.current;
     if (!element) { s.played = true; setShown(value); return; }
     // Start only when the number sits well inside the viewport AND its revealing section (if any) has played its entrance.
-    const section = element.closest<HTMLElement>("[data-inview]");
+    // Look for the revealing section by its static marker: `data-inview` is set by the parent's layout effect, after this one.
+    const section = element.closest<HTMLElement>("[data-reveal]");
     let watcher: MutationObserver | null = null;
     const start = () => {
       s.played = true;
