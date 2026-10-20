@@ -1591,7 +1591,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
                 <span className="sr-only">{t("Microfone ativo durante a entrevista — só enviamos áudio durante as suas respostas.")}</span>
               </span>
             )}
-            <div className="mt-timer" data-over={timeLimitReached ? "true" : undefined}>
+            <div className="mt-timer" data-over={timeLimitReached ? "true" : undefined} data-final={!timeLimitReached && durationMinutes * 60 - seconds <= 60 ? "true" : undefined}>
               <strong aria-label={`${t("Tempo decorrido: ")}${elapsed}`}>{elapsed}</strong>
               <span aria-hidden="true">{t("·")}</span>
               <span aria-label={`${t("Tempo restante: ")}${remaining}`}>{timeLimitReached ? `+${formatClock(seconds - durationMinutes * 60)}` : remaining} <span className="mt-timer-rest">{t("restantes")}</span></span>

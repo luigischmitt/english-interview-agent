@@ -52,6 +52,15 @@
 .mt-call[hidden] { display: none; }
 .mt-call :focus-visible { outline: 2px solid var(--mt-accent); outline-offset: 3px; }
 
+/* ---- Entrance on join: header, tiles and dock rise in (transform + opacity only; controls are interactive from the first frame). ---- */
+.mt-top { animation: mt-enter 360ms var(--ease-out) backwards; }
+.mt-candidate { animation: mt-enter 420ms var(--ease-out) 70ms backwards; }
+.mt-interviewer { animation: mt-enter 420ms var(--ease-out) 140ms backwards; }
+/* The bar has a backdrop blur: an opacity animation on it (or its parent) would drop the blur mid-way, so it only slides. */
+.mt-bar { animation: mt-bar-in 400ms var(--ease-out) 180ms backwards; }
+@keyframes mt-enter { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes mt-bar-in { from { transform: translateY(18px); } to { transform: none; } }
+
 /* ---- Top overlay: role, save status, calm timer, hairline progress. ---- */
 .mt-top { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(18px + env(safe-area-inset-top, 0px)) 4px 16px; min-width: 0; }
 .mt-top-title { min-width: 0; }
@@ -61,8 +70,13 @@
 .mt-save, .mt-mic-live { display: inline-flex; align-items: center; gap: 5px; font-size: 0.75rem; color: var(--mt-muted); }
 .mt-save-text { display: none; }
 .mt-mic-live { color: var(--mt-accent); }
-.mt-timer { display: inline-flex; align-items: center; gap: 6px; border-radius: 9999px; background: var(--mt-chip); padding: 6px 12px; font-size: 0.8125rem; font-variant-numeric: tabular-nums; color: var(--mt-muted); }
-.mt-timer strong { color: var(--mt-text); font-weight: 600; }
+.mt-timer { transition: background-color 400ms ease, color 400ms ease; display: inline-flex; align-items: center; gap: 6px; border-radius: 9999px; background: var(--mt-chip); padding: 6px 12px; font-size: 0.8125rem; font-variant-numeric: tabular-nums; color: var(--mt-muted); }
+.mt-timer strong { color: var(--mt-text); font-weight: 600; transition: color 400ms ease; }
+/* Last minute: a calm warm tint and a slow breathing dot (no flashing, no layout change). */
+.mt-timer[data-final="true"] { background: var(--mt-over-bg); color: var(--mt-over-text); }
+.mt-timer[data-final="true"] strong { color: var(--mt-over-text); }
+.mt-timer[data-final="true"]::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 9999px; background: currentColor; animation: mt-breathe 2.6s ease-in-out infinite; }
+@keyframes mt-breathe { 0%, 100% { opacity: 0.25; transform: scale(0.8); } 50% { opacity: 0.9; transform: scale(1); } }
 .mt-timer-rest { display: none; }
 .mt-timer[data-over="true"] { background: var(--mt-over-bg); color: var(--mt-over-text); }
 .mt-timer[data-over="true"] strong { color: var(--mt-over-text); }
@@ -106,6 +120,7 @@
   border-radius: inherit;
   border: 3px solid var(--mt-accent);
   opacity: 0;
+  transition: opacity 300ms ease;
   pointer-events: none;
 }
 /* Soft warm glow around the toucan. The avatar paints its own wall, so the glow is blended over it (multiply on light,
@@ -143,8 +158,8 @@
 
 .mt-name .mt-bars { color: var(--ds-caption-accent); }
 .mt-bars { display: inline-flex; height: 12px; align-items: center; gap: 2px; color: var(--mt-accent); }
-.mt-bars i { display: block; width: 3px; height: 100%; border-radius: 2px; background: currentColor; transform: scaleY(0.3); transform-origin: center; }
-.mt-bars[data-active="true"] i { animation: mt-bar 800ms var(--ease-in-out) infinite alternate; }
+.mt-bars i { opacity: 0.55; transition: opacity 300ms ease; display: block; width: 3px; height: 100%; border-radius: 2px; background: currentColor; transform: scaleY(0.3); transform-origin: center; }
+.mt-bars[data-active="true"] i { opacity: 1; animation: mt-bar 800ms var(--ease-in-out) infinite alternate; }
 .mt-bars[data-active="true"] i:nth-child(2) { animation-delay: -300ms; animation-duration: 650ms; }
 .mt-bars[data-active="true"] i:nth-child(3) { animation-delay: -550ms; animation-duration: 950ms; }
 @keyframes mt-bar { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
@@ -169,14 +184,19 @@
   letter-spacing: -0.005em;
   text-wrap: pretty;
   text-align: left;
-  animation: ds-rise var(--ds-dur-slow) var(--ease-out) backwards;
+  animation: mt-cap-in 320ms var(--ease-out) backwards;
 }
+@keyframes mt-cap-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* Word-level fade: opacity only, so the text never reflows while it appears. */
+.mt-w { animation: mt-word 320ms ease-out backwards; }
+@keyframes mt-word { from { opacity: 0; } to { opacity: 1; } }
 
 /* Candidate tile: camera or avatar; ring + glow follow the real microphone level. */
 .mt-candidate video.mt-self-view { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .mt-glow { position: absolute; inset: 0; z-index: 2; background: radial-gradient(80% 60% at 50% 100%, var(--mt-accent) 0%, transparent 70%); opacity: 0; pointer-events: none; }
 .mt-cam-spinner { position: absolute; right: 14px; top: 14px; z-index: 4; animation: mt-spin 1s linear infinite; }
 @keyframes mt-spin { to { transform: rotate(360deg); } }
+.mt-candidate::after { transition: none; }
 .mt-candidate[data-capturing="true"]::after { opacity: calc(0.18 + var(--lvl, 0) * 0.82); transform: scale(calc(1 + var(--lvl, 0) * 0.008)); }
 .mt-candidate[data-capturing="true"] .mt-glow { opacity: calc(var(--lvl, 0) * 0.34); }
 .mt-candidate[data-capturing="true"] .mt-avatar::before { opacity: calc(var(--lvl, 0) * 0.45); transform: scale(calc(0.95 + var(--lvl, 0) * 0.4)); }
@@ -196,9 +216,12 @@
 /* ---- Dock: toasts above a floating control bar. ---- */
 .mt-dock { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 max(12px, env(safe-area-inset-right, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); pointer-events: none; }
 .mt-dock > * { pointer-events: auto; }
-.mt-toasts { display: flex; width: 100%; max-width: 34rem; max-height: 34dvh; flex-direction: column; gap: 8px; overflow-y: auto; overscroll-behavior: contain; } /* many warnings scroll instead of swallowing the stage */
-.mt-toast { display: flex; align-items: flex-start; gap: 10px; border-radius: 14px; background: var(--mt-toast-bg); color: var(--mt-toast-fg); padding: 10px 12px; font-size: 0.875rem; line-height: 1.4; box-shadow: 0 0 0 1px var(--mt-toast-line), var(--ds-shadow-float); animation: mt-toast-in var(--ds-dur-slow) var(--ease-out) backwards; }
-@keyframes mt-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* Many warnings scroll instead of swallowing the stage. A scroll container clips its children's shadows into a hard rectangle (the old
+   "blurred edges"), so it carries padding sized to the toast shadow and cancels it with negative margins: layout is unchanged. */
+.mt-toasts { box-sizing: border-box; display: flex; width: calc(100% + 32px); max-width: calc(34rem + 32px); max-height: 34dvh; flex-direction: column; gap: 8px; margin: 0 -16px -14px; padding: 2px 16px 14px; overflow-y: auto; overscroll-behavior: contain; }
+.mt-toasts:empty { margin: 0; padding: 0; }
+.mt-toast { display: flex; align-items: flex-start; gap: 10px; border-radius: 14px; background: var(--mt-toast-bg); color: var(--mt-toast-fg); padding: 10px 12px; font-size: 0.875rem; line-height: 1.25rem; box-shadow: 0 0 0 1px var(--mt-toast-line), 0 6px 14px -8px rgb(0 0 0 / 0.4); animation: mt-toast-in 340ms var(--ease-out) backwards; }
+@keyframes mt-toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .mt-toast-icon { flex: none; margin-top: 2px; color: var(--ds-green); }
 .mt-toast[data-tone="warn"] .mt-toast-icon { color: var(--ds-warning); }
 .mt-toast[data-tone="error"] { background: var(--ds-error-tint); color: var(--ds-error); }
@@ -240,9 +263,11 @@
 .mt-btn[data-off="true"] { background: var(--mt-btn-off-bg); color: var(--mt-btn-off-fg); }
 @media (hover: hover) and (pointer: fine) { .mt-btn:hover:not(:disabled) { background: var(--mt-btn-hover); } .mt-btn[data-off="true"]:hover:not(:disabled) { background: var(--mt-btn-off-hover); } }
 
-.mt-btn-mic[data-state="recording"] { background: var(--mt-accent-strong); color: var(--mt-on-accent); }
-.mt-btn-mic[data-state="recording"]::before { content: ""; position: absolute; inset: 0; border-radius: inherit; border: 2px solid var(--mt-accent); animation: mt-listen 1.4s var(--ease-out) infinite; pointer-events: none; }
-@keyframes mt-listen { from { opacity: 0.8; transform: scale(1); } to { opacity: 0; transform: scale(1.5); } }
+.mt-btn-mic[data-state="recording"] { background: var(--mt-accent-strong); color: var(--mt-on-accent); animation: mt-mic-pop 380ms var(--ease-out); }
+/* Gentle breathing ring while listening. */
+.mt-btn-mic[data-state="recording"]::before { content: ""; position: absolute; inset: 0; border-radius: inherit; border: 2px solid var(--mt-accent); animation: mt-listen 2.4s ease-in-out infinite; pointer-events: none; }
+@keyframes mt-listen { 0% { opacity: 0.7; transform: scale(1); } 100% { opacity: 0; transform: scale(1.4); } }
+@keyframes mt-mic-pop { 0% { transform: scale(0.92); } 55% { transform: scale(1.07); } 100% { transform: none; } }
 .mt-btn-mic[data-state="error"] { background: var(--mt-danger); color: var(--ds-on-danger); }
 .mt-btn-mic[data-state="off"] { opacity: 0.5; }
 
@@ -264,7 +289,12 @@
 /* ---- End-call dialog. ---- */
 .mt-dialog { margin: auto; width: min(22rem, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; border: 0; border-radius: 24px; background: var(--ds-dialog); color: var(--ds-ink); padding: 0; box-shadow: 0 0 0 1px var(--ds-line), var(--ds-shadow-dialog); }
 .mt-dialog::backdrop { background: var(--ds-overlay); }
-.mt-dialog[open] { animation: mt-toast-in var(--ds-dur-slow) var(--ease-out); }
+/* Enter and exit with a short rise + fade (display/overlay are discrete so the exit plays before the dialog leaves the top layer). */
+.mt-dialog { opacity: 0; transform: translateY(10px); transition: opacity 220ms var(--ease-out), transform 260ms var(--ease-out), overlay 260ms allow-discrete, display 260ms allow-discrete; }
+.mt-dialog[open] { opacity: 1; transform: none; }
+.mt-dialog::backdrop { opacity: 0; transition: opacity 260ms ease, overlay 260ms allow-discrete, display 260ms allow-discrete; }
+.mt-dialog[open]::backdrop { opacity: 1; }
+@starting-style { .mt-dialog[open] { opacity: 0; transform: translateY(10px); } .mt-dialog[open]::backdrop { opacity: 0; } }
 .mt-dialog-body { display: flex; flex-direction: column; gap: 8px; padding: 22px; }
 .mt-dialog-title { margin-bottom: 8px; font-size: 1.125rem; font-weight: 600; letter-spacing: -0.015em; }
 .mt-dialog-btn { display: flex; min-height: 48px; flex-direction: column; align-items: center; justify-content: center; border-radius: 9999px; background: var(--ds-tint); color: var(--ds-green-deep); padding: 0 18px; font-size: 0.9375rem; font-weight: 600; transition: transform var(--ds-dur-press) var(--ease-out), background-color var(--ds-dur-fast) ease; }
@@ -297,7 +327,11 @@
   .mt-candidate[data-capturing="true"]::after { transform: none; }
   .mt-candidate[data-capturing="true"] .mt-avatar, .mt-candidate[data-capturing="true"] .mt-avatar::before { transform: none; }
   .mt-btn-mic[data-state="recording"]::before { animation: none; opacity: 0.8; }
-  .mt-caption, .mt-toast, .mt-dialog[open] { animation: ds-fade var(--ds-dur-base) ease backwards; }
+  .mt-caption, .mt-toast { animation: ds-fade var(--ds-dur-base) ease backwards; }
+  .mt-w, .mt-top, .mt-candidate, .mt-interviewer, .mt-bar, .mt-btn-mic[data-state="recording"] { animation: none; }
+  .mt-timer[data-final="true"]::before { animation: none; opacity: 0.8; }
+  .mt-dialog, .mt-dialog[open] { transform: none; transition: opacity 150ms ease, overlay 150ms allow-discrete, display 150ms allow-discrete; }
+  @starting-style { .mt-dialog[open] { transform: none; } }
   .mt-progress::-webkit-progress-value { transition: none; }
   .mt-cam-spinner { animation: none; }
 }

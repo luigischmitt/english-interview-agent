@@ -129,6 +129,31 @@ function SpeakingBars({ active }: { active: boolean }) {
   return <span className="mt-bars" data-active={active ? "true" : undefined} aria-hidden="true"><i /><i /><i /></span>;
 }
 
+/** Words a new caption shares with the one before it (same leading words): those stay put, only the new ones fade in. */
+function settledWords(previous: string | null, next: string) {
+  if (!previous) return 0;
+  const a = previous.split(" "), b = next.split(" ");
+  let shared = 0;
+  while (shared < a.length && shared < b.length && a[shared] === b[shared]) shared += 1;
+  return shared;
+}
+
+/** Caption with a soft word-by-word fade-in (opacity only, so the lines never reflow). The text content stays identical. */
+function CaptionText({ text, settled = 0 }: { text: string; settled?: number }) {
+  const words = text.split(" ");
+  const step = Math.min(36, 420 / Math.max(words.length - settled, 1));
+  return (
+    <p className="mt-caption" lang="en" aria-live="polite">
+      {words.map((word, index) => (
+        <span key={index}>
+          {index < settled ? word : <span className="mt-w" style={{ animationDelay: `${Math.round((index - settled) * step)}ms` }}>{word}</span>}
+          {index < words.length - 1 ? " " : null}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 export function InterviewerTile({ speaking, advancing, caption, avatarState, showCharacter = true, speechFeed, candidateLevelRef, children }: {
   speaking: boolean;
   advancing: boolean;
@@ -143,6 +168,9 @@ export function InterviewerTile({ speaking, advancing, caption, avatarState, sho
   candidateLevelRef?: RefObject<number>;
   children?: ReactNode;
 }) {
+  // Remember the caption before the current one (state adjusted during render when the caption changes).
+  const [captions, setCaptions] = useState<{ current: string | null; previous: string | null }>({ current: caption, previous: null });
+  if (caption !== null && caption !== captions.current) setCaptions({ current: caption, previous: captions.current });
   return (
     <section className="mt-tile mt-interviewer" data-avatar={showCharacter ? "animated" : "static"} data-speaking={speaking ? "true" : undefined} data-advancing={advancing ? "true" : undefined} aria-label={t("Entrevistador")}>
       {showCharacter ? <ToucanAvatar state={avatarState} speechFeed={speechFeed} candidateLevelRef={candidateLevelRef} /> : (
@@ -153,7 +181,7 @@ export function InterviewerTile({ speaking, advancing, caption, avatarState, sho
         </div>
       )}
       {caption !== null && (
-        <p key={caption} className="mt-caption" lang="en" aria-live="polite">{caption}</p>
+        <CaptionText key={caption} text={caption} settled={settledWords(captions.previous, caption)} />
       )}
       <div className="mt-name">
         <SpeakingBars active={speaking} />
