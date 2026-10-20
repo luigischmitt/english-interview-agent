@@ -2,7 +2,7 @@
 
 
 import { useLocale, t } from "@/lib/locale";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Play } from "lucide-react";
 import { LoadingRegion, SkCard, SkChart } from "@/components/ui/loading-state";
 import { loadProgressRecords } from "@/lib/interview/persistence";
@@ -64,9 +64,12 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
   const insights = useMemo(() => buildProgressInsights(records, { locale }), [records, locale]);
   const selectedSession = records.find((record) => record.id === selectedSessionId && record.feedback?.status === "ready" && record.feedback.analysis);
 
-  useEffect(() => {
-    if (selectedSession) window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [selectedSession]);
+  // An old report opens at its top, like a fresh one: jump there before paint (a smooth scroll up from the list would run
+  // the report backwards, playing and skipping its entrances on the way).
+  const selectedReportId = selectedSession?.id ?? null;
+  useLayoutEffect(() => {
+    if (selectedReportId) window.scrollTo({ top: 0, behavior: "instant" });
+  }, [selectedReportId]);
 
   const retry = () => {
     setIsLoading(true);
