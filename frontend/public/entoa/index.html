@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Entoa</title>
-<meta name="description" content="Tem entrevista em inglês para vaga gringa? Treine falando com um agente de voz, receba o relatório do seu inglês sob pressão e treine só o que você errou.">
+<meta name="description" content="Pratique entrevistas profissionais em inglês por voz. Receba um relatório claro e refaça trechos reais das suas respostas.">
 <meta property="og:title" content="Entoa">
 <meta name="twitter:title" content="Entoa">
 <meta name="theme-color" content="#f3f4ee">
@@ -90,7 +90,7 @@ section{padding:clamp(44px,6vw,80px) 0}
 @media(max-width:640px){.hero{padding-top:20px}.hero h1{font-size:2.2rem}.hero .lead{max-width:26ch}}
 .wordmark{font-family:var(--serif);font-size:1.45rem;font-weight:400;letter-spacing:-.01em;line-height:1}
 
-/* ===== windows (shared by demo + Treinar) ===== */
+/* ===== windows shared by the interview demo ===== */
 .win{background:var(--surface);border-radius:24px;box-shadow:var(--shadow),0 30px 60px -34px rgba(14,42,31,.35);overflow:hidden;position:relative}
 .chrome{display:flex;align-items:center;gap:6px;height:38px;padding:0 14px;background:var(--field);border-bottom:1px solid rgba(14,42,31,.06)}
 .chrome i{width:10px;height:10px;border-radius:50%;background:#d6dccf}
@@ -468,17 +468,10 @@ main{overflow-x:clip}
 .vz-wave{display:block;width:100%;height:76px;margin-top:.7rem;overflow:visible}
 .vz-wave path{fill:none;stroke:var(--green);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:0}
 .vz-wave .b{opacity:0;stroke:var(--danger)}
-.vz-att{font-size:.78rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);margin-top:.2rem}
-.vz-m{list-style:none;padding:0;margin:clamp(1.2rem,3vw,1.8rem) 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(.5rem,2vw,1.1rem)}
-.vz-m li{background:rgba(255,255,255,.5);box-shadow:inset 0 0 0 1px rgba(30,30,28,.05);border-radius:18px;padding:clamp(.7rem,2vw,1.1rem);display:grid;gap:.35rem;justify-items:center;align-content:start}
-.vz-n{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--green)}
-.vz-nv{display:flex;align-items:baseline;justify-content:center;gap:.4rem;flex-wrap:wrap}
-.vz-v{font-size:clamp(1.8rem,4vw,2.6rem);font-weight:600;line-height:1;font-variant-numeric:tabular-nums;color:var(--green-deep);transition:color .5s var(--ease)}
-.vz-d{font-style:normal;font-size:.74rem;font-weight:700;color:var(--green-deep);background:rgba(255,255,255,.8);box-shadow:inset 0 0 0 1px rgba(31,107,69,.22);border-radius:99px;padding:.1rem .5rem}
-.vz-bar{display:block;width:100%;height:6px;border-radius:9px;background:rgba(30,30,28,.1);overflow:hidden}
-.vz-bar i{display:block;height:100%;width:var(--p,84%);background:var(--green);border-radius:inherit}
-.vz-ds{font-size:.8rem;color:var(--text2);line-height:1.35}
-@media(max-width:560px){.vz-ds{display:none}}
+.vz-att{font-size:.78rem;font-weight:600;letter-spacing:.025em;color:var(--text2);margin-top:.2rem}
+.vz-m{margin:clamp(1.2rem,3vw,1.8rem) 0 0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(.5rem,2vw,1.1rem)}
+.vz-m p{padding:clamp(.7rem,2vw,1rem) 0 0;border-top:1px solid rgba(30,30,28,.12);color:var(--text2);font-size:.86rem;line-height:1.5;text-align:left}
+@media(max-width:560px){.vz-m{grid-template-columns:1fr}}
 
 /* initial states only when motion is on; the markup itself is the finished picture */
 .fx .vz .lead{opacity:0}
@@ -497,11 +490,9 @@ main{overflow-x:clip}
 .fx .vz.fix .c{transition-delay:.35s}
 .fx .vz-att{opacity:0;transition:opacity .5s}
 .fx .vz.s1 .vz-att{opacity:1}
-.fx .vz-m li{opacity:0;transform:translateY(16px);filter:blur(6px)}
-.fx .vz.s1 .vz-m li{opacity:1;transform:none;filter:blur(0);transition:opacity .7s var(--ease) calc(var(--k) * .12s),transform .8s var(--ease) calc(var(--k) * .12s),filter .7s var(--ease) calc(var(--k) * .12s)}
-.fx .vz:not(.fix) .vz-v{color:var(--warm)}
-.fx .vz-d{opacity:0;transform:scale(.3)}
-.fx .vz.chip .vz-d{opacity:1;transform:none;transition:opacity .25s calc(var(--k) * .13s),transform .6s cubic-bezier(.34,1.56,.64,1) calc(var(--k) * .13s)}
+.fx .vz-m p{opacity:0;transform:translateY(12px)}
+.fx .vz.s1 .vz-m p{opacity:1;transform:none;transition:opacity .45s var(--ease),transform .55s var(--ease)}
+.fx .vz.s1 .vz-m p+ p{transition-delay:.1s}
 
 /* --- EXTRA: cursinho comparison, on the forest engraving --- */
 .cursec{position:relative;isolation:isolate;overflow:hidden;padding:clamp(72px,9vw,132px) 0}
@@ -605,7 +596,7 @@ html[data-extra="0"] #cursinho{display:none}
   <div class="hero-bg" aria-hidden="true"><canvas id="hbCanvas"></canvas></div>
   <div class="wrap hero-inner">
     <h1 id="h1">Você sabe a resposta. Em inglês, ela <em>trava<svg class="sw" viewBox="0 0 120 12" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M2 8 C 28 2, 62 12, 118 4"/></svg></em>.</h1>
-    <p class="lead">Entrevista em inglês para dev brasileiro. Treine falando e veja exatamente o que corrigir.</p>
+    <p class="lead">Entrevistas em inglês para profissionais brasileiros. Pratique por voz e receba feedback claro sobre suas respostas.</p>
     <div class="cta-row">
       <a class="btn" href="/signup" data-cta>Experimentar grátis <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
       <a class="btn soft" href="/login">Entrar</a>
@@ -636,10 +627,9 @@ h.setAttribute('aria-label','Você sabe a resposta. Em inglês, ela trava.');var
           <p class="rep-role">Backend Engineer · Sênior</p>
           <p class="rep-title">Seu perfil depois de 6 entrevistas</p>
           <ul class="rep-read">
-            <li class="en"><i></i><span><b>Inglês:</b> % das respostas sem erro</span></li>
-            <li><i class="v"></i><span><b>Voz:</b> nota de 0 a 100</span></li>
+            <li class="en"><i></i><span><b>Inglês:</b> % das respostas sem erro prioritário identificado</span></li>
           </ul>
-          <p class="rep-note">Mais perto da borda é melhor. Escolha um ponto para ver o que ele mede.</p>
+          <p class="rep-note">Mais perto da borda indica menos padrões recorrentes de inglês. Escolha um ponto para ver evidências.</p>
         </div>
         <div class="radar">
           <svg viewBox="-62 -22 424 344" id="radar" role="group" aria-label="Perfil de exemplo. Cada ponto pode ser selecionado para ver o que a dimensão mede."></svg>
@@ -760,19 +750,17 @@ AWS e observabilidade</div></div>
             <div class="metas"><span>Modo <b>Pela vaga</b></span><span>Cargo <b>Backend Engineer</b></span><span>Tempo <b>00:58</b></span><span>Respostas <b>1</b></span></div>
 
             <div class="rcard">
-              <h5>Prioridades para praticar</h5>
+              <h5>Trechos para revisar em Sua voz</h5>
               <div class="prio" id="pr0"><b class="p">Prioridade 1 · Preposições</b><span class="sm">Baseado na resposta 1</span>
                 <div class="dif" lang="en">“experience <s>on</s> backend” → “experience <u>in</u> backend”</div>
-                <span class="sm">Exercício: grave 3 respostas curtas sobre sua carreira usando “in”, “on” e “at” e confira cada uma.</span>
-                <span class="go" id="bTrain">Treinar meus erros</span></div>
+                <span class="sm">Refaça este trecho em Sua voz e compare as tentativas.</span>
+                <span class="go">Abrir Sua voz</span></div>
               <div class="prio" id="pr1"><b class="p">Prioridade 2 · Tempos verbais</b><span class="sm">Baseado na resposta 1</span><div class="dif" lang="en">“I am working … since 2021” → “I’ve been working … since 2021”</div></div>
             </div>
 
             <div class="rcard">
-              <h5>Pontuação da fala</h5>
-              <div class="score"><div class="big"><span id="score">0</span><small> /100</small></div>
-                <div><div class="meter"><span>Fluência <b>78</b></span><div><i id="mF"></i></div></div><div class="meter"><span>Precisão <b>84</b></span><div><i id="mP"></i></div></div></div></div>
-              <p class="sm" style="margin-top:.6rem">A análise não avalia seu sotaque.</p>
+              <h5>Sinais vocais experimentais</h5>
+              <p class="sm" style="margin-top:.6rem">Os sinais do Azure usam calibração en-US. Não medem sotaque nem nível geral de inglês; compare mudanças nas suas próprias tentativas com cautela.</p>
             </div>
 
             <div class="rcard">
@@ -815,42 +803,30 @@ AWS e observabilidade</div></div>
   <div class="wrap">
     <div class="vz rv" id="vz" data-at=".25">
       <span class="badge ex"><i></i>Exemplo</span>
-      <h2 id="vozT" data-split="in">Depois do relatório, treine a sua voz.</h2>
-      <p class="lead">Repita as suas próprias frases, ouça a forma certa e veja cada tentativa melhorar.</p>
-      <div class="vz-stage" id="vzStage" role="img" aria-label="Exemplo animado: na frase I have five years of experience in backend, a palavra experience trava na primeira tentativa e sai clara na segunda. As notas sobem: Precisão de 72 para 84, Ritmo de 68 para 77 e Prosódia de 61 para 70.">
+      <h2 id="vozT" data-split="in">Depois do relatório, refaça trechos reais da entrevista.</h2>
+      <p class="lead">Leia a referência em texto, ouça a voz sintetizada e compare suas tentativas. O áudio original da entrevista não é reproduzido.</p>
+      <div class="vz-stage" id="vzStage" role="img" aria-label="Exemplo ilustrativo: uma pessoa refaz a frase I have five years of experience in backend. A comparação entre tentativas mostra as palavras que o Azure sinalizou. Os sinais experimentais não medem sotaque nem nível geral de inglês.">
         <p class="vz-phrase" lang="en" data-split="in" data-cs="26" style="--d:1.2s;--cs:26ms">I have five years of <span class="vz-w" id="vzWord">experience<svg class="sw" viewBox="0 0 120 12" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M2 8 C 28 2, 62 12, 118 4"/></svg></span> in backend.</p>
         <svg class="vz-wave" id="vzWave" aria-hidden="true"><path class="a" pathLength="1"/><path class="b" pathLength="1"/><path class="b2" pathLength="1"/><path class="c" pathLength="1"/></svg>
-        <p class="vz-att" id="vzAtt">Tentativa 2</p>
-        <ul class="vz-m" id="vzM">
-          <li style="--k:0"><span class="vz-n">Precisão</span><div class="vz-nv"><b class="vz-v">84</b><em class="vz-d">+12</em></div><span class="vz-bar"><i style="--p:84%"></i></span><span class="vz-ds">Clareza de cada som e palavra.</span></li>
-          <li style="--k:1"><span class="vz-n">Ritmo</span><div class="vz-nv"><b class="vz-v">77</b><em class="vz-d">+9</em></div><span class="vz-bar"><i style="--p:77%"></i></span><span class="vz-ds">Pausas, hesitações e velocidade.</span></li>
-          <li style="--k:2"><span class="vz-n">Prosódia</span><div class="vz-nv"><b class="vz-v">70</b><em class="vz-d">+9</em></div><span class="vz-bar"><i style="--p:70%"></i></span><span class="vz-ds">Entonação e acento das palavras.</span></li>
-        </ul>
+        <p class="vz-att" id="vzAtt">Compare com a tentativa anterior</p>
+        <div class="vz-m" id="vzM"><p>Exemplo ilustrativo: o Azure sinalizou “experience” na primeira tentativa e não sinalizou essa palavra na segunda.</p><p>Confira se a palavra também ficou clara para você. O resultado automático é apenas um indício.</p></div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- EXTRA: cursinho (hide with ?extra=0) -->
+<!-- EXTRA: posicionamento do produto -->
 <section id="cursinho" class="cursec">
   <picture class="cursec-art" aria-hidden="true"><source media="(max-width:767px)" srcset="/landing/hero-mata-mobile.webp"><img src="/landing/hero-mata.webp" srcset="/landing/hero-mata-1152.webp 1152w, /landing/hero-mata.webp 1536w" sizes="100vw" alt="" width="1536" height="1024" loading="lazy" decoding="async"></picture>
   <div class="wrap">
     <div class="vs-head">
-      <h2 data-split>Por que não um cursinho de inglês?</h2>
-      <p class="lead">Cursinho ensina inglês. Aqui você ensaia a sua entrevista.</p>
+      <h2 data-split>Prática ligada às suas entrevistas.</h2>
+      <p class="lead">A Entoa ajuda você a comunicar sua experiência com clareza na entrevista.</p>
     </div>
     <div class="vs-wrap" data-stage data-at=".25">
-    <table class="vs">
-      <caption>Comparação entre um cursinho de inglês e o Entoa</caption>
-      <thead><tr><th scope="col"><span class="sr">Critério</span></th><th scope="col">Cursinho</th><th scope="col">Entoa</th></tr></thead>
-      <tbody>
-        <tr style="--r:0"><th scope="row">O que você treina</th><td data-l="Cursinho">Inglês em geral, o mesmo conteúdo para toda a turma.</td><td data-l="Entoa">A entrevista da sua vaga, com perguntas sobre o seu cargo.</td></tr>
-        <tr style="--r:1"><th scope="row">Quando</th><td data-l="Cursinho">No horário da turma.</td><td data-l="Entoa">Quando você quiser, em 5 a 25 minutos.</td></tr>
-        <tr style="--r:2"><th scope="row">Feedback</th><td data-l="Cursinho">Depende de o professor ter tempo para cada aluno.</td><td data-l="Entoa">Relatório com cada erro seu, a frase corrigida e a regra.</td></tr>
-        <tr style="--r:3"><th scope="row">Depois</th><td data-l="Cursinho">Você segue o cronograma do curso.</td><td data-l="Entoa">Você treina só o que errou, sem repetir o que já sabe.</td></tr>
-        <tr style="--r:4"><th scope="row">Custo</th><td data-l="Cursinho">Mensalidade.</td><td data-l="Entoa">Grátis por enquanto.</td></tr>
-      </tbody>
-    </table>
+      <p class="lead">Em <strong>Sua voz</strong>, retome uma frase de uma entrevista, ouça uma referência sintetizada e compare suas próprias tentativas. Para praticar uma resposta completa, comece uma nova entrevista.</p>
+      <a class="cta" href="/app/dashboard?view=voice" data-cta>Abrir Sua voz</a>
+      <a class="cta" href="/app/dashboard?view=interview-setup" data-cta>Nova entrevista</a>
     </div>
   </div>
 </section>
@@ -911,7 +887,7 @@ AWS e observabilidade</div></div>
   const css=(el,p,v)=>{let o=memo.get(el);if(!o){o={};memo.set(el,o)}if(o[p]!==v){el.style.setProperty(p,v);o[p]=v}};
   const txt=(el,v)=>{let o=memo.get(el);if(!o){o={};memo.set(el,o)}if(o.t!==v){el.textContent=v;o.t=v}};
   const tg=(el,c,on)=>{on=!!on;let o=memo.get(el);if(!o){o={};memo.set(el,o)}if(o['c'+c]!==on){el.classList.toggle(c,on);o['c'+c]=on}};
-  const E={};['sgMode','mAuto','revJob','ta','taTxt','cnt','bAn','bAnTxt','bClr','revRes','inpRole','sgSen','sgFoc','pf0','pf1','pf2','sgDur','bStart','tInt','tMe','cap','capMe','live','rEl','rRem','rProg','bMic','bCap','bEnd','dlg','dFin','pr0','pr1','bTrain','score','mF','mP'].forEach(k=>E[k]=document.getElementById(k));
+  const E={};['sgMode','mAuto','revJob','ta','taTxt','cnt','bAn','bAnTxt','bClr','revRes','inpRole','sgSen','sgFoc','pf0','pf1','pf2','sgDur','bStart','tInt','tMe','cap','capMe','live','rEl','rRem','rProg','bMic','bCap','bEnd','dlg','dFin','pr0','pr1'].forEach(k=>E[k]=document.getElementById(k));
   const fmt=s=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0');
 
   /* cursor: waypoints {c: click time, el}; the pointer leaves the previous one 1.25s before the click */
@@ -989,8 +965,6 @@ AWS e observabilidade</div></div>
   function renderReport(t){
     const a=t-63.5;
     tg(E.pr0,'on',a>=1.2);tg(E.pr1,'on',a>=2.4);
-    const p=ease(prog(t,66.5,68.2));txt(E.score,String(Math.round(82*p)));
-    css(E.mF,'width',(78*ease(prog(t,66.5,68.5)))+'%');css(E.mP,'width',(84*ease(prog(t,66.8,68.8)))+'%');
     const over=Math.max(0,pg2.scrollHeight-scenes.clientHeight+20);
     const f=ease(prog(t,68.5,73))*.95;
     css(pg2,'transform',`translateY(${-over*f}px)`);
@@ -1054,13 +1028,10 @@ AWS e observabilidade</div></div>
   /* ================= relatório: radar do perfil ================= */
   const NS='http://www.w3.org/2000/svg',mk=(tag,at)=>{const e=document.createElementNS(NS,tag);for(const k in at)e.setAttribute(k,at[k]);return e};
   const DIM=[
-    ['Gramática',70,'en','70% das respostas sem erro de tempo verbal, artigo ou preposição.'],
-    ['Escolha de palavras',85,'en','85% das respostas com a palavra que um nativo usaria.'],
-    ['Falsos cognatos',95,'en','95% das respostas sem cair em palavras como <em>actually</em> e <em>pretend</em>.'],
-    ['Estrutura',80,'en','80% das respostas com começo, meio e fim fáceis de seguir.'],
-    ['Precisão',84,'v','84 de 100 na clareza de cada som e palavra.'],
-    ['Ritmo',78,'v','78 de 100 em fluidez: pausas, hesitações e velocidade.'],
-    ['Prosódia',72,'v','72 de 100 em entonação e acento das palavras.']];
+    ['Gramática',70,'en','70% das respostas sem erro prioritário identificado em tempos verbais, artigos ou preposições.'],
+    ['Escolha de palavras',85,'en','85% das respostas sem erro prioritário de escolha de palavras identificado.'],
+    ['Falsos cognatos',95,'en','95% das respostas sem falso cognato prioritário identificado.'],
+    ['Estrutura',80,'en','80% das respostas sem problema prioritário de estrutura identificado.']];
   const C=150,R=112,N=DIM.length,ang=i=>-Math.PI/2+i*Math.PI*2/N,rpt=(i,r)=>[C+r*Math.cos(ang(i)),C+r*Math.sin(ang(i))];
   const poly=f=>DIM.map((d,i)=>rpt(i,R*f(d)).map(n=>n.toFixed(1)).join(',')).join(' ');
   const radar=$('#radar'),detail=$('#dimDetail');
@@ -1078,7 +1049,7 @@ AWS e observabilidade</div></div>
     const tn=mk('text',{class:'ln',x:lx.toFixed(1),y:(ly+dy).toFixed(1),'text-anchor':anchor});tn.textContent=d[0];
     const tv=mk('text',{class:'lv',x:lx.toFixed(1),y:(ly+dy+18).toFixed(1),'text-anchor':anchor});tv.textContent=d[2]==='en'?d[1]+'%':d[1];
     g.append(tn,tv);radar.appendChild(g);labs.push(g);
-    const metric=d[2]==='en'?`${d[1]}% das respostas sem erro`:`${d[1]} de 100`;
+    const metric=d[2]==='en'?`${d[1]}% das respostas sem erro prioritário identificado`:`${d[1]} de 100`;
     const hit=mk('circle',{class:'hit',cx:x,cy:y,r:16,role:'button',tabindex:'0','aria-label':`${d[0]}: ${metric}`,'aria-pressed':'false'});
     radar.appendChild(hit);hits.push(hit);
     g.addEventListener('pointerenter',()=>hl(i));g.addEventListener('pointerleave',()=>hl(-1));
@@ -1301,22 +1272,16 @@ AWS e observabilidade</div></div>
         off(){clearT(diff);$$('.seg',diff).forEach(b=>b.classList.remove('bad','lit'))}};
     }
 
-    /* --- voz: the phrase forms, "experience" stutters in red, resolves to green, the scores count up --- */
+    /* --- voz: compare attempts without presenting absolute speech scores --- */
     if(vz){
-      const MET=[[72,84],[68,77],[61,70]],lis=$$('#vzM li'),att=$('#vzAtt');
-      let gen=0;
-      const put=(i,v)=>{const li=lis[i];$('.vz-v',li).textContent=Math.round(v);$('.vz-bar i',li).style.setProperty('--p',v.toFixed(1)+'%')};
-      const count=(i,a,b,ms)=>{const g=gen,t0=performance.now();(function f(n){if(g!==gen)return;const k=clamp((n-t0)/ms);put(i,a+(b-a)*ease(k));if(k<1)requestAnimationFrame(f)})(t0)};
+      const att=$('#vzAtt');
       const add=c=>vz.classList.add(c);
       HOOKS.vz={
-        on(){buildWave();gen++;att.textContent='Tentativa 1';lis.forEach((_,i)=>put(i,0));
+        on(){buildWave();att.textContent='Compare com a tentativa anterior';
           T(vz,1900,()=>add('wa'));
-          T(vz,2600,()=>{add('s1');lis.forEach((_,i)=>count(i,0,MET[i][0],1000))});
-          T(vz,4300,()=>{add('fix');att.textContent='Tentativa 2'});
-          T(vz,4500,()=>lis.forEach((_,i)=>count(i,MET[i][0],MET[i][1],1100)));
-          T(vz,5500,()=>add('chip'))},
-        off(){clearT(vz);gen++;['wa','s1','fix','chip'].forEach(c=>vz.classList.remove(c))}};
-      lis.forEach((_,i)=>put(i,0));
+          T(vz,2600,()=>add('s1'));
+          T(vz,4300,()=>{add('fix');att.textContent='Duas tentativas da mesma pessoa'})},
+        off(){clearT(vz);['wa','s1','fix'].forEach(c=>vz.classList.remove(c))}};
     }
 
     /* --- observers: one decides when something starts (a bit inside the screen), one when it has fully left --- */

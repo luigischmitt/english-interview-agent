@@ -337,8 +337,8 @@ function ReadyReport({
   );
 }
 
-export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, turns, azureSummary, coverage, onLeave, progressRecords, currentInterviewId, historical = false }: {
-  config: InterviewConfig; elapsed: string; totalClock: string; answerCount: number; persistenceLabel: string; persistenceMessage: string | null; feedbackSyncMessage: string | null; reportState: ReportState; progressRecords: ProgressRecord[]; currentInterviewId?: string; historical?: boolean; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onLeave: () => void;
+export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, turns, azureSummary, coverage, onLeave, progressRecords, currentInterviewId, historical = false, onRetry, retrying = false }: {
+  config: InterviewConfig; elapsed: string; totalClock: string; answerCount: number; persistenceLabel: string; persistenceMessage: string | null; feedbackSyncMessage: string | null; reportState: ReportState; progressRecords: ProgressRecord[]; currentInterviewId?: string; historical?: boolean; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onLeave: () => void; onRetry?: () => void; retrying?: boolean;
 }): ReactNode {
   const [loadedTurns, setLoadedTurns] = useState<Turns>(turns);
   const [loadingTurns, setLoadingTurns] = useState(historical && turns.length === 0 && Boolean(currentInterviewId));
@@ -413,7 +413,11 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
           <div className="rp-pending-wrap ld-fade">
             <div className="ds-card rp-card rp-pending" role="status" aria-live="polite">
               <p className="rp-loading-step"><LoadingMark /><span key={loadingStep}>{t(reportLoadingSteps[loadingStep])}…</span></p>
-              <p className="rp-hint mt-2">{t("Leva cerca de 30 segundos. Mantenha esta página aberta enquanto montamos o relatório.")}</p>
+              <p className="rp-hint mt-2">{t("Você pode sair. O relatório continua sendo preparado; volte ao Progresso para ver o resultado.")}</p>
+              {onRetry && <button type="button" className="btn ds-btn ds-btn-soft mt-4" onClick={onRetry} disabled={retrying} aria-busy={retrying}>
+                {retrying && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
+                {t(retrying ? "Gerando relatório…" : "Tentar gerar novamente")}
+              </button>}
             </div>
             <div className="ld-grid-3" aria-hidden="true">
               <SkCard minHeight="8rem" i={1} lines={2} />
@@ -426,11 +430,15 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
           <div className="rp-stack">
             <div role="status" className="rp-alert">
               <h2 className="ds-label">
-                {t(loadedTurns.length ? "Não foi possível montar o relatório detalhado." : "Não há respostas para analisar.")}
+                {t(loadedTurns.length ? (reportState.message ?? "O relatório continua indisponível. Tente novamente em instantes.") : "Não há respostas para analisar.")}
               </h2>
-              <p className="mt-1 text-sm leading-6">
-                {t(reportState.message ?? "")} {t("Os sinais vocais disponíveis continuam abaixo.")}
-              </p>
+              {loadedTurns.length > 0 && <p className="mt-1 text-sm leading-6">{t("Os sinais vocais disponíveis continuam abaixo.")}</p>}
+              {loadedTurns.length > 0 && onRetry && (
+                <button type="button" className="btn ds-btn ds-btn-soft mt-4" onClick={onRetry} disabled={retrying} aria-busy={retrying}>
+                  {retrying && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
+                  {t(retrying ? "Gerando relatório…" : "Tentar gerar novamente")}
+                </button>
+              )}
             </div>
             {loadedTurns.length > 0 && <CapturedAnswers turns={loadedTurns} />}
             <AzureVoiceReport summary={azureSummary} coverage={coverage} />

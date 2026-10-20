@@ -3,7 +3,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { invalidateDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import type { InterviewConfig, PersistenceResult } from "./types";
 import { buildInterviewReportRequest } from "./report-request.mjs";
-import { requestInterviewStudyPlan as requestStudyPlanOnce, serializeInterviewAnalysis } from "./study-plan.mjs";
+import { serializeInterviewAnalysis } from "./report-serialization.mjs";
 import type { JobDirection } from "./job-direction.mjs";
 import { answerOrdinalForSequence, pairInterviewTurns, summarizeAzureAssessments, type AzureAssessmentSample, type AzureMetricSummary, type InterviewReportTurn } from "./report-metrics.mjs";
 
@@ -21,7 +21,6 @@ export type InterviewReport = {
   jobDirection?: JobDirection;
   /** Stable fixed-bank topic ids for answered planned questions; omitted for legacy/adapted prompts. */
   technicalQuestionTopics?: Array<{ sequenceNumber: number; topicId: string }>;
-  studyPlan?: InterviewStudyPlan;
   /** Optional so previously persisted analysis JSON remains readable. */
   evidenceReview?: {
     technicalStrengths: InterviewReportEvidenceCounts;
@@ -43,18 +42,6 @@ export type InterviewReport = {
   };
   priorities: Array<{ area: "TECHNICAL_CONTENT" | "ENGLISH_COMMUNICATION"; sequenceNumber: number; evidence: string; focus: string; exercise: string; vacancyCompetency?: string }>;
 };
-
-export type InterviewStudyPlanTarget = {
-  category: "ENGLISH_COMMUNICATION";
-  lessonKey: string;
-  ruleId: string;
-  explanation: string;
-  why: string;
-  sourceEvidence: string;
-  correctedTarget: string;
-  acceptedAnswers: string[];
-};
-export type InterviewStudyPlan = { targets: InterviewStudyPlanTarget[] };
 
 export type InterviewReportEvidenceCounts = {
   candidates: number;
@@ -122,10 +109,6 @@ export async function requestInterviewReport(config: InterviewConfig, turns: Int
 }
 
 /** A single optional post-report request; the helper returns null on failure and never retries. */
-export function requestInterviewStudyPlan(config: InterviewConfig, report: InterviewReportResult, endpoint = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001"): Promise<InterviewStudyPlan | null> {
-  return requestStudyPlanOnce(config, report, authorizedFetch, endpoint);
-}
-
 export const interviewTurnAnalysisTimeoutMs = 35_000;
 export const interviewConsolidationTimeoutMs = 30_000;
 

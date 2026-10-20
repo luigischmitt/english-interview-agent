@@ -16,15 +16,11 @@ test("Progress lets candidates navigate between available examples accessibly", 
   assert.match(source, /aria-label=\{t\("Próximo exemplo"\)\} disabled=\{exampleIndex === examples\.length - 1\}/);
 });
 
-test("current study focus explains its report evidence and exercise source", async () => {
+test("Progress directs candidates to their voice excerpts or a new interview", async () => {
   const source = await readFile(new URL("src/app/components/progress/progress-content.tsx", root), "utf8");
-
-  assert.match(source, /Seus focos atuais/);
-  assert.match(source, /Foco principal/);
-  assert.match(source, /topic\.focuses\[0\]/);
-  assert.match(source, /Observado nos relatórios:/);
-  assert.match(source, /topic\.exerciseSource === "report" \? "Exercício sugerido no relatório" : "Sugestão de exercício geral"/);
-  assert.match(source, /Outros focos/);
+  assert.match(source, /href="\/dashboard\?view=voice"/);
+  assert.match(source, /href="\/dashboard\?view=interview-setup"/);
+  assert.doesNotMatch(source, /studyTopics|Exercício sugerido no relatório|Sugestão de exercício geral/);
 });
 
 test("Progress keeps revealed sections visible and restores the list position after closing a report", async () => {
@@ -51,10 +47,10 @@ test("Progress labels error percentages directly and omits the hard-to-read per-
   assert.doesNotMatch(source, /erros por resposta na última entrevista/);
 });
 
-test("Voice keeps comparisons in Evolution instead of repeating small figures in every summary card", async () => {
+test("Sua voz compares a candidate's own attempts without absolute scores", async () => {
   const source = await readFile(new URL("src/app/components/voice-view.tsx", root), "utf8");
-
-  assert.match(source, /Visão geral da sua voz/);
-  assert.doesNotMatch(source, /metric\.previousAverage !== null/);
-  assert.match(source, /index === points\.length - 1 \? Math\.round\(point\.value\) : ""/);
+  assert.match(source, /O que mudou entre tentativas/);
+  assert.match(source, /sem mudança no sinal/);
+  assert.match(source, /Sinais experimentais do Azure, calibrados em en-US/);
+  assert.doesNotMatch(source, /\/\s*100|point\.value/);
 });

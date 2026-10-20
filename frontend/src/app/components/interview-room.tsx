@@ -15,9 +15,9 @@ import { assessmentContextKey, composeClarificationTurn, planTurnAfterDecision, 
 import { plannedQuestionType, resolveFixedPromptForAudio, resolveMonotonicFixedAction, resolveSpeculativeFixedSelection, selectNextPlannedQuestion, selectNextPlannedQuestions, shouldUseMonotonicFixedFallback } from "@/lib/interview/question-scheduling.mjs";
 import { createNextTurnPreparationRegistry } from "@/lib/interview/next-turn-preparation.mjs";
 import { createFixedHandoffPreparationRegistry, type FixedHandoffEntry } from "@/lib/interview/fixed-handoff-preparation.mjs";
-import { loadProgressRecords, updateCandidateTurnContent, type InterviewTurnInput } from "@/lib/interview/persistence";
-import { warmProgressCacheAfterFeedbackSave } from "@/lib/interview/progress-cache-warmup.mjs";
-import { createPendingInterviewFeedback, markInterviewFeedbackUnavailable, pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, saveInterviewFeedback, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
+import { type InterviewTurnInput } from "@/lib/interview/persistence";
+import { pairInterviewTurns, requestInterviewConsolidation, requestInterviewReport, requestInterviewTurnAnalysis, summarizeAzureAssessments, type InterviewReportResult, type InterviewTurnAnalysis } from "@/lib/interview/report";
+import { requestPersistedInterviewReport } from "@/lib/interview/persisted-report";
 import { resolveCandidateVoicePreferences } from "@/lib/interview/candidate-voice-preferences.mjs";
 import type { InterviewAnswers, InterviewConfig, InterviewPhase, InterviewQuestion } from "@/lib/interview/types";
 import { appendInterviewReportPair, buildAzureAnswerRecords, type AzureAssessmentSample, type InterviewReportTurnSource } from "@/lib/interview/report-metrics.mjs";
@@ -26,13 +26,14 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAudioInputs } from "../hooks/use-audio-inputs";
 import { storeMicrophoneDeviceId } from "@/lib/interview/mic-device.mjs";
 import { useInterviewPersistence } from "../hooks/use-interview-persistence";
+import type { LocalInterviewCheckpoint } from "@/lib/interview/local-checkpoint.mjs";
 import { AssessmentSocketRegistry } from "@/lib/interview/assessment-socket-registry.mjs";
 import { analyzeTurnWithRetry, replaceCandidateTurnContent, resolveReportAtEnd, settleTurnAnalyses, turnAnalysisWaitMs, waitForReviewedTranscriptOrTimeout } from "@/lib/interview/report-incremental.mjs";
 import { InterviewReport, type ReportState } from "./interview-report";
 import "./interview-room.css";
 import { createSpeechFeed, toucanStateFor } from "@/components/interview/toucan/toucan-engine.mjs";
 import { CallDock, CandidateTile, InterviewerTile, Toast, useCandidateCamera, useMicLevelMeter } from "./call-stage";
-import { createFeedbackPersistenceSignature, waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
+import { waitForPendingAssessments } from "@/lib/interview/assessment-report-wait.mjs";
 import { canAutoSubmitVoiceTranscript, canSkipVoiceQuestion, createOnceGate, finalTranscriptForSubmission, hasTimeForNextQuestion } from "@/lib/interview/session-policy.mjs";
 import { useInterviewSession } from "../hooks/use-interview-session";
 import { createInterviewerAcknowledgements, prewarmFixedInterviewerUtterance, prewarmFollowUpUtterance, prewarmInterviewerClosing, prewarmInterviewerUtterance, useSpeechPlayback, useSpeechWarmup, type SpeechTimingEvent } from "../hooks/use-speech-playback";
@@ -105,7 +106,7 @@ function assessmentSamples(entries: Record<string, AssessmentEntry>, excluded: R
     : state.status === "pending" ? { status: "pending" } : { status: "unavailable" });
 }
 
-export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; onLeave: () => void }) {
+export function InterviewRoom({ config, resumeCheckpoint = null, onLeave }: { config: InterviewConfig; resumeCheckpoint?: LocalInterviewCheckpoint | null; onLeave: () => void }) {
   const { locale } = useLocale();
   useSpeechWarmup();
   const durationMinutes = Math.max(5, Number.parseInt(config.duration, 10) || 5);
@@ -116,18 +117,19 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   }, []);
   const learnerProfile = useMemo(() => buildLearnerQuestionProfile(progressRecords, config.role), [progressRecords, config.role]);
   const questions = useMemo(() => getFixedInterviewQuestions(config, learnerProfile), [config, learnerProfile]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [question, setQuestion] = useState<InterviewQuestion>(() => questions[0]);
-  const [questionSequenceNumber, setQuestionSequenceNumber] = useState(1);
-  const [followUpUsed, setFollowUpUsed] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(resumeCheckpoint?.snapshot.currentIndex ?? 0);
+  const [question, setQuestion] = useState<InterviewQuestion>(() => resumeCheckpoint?.snapshot.activeQuestion ?? questions[0]);
+  const [questionSequenceNumber, setQuestionSequenceNumber] = useState(resumeCheckpoint?.snapshot.questionSequenceNumber ?? 1);
+  const [followUpUsed, setFollowUpUsed] = useState(resumeCheckpoint?.snapshot.followUpUsed ?? false);
   const [acknowledgement, setAcknowledgement] = useState<string | null>(null);
   // What the interviewer says after a clarification request; the question itself (id, prompt, report pairing) never changes.
   const [spokenTurn, setSpokenTurn] = useState<ClarificationTurn | null>(null);
   const [clarifyRound, setClarifyRound] = useState(0);
   const [excludedAssessments, setExcludedAssessments] = useState<ReadonlySet<string>>(() => new Set());
-  const [phase, setPhase] = useState<InterviewPhase>("introducing");
+  // After reload any in-progress capture is gone, so repeat the saved active question before recording again.
+  const [phase, setPhase] = useState<InterviewPhase>(resumeCheckpoint ? "speaking" : "introducing");
   const [answers, setAnswers] = useState<InterviewAnswers>({});
-  const [reportTurns, setReportTurns] = useState<InterviewReportTurnSource[]>([]);
+  const [reportTurns, setReportTurns] = useState<InterviewReportTurnSource[]>(() => resumeCheckpoint?.snapshot.turns ?? []);
   const [answerError, setAnswerError] = useState<string | null>(null);
   const [voiceTranscription, setVoiceTranscription] = useState<VoiceTranscriptionState>({ status: "idle" });
   const [voiceCaptureState, setVoiceCaptureState] = useState<VoiceCaptureState>("idle");
@@ -136,7 +138,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const [voiceAssessments, setVoiceAssessments] = useState<Record<string, AssessmentEntry>>({});
   const [reportState, setReportState] = useState<ReportState>({ status: "idle" });
   const [answerClipPaths, setAnswerClipPaths] = useState<Record<string, string>>({});
-  const [feedbackSyncMessage, setFeedbackSyncMessage] = useState<string | null>(null);
   const [assessmentSockets] = useState(() => new AssessmentSocketRegistry());
   const [nextTurnPreparation] = useState(() => createNextTurnPreparationRegistry<PreparedTurn>());
   const [fixedHandoffPreparation] = useState(() => createFixedHandoffPreparationRegistry());
@@ -191,7 +192,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const mountedRef = useRef(true);
   const leftRef = useRef(false);
   const reportStartedRef = useRef(createOnceGate());
-  const reportPersistenceSignatureRef = useRef("");
   const uploadedClipSessionsRef = useRef(new Set<string>());
   const reportTurnsRef = useRef(reportTurns);
   const turnAnalysesRef = useRef(new Map<number, Promise<InterviewTurnAnalysis | null>>());
@@ -211,9 +211,10 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   // Identifies one answer window: it changes after a clarification so the microphone restarts for the same question.
   const micTurnId = `${question.id}:${clarifyRound}`;
   const micTurnIdRef = useRef(micTurnId);
-  const elapsedSecondsRef = useRef(0);
+  const elapsedSecondsRef = useRef(resumeCheckpoint?.snapshot.elapsedSeconds ?? 0);
   // A planned question is considered used as soon as it is asked. Adapted wording keeps the same stable bank id.
-  const askedPlannedQuestionIdsRef = useRef<Set<string>>(new Set([questions[0].id]));
+  const askedPlannedQuestionIdsRef = useRef<Set<string>>(new Set(resumeCheckpoint?.snapshot.askedQuestionIds ?? [questions[0].id]));
+  const [askedQuestionIdsSnapshot, setAskedQuestionIdsSnapshot] = useState<string[]>(() => resumeCheckpoint?.snapshot.askedQuestionIds ?? [questions[0].id]);
   const handoffTimingRef = useRef<{ mark: (stage: string) => void; markPrepared: () => void } | null>(null);
   const handoffAudioMarksRef = useRef<{ confirmationAt: number | null; firstAudioAt: number | null; questionStartAt: number | null; finalChunkStartAt: number | null; maxInterChunkGapMs: number }>({ confirmationAt: null, firstAudioAt: null, questionStartAt: null, finalChunkStartAt: null, maxInterChunkGapMs: 0 });
   const openingTimingRef = useRef<{ mark: (stage: string) => void } | null>(null);
@@ -235,8 +236,17 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       : spokenTurn ? composeAcknowledgedQuestion(spokenTurn.acknowledgement, spokenTurn.question) : composeAcknowledgedQuestion(acknowledgement, question.prompt);
   const stableQuestionCaption = phase === "introducing" || phase === "closing" ? currentUtterance : spokenTurn?.question ?? question.prompt;
   const persistenceQuestion = { ...question, prompt: currentUtterance };
-  const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId } = useInterviewPersistence(config, persistenceQuestion, questionSequenceNumber, phase);
-  const { elapsed, seconds, remaining, timeLimitReached } = useInterviewSession(phase, durationMinutes);
+  const { elapsed, seconds, remaining, timeLimitReached } = useInterviewSession(phase, durationMinutes, resumeCheckpoint?.snapshot.elapsedSeconds ?? 0);
+  const checkpointSnapshot = {
+    activeQuestion: question,
+    currentIndex,
+    questionSequenceNumber,
+    followUpUsed,
+    elapsedSeconds: seconds,
+    turns: reportTurns,
+    askedQuestionIds: askedQuestionIdsSnapshot,
+  };
+  const { sessionId, persistenceMessage, persistenceState, enqueueTurn, abandonSession, waitForSessionId, waitForCompletionSync } = useInterviewPersistence(config, persistenceQuestion, questionSequenceNumber, phase, checkpointSnapshot, resumeCheckpoint);
 
   useLayoutEffect(() => {
     phaseRef.current = phase;
@@ -262,6 +272,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     setPhase(nextPhase);
   };
   useEffect(() => { elapsedSecondsRef.current = seconds; }, [seconds]);
+  useEffect(() => { setAskedQuestionIdsSnapshot([...askedPlannedQuestionIdsRef.current]); }, [currentIndex, followUpUsed, question.id]);
   useEffect(() => { voiceAssessmentsRef.current = voiceAssessments; }, [voiceAssessments]);
   useEffect(() => { excludedAssessmentsRef.current = excludedAssessments; }, [excludedAssessments]);
   useEffect(() => {
@@ -1349,7 +1360,6 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
     // Wait for pending voice assessments and transcript reviews before snapshotting the turns and analyses.
     void (async () => {
       await waitForPendingAssessments(() => Object.values(voiceAssessmentsRef.current).filter((entry) => entry.state.status === "pending" && !excludedAssessmentsRef.current.has(assessmentContextKey(entry))).length + pendingReviewedTranscriptsRef.current.size);
-      const settledAnalyses = settleTurnAnalyses(pairInterviewTurns(reportTurnsRef.current), turnAnalysesRef.current, { timeoutMs: turnAnalysisWaitMs });
       const latestEntries = voiceAssessmentsRef.current;
       const samples = assessmentSamples(latestEntries, excludedAssessmentsRef.current);
       const turns = pairInterviewTurns(reportTurnsRef.current);
@@ -1375,10 +1385,23 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
           } catch { /* Clip storage must never block report generation. */ }
         })();
       }
-      if (feedbackSessionId) await createPendingInterviewFeedback(feedbackSessionId, samples);
-
-      let path: "incremental" | "fallback" = "fallback";
+      let path: "persisted" | "incremental" | "fallback" = feedbackSessionId ? "persisted" : "fallback";
       try {
+        if (feedbackSessionId) {
+          if (!await waitForCompletionSync(12_000)) throw new Error("Interview persistence did not finish before report generation.");
+          const persisted = await requestPersistedInterviewReport(feedbackSessionId, summarizeAzureAssessments(samples), locale);
+          const technicalQuestionTopics = createTechnicalQuestionSnapshot(questions, turns);
+          const result = {
+            ...persisted,
+            analysisCoverage: { analyzedTurnCount: turns.length, totalTurnCount: turns.length, missingSequenceNumbers: [] },
+            ...(technicalQuestionTopics.length ? { technicalQuestionTopics } : {}),
+          };
+          console.info("[interview-report] ready", { path, turnCount: turns.length, durationMs: Date.now() - lifecycleStartedAt });
+          if (mountedRef.current && current) setReportState({ status: "ready", result });
+          return;
+        }
+
+        const settledAnalyses = settleTurnAnalyses(turns, turnAnalysesRef.current, { timeoutMs: turnAnalysisWaitMs });
         const endAbort = new AbortController();
         turnAnalysisAbortsRef.current.add(endAbort);
         const outcome = await resolveReportAtEnd<typeof turns[number], InterviewTurnAnalysis, InterviewReportResult>({
@@ -1416,29 +1439,14 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
       }
     })();
     return () => { current = false; };
-  }, [config, locale, phase, questions, sessionId, waitForSessionId]);
-
-  useEffect(() => {
-    if (!sessionId || phase !== "ending" || (reportState.status !== "ready" && reportState.status !== "unavailable")) return;
-    const signature = createFeedbackPersistenceSignature({ sessionId, status: reportState.status, result: reportState.result, azureSummary: currentAzureSummary });
-    if (signature === reportPersistenceSignatureRef.current) return;
-    reportPersistenceSignatureRef.current = signature;
-    const persistence = reportState.status === "ready" && reportState.result
-      ? saveInterviewFeedback(sessionId, currentAzureSummary, reportState.result)
-      : markInterviewFeedbackUnavailable(sessionId, currentAzureSummary);
-    void persistence.then((result) => {
-      warmProgressCacheAfterFeedbackSave(result, loadProgressRecords);
-      if (!mountedRef.current || reportPersistenceSignatureRef.current !== signature) return;
-      setFeedbackSyncMessage(result.ok ? null : "O relatório está disponível nesta tela, mas não foi possível sincronizá-lo com sua conta.");
-    });
-  }, [currentAzureSummary, locale, phase, reportState, sessionId]);
+  }, [config, locale, phase, questions, sessionId, waitForCompletionSync, waitForSessionId]);
 
 
   const isAdvancing = phase === "advancing";
   const resumePractice = isResumePractice(config);
   const seniorityLabel = config.seniority === "junior" ? t("Júnior") : config.seniority === "mid-level" ? t("Pleno") : config.seniority === "senior" ? t("Sênior") : "Staff / Lead";
   const focusLabel = t(config.focus === "technical-depth" ? "Profundidade técnica" : config.focus === "communication" ? "Comunicação e clareza" : config.focus === "behavioral" ? "Respostas comportamentais" : "Prática equilibrada");
-  const persistenceLabel = persistenceState === "saved" ? "Sessão salva na conta" : persistenceState === "local" ? "Sessão salva neste navegador; sincronização pendente" : "Salvando sessão na conta…";
+  const persistenceLabel = persistenceState === "saved" ? "Sessão salva na conta" : persistenceState === "local" ? "Sessão salva neste navegador; sincronização pendente" : persistenceState === "unsafe" ? "Sessão ainda não salva" : "Salvando sessão na conta…";
   const capturedReportTurns = pairInterviewTurns(reportTurns);
   const isOpeningQuestion = currentIndex === 0 && questionSequenceNumber === 1 && !followUpUsed;
   const interviewerFallbackText = phase === "introducing" && isOpeningQuestion ? openingUtterance : currentUtterance;
@@ -1486,8 +1494,8 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
   const inApp = useInAppBrowser();
   const micDisabled = isInterviewerSpeaking || isAdvancing || phase === "ending";
   const capturing = voiceCaptureState === "listening" || voiceCaptureState === "detected";
-  const SaveIcon = persistenceState === "saved" ? Check : persistenceState === "local" ? CloudOff : LoaderCircle;
-  const saveText = persistenceState === "saved" ? "Salva" : persistenceState === "local" ? "Só local" : "Salvando…";
+  const SaveIcon = persistenceState === "saved" ? Check : persistenceState === "local" || persistenceState === "unsafe" ? CloudOff : LoaderCircle;
+  const saveText = persistenceState === "saved" ? "Salva" : persistenceState === "local" ? "No navegador" : persistenceState === "unsafe" ? "Não salva" : "Salvando…";
 
   const renderDock = (mic: MicControls) => {
     const inAppDenied = Boolean(inApp) && mic.errorMessage === micDeniedMessage();
@@ -1561,7 +1569,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             answerCount={Object.keys(answers).length}
             persistenceLabel={persistenceLabel}
             persistenceMessage={persistenceMessage}
-            feedbackSyncMessage={feedbackSyncMessage}
+            feedbackSyncMessage={null}
             reportState={reportState}
             progressRecords={progressRecords}
             currentInterviewId={sessionId ?? undefined}
@@ -1701,10 +1709,7 @@ export function InterviewRoom({ config, onLeave }: { config: InterviewConfig; on
             const updatedTurns = replaceCandidateTurnContent(reportTurnsRef.current, candidateSequenceNumber, transcript);
             reportTurnsRef.current = updatedTurns;
             setReportTurns(updatedTurns);
-            void (async () => {
-              const interviewId = sessionId ?? await waitForSessionId(2_000);
-              if (interviewId) await updateCandidateTurnContent(interviewId, candidateSequenceNumber, transcript);
-            })();
+            enqueueTurn({ interviewId: sessionId ?? "", sequenceNumber: candidateSequenceNumber, speaker: "candidate", content: transcript });
           }}
         />
 

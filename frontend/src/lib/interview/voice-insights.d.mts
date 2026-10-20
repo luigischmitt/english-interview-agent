@@ -12,8 +12,8 @@ export function buildVoiceLesson(records: ProgressRecord[], metric?: VoiceMetric
 export function buildVoiceInsights(records: ProgressRecord[]): { hasVoiceData: boolean; latestDate: string | null; focus: VoiceMetricKey | null; metrics: VoiceMetricInsight[] };
 export type VoicePracticeSentence = { id: string; text: string; source: "report" | "answer" | "phrase"; time: number; date: string | null; interviewId: string; answerNumber: number | null; phraseIndex?: number; attentionWords: string[]; specificEvidence: boolean; severity: number };
 export type VoicePracticeWord = { word: string; score: number; count: number; worst: number; time: number };
-export type VoiceTrainingPhrase = { id: string; referenceText: string; saidText: string; source: "english" | "pronunciation"; time: number; date: string | null; beforeAccuracy: number | null; attentionWords: string[]; recurrence: number };
-export type VoicePracticeAttempt = { scores: { accuracy: number | null; fluency: number | null; prosody: number | null }; words: Array<{ word: string; accuracyScore: number | null; errorType: string | null }>; createdAt: string };
+export type VoiceTrainingPhrase = { id: string; referenceText: string; saidText: string; source: "english" | "pronunciation"; sourceKind: "english_correction" | "voice_phrase"; interviewId: string; candidateSequenceNumber: number; phraseIndex: number | null; normalizedTarget: string; time: number; date: string | null; attentionWords: string[]; recurrence: number };
+export type VoicePracticeAttempt = { id?: string; scores: { accuracy: number | null; fluency: number | null; prosody: number | null }; words: Array<{ word: string; accuracyScore: number | null; errorType: string | null }>; createdAt: string };
 export function likelyTranscriptionArtifact(text: unknown): boolean;
 export function normalizePracticeSentenceCapitalization(text: unknown): string;
 export function normalizePracticeSpokenText(text: unknown): string;
@@ -24,3 +24,4 @@ export function buildVoiceTrainingPhrases(records: ProgressRecord[]): VoiceTrain
 export function encodeWav16Mono(samples: Float32Array | ArrayLike<number>, sampleRate?: number): ArrayBuffer;
 export function readPracticeAttempts(storage: Storage | null | undefined): Record<string, VoicePracticeAttempt[]>;
 export function savePracticeAttempt(storage: Storage | null | undefined, sentenceId: string, attempt: VoicePracticeAttempt): Record<string, VoicePracticeAttempt[]>;
+export function migrateLegacyPracticeAttempts(storage: Storage | null | undefined, sources: VoiceTrainingPhrase[]): Record<string, VoicePracticeAttempt[]>;

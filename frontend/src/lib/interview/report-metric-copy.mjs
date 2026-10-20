@@ -2,7 +2,7 @@
 export const azureMetricCopy = {
   accuracy: {
     label: "Precisão",
-    help: "Mede o quanto os sons de cada palavra se aproximam da pronúncia esperada pelo Azure. Não mede vocabulário, gramática nem sotaque.",
+    help: "Compara os sons à pronúncia esperada pelo Azure em en-US. É um sinal experimental: não mede inteligibilidade, nível de inglês ou qualidade do sotaque.",
   },
   fluency: {
     label: "Ritmo da fala",
@@ -10,11 +10,11 @@ export const azureMetricCopy = {
   },
   prosody: {
     label: "Prosódia",
-    help: "Mede a entonação e o acento das palavras, ou seja, se a fala soa natural e expressiva. É a medida mais sensível a áudio curto ou ruidoso.",
+    help: "Estima entonação e acento segundo padrões en-US. É muito sensível a áudio curto ou ruidoso e não indica que um sotaque brasileiro seja um erro.",
   },
 };
 
-export const azureReportIntro = "Médias do Azure por resposta, ponderadas pelo tempo de fala avaliado. São sinais experimentais, calculados sobre a transcrição da sua fala: um erro de transcrição pode reduzir a nota sem que você tenha errado. Não representam seu nível geral de inglês nem avaliam sotaque.";
+export const azureReportIntro = "Médias experimentais do Azure por resposta, ponderadas pelo tempo avaliado e calibradas para inglês en-US. Um erro de transcrição pode alterar o resultado. Esses números não medem seu nível geral, sua inteligibilidade ou a qualidade do seu sotaque.";
 
 export const azureReliabilityCopy = {
   insufficient: "Áudio avaliado curto demais para mostrar um valor confiável.",

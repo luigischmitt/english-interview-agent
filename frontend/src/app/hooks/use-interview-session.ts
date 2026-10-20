@@ -7,8 +7,8 @@ function formatClock(seconds: number) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function useInterviewSession(phase: InterviewPhase, durationMinutes: number) {
-  const [seconds, setSeconds] = useState(0);
+export function useInterviewSession(phase: InterviewPhase, durationMinutes: number, initialSeconds = 0) {
+  const [seconds, setSeconds] = useState(initialSeconds);
 
   useEffect(() => {
     if (phase === "closing" || phase === "ending") return;

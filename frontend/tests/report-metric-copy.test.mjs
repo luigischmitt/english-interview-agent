@@ -5,8 +5,8 @@ import { answerCountLabel, azureMetricCopy, azureReportIntro, clarityHelp, engli
 const allCopy = [azureReportIntro, clarityHelp, englishPatternsHelp, ...Object.values(azureMetricCopy).flatMap(({ help }) => [help])].join(" ");
 
 test("metric copy never presents pronunciation or clarity as an overall English level or CEFR", () => {
-  assert.match(azureReportIntro, /n[ãa]o representam seu n[ií]vel geral de ingl[êe]s/i);
-  assert.match(clarityHelp, /n[ãa]o avalia pron[úu]ncia nem [ée] um n[ií]vel de ingl[êe]s/i);
+  assert.match(azureReportIntro, /experimentais.*calibradas para ingl[eê]s en-US/i);
+  assert.match(azureReportIntro, /n[ãa]o medem seu n[ií]vel geral.*inteligibilidade.*sotaque/i);
   assert.doesNotMatch(allCopy, /\b(A1|A2|B1|B2|C1|C2|CEFR|fluente|avançado)\b/i);
 });
 

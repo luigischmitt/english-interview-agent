@@ -48,6 +48,14 @@ class RecordingSpeechProvider implements SpeechProvider {
 }
 
 describe("backend routes", () => {
+  it("retires generic practice and study-plan endpoints while keeping voice practice separate", async () => {
+    const genericPractice = await request(app).post("/api/v1/practice/grade").send({});
+    const studyPlan = await request(app).post("/api/v1/thinking/study-plan").send({});
+
+    expect(genericPractice.status).toBe(404);
+    expect(studyPlan.status).toBe(404);
+  });
+
   it("exposes a health check", async () => {
     const response = await request(app).get("/health");
 

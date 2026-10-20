@@ -17,12 +17,10 @@ import { createOrchestrationService } from "./thinking/openrouter-orchestration-
 import { createInterviewReportService } from "./thinking/openrouter-interview-report-service.js";
 import { createJobDirectionService } from "./thinking/openrouter-job-direction-service.js";
 import { createResumeDirectionService } from "./thinking/openrouter-resume-direction-service.js";
-import { createStudyPlanService, type StudyPlanService } from "./thinking/study-plan-service.js";
 import { OpenRouterPolishedAnswerService, type PolishedAnswerService } from "./thinking/polished-answer-service.js";
 import { JobDirectionUserLimit } from "./thinking/job-direction-user-limit.js";
 import type { InterviewOrchestrationService, InterviewReportService, JobDirectionService, ResumeDirectionService, ThinkingService } from "./thinking/types.js";
 import { createClosingReactionService, type ClosingReactionService } from "./thinking/closing-reaction-service.js";
-import { createPracticeService, type PracticeService } from "./thinking/practice-service.js";
 import { createRedoCheckService, type RedoCheckService } from "./thinking/redo-check-service.js";
 import { SpeculativeTurnAnalysisService } from "./thinking/speculative-turn-analysis-service.js";
 import { loadTranscriptionConfig, type TranscriptionConfig } from "./transcription/config.js";
@@ -32,6 +30,8 @@ import type { TranscriptionService } from "./transcription/types.js";
 import { AdminUsageService } from "./admin/usage-service.js";
 import type { PronunciationAssessmentService } from "./transcription/azure-pronunciation-assessment.js";
 import { PracticeDailyLimit } from "./routes/voice.routes.js";
+import { loadAuthConfig } from "./auth/config.js";
+import { createSupabaseReportPersistence, createPersistedInterviewReportService, type ReportPersistence } from "./thinking/persisted-interview-report.js";
 
 /** Speculative analysis deadline; the call is off the critical path, so it gets 7 s unless SPECULATIVE_ANALYSIS_TIMEOUT_MS overrides it. */
 function speculativeAnalysisTimeoutMs(): number {
@@ -58,8 +58,6 @@ type AppDependencies = {
   resumeDirectionService?: ResumeDirectionService | null;
   jobDirectionUserLimit?: JobDirectionUserLimit;
   closingReactionService?: ClosingReactionService | null;
-  practiceService?: PracticeService | null;
-  studyPlanService?: StudyPlanService | null;
   polishedAnswerService?: PolishedAnswerService | null;
   redoCheckService?: RedoCheckService | null;
   adminUsageService?: AdminUsageService;
@@ -69,13 +67,15 @@ type AppDependencies = {
   practiceDailyLimit?: PracticeDailyLimit;
   /** Receives content-free Azure voice-practice usage logs (defaults to console.info). */
   practiceLogger?: (line: string) => void;
+  /** Omit to use the user's bearer token and the configured Supabase publishable key through RLS. */
+  persistedReportPersistence?: ReportPersistence | null;
   /** Omit for the environment default; pass null to disable authentication. */
   accessTokenVerifier?: AccessTokenVerifier | null;
   /** Receives one JSON line per accepted client audio diagnostic (defaults to console.info). */
   clientEventLogger?: (line: string) => void;
 };
 
-export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, jobDirectionService, resumeDirectionService, jobDirectionUserLimit, accessTokenVerifier, clientEventLogger, closingReactionService, practiceService, studyPlanService, polishedAnswerService, redoCheckService, adminUsageService, adminUserIds, pronunciationAssessmentService, practiceDailyLimit, practiceLogger }: AppDependencies = {}) {
+export function createApp({ speechConfig, speechProvider, transcriptionConfig, transcriptionService, thinkingConfig, thinkingService, orchestrationService, reportService, jobDirectionService, resumeDirectionService, jobDirectionUserLimit, accessTokenVerifier, clientEventLogger, closingReactionService, polishedAnswerService, redoCheckService, adminUsageService, adminUserIds, pronunciationAssessmentService, practiceDailyLimit, practiceLogger, persistedReportPersistence }: AppDependencies = {}) {
   const resolvedSpeechConfig = speechConfig ?? loadSpeechConfig();
   const resolvedSpeechProvider = speechProvider ?? createSpeechProvider(resolvedSpeechConfig);
   const resolvedTranscriptionService = transcriptionService
@@ -84,13 +84,16 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
   const resolvedThinkingService = thinkingService === undefined ? createThinkingService(resolvedThinkingConfig) : thinkingService;
   const resolvedOrchestrationService = orchestrationService ?? createOrchestrationService(resolvedThinkingConfig);
   const resolvedReportService = reportService === undefined ? createInterviewReportService(resolvedThinkingConfig) : reportService;
+  const authConfig = loadAuthConfig();
+  const resolvedPersistedReportPersistence = persistedReportPersistence === undefined
+    ? createSupabaseReportPersistence({ supabaseUrl: authConfig.supabaseUrl, publishableKey: authConfig.publishableKey })
+    : persistedReportPersistence;
+  const persistedReportGenerator = createPersistedInterviewReportService(resolvedReportService, resolvedPersistedReportPersistence);
   const resolvedJobDirectionService = jobDirectionService === undefined ? createJobDirectionService(resolvedThinkingConfig) : jobDirectionService;
   const resolvedResumeDirectionService = resumeDirectionService === undefined ? createResumeDirectionService({ ...resolvedThinkingConfig, timeoutMs: resolvedThinkingConfig.resumeDirectionTimeoutMs ?? resolvedThinkingConfig.timeoutMs, hedgeAfterMs: resolvedThinkingConfig.resumeDirectionHedgeAfterMs }) : resumeDirectionService;
   const resolvedJobDirectionUserLimit = jobDirectionUserLimit ?? new JobDirectionUserLimit();
   const speculativeService = resolvedThinkingConfig.openRouterApiKey ? new SpeculativeTurnAnalysisService({ apiKey: resolvedThinkingConfig.openRouterApiKey, model: resolvedThinkingConfig.model, timeoutMs: speculativeAnalysisTimeoutMs() }) : null;
   const resolvedClosingReactionService = closingReactionService === undefined ? (resolvedThinkingConfig.openRouterApiKey ? createClosingReactionService(resolvedThinkingConfig) : null) : closingReactionService;
-  const resolvedPracticeService = practiceService === undefined ? createPracticeService(resolvedThinkingConfig) : practiceService;
-  const resolvedStudyPlanService = studyPlanService === undefined ? createStudyPlanService(resolvedThinkingConfig) : studyPlanService;
   const resolvedPolishedAnswerService = polishedAnswerService === undefined && resolvedThinkingConfig.openRouterApiKey
     ? new OpenRouterPolishedAnswerService({ key: resolvedThinkingConfig.openRouterApiKey, model: resolvedThinkingConfig.model, timeoutMs: 20_000 })
     : polishedAnswerService ?? null;
@@ -113,7 +116,7 @@ export function createApp({ speechConfig, speechProvider, transcriptionConfig, t
 
   const verifier = accessTokenVerifier === undefined ? defaultAccessTokenVerifier : accessTokenVerifier;
   app.use("/api/v1", requireAccessToken(verifier, (request) => request.method === "GET" && request.path === "/speech/health"));
-  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, resolvedJobDirectionService, resolvedResumeDirectionService, resolvedJobDirectionUserLimit, clientEventLogger, speculativeService, resolvedThinkingConfig.speculativeHandoffEnabled === true, resolvedClosingReactionService, resolvedPracticeService, resolvedStudyPlanService, resolvedPolishedAnswerService, resolvedRedoCheckService, adminUsageService, adminUserIds, resolvedPronunciationAssessmentService, practiceDailyLimit, practiceLogger));
+  app.use("/api/v1", createApiRouter(resolvedSpeechProvider, resolvedSpeechConfig, resolvedTranscriptionService, resolvedThinkingService, resolvedOrchestrationService, resolvedReportService, resolvedJobDirectionService, resolvedResumeDirectionService, resolvedJobDirectionUserLimit, clientEventLogger, speculativeService, resolvedThinkingConfig.speculativeHandoffEnabled === true, resolvedClosingReactionService, resolvedPolishedAnswerService, resolvedRedoCheckService, adminUsageService, adminUserIds, resolvedPronunciationAssessmentService, practiceDailyLimit, practiceLogger, persistedReportGenerator));
   app.use(notFoundHandler);
   app.use(errorHandler);
 

@@ -127,7 +127,7 @@ function phrasesFor(records, metric) {
       }
     }
   }
-  return phrases.sort((first, second) => phraseSeverity(first) - phraseSeverity(second) || second.time - first.time || first.answerNumber - second.answerNumber || first.phraseIndex - second.phraseIndex);
+  return phrases.sort((first, second) => second.time - first.time || first.answerNumber - second.answerNumber || first.phraseIndex - second.phraseIndex);
 }
 
 function accuracyTips(records) {
@@ -244,19 +244,11 @@ export function buildVoiceInsights(input) {
       phrases: phrasesFor(records, key),
     };
   });
-  const focus = metrics.filter((metric) => reliable(metric.reliability) && metric.rawValue !== null).sort((first, second) => first.rawValue - second.rawValue)[0]?.key ?? null;
-  // A phrase is practiced in one section only: the focus metric picks first, then the others in display order.
-  const used = new Set();
-  for (const key of [focus, ...voiceMetrics.filter((metric) => metric !== focus)]) {
-    const metric = metrics.find((item) => item.key === key);
-    if (!metric) continue;
-    metric.phrases = metric.phrases.filter((phrase) => !used.has(`${phrase.interviewId}-${phrase.answerNumber}-${phrase.phraseIndex}`)).slice(0, 4);
-    for (const phrase of metric.phrases) used.add(`${phrase.interviewId}-${phrase.answerNumber}-${phrase.phraseIndex}`);
-  }
-  return { hasVoiceData, latestDate: latest ? dateOf(latest) : null, focus, metrics };
+  return { hasVoiceData, latestDate: latest ? dateOf(latest) : null, focus: null, metrics };
 }
 
-const practiceStorageKey = "eia:voice-practice:v1";
+const practiceStorageKey = "eia:voice-practice:v2";
+const legacyPracticeStorageKey = "eia:voice-practice:v1";
 const lowWordScore = 70;
 const fillerWords = new Set(["um", "uh", "er", "ah", "hmm", "like"]);
 const practiceStopWords = new Set([
@@ -434,25 +426,14 @@ function normalizedPracticeText(text) {
  */
 export function buildVoiceTrainingPhrases(input) {
   const records = (Array.isArray(input) ? input : []).slice().sort((first, second) => timeOf(second) - timeOf(first));
-  const grouped = new Map();
+  const candidates = new Map();
+  const recurrence = new Map();
   const add = (candidate) => {
-    const key = normalizedPracticeText(candidate.referenceText);
-    if (!key) return;
-    const current = grouped.get(key);
-    if (!current) {
-      grouped.set(key, { ...candidate, id: `training:${key}`, recurrence: 1 });
-      return;
-    }
-    current.recurrence += 1;
-    const attentionWords = [...new Set([...current.attentionWords, ...candidate.attentionWords])];
-    if (candidate.time > current.time) {
-      const correction = current.source === "english" ? { source: current.source, saidText: current.saidText } : {};
-      Object.assign(current, candidate, correction, { recurrence: current.recurrence, beforeAccuracy: candidate.beforeAccuracy ?? current.beforeAccuracy, attentionWords });
-    } else {
-      if (current.beforeAccuracy === null && candidate.beforeAccuracy !== null) current.beforeAccuracy = candidate.beforeAccuracy;
-      if (candidate.source === "english" && current.source !== "english") Object.assign(current, { source: candidate.source, saidText: candidate.saidText });
-      current.attentionWords = attentionWords;
-    }
+    const normalizedTarget = normalizedPracticeText(candidate.referenceText);
+    if (!normalizedTarget || !candidate.interviewId || !Number.isSafeInteger(candidate.candidateSequenceNumber)) return;
+    const id = JSON.stringify([candidate.interviewId, candidate.candidateSequenceNumber, candidate.sourceKind, candidate.phraseIndex, normalizedTarget]);
+    recurrence.set(normalizedTarget, (recurrence.get(normalizedTarget) ?? 0) + 1);
+    if (!candidates.has(id)) candidates.set(id, { ...candidate, id, normalizedTarget });
   };
 
   for (const record of records) {
@@ -461,30 +442,32 @@ export function buildVoiceTrainingPhrases(input) {
       const referenceText = cleanPracticeSentence(pattern?.rephrasedExample);
       const saidText = isText(pattern?.evidence) ? normalizePracticeSpokenText(pattern.evidence) : null;
       if (!referenceText || !saidText) continue;
-      add({ referenceText, saidText, source: "english", time: timeOf(record), date: dateOf(record), beforeAccuracy: null, attentionWords: [] });
+      add({ referenceText, saidText, source: "english", sourceKind: "english_correction", interviewId: record.id, candidateSequenceNumber: pattern.sequenceNumber + 1, phraseIndex: null, time: timeOf(record), date: dateOf(record), attentionWords: [] });
     }
     for (const answer of record?.feedback?.azureSummary?.answers ?? []) {
       for (const phrase of answer?.phrases ?? []) {
         const referenceText = cleanPracticeSentence(phrase?.text);
-        const problemWords = Array.isArray(phrase?.problemWords) ? phrase.problemWords.filter((word) => isText(word?.word) && isScore(word?.score) && word.score < lowWordScore) : [];
-        const score = isScore(phrase?.score) ? phrase.score : null;
-        if (!referenceText || (!problemWords.length && !(score !== null && score < lowWordScore))) continue;
+        const problemWords = Array.isArray(phrase?.problemWords) ? phrase.problemWords.filter((word) => isText(word?.word) && ((typeof word.errorType === "string" && word.errorType !== "None") || (Array.isArray(word.prosodyErrors) && word.prosodyErrors.some((error) => error === "UnexpectedBreak" || error === "MissingBreak")))) : [];
+        if (!referenceText || !Number.isSafeInteger(phrase?.phraseIndex) || !problemWords.length) continue;
         add({
           referenceText,
           saidText: referenceText,
           source: "pronunciation",
+          sourceKind: "voice_phrase",
+          interviewId: record.id,
+          candidateSequenceNumber: answer.sequenceNumber + 1,
+          phraseIndex: phrase.phraseIndex,
           time: timeOf(record),
           date: dateOf(record),
-          beforeAccuracy: score,
           attentionWords: problemWords.map((word) => word.word.trim()),
         });
       }
     }
   }
 
-  return [...grouped.values()]
-    .sort((first, second) => second.recurrence - first.recurrence || second.time - first.time || (first.beforeAccuracy ?? 101) - (second.beforeAccuracy ?? 101) || first.referenceText.localeCompare(second.referenceText))
-    .slice(0, 5);
+  return [...candidates.values()]
+    .map((candidate) => ({ ...candidate, recurrence: recurrence.get(candidate.normalizedTarget) ?? 1 }))
+    .sort((first, second) => second.recurrence - first.recurrence || second.time - first.time || first.referenceText.localeCompare(second.referenceText));
 }
 
 function evidencePhraseCandidates(records, metric) {
@@ -545,7 +528,9 @@ export function encodeWav16Mono(samples, sampleRate = 16_000) {
 export function readPracticeAttempts(storage) {
   try {
     const parsed = JSON.parse(storage?.getItem?.(practiceStorageKey) ?? "{}");
-    return parsed && parsed.version === 1 && parsed.items && typeof parsed.items === "object" ? parsed.items : {};
+    if (parsed && parsed.version === 2 && parsed.items && typeof parsed.items === "object") return parsed.items;
+    const legacy = JSON.parse(storage?.getItem?.(legacyPracticeStorageKey) ?? "{}");
+    return legacy && legacy.version === 1 && legacy.items && typeof legacy.items === "object" ? legacy.items : {};
   } catch { return {}; }
 }
 
@@ -553,7 +538,55 @@ export function savePracticeAttempt(storage, sentenceId, attempt) {
   const items = readPracticeAttempts(storage);
   const history = Array.isArray(items[sentenceId]) ? items[sentenceId].slice(-5) : [];
   history.push(attempt);
-  const bounded = Object.fromEntries(Object.entries({ ...items, [sentenceId]: history }).slice(-30));
-  try { storage?.setItem?.(practiceStorageKey, JSON.stringify({ version: 1, items: bounded })); } catch { /* Local progress is optional. */ }
+  const bounded = Object.fromEntries(Object.entries({ ...items, [sentenceId]: history }).slice(-100));
+  try { storage?.setItem?.(practiceStorageKey, JSON.stringify({ version: 2, items: bounded })); } catch { /* Local fallback is best effort. */ }
   return bounded;
+}
+
+function stableAttemptUuid(value) {
+  const hashes = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35].map((seed, salt) => {
+    let hash = seed ^ salt;
+    for (const char of value) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
+    return hash.toString(16).padStart(8, "0");
+  });
+  const hex = hashes.join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+/** Map pre-account local attempts to one matching real source occurrence; unmappable history stays local. */
+export function migrateLegacyPracticeAttempts(storage, sources) {
+  const current = readPracticeAttempts(storage);
+  let legacy = {};
+  try {
+    const parsed = JSON.parse(storage?.getItem?.(legacyPracticeStorageKey) ?? "{}");
+    if (parsed?.version === 1 && parsed.items && typeof parsed.items === "object") legacy = parsed.items;
+  } catch { /* A broken legacy record must not block remote history. */ }
+  const sourceByTarget = new Map();
+  for (const source of sources) {
+    const key = normalizedPracticeText(source?.referenceText);
+    if (!key) continue;
+    const group = sourceByTarget.get(key) ?? [];
+    group.push(source);
+    sourceByTarget.set(key, group);
+  }
+  const next = Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith("training:") && !key.startsWith("word:")));
+  const unmapped = {};
+  for (const [oldKey, rows] of Object.entries(legacy)) {
+    if (!oldKey.startsWith("training:") || !Array.isArray(rows)) continue;
+    const matches = sourceByTarget.get(oldKey.slice("training:".length)) ?? [];
+    if (!matches.length) { unmapped[oldKey] = rows; continue; }
+    const source = matches.slice().sort((first, second) => (second.time ?? 0) - (first.time ?? 0) || first.id.localeCompare(second.id))[0];
+    const history = Array.isArray(next[source.id]) ? next[source.id].slice() : [];
+    rows.forEach((attempt, index) => {
+      if (!attempt || typeof attempt.createdAt !== "string") return;
+      const id = typeof attempt.id === "string" ? attempt.id : stableAttemptUuid(`${source.id}|${attempt.createdAt}|${index}`);
+      if (!history.some((saved) => saved.id === id)) history.push({ ...attempt, id, migratedByText: true });
+    });
+    next[source.id] = history.sort((first, second) => Date.parse(first.createdAt) - Date.parse(second.createdAt)).slice(-20);
+  }
+  try {
+    storage?.setItem?.(practiceStorageKey, JSON.stringify({ version: 2, items: next }));
+    storage?.setItem?.(legacyPracticeStorageKey, JSON.stringify({ version: 1, items: unmapped }));
+  } catch { /* Keep whatever local history the browser accepted. */ }
+  return next;
 }

@@ -1,2 +1,0 @@
-export type ReportSuggestion = { lessonKey: string; ruleId: string | null; lessonTitle: string; partLabel: string | null; evidence: string; rephrased: string; count: number; href: string };
-export function buildReportSuggestions(groups: Array<{ theme_key: string; error_refs?: Array<{ interview_id: string; sequence_number?: number; evidence: string; rephrased: string; category?: string; ruleId?: string | null }> }>, interviewId: string | null | undefined, limit?: number): ReportSuggestion[];

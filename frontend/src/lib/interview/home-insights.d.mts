@@ -6,7 +6,6 @@ export type HomeInsights = {
   lastReportReady: boolean;
   lastTakeaway: string | null;
   topPattern: { type: string | null; suggestion: string } | null;
-  voiceFocus: { label: string; value: number; measure: string } | null;
 };
 
 export function buildHomeInsights(records: ProgressRecord[] | unknown): HomeInsights;

@@ -104,15 +104,19 @@ async function authenticatedClient(): Promise<PersistenceResult<{ client: Supaba
   }
 }
 
-export async function createInterviewSession(config: InterviewConfig): Promise<PersistenceResult<InterviewSession>> {
+export async function createInterviewSession(config: InterviewConfig, id?: string): Promise<PersistenceResult<InterviewSession>> {
   const auth = await authenticatedClient();
   if (!auth.ok) return auth;
   const { client, userId } = auth.value;
   const { data, error } = await client
     .from("interviews")
-    .insert(buildInterviewSessionPayload(config, userId))
+    .insert({ ...buildInterviewSessionPayload(config, userId), ...(id ? { id } : {}) })
     .select(sessionColumns)
     .single();
+  if (error?.code === "23505" && id) {
+    const existing = await client.from("interviews").select(sessionColumns).eq("id", id).eq("user_id", userId).single();
+    if (!existing.error && existing.data) return { ok: true, value: toSession(existing.data as InterviewRow) };
+  }
   if (error) return failure(error);
   invalidateDashboardCache("progress");
   return { ok: true, value: toSession(data as InterviewRow) };
@@ -123,12 +127,12 @@ export async function appendInterviewTurn(input: InterviewTurnInput): Promise<Pe
   if (!auth.ok) return auth;
   const { data, error } = await auth.value.client
     .from("interview_turns")
-    .insert({
+    .upsert({
       interview_id: input.interviewId,
       sequence_number: input.sequenceNumber,
       speaker: input.speaker,
       content: input.content,
-    })
+    }, { onConflict: "interview_id,sequence_number" })
     .select(turnColumns)
     .single();
   if (error) return failure(error);

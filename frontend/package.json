@@ -7,8 +7,7 @@
     "build": "next build",
     "test": "node --test tests/*.test.mjs",
     "start": "next start",
-    "lint": "eslint",
-    "audio:practice": "../backend/node_modules/.bin/tsx scripts/generate-practice-audio.mts"
+    "lint": "eslint"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

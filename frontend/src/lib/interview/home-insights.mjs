@@ -1,4 +1,3 @@
-import { buildVoiceInsights } from "./voice-insights.mjs";
 
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const cleanText = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
@@ -48,17 +47,11 @@ export function buildHomeInsights(input) {
     .slice()
     .sort((first, second) => timeOf(second) - timeOf(first));
   const latest = records[0] ?? null;
-  const voice = buildVoiceInsights(records);
-  const focusMetric = voice.focus ? voice.metrics.find((metric) => metric.key === voice.focus) ?? null : null;
-
   return {
     interviewCount: records.length,
     lastInterviewAt: timeOf(latest) ? new Date(timeOf(latest)).toISOString() : null,
     lastReportReady: latest?.feedback?.status === "ready",
     lastTakeaway: takeawayFrom(latest?.feedback?.analysis),
     topPattern: patternFrom(latest?.feedback?.analysis),
-    voiceFocus: focusMetric?.value !== null && focusMetric?.value !== undefined
-      ? { label: focusMetric.label, value: focusMetric.value, measure: focusMetric.measure }
-      : null,
   };
 }

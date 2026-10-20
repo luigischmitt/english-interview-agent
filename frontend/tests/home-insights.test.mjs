@@ -37,11 +37,7 @@ test("summarizes only persisted home information from the latest completed inter
   assert.equal(result.lastReportReady, true);
   assert.equal(result.lastTakeaway, "Você conectou a decisão técnica ao impacto.");
   assert.deepEqual(result.topPattern, { type: "Gramática", suggestion: "Use goes" });
-  assert.deepEqual(result.voiceFocus, {
-    label: "Ritmo",
-    value: 68,
-    measure: "Mostra a fluidez entre palavras e pausas; não é velocidade de fala.",
-  });
+  assert.equal("voiceFocus" in result, false);
 });
 
 test("keeps the first-practice state empty and does not manufacture voice data", () => {
@@ -51,6 +47,5 @@ test("keeps the first-practice state empty and does not manufacture voice data",
     lastReportReady: false,
     lastTakeaway: null,
     topPattern: null,
-    voiceFocus: null,
   });
 });

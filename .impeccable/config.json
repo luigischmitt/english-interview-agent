@@ -11,6 +11,18 @@
         ],
         "createdAt": "2026-10-19T10:26:49.894Z",
         "reason": "Agent: the flagged wrappers are intentional full-bleed demo shells or delegate generous padding to their text-bearing children; cta-box itself already has 1.1rem-4rem padding"
+      },
+      {
+        "rule": "overused-font",
+        "value": "instrument serif",
+        "createdAt": "2026-10-20T21:10:34.861Z",
+        "reason": "DESIGN.md pins Instrument Serif as Entoa's display typeface"
+      },
+      {
+        "rule": "overused-font",
+        "value": "instrument sans",
+        "createdAt": "2026-10-20T21:10:34.875Z",
+        "reason": "DESIGN.md pins Instrument Sans as Entoa's UI typeface"
       }
     ]
   }

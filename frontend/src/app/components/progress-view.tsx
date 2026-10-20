@@ -7,7 +7,7 @@ import { Play } from "lucide-react";
 import { LoadingRegion, SkCard, SkChart } from "@/components/ui/loading-state";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import { purgeExpiredAnswerClips } from "@/lib/interview/answer-clips";
-import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
+import { invalidateDashboardCache, readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { buildProgressInsights, sessionDurationMs } from "@/lib/interview/progress-insights.mjs";
 import type { InterviewReportResult } from "@/lib/interview/report";
 import type { InterviewConfig } from "@/lib/interview/types";
@@ -16,6 +16,8 @@ import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { PageIntro } from "./shared";
 import { formatPracticeDuration, ProgressContent } from "./progress/progress-content";
 import { InterviewReport } from "./interview-report";
+import type { ReportState } from "./interview-report";
+import { requestPersistedInterviewReport } from "@/lib/interview/persisted-report";
 
 const emptyAzureSummary: AzureMetricSummary = {
   accuracy: { mean: null, sampleCount: 0 },
@@ -36,6 +38,8 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [recoveryStates, setRecoveryStates] = useState<Record<string, ReportState>>({});
+  const [retryingSessionId, setRetryingSessionId] = useState<string | null>(null);
   const progressScrollTop = useRef(0);
 
   useEffect(() => { void purgeExpiredAnswerClips(); }, []);
@@ -62,7 +66,16 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
   }, [attempt]);
 
   const insights = useMemo(() => buildProgressInsights(records, { locale }), [records, locale]);
-  const selectedSession = records.find((record) => record.id === selectedSessionId && record.feedback?.status === "ready" && record.feedback.analysis);
+  const selectedSession = records.find((record) => record.id === selectedSessionId);
+  const selectedStoredReport = selectedSession?.feedback?.status === "ready" && selectedSession.feedback.analysis
+    ? selectedSession.feedback.analysis as InterviewReportResult
+    : null;
+  const selectedReportState: ReportState = selectedStoredReport
+    ? { status: "ready", result: selectedStoredReport }
+    : recoveryStates[selectedSession?.id ?? ""]
+      ?? (selectedSession?.feedback?.status === "pending"
+        ? { status: "pending" }
+        : { status: "unavailable", message: selectedSession?.feedback?.status === "unavailable" ? "O relatório continua indisponível. Tente novamente em instantes." : "Este relatório ainda não foi gerado. Você pode tentar novamente agora." });
 
   // An old report opens at its top, like a fresh one: jump there before paint (a smooth scroll up from the list would run
   // the report backwards, playing and skipping its entrances on the way).
@@ -77,9 +90,35 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
     setAttempt((value) => value + 1);
   };
 
+  const generateHistoricalReport = async (sessionId: string) => {
+    const session = records.find((record) => record.id === sessionId);
+    if (!session || retryingSessionId === sessionId) return;
+    setRetryingSessionId(sessionId);
+    setRecoveryStates((current) => ({ ...current, [sessionId]: { status: "pending" } }));
+    try {
+      const result = await requestPersistedInterviewReport(sessionId, session.feedback?.azureSummary ?? null, locale === "en" ? "en" : "pt-BR");
+      setRecoveryStates((current) => ({ ...current, [sessionId]: { status: "ready", result } }));
+      invalidateDashboardCache("progress");
+      const refreshed = await loadProgressRecords();
+      if (refreshed.ok) setRecords(refreshed.value);
+    } catch (error) {
+      setRecoveryStates((current) => ({
+        ...current,
+        [sessionId]: { status: "unavailable", message: error instanceof Error ? error.message : "O relatório continua indisponível. Tente novamente em instantes." },
+      }));
+      invalidateDashboardCache("progress");
+      const refreshed = await loadProgressRecords();
+      if (refreshed.ok) setRecords(refreshed.value);
+    } finally {
+      setRetryingSessionId((current) => current === sessionId ? null : current);
+    }
+  };
+
   const openHistoricalReport = (sessionId: string) => {
     progressScrollTop.current = window.scrollY;
     setSelectedSessionId(sessionId);
+    const session = records.find((record) => record.id === sessionId);
+    if (session?.feedback?.status === "pending") void generateHistoricalReport(sessionId);
   };
 
   const closeHistoricalReport = () => {
@@ -92,7 +131,6 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
       <Play className="size-4 fill-current" aria-hidden="true" /> {t("Nova prática ")}</button>
   );
 
-  const historicalReport = selectedSession?.feedback?.analysis as InterviewReportResult | undefined;
   const historicalAzureSummary = selectedSession?.feedback?.azureSummary ?? emptyAzureSummary;
   const historicalDuration = selectedSession ? sessionDurationMs(selectedSession) : null;
   const historicalAssessmentCount = Math.max(0, ...[historicalAzureSummary.accuracy, historicalAzureSummary.fluency, historicalAzureSummary.prosody].map((metric) => metric.sampleCount));
@@ -107,9 +145,27 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
     showQuestionCaptions: false,
     candidateCameraEnabled: false,
     autoCaptureVoice: false,
-    jobDirection: historicalReport?.jobDirection,
+    jobDirection: selectedStoredReport?.jobDirection,
     interviewSource: "manual",
   } : null;
+
+  useEffect(() => {
+    if (!selectedSession || selectedReportState.status !== "pending") return;
+    let active = true;
+    let timer: number | null = null;
+    const refresh = async () => {
+      invalidateDashboardCache("progress");
+      const result = await loadProgressRecords();
+      if (!active) return;
+      if (result.ok) setRecords(result.value);
+      timer = window.setTimeout(() => { void refresh(); }, 2_500);
+    };
+    timer = window.setTimeout(() => { void refresh(); }, 2_500);
+    return () => {
+      active = false;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [selectedReportState.status, selectedSession]);
 
   return (
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14 lg:pb-16">
@@ -159,17 +215,17 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
           <div hidden={!!selectedSession}>
             <ProgressContent insights={insights} onOpenReport={openHistoricalReport} />
           </div>
-          {selectedSession && historicalReport && historicalConfig && (
+          {selectedSession && historicalConfig && (
             <div className="mt-8 lg:mt-10">
               <InterviewReport
                 config={historicalConfig}
                 elapsed={formatPracticeDuration(historicalDuration)}
                 totalClock={historicalDuration === null ? "" : formatClock(Math.round(historicalDuration / 1000))}
                 answerCount={selectedSession.answerCount}
-                persistenceLabel={t("Relatório salvo desta prática.")}
+                persistenceLabel={t(selectedReportState.status === "ready" ? "Relatório salvo desta prática." : "Entrevista salva; relatório recuperável.")}
                 persistenceMessage={null}
                 feedbackSyncMessage={null}
-                reportState={{ status: "ready", result: historicalReport }}
+                reportState={selectedReportState}
                 turns={[]}
                 azureSummary={historicalAzureSummary}
                 coverage={{ available: historicalAssessmentCount, pending: 0, total: historicalAssessmentCount }}
@@ -177,6 +233,8 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
                 progressRecords={records}
                 currentInterviewId={selectedSession.id}
                 historical
+                onRetry={() => { void generateHistoricalReport(selectedSession.id); }}
+                retrying={retryingSessionId === selectedSession.id}
               />
             </div>
           )}
