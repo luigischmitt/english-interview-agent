@@ -71,6 +71,9 @@
 .pg-side-detail strong { color: var(--ds-ink); font-weight: 600; }
 .pg-dims-note { color: var(--ds-text-2); font-size: 0.75rem; line-height: 1.5; }
 .pg-chart { min-width: 0; }
+/* Slower sweep than Home's compact chart; linear so each marker lands as the line passes it. */
+.pg-chart .vt { --vt-sweep: 1900ms; }
+.pg-chart .vt-line { animation-timing-function: linear; }
 .pg-empty { display: grid; justify-items: start; gap: 0.75rem; border-radius: var(--ds-r-xl); background: var(--ds-field); padding: 1.5rem; color: var(--ds-text-2); font-size: 0.9375rem; line-height: 1.55; }
 .pg-tucano { width: 2.75rem; height: 3.125rem; background: url("/landing/tucano-mark.webp") center / contain no-repeat; opacity: 0.55; }
 
@@ -93,7 +96,8 @@
 .pg-pattern-share small { font-size: 1rem; font-weight: 600; }
 .pg-pattern-of { margin-top: 0.25rem; color: var(--ds-text-2); font-size: 0.75rem; white-space: nowrap; }
 .pg-meter { height: 0.625rem; border-radius: var(--ds-r-pill); background: var(--ds-track); overflow: hidden; }
-.pg-meter > i { display: block; height: 100%; border-radius: inherit; background: color-mix(in srgb, var(--ds-ink) 72%, transparent); transform-origin: left; transition: transform 650ms var(--ease-out) calc(120ms + min(var(--i, 0), 8) * 40ms); }
+.pg-meter > i { position: relative; display: block; height: 100%; border-radius: inherit; background: color-mix(in srgb, var(--ds-ink) 72%, transparent); transform-origin: left; transition: transform 1000ms cubic-bezier(0.32, 0.72, 0.2, 1) calc(var(--rd, 0ms) + 350ms + min(var(--i, 0), 8) * 110ms); }
+.pg-meter > i::after { content: ""; position: absolute; inset: 0 0 0 auto; width: 1.5rem; border-radius: inherit; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ds-surface) 70%, transparent)); opacity: 0; transition: opacity 350ms ease calc(var(--rd, 0ms) + 1000ms + min(var(--i, 0), 8) * 110ms); }
 .pg-pattern-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
 .pg-trend { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: var(--ds-r-pill); padding: 0.125rem 0.625rem; font-size: 0.75rem; font-weight: 600; background: var(--ds-track); color: var(--ds-text-2); }
 .pg-trend[data-trend="up"] { background: var(--ds-warning-tint); color: var(--ds-warning); }
@@ -135,9 +139,9 @@
 .pg-weeks { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0.5rem; align-items: end; height: 11rem; }
 .pg-week { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; justify-items: center; gap: 0.375rem; height: 100%; font-variant-numeric: tabular-nums; }
 .pg-week-track { display: flex; align-items: flex-end; width: 100%; max-width: 2.25rem; height: 100%; }
-.pg-week-track > i { display: block; width: 100%; border-radius: 0.375rem 0.375rem 0.25rem 0.25rem; background: var(--ds-green); transform-origin: bottom; transition: transform 550ms var(--ease-out) calc(min(var(--i, 0), 10) * 30ms); }
+.pg-week-track > i { display: block; width: 100%; border-radius: 0.375rem 0.375rem 0.25rem 0.25rem; background: var(--ds-green); transform-origin: bottom; transition: transform 900ms cubic-bezier(0.32, 0.72, 0.2, 1) calc(var(--rd, 0ms) + 350ms + min(var(--i, 0), 10) * 90ms); }
 .pg-week-track > i[data-empty="true"] { background: var(--ds-track); }
-.pg-week-n { min-height: 1rem; font-size: 0.75rem; font-weight: 600; color: var(--ds-ink); }
+.pg-week-n { transition: opacity 500ms ease calc(var(--rd, 0ms) + 900ms + min(var(--i, 0), 10) * 90ms); min-height: 1rem; font-size: 0.75rem; font-weight: 600; color: var(--ds-ink); }
 .pg-week-l { font-size: 0.6875rem; color: var(--ds-text-2); white-space: nowrap; }
 
 /* ---- History ---- */
@@ -155,11 +159,15 @@
 @media (hover: hover) and (pointer: fine) { .pg-row:hover { background: var(--ds-hover-wash-faint); } }
 
 /* ---- One-time entrances ---- */
-.pg-metric, .pg-pattern, .pg-topic { transition: opacity 360ms var(--ease-out) calc(60ms + min(var(--i, 0), 8) * 40ms), transform 360ms var(--ease-out) calc(60ms + min(var(--i, 0), 8) * 40ms); }
-[data-inview="false"] .pg-metric, [data-inview="false"] .pg-pattern, [data-inview="false"] .pg-topic { opacity: 0; transform: translateY(10px); transition: none; }
+/* Rows rise in reading order; their meter starts filling a beat later (see .pg-meter). Calm eases, no overshoot. */
+.pg-metric { transition: opacity 400ms var(--ease-out) calc(60ms + min(var(--i, 0), 8) * 40ms), transform 400ms var(--ease-out) calc(60ms + min(var(--i, 0), 8) * 40ms); }
+.pg-pattern, .pg-topic { transition: opacity 700ms var(--ease-out) calc(var(--rd, 0ms) + 100ms + min(var(--i, 0), 8) * 110ms), transform 700ms var(--ease-out) calc(var(--rd, 0ms) + 100ms + min(var(--i, 0), 8) * 110ms); }
+[data-inview="false"] .pg-metric, [data-inview="false"] .pg-pattern, [data-inview="false"] .pg-topic { opacity: 0; transform: translateY(14px); transition: none; }
 [data-inview="false"] .pg-meter > i { transform: scaleX(0); transition: none; }
+[data-inview="false"] .pg-meter > i::after { opacity: 1; transition: none; }
 [data-inview="false"] .pg-week-track > i { transform: scaleY(0); transition: none; }
+[data-inview="false"] .pg-week-n { opacity: 0; transition: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .pg-metric, .pg-pattern, .pg-topic, .pg-meter > i, .pg-week-track > i, .pg-example-toggle svg { transition: none; }
+  .pg-metric, .pg-pattern, .pg-topic, .pg-meter > i, .pg-meter > i::after, .pg-week-track > i, .pg-week-n, .pg-example-toggle svg { transition: none; }
 }
