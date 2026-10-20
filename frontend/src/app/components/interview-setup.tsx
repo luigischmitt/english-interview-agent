@@ -428,6 +428,13 @@ export function InterviewSetup({
       : "Aguarde a voz do entrevistador ficar pronta para iniciar com áudio.";
   const roleInvalid = showErrors && !config.role.trim();
 
+  // The opening "deal" only plays once; fields that mount later (after an analysis) just rise.
+  const [dealing, setDealing] = useState(true);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDealing(false), 1800);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   return (
     <main id="main-content" className={`isu-root mx-auto w-full min-w-0 max-w-6xl px-4 pb-[calc(var(--shl-bottom-nav-h,0px)+9rem)] pt-6 sm:px-8 sm:pt-8 lg:px-12 lg:pb-16 lg:pt-10`}>
       <button type="button" className="ds-btn ds-btn-quiet -ml-3 mb-6 min-h-10 gap-2 px-3 text-sm" onClick={onBack}>
@@ -442,14 +449,14 @@ export function InterviewSetup({
       <form id="interview-setup-form" onSubmit={handleSubmit} className="mt-8 grid items-start gap-6 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-8" noValidate>
         <div className="flex min-w-0 flex-col gap-5">
           {/* 1. Essentials: what is being practiced, set manually or filled from a pasted job description */}
-          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 0 } as CSSProperties} aria-labelledby="interview-details-title">
+          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 0, "--rot": "-2.4deg" } as CSSProperties} aria-labelledby="interview-details-title">
             <div className="flex items-center gap-3">
               <span className="ds-step" aria-hidden="true">{t("1")}</span>
               <h2 id="interview-details-title" className="ds-h2">{t("Detalhes da entrevista")}</h2>
             </div>
             <p className="ds-body mt-2">{t("Você pode mudar essas opções a cada nova sessão.")}</p>
             <div className="mt-6 flex flex-col gap-6">
-              <fieldset className="flex min-w-0 flex-col gap-2">
+              <fieldset className="isu-deal flex min-w-0 flex-col gap-2" style={{ "--j": 0, "--rot": "-1.6deg" } as CSSProperties}>
                 <legend className="ds-label mb-2">{t("Como definir a entrevista")}</legend>
                 <SlidingSegmented
                   name="setup-mode"
@@ -561,7 +568,7 @@ export function InterviewSetup({
 
               {/* Resume interviews use the inferred profile internally; only manual and vacancy modes expose these controls. */}
               {setupMode !== "resume" && (setupMode === "manual" || config.jobDirection) && (
-                <div className="ds-fade-in flex flex-col gap-6">
+                <div className={`${dealing ? "isu-deal" : "isu-rise-in"} isu-rise flex flex-col gap-6`} style={{ "--j": 1, "--rot": "1.4deg" } as CSSProperties}>
                   {setupMode !== "manual" && (
                     <p className="ds-small -mb-2" role="status">{t("Preenchido a partir da vaga. Ajuste o que não estiver certo.")}</p>
                   )}
@@ -639,7 +646,7 @@ export function InterviewSetup({
                 </div>
               </div>
 
-              <fieldset className="flex min-w-0 flex-col gap-2">
+              <fieldset className="isu-deal flex min-w-0 flex-col gap-2" style={{ "--j": 2, "--rot": "-1.4deg" } as CSSProperties}>
                 <legend className="ds-label mb-2">{t("Duração da sessão")}</legend>
                 <SlidingSegmented
                   name="duration"
@@ -654,7 +661,7 @@ export function InterviewSetup({
           </section>
 
           {/* 2. Interviewer audio mode and an optional real synthesis test. */}
-          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 1 } as CSSProperties} aria-labelledby="interviewer-audio-title">
+          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 1, "--rot": "1.9deg" } as CSSProperties} aria-labelledby="interviewer-audio-title">
             <div className="flex items-center gap-3">
               <span className="ds-step" aria-hidden="true">{t("2")}</span>
               <h2 id="interviewer-audio-title" className="ds-h2">{t("Como o entrevistador fala")}</h2>
@@ -706,7 +713,7 @@ export function InterviewSetup({
           </section>
 
           {/* 3. Candidate microphone: optional check, placed right after the interviewer audio choice */}
-          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 2 } as CSSProperties} aria-labelledby="microphone-title">
+          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 2, "--rot": "-1.5deg" } as CSSProperties} aria-labelledby="microphone-title">
             <div className="flex items-center gap-3">
               <span className="ds-step" aria-hidden="true">{t("3")}</span>
               <h2 id="microphone-title" className="ds-h2">{t("Seu microfone")}</h2>
@@ -718,7 +725,7 @@ export function InterviewSetup({
           </section>
 
           {/* 4. Advanced: one level deeper, collapsed by default */}
-          <section ref={roomOptionsRef} className="ds-card ds-enter scroll-mb-28 scroll-mt-24" style={{ "--i": 3 } as CSSProperties} aria-labelledby="room-options-title">
+          <section ref={roomOptionsRef} className="ds-card ds-enter scroll-mb-28 scroll-mt-24" style={{ "--i": 3, "--rot": "1.3deg" } as CSSProperties} aria-labelledby="room-options-title">
             <button type="button" className="isu-disclosure-button flex items-center gap-3 p-5 sm:px-7" aria-expanded={roomOptionsOpen} aria-controls="room-options-panel" onClick={toggleRoomOptions}>
               <span className="ds-step" aria-hidden="true">{t("4")}</span>
               <span className="min-w-0 flex-1">
@@ -731,7 +738,7 @@ export function InterviewSetup({
               <div>
                 <div className="px-5 pb-6 sm:px-7">
                   <p className="ds-body">{t("Essas opções mudam a voz, o que aparece e quando o microfone começa a capturar.")}</p>
-                  <div className="mt-5">
+                  <div className="isu-deal-late mt-5">
                     <VoicePicker
                       value={voice}
                       onChange={chooseVoice}
@@ -754,7 +761,7 @@ export function InterviewSetup({
         </div>
 
         {/* Summary + primary action: sticky beside the form on desktop, recap in flow on mobile */}
-        <div className="ds-enter lg:sticky lg:top-24" style={{ "--i": 4 } as CSSProperties}>
+        <div className="ds-enter lg:sticky lg:top-24" style={{ "--i": 4, "--rot": "2.2deg" } as CSSProperties}>
           <aside className="isu-aside ds-mata px-6 py-7 sm:px-8" aria-labelledby="session-preview-title">
             <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.08em] text-on-panel-accent">
               <Leaf className="size-3.5 text-[color:var(--ds-brand-warm)]" aria-hidden="true" />
