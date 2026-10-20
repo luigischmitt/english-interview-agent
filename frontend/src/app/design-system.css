@@ -301,6 +301,8 @@ select.ds-field {
  * `[data-reveal]` is `data-inview="false"`, which useReplayReveal sets before paint when JS motion is allowed. Reveals start
  * only after the data is on screen: skeletons never carry `data-reveal`.
  *
+ *   Primitives are parameterised by custom properties so each tab can pick its own signature (do not apply them all everywhere):
+ *   --rise-y/--rise-t (ds-rise, ds-item), --reveal-y ([data-reveal]), --grow-t/--grow-step/--grow-ease (bars), SplitTitle props.
  *   .ds-split + .ds-split-ch  headline letters forming (SplitTitle). --i per char, --cs stagger per char.
  *   .ds-rise (+ --d)          subcopy / actions that rise right after the title.
  *   [data-reveal]             block that rises in when it scrolls into view (="group": only its `.ds-item` children move).
@@ -311,9 +313,9 @@ select.ds-field {
  *   .ds-lift                  card hover lift (pointer devices only).
  *   .ds-view                  whole-screen fade on navigation (opacity only, so sticky/fixed children stay stable).
  */
-@keyframes ds-ch { from { opacity: 0; transform: translateY(0.5em); filter: blur(7px); } }
-@keyframes ds-rise-in { from { opacity: 0; transform: translateY(16px); } }
-@keyframes ds-item-in { from { opacity: 0; transform: translateY(20px); } }
+@keyframes ds-ch { from { opacity: 0; transform: translateY(var(--ch-y, 0.5em)); filter: blur(var(--ch-blur, 7px)); } }
+@keyframes ds-rise-in { from { opacity: 0; transform: translateY(var(--rise-y, 16px)); } }
+@keyframes ds-item-in { from { opacity: 0; transform: translateY(var(--rise-y, 20px)); } }
 @keyframes ds-view-in { from { opacity: 0; } }
 @keyframes ds-bar-x { from { transform: scaleX(0); } }
 @keyframes ds-bar-y { from { transform: scaleY(0); } }
@@ -322,18 +324,18 @@ select.ds-field {
 @keyframes ds-option-pop { 0% { transform: scale(0.975); } 50% { transform: scale(1.015); } 100% { transform: none; } }
 
 .ds-split-w { display: inline-block; white-space: nowrap; }
-.ds-split-ch { display: inline-block; animation: ds-ch 800ms var(--ease-out) calc(80ms + var(--i, 0) * var(--cs, 17ms)) backwards; }
-.ds-rise { animation: ds-rise-in 600ms var(--ease-out) var(--d, 400ms) backwards; }
+.ds-split-ch { display: inline-block; animation: ds-ch var(--ch-d, 800ms) var(--ease-out) calc(80ms + var(--i, 0) * var(--cs, 17ms)) backwards; }
+.ds-rise { animation: ds-rise-in var(--rise-t, 600ms) var(--ease-out) var(--d, 400ms) backwards; }
 
 [data-reveal] { transition: opacity 650ms var(--ease-out) var(--rd, 0ms), transform 650ms var(--ease-out) var(--rd, 0ms); }
-[data-reveal][data-inview="false"] { opacity: 0; transform: translateY(26px); transition: none; }
+[data-reveal][data-inview="false"] { opacity: 0; transform: translateY(var(--reveal-y, 26px)); transition: none; }
 [data-reveal="group"] { transition: none; }
 [data-reveal="group"][data-inview="false"] { opacity: 1; transform: none; }
 
 .ds-view { animation: ds-view-in 260ms var(--ease-out) backwards; }
 .ds-item { animation: ds-item-in 600ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 60ms + var(--i, 0) * 80ms); }
-.ds-grow-x { transform-origin: left; animation: ds-bar-x 750ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 200ms + var(--i, 0) * 90ms); }
-.ds-grow-y { transform-origin: bottom; animation: ds-bar-y 750ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 200ms + var(--i, 0) * 90ms); }
+.ds-grow-x { transform-origin: left; animation: ds-bar-x var(--grow-t, 750ms) var(--grow-ease, var(--ease-out)) backwards; animation-delay: calc(var(--rd, 0ms) + 200ms + var(--i, 0) * var(--grow-step, 90ms)); }
+.ds-grow-y { transform-origin: bottom; animation: ds-bar-y var(--grow-t, 750ms) var(--grow-ease, var(--ease-out)) backwards; animation-delay: calc(var(--rd, 0ms) + 200ms + var(--i, 0) * var(--grow-step, 90ms)); }
 [data-inview="false"] :is(.ds-item, .ds-grow-x, .ds-grow-y) { animation-play-state: paused; }
 .ds-stagger > :nth-child(1) { --i: 0; } .ds-stagger > :nth-child(2) { --i: 1; } .ds-stagger > :nth-child(3) { --i: 2; } .ds-stagger > :nth-child(4) { --i: 3; }
 .ds-stagger > :nth-child(5) { --i: 4; } .ds-stagger > :nth-child(6) { --i: 5; } .ds-stagger > :nth-child(7) { --i: 6; } .ds-stagger > :nth-child(n+8) { --i: 7; }

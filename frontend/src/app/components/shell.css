@@ -185,10 +185,10 @@
 .shl-home-weeks { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0.375rem; align-items: end; max-width: 26rem; height: 6.5rem; margin-top: 2rem; }
 .shl-home-week { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; justify-items: center; gap: 0.25rem; height: 100%; font-variant-numeric: tabular-nums; }
 .shl-home-week-track { display: flex; align-items: flex-end; width: 100%; max-width: 1.75rem; height: 100%; }
-.shl-home-week-track > i { display: block; width: 100%; border-radius: 0.3rem 0.3rem 0.2rem 0.2rem; background: var(--ds-green); transform-origin: bottom; transition: transform 850ms var(--ease-out) calc(var(--rd, 0ms) + 450ms + var(--i, 0) * 110ms); }
+.shl-home-week-track > i { display: block; width: 100%; border-radius: 0.3rem 0.3rem 0.2rem 0.2rem; background: var(--ds-green); transform-origin: bottom; transition: transform 900ms cubic-bezier(0.34, 1.45, 0.64, 1) calc(var(--rd, 0ms) + 350ms + var(--i, 0) * 70ms); }
 .shl-home-week-track > i[data-empty="true"] { background: var(--ds-track); }
 [data-inview="false"] .shl-home-week-track > i { transform: scaleY(0); transition: none; }
-.shl-home-week-n { min-height: 0.9rem; color: var(--ds-ink); font-size: 0.6875rem; font-weight: 600; transition: opacity 500ms var(--ease-out) calc(var(--rd, 0ms) + 750ms + var(--i, 0) * 110ms), transform 500ms var(--ease-out) calc(var(--rd, 0ms) + 750ms + var(--i, 0) * 110ms); }
+.shl-home-week-n { min-height: 0.9rem; color: var(--ds-ink); font-size: 0.6875rem; font-weight: 600; transition: opacity 500ms var(--ease-out) calc(var(--rd, 0ms) + 900ms + var(--i, 0) * 70ms), transform 500ms var(--ease-out) calc(var(--rd, 0ms) + 900ms + var(--i, 0) * 70ms); }
 [data-inview="false"] .shl-home-week-n { opacity: 0; transform: translateY(6px); transition: none; }
 .shl-home-week-l { color: var(--ds-text-2); font-size: 0.625rem; white-space: nowrap; }
 .shl-home-caption { margin-top: 0.625rem; color: var(--ds-text-2); font-size: 0.75rem; }
@@ -206,8 +206,8 @@
 .shl-home-steps p { max-width: 22ch; margin-top: 1rem; color: var(--ds-text-2); font-size: 0.9375rem; line-height: 1.55; }
 /* Home sections: the two columns (label, content) rise one after the other; the section box itself stays put. */
 .shl-home [data-reveal], .shl-home [data-reveal][data-inview="false"] { opacity: 1; transform: none; transition: none; }
-.shl-home [data-reveal] > * { transition: opacity 700ms var(--ease-out) calc(var(--rd, 0ms) + var(--c, 0) * 120ms), transform 700ms var(--ease-out) calc(var(--rd, 0ms) + var(--c, 0) * 120ms); }
-.shl-home [data-reveal][data-inview="false"] > * { opacity: 0; transform: translateY(26px); transition: none; }
+.shl-home [data-reveal] > * { transition: opacity 600ms var(--ease-out) calc(var(--rd, 0ms) + var(--c, 0) * 100ms), transform 600ms var(--ease-out) calc(var(--rd, 0ms) + var(--c, 0) * 100ms); }
+.shl-home [data-reveal][data-inview="false"] > * { opacity: 0; transform: translateY(12px); transition: none; } /* calm: the signature moments are the heading and the weekly bars */
 .shl-home [data-reveal] > :nth-child(2) { --c: 1; }
 .shl-home [data-reveal] > :nth-child(3) { --c: 2; }
 @media (min-width: 768px) {
