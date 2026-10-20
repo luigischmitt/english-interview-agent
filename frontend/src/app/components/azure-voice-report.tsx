@@ -41,7 +41,8 @@ function MetricNumber({ value, index }: { value: number; index: number }) {
   const [shown, setShown] = useState(value);
   useIsoLayoutEffect(() => {
     const element = ref.current;
-    const list = element?.closest<HTMLElement>("[data-inview]");
+    // The list itself (not "any [data-inview]"): its trigger is set by the parent's layout effect, which runs after this one.
+    const list = element?.closest<HTMLElement>(".rp-metrics");
     if (!element || !list || prefersStatic()) return;
     let frame = 0;
     let timer = 0;
@@ -60,6 +61,7 @@ function MetricNumber({ value, index }: { value: number; index: number }) {
     };
     setShown(0);
     if (list.getAttribute("data-inview") === "true") { run(); return () => { clearTimeout(timer); cancelAnimationFrame(frame); }; }
+    // Not marked yet (the parent marks it right after) or still waiting: start when it turns "true".
     const watcher = new MutationObserver(() => {
       if (list.getAttribute("data-inview") !== "true") return;
       watcher.disconnect();
