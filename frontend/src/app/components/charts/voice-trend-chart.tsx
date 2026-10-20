@@ -14,11 +14,11 @@ const seriesColor: Record<VoiceTrendMetric, string> = {
 };
 
 /** Marker shape per metric, so identity never depends on color alone. */
-function Marker({ metric, x, y, size, className }: { metric: VoiceTrendMetric; x: number; y: number; size: number; className?: string }) {
+function Marker({ metric, x, y, size, className, style }: { metric: VoiceTrendMetric; x: number; y: number; size: number; className?: string; style?: React.CSSProperties }) {
   const half = size / 2;
-  if (metric === "fluency") return <rect className={className} x={x - half} y={y - half} width={size} height={size} rx={1.5} fill={seriesColor[metric]} />;
-  if (metric === "prosody") return <path className={className} d={`M${x},${y - half - 1} L${x + half + 1},${y} L${x},${y + half + 1} L${x - half - 1},${y} Z`} fill={seriesColor[metric]} />;
-  return <circle className={className} cx={x} cy={y} r={half} fill={seriesColor[metric]} />;
+  if (metric === "fluency") return <rect className={className} style={style} x={x - half} y={y - half} width={size} height={size} rx={1.5} fill={seriesColor[metric]} />;
+  if (metric === "prosody") return <path className={className} style={style} d={`M${x},${y - half - 1} L${x + half + 1},${y} L${x},${y + half + 1} L${x - half - 1},${y} Z`} fill={seriesColor[metric]} />;
+  return <circle className={className} style={style} cx={x} cy={y} r={half} fill={seriesColor[metric]} />;
 }
 
 export function MetricSwatch({ metric }: { metric: VoiceTrendMetric }) {
@@ -128,7 +128,7 @@ export function VoiceTrendChart({ rows, variant = "full", focus = null }: { rows
 
       <div ref={ref} className="vt-plot" onMouseLeave={() => setHover(null)}>
         {width > 0 && (
-          <svg width={width} height={height} role="img" aria-label={`${t("Evolução da sua voz por entrevista")}. ${summary}.`} className="vt-svg">
+          <svg width={width} height={height} role="img" aria-label={`${t("Evolução da sua voz por entrevista")}. ${summary}.`} className="vt-svg" style={{ "--vt-n": Math.max(1, rows.length - 1) } as React.CSSProperties}>
             {ticks.map((value) => (
               <g key={value}>
                 <line className="vt-grid" x1={pad.left} x2={pad.left + innerW} y1={y(value)} y2={y(value)} />
@@ -158,7 +158,7 @@ export function VoiceTrendChart({ rows, variant = "full", focus = null }: { rows
                     const isLast = index === rows.length - 1 || rows.slice(index + 1).every((later) => later.values[metric] === null);
                     if (compact && !isLast) return null;
                     const active = hover === index;
-                    return <Marker key={row.id} metric={metric} x={x(index)} y={y(value)} size={active ? 11 : 8} className="vt-marker" />;
+                    return <Marker key={row.id} metric={metric} x={x(index)} y={y(value)} size={active ? 11 : 8} className="vt-marker" style={{ "--k": index } as React.CSSProperties} />;
                   })}
                 </g>
               );

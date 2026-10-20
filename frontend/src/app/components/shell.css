@@ -166,6 +166,7 @@
 .shl-home-signature { display: flex; align-items: center; gap: 0.5rem; margin-top: 1.25rem; color: var(--ds-text-2); font-size: 0.75rem; font-weight: 600; }
 .shl-home-signature svg { color: var(--ds-brand-warm); }
 .shl-home-hero-art { display: none; position: absolute; z-index: -1; top: 2%; right: -24%; width: min(76vw, 54rem); height: min(76vw, 48rem); pointer-events: none; will-change: transform; }
+.shl-home-hero-art { animation: ds-view-in 1300ms var(--ease-out) 150ms backwards; }
 .shl-home-flow, .shl-home-how { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: clamp(3rem, 7vw, 6rem) 0; box-shadow: inset 0 1px 0 var(--ds-line); }
 .shl-home-hero + .shl-home-flow, .shl-home-hero + .shl-home-how { box-shadow: none; }
 .shl-home-label, .shl-home-flow-label h2 { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -184,10 +185,11 @@
 .shl-home-weeks { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0.375rem; align-items: end; max-width: 26rem; height: 6.5rem; margin-top: 2rem; }
 .shl-home-week { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; justify-items: center; gap: 0.25rem; height: 100%; font-variant-numeric: tabular-nums; }
 .shl-home-week-track { display: flex; align-items: flex-end; width: 100%; max-width: 1.75rem; height: 100%; }
-.shl-home-week-track > i { display: block; width: 100%; border-radius: 0.3rem 0.3rem 0.2rem 0.2rem; background: var(--ds-green); transform-origin: bottom; transition: transform 650ms var(--ease-out) calc(200ms + var(--i, 0) * 55ms); }
+.shl-home-week-track > i { display: block; width: 100%; border-radius: 0.3rem 0.3rem 0.2rem 0.2rem; background: var(--ds-green); transform-origin: bottom; transition: transform 850ms var(--ease-out) calc(var(--rd, 0ms) + 450ms + var(--i, 0) * 110ms); }
 .shl-home-week-track > i[data-empty="true"] { background: var(--ds-track); }
 [data-inview="false"] .shl-home-week-track > i { transform: scaleY(0); transition: none; }
-.shl-home-week-n { min-height: 0.9rem; color: var(--ds-ink); font-size: 0.6875rem; font-weight: 600; }
+.shl-home-week-n { min-height: 0.9rem; color: var(--ds-ink); font-size: 0.6875rem; font-weight: 600; transition: opacity 500ms var(--ease-out) calc(var(--rd, 0ms) + 750ms + var(--i, 0) * 110ms), transform 500ms var(--ease-out) calc(var(--rd, 0ms) + 750ms + var(--i, 0) * 110ms); }
+[data-inview="false"] .shl-home-week-n { opacity: 0; transform: translateY(6px); transition: none; }
 .shl-home-week-l { color: var(--ds-text-2); font-size: 0.625rem; white-space: nowrap; }
 .shl-home-caption { margin-top: 0.625rem; color: var(--ds-text-2); font-size: 0.75rem; }
 .shl-home-voice-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; max-width: 34rem; }
@@ -202,10 +204,12 @@
 .shl-home-steps li { min-width: 0; }
 .shl-home-steps span { display: block; color: var(--ds-green); font-family: var(--font-display); font-size: clamp(3.5rem, 2.5rem + 3vw, 5rem); letter-spacing: -0.05em; line-height: 0.8; }
 .shl-home-steps p { max-width: 22ch; margin-top: 1rem; color: var(--ds-text-2); font-size: 0.9375rem; line-height: 1.55; }
-.shl-home [data-reveal] > * { transition: opacity 450ms var(--ease-out), transform 450ms var(--ease-out); }
-.shl-home [data-reveal][data-inview="false"] > * { opacity: 0; transform: translateY(8px); transition: none; }
-.shl-home [data-reveal] > :nth-child(2) { transition-delay: 80ms; }
-.shl-home [data-reveal] > :nth-child(3) { transition-delay: 160ms; }
+/* Home sections: the two columns (label, content) rise one after the other; the section box itself stays put. */
+.shl-home [data-reveal], .shl-home [data-reveal][data-inview="false"] { opacity: 1; transform: none; transition: none; }
+.shl-home [data-reveal] > * { transition: opacity 700ms var(--ease-out) calc(var(--rd, 0ms) + var(--c, 0) * 120ms), transform 700ms var(--ease-out) calc(var(--rd, 0ms) + var(--c, 0) * 120ms); }
+.shl-home [data-reveal][data-inview="false"] > * { opacity: 0; transform: translateY(26px); transition: none; }
+.shl-home [data-reveal] > :nth-child(2) { --c: 1; }
+.shl-home [data-reveal] > :nth-child(3) { --c: 2; }
 @media (min-width: 768px) {
   .shl-home-hero-art { display: block; background: url("/landing/hero-mata-1152.webp") right center / contain no-repeat; background-image: image-set(url("/landing/hero-mata-1152.webp") 1x, url("/landing/hero-mata.webp") 2x); opacity: var(--ds-forest-opacity); filter: var(--ds-forest-filter); mask-image: linear-gradient(90deg, transparent 4%, var(--ds-ink) 36%, var(--ds-ink) 76%, transparent 100%), linear-gradient(180deg, transparent 0%, var(--ds-ink) 12%, var(--ds-ink) 70%, transparent 100%), radial-gradient(ellipse 88% 82% at 54% 50%, var(--ds-ink) 48%, transparent 100%), radial-gradient(ellipse 88% 82% at 62% 55%, black 45%, transparent 78%); mask-composite: intersect; -webkit-mask-image: linear-gradient(90deg, transparent 4%, var(--ds-ink) 36%, var(--ds-ink) 76%, transparent 100%), linear-gradient(180deg, transparent 0%, var(--ds-ink) 12%, var(--ds-ink) 70%, transparent 100%), radial-gradient(ellipse 88% 82% at 54% 50%, var(--ds-ink) 48%, transparent 100%), radial-gradient(ellipse 88% 82% at 62% 55%, black 45%, transparent 78%); -webkit-mask-composite: source-in; }
   .shl-home-hero { min-height: min(32rem, calc(100svh - 8rem)); }
@@ -243,7 +247,7 @@
   .shl-mobile-item { min-height: 3.25rem; font-size: 0.625rem; }
 }
 @media (hover: hover) and (pointer: fine) { .shl-home-link:hover { color: var(--ds-green-deep); } .shl-home-link:hover .ds-arrow { transform: translate(2px, -2px); } }
-@media (prefers-reduced-motion: reduce) { .shl-home [data-reveal] > *, .shl-home-week-track > i { transition: none; } .shl-home-hero-art { transform: none !important; } }
+@media (prefers-reduced-motion: reduce) { .shl-home [data-reveal] > *, .shl-home-week-track > i, .shl-home-week-n { transition: none; } .shl-home-hero-art { transform: none !important; animation: none; } }
 
 .shl-icon-tile { display: grid; width: 2.5rem; height: 2.5rem; flex: none; place-items: center; border-radius: var(--ds-r-md); background: var(--ds-tint); color: var(--ds-green); }
 .shl-well { border-radius: var(--ds-r-xl); background: var(--ds-field); padding: 1rem 1.125rem; }
