@@ -49,8 +49,8 @@ type InitialView = View | "pronunciation";
 const primaryNavigationItems = [
   { id: "home" as const, label: "Início", icon: Home },
   { id: "interview-setup" as const, label: "Entrevista", icon: Video },
-  { id: "progress" as const, label: "Progresso", icon: LineChart },
   { id: "voice" as const, label: "Sua voz", icon: AudioLines },
+  { id: "progress" as const, label: "Progresso", icon: LineChart },
 ];
 
 const settingsNavigationItem = { id: "settings" as const, label: "Configurações", icon: SlidersHorizontal };
