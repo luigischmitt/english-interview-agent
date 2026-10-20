@@ -37,6 +37,7 @@ import { buildProgressInsights, type ProgressRecord } from "@/lib/interview/prog
 import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics } from "@/lib/interview/voice-trend.mjs";
 import { useReplayReveal } from "@/lib/use-replay-reveal";
 import { CountUp } from "@/components/ui/count-up";
+import { SplitTitle } from "@/components/ui/split-title";
 import { useLocale } from "@/lib/locale";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 
@@ -372,16 +373,16 @@ function HomeView({
     <main ref={homeRef} id="main-content" className={`${pageMain} shl-home`}>
       <section className="shl-home-hero" aria-labelledby="home-title">
         <div className="shl-home-hero-copy">
-          <h1 id="home-title" className="shl-home-title ds-title-in">
-            {t("Sua próxima entrevista começa aqui.")}
+          <h1 id="home-title" className="shl-home-title">
+            <SplitTitle text={t("Sua próxima entrevista começa aqui.")} />
           </h1>
-          <p className="shl-home-subcopy">
+          <p className="shl-home-subcopy ds-rise" style={{ "--d": "560ms" } as CSSProperties}>
             {t("Pratique em voz alta e leve mais clareza para a próxima conversa.")}
           </p>
-          <button type="button" className="ds-btn ds-btn-cta-green shl-home-primary" onClick={onStart}>
+          <button type="button" className="ds-btn ds-btn-cta-green shl-home-primary ds-rise" style={{ "--d": "700ms" } as CSSProperties} onClick={onStart}>
             <Play className="size-4 fill-current" aria-hidden="true" /> {t("Começar entrevista")}
           </button>
-          <p className="shl-home-signature">
+          <p className="shl-home-signature ds-rise" style={{ "--d": "820ms" } as CSSProperties}>
             <Leaf className="size-3.5" aria-hidden="true" /> {t("Feito no Brasil, para vaga lá fora")}
           </p>
         </div>
@@ -389,7 +390,7 @@ function HomeView({
       </section>
 
       {isLoading ? (
-        <section className="shl-home-flow" aria-live="polite" data-reveal>
+        <section className="shl-home-flow ds-fade-in" aria-live="polite">
           <p className="shl-home-label">{t("Organizando seu histórico")}</p>
           <div className="mt-6 max-w-xl space-y-3">
             <div className="skeleton h-4 w-2/3" />

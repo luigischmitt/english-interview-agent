@@ -294,50 +294,70 @@ select.ds-field {
 }
 
 /*
- * ---- Motion layer (landing language, tuned for frequent use) ----
- * Entrances are short (<= 400ms), staggered by <= 40ms per item, and play once per mount. Content is visible by default;
- * it is only held back while an ancestor `[data-reveal]` is explicitly `data-inview="false"` (set by useReplayReveal when
- * JS runs, motion is allowed and the block is still below the fold).
+ * ---- Motion layer (the landing's language: letters form, blocks rise and settle, bars grow, numbers count) ----
+ * Timings are meant to be seen: titles form in ~0.9s, blocks rise in 0.65s, bars grow in 0.7s one after another, charts draw in
+ * 1.3s. Nothing blocks use: controls stay clickable the whole time and every entrance plays once per mount (re-renders and
+ * polling never replay it). Content is visible by default (SSR, no JS, reduced motion); it is only held back while an ancestor
+ * `[data-reveal]` is `data-inview="false"`, which useReplayReveal sets before paint when JS motion is allowed. Reveals start
+ * only after the data is on screen: skeletons never carry `data-reveal`.
  *
- *   [data-reveal]            block that rises in when it first enters the viewport (use ="group" to leave the block
- *                            itself still and animate only its `.ds-item` children).
- *   .ds-item  + --i          child that rises with a 40ms x --i stagger once the ancestor reveals (also plays on mount).
- *   .ds-stagger              sets --i on the first 8 children, so lists need no inline styles.
- *   .ds-grow-x / .ds-grow-y  bars that grow from their base once.
- *   .ds-lift                 card hover lift (pointer devices only).
- *   .ds-view                 whole-screen fade on navigation (opacity only, so sticky/fixed children stay stable).
+ *   .ds-split + .ds-split-ch  headline letters forming (SplitTitle). --i per char, --cs stagger per char.
+ *   .ds-rise (+ --d)          subcopy / actions that rise right after the title.
+ *   [data-reveal]             block that rises in when it scrolls into view (="group": only its `.ds-item` children move).
+ *   --rd                      reveal delay set by useReplayReveal (initial entrance waits for the title; each next block +90ms).
+ *   .ds-item  + --i           child that rises with an 80ms x --i stagger once the ancestor reveals (also plays on mount).
+ *   .ds-stagger               sets --i on the first 8 children, so lists need no inline styles.
+ *   .ds-grow-x / .ds-grow-y   bars that grow from their base, one after another.
+ *   .ds-lift                  card hover lift (pointer devices only).
+ *   .ds-view                  whole-screen fade on navigation (opacity only, so sticky/fixed children stay stable).
  */
-[data-reveal] { transition: opacity 380ms var(--ease-out), transform 380ms var(--ease-out); }
-[data-reveal][data-inview="false"] { opacity: 0; transform: translateY(12px); transition: none; }
-[data-reveal="group"] { transition: none; }
-[data-reveal="group"][data-inview="false"] { opacity: 1; transform: none; }
-
-@keyframes ds-item-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes ds-ch { from { opacity: 0; transform: translateY(0.5em); filter: blur(7px); } }
+@keyframes ds-rise-in { from { opacity: 0; transform: translateY(16px); } }
+@keyframes ds-item-in { from { opacity: 0; transform: translateY(20px); } }
 @keyframes ds-view-in { from { opacity: 0; } }
 @keyframes ds-bar-x { from { transform: scaleX(0); } }
 @keyframes ds-bar-y { from { transform: scaleY(0); } }
-@keyframes ds-title-in { from { opacity: 0; transform: translateY(8px); filter: blur(6px); } }
-@keyframes ds-radio-pop { 0% { transform: scale(0.82); } 55% { transform: scale(1.1); } 100% { transform: scale(1); } }
+@keyframes ds-radio-pop { 0% { transform: scale(0.82); } 55% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes ds-ring-out { from { opacity: 0.55; transform: scale(0.96); } to { opacity: 0; transform: scale(1.06); } }
+@keyframes ds-option-pop { 0% { transform: scale(0.975); } 50% { transform: scale(1.015); } 100% { transform: none; } }
 
-.ds-view { animation: ds-view-in 220ms var(--ease-out) backwards; }
-.ds-item { animation: ds-item-in 360ms var(--ease-out) backwards; animation-delay: calc(40ms + var(--i, 0) * 40ms); }
-.ds-grow-x { transform-origin: left; animation: ds-bar-x 600ms var(--ease-out) backwards; animation-delay: calc(120ms + var(--i, 0) * 40ms); }
-.ds-grow-y { transform-origin: bottom; animation: ds-bar-y 600ms var(--ease-out) backwards; animation-delay: calc(120ms + var(--i, 0) * 40ms); }
+.ds-split-w { display: inline-block; white-space: nowrap; }
+.ds-split-ch { display: inline-block; animation: ds-ch 800ms var(--ease-out) calc(80ms + var(--i, 0) * var(--cs, 17ms)) backwards; }
+.ds-rise { animation: ds-rise-in 600ms var(--ease-out) var(--d, 400ms) backwards; }
+
+[data-reveal] { transition: opacity 650ms var(--ease-out) var(--rd, 0ms), transform 650ms var(--ease-out) var(--rd, 0ms); }
+[data-reveal][data-inview="false"] { opacity: 0; transform: translateY(26px); transition: none; }
+[data-reveal="group"] { transition: none; }
+[data-reveal="group"][data-inview="false"] { opacity: 1; transform: none; }
+
+.ds-view { animation: ds-view-in 260ms var(--ease-out) backwards; }
+.ds-item { animation: ds-item-in 600ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 60ms + var(--i, 0) * 80ms); }
+.ds-grow-x { transform-origin: left; animation: ds-bar-x 750ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 200ms + var(--i, 0) * 90ms); }
+.ds-grow-y { transform-origin: bottom; animation: ds-bar-y 750ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 200ms + var(--i, 0) * 90ms); }
 [data-inview="false"] :is(.ds-item, .ds-grow-x, .ds-grow-y) { animation-play-state: paused; }
 .ds-stagger > :nth-child(1) { --i: 0; } .ds-stagger > :nth-child(2) { --i: 1; } .ds-stagger > :nth-child(3) { --i: 2; } .ds-stagger > :nth-child(4) { --i: 3; }
 .ds-stagger > :nth-child(5) { --i: 4; } .ds-stagger > :nth-child(6) { --i: 5; } .ds-stagger > :nth-child(7) { --i: 6; } .ds-stagger > :nth-child(n+8) { --i: 7; }
 
-.ds-title-in { animation: ds-title-in 320ms var(--ease-out) backwards; }
-.ds-radio:checked { animation: ds-radio-pop 240ms var(--ease-out); }
+/* Page entrances (screens that mount with a `.ds-enter` card) reuse the same rise, a touch later so the title leads. */
+.ds-enter { animation: ds-item-in 650ms var(--ease-out) backwards; animation-delay: calc(320ms + var(--i, 0) * 90ms); }
+
+/* Selection feedback: the picked option pops and a ring pulses out of it (the ring is a transformed pseudo-element, no layout). */
+.ds-option, .vp-row { position: relative; }
+.ds-option:has(input:checked), .vp-row:has(input:checked) { animation: ds-option-pop 380ms var(--ease-out); }
+.ds-option:has(input:checked)::after, .vp-row:has(input:checked)::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--ds-green) 38%, transparent); animation: ds-ring-out 560ms var(--ease-out) forwards; }
+.ds-radio:checked { animation: ds-radio-pop 320ms var(--ease-out); }
 
 @media (hover: hover) and (pointer: fine) {
-  .ds-lift { transition: transform 240ms var(--ease-out), box-shadow 240ms var(--ease-out); }
-  .ds-lift:hover { transform: translateY(-2px); box-shadow: var(--ds-shadow-pop); }
+  .ds-lift { transition: transform 280ms var(--ease-out), box-shadow 280ms var(--ease-out); }
+  .ds-lift:hover { transform: translateY(-3px); box-shadow: var(--ds-shadow-pop); }
+  .ds-btn-soft:hover:not(:disabled):not(:active) { transform: translateY(-1px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   [data-reveal] { transition: none; }
-  .ds-view, .ds-title-in, .ds-item, .ds-grow-x, .ds-grow-y, .ds-radio:checked { animation: none; }
+  .ds-view, .ds-split-ch, .ds-rise, .ds-item, .ds-enter, .ds-grow-x, .ds-grow-y, .ds-radio:checked { animation: none; }
+  .ds-option:has(input:checked), .vp-row:has(input:checked) { animation: none; }
+  .ds-option:has(input:checked)::after, .vp-row:has(input:checked)::after { display: none; }
   .ds-lift, .ds-lift:hover { transform: none; transition: none; }
-  .ds-btn-cta-green:hover:not(:disabled):not(:active) { transform: none; }
+  .ds-btn-cta-green:hover:not(:disabled):not(:active), .ds-btn-soft:hover:not(:disabled) { transform: none; }
 }

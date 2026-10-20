@@ -1,8 +1,6 @@
-"use client";
+import { SplitTitle } from "@/components/ui/split-title";
 
-import gsap from "gsap";
-import { useLayoutEffect, useRef } from "react";
-
+/** Page heading: the title forms letter by letter (~0.9s), then the subcopy and the action rise right after. Replays whenever the screen mounts. */
 export function PageIntro({
   title,
   description,
@@ -12,53 +10,17 @@ export function PageIntro({
   description: string;
   action?: React.ReactNode;
 }) {
-  const introRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      return;
-    }
-
-    const context = gsap.context(() => {
-      gsap.fromTo(
-        "[data-page-intro-word]",
-        { yPercent: 115, opacity: 0, filter: "blur(5px)" },
-        {
-          yPercent: 0,
-          opacity: 1,
-          filter: "blur(0px)",
-          duration: 0.56,
-          stagger: 0.055,
-          ease: "power3.out",
-        },
-      );
-      gsap.fromTo(
-        "[data-page-intro-support]",
-        { y: 10, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.35, delay: 0.2, ease: "power2.out" },
-      );
-    }, introRef);
-
-    return () => context.revert();
-  }, [title]);
-
   return (
-    <div ref={introRef} className="flex min-w-0 flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex min-w-0 flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0 max-w-2xl">
         <h1 className="text-balance font-[family-name:var(--font-display)] text-[clamp(2.25rem,calc(1.5rem+3.75vw),3rem)] leading-[1.08] tracking-[-0.02em]">
-          {title.split(" ").map((word, index) => (
-            <span key={`${word}-${index}`} className="mr-[0.24em] inline-block overflow-hidden align-bottom last:mr-0">
-              <span className="inline-block" data-page-intro-word>
-                {word}
-              </span>
-            </span>
-          ))}
+          <SplitTitle key={title} text={title} />
         </h1>
-        <p data-page-intro-support className="mt-3 max-w-[60ch] text-[15px] leading-6 text-muted-foreground sm:text-base">
+        <p className="ds-rise mt-3 max-w-[60ch] text-[15px] leading-6 text-muted-foreground sm:text-base" style={{ "--d": "420ms" } as React.CSSProperties}>
           {description}
         </p>
       </div>
-      {action && <div data-page-intro-support>{action}</div>}
+      {action && <div className="ds-rise" style={{ "--d": "560ms" } as React.CSSProperties}>{action}</div>}
     </div>
   );
 }
