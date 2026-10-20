@@ -2,7 +2,7 @@
 
 
 import { getCurrentLocale, t } from "@/lib/locale";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { minAnswersForProfile, minSessionsForTrends } from "@/lib/interview/progress-insights.mjs";
@@ -178,6 +178,20 @@ function VoiceTrendView({ insights }: { insights: ProgressInsights }) {
 
 export function ProgressHero({ insights }: { insights: ProgressInsights }) {
   const [view, setView] = useState<"profile" | "trend">("profile");
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [switches, setSwitches] = useState(0);
+  // Picking a view brings its chart to the middle of the screen, where it forms again (the view remounts).
+  useEffect(() => {
+    if (!switches) return;
+    const frame = requestAnimationFrame(() => {
+      const chart = chartRef.current;
+      if (!chart) return;
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const tall = chart.getBoundingClientRect().height > window.innerHeight - 96;
+      chart.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: tall ? "start" : "center" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [switches]);
   return (
     <section className="pg-hero" aria-labelledby="pg-hero-title" data-reveal>
       <div className="pg-hero-head">
@@ -198,10 +212,10 @@ export function ProgressHero({ insights }: { insights: ProgressInsights }) {
         ariaLabel={t("O que mostrar")}
         options={[{ value: "profile", label: t("Perfil") }, { value: "trend", label: t("Evolução da voz") }]}
         value={view}
-        onChange={(value) => setView(value as "profile" | "trend")}
+        onChange={(value) => { setView(value as "profile" | "trend"); setSwitches((count) => count + 1); }}
         className="pg-view-switch grid-cols-2"
       />
-      {view === "profile" ? <ProfileView insights={insights} /> : <VoiceTrendView insights={insights} />}
+      <div ref={chartRef} className="min-w-0 scroll-mt-24">{view === "profile" ? <ProfileView insights={insights} /> : <VoiceTrendView insights={insights} />}</div>
     </section>
   );
 }

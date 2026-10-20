@@ -314,6 +314,15 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
     if (selectedSentenceId) requestAnimationFrame(scrollTrainingIntoView);
   }, [scrollTrainingIntoView, selectedSentenceId]);
   const practiceNow = scrollTrainingIntoView;
+  const lessonRef = useRef<HTMLDivElement | null>(null);
+  // Choosing Precisão, Ritmo or Prosódia centres the lesson that just changed.
+  const scrollLessonIntoView = useCallback(() => {
+    const lessonCard = lessonRef.current;
+    if (!lessonCard) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const tall = lessonCard.getBoundingClientRect().height > window.innerHeight - 96;
+    lessonCard.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: tall ? "start" : "center" });
+  }, []);
 
   const mainRef = useRef<HTMLElement>(null);
   // Sections rise in once, the first time they are on screen; the sections only exist after the data has loaded.
@@ -361,10 +370,10 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
                 ariaLabel={t("Escolha um aspecto da sua voz para aprender")}
                 options={metricKeys.map((key) => ({ value: key, label: t(key === "accuracy" ? "Precisão" : key === "fluency" ? "Ritmo" : "Prosódia") }))}
                 value={activeMetric}
-                onChange={(value) => { setSelectedMetric(value as VoiceMetricKey); setPhraseLive(true); setSelectedSentenceId(null); }}
+                onChange={(value) => { setSelectedMetric(value as VoiceMetricKey); setPhraseLive(true); setSelectedSentenceId(null); requestAnimationFrame(scrollLessonIntoView); }}
                 className="ds-item grid-cols-3 w-full sm:w-[24rem]"
               />
-              <div className="vv-lesson-card ds-card ds-item">
+              <div ref={lessonRef} className="vv-lesson-card ds-card ds-item scroll-mt-24">
               <p className="vv-lesson-measure">{t(lesson.measure)}</p>
               <div className="vv-lesson-grid">
               <div className="vv-lesson-detail vv-techniques">

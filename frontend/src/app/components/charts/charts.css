@@ -27,8 +27,6 @@
 .vt-tip-date { margin-bottom: 0.375rem; color: var(--ds-text-2); font-size: 0.75rem; font-weight: 600; }
 .vt-tip-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; line-height: 1.6; }
 .vt-tip-row strong { margin-left: auto; padding-left: 1rem; font-variant-numeric: tabular-nums; }
-.vt-table summary { cursor: pointer; width: fit-content; color: var(--ds-text-2); font-size: 0.8125rem; font-weight: 600; }
-.vt-table table { margin-top: 0.75rem; }
 
 /* Clip sweep, not a dash-offset draw: round caps would leave a dot at the start of the line before it draws. */
 @keyframes vt-draw { from { clip-path: inset(-6px 100% -6px -6px); } to { clip-path: inset(-6px -6px -6px -6px); } }
@@ -54,8 +52,6 @@
 .pr-point { stroke: var(--ds-surface); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: pr-pop 500ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 1300ms + var(--k, 0) * 60ms); }
 .pr-point[data-group="english"] { fill: var(--ds-green); }
 .pr-point[data-group="voice"] { fill: var(--ds-brand-warm); }
-/* rotated diamonds only fade: a transform animation would drop their rotation */
-rect.pr-point { animation-name: vt-fade; animation-duration: 560ms; }
 .pr-label { cursor: pointer; animation: vt-fade 700ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 1450ms + var(--k, 0) * 60ms); }
 .pr-label-name { fill: var(--ds-green); font-size: 12px; font-weight: 600; }
 .pr-label-value { fill: var(--ds-ink); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }

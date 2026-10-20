@@ -727,7 +727,6 @@ const englishCopy: Record<string, string> = {
   "Métrica do gráfico": "Chart metric",
   "Ainda não há práticas com fala suficiente para esta métrica. Respostas mais longas ajudam a deixar o sinal confiável.": "There are no practices with enough speech for this metric yet. Longer answers help make the signal more reliable.",
   "Esta métrica aparece depois do primeiro relatório pronto.": "This metric will appear after your first report is ready.",
-  "Ver dados em tabela": "View data as a table",
   "Prática": "Practice",
   "Práticas por semana": "Practices per week",
   "Nenhuma prática concluída nas últimas 8 semanas.": "No practices completed in the last 8 weeks.",
