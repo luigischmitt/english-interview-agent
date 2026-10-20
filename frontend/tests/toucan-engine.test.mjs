@@ -222,3 +222,27 @@ test("engine: real audio drives the beak (position + lookahead), nods follow the
   for (let t = 0; t < 8; t += 1 / 60) { idle.setCandidateLevel(t > 1 && t < 3.5 ? 0.7 : 0); idle.frame(t); }
   assert.equal(idle.nodCount, 0);
 });
+
+test("engine: breathing is irregular and state changes blend smoothly (no pose snap)", () => {
+  const root = fakeRoot();
+  const engine = createToucanEngine({ root, rng: seeded(21) });
+  engine.setState("idle", 0);
+  const ys = []; let prevRot = null; let maxStep = 0;
+  for (let i = 0; i < 60 * 40; i += 1) {
+    const t = i / 60;
+    if (i === 60 * 15) engine.setState("thinking", t);
+    if (i === 60 * 25) engine.setState("listening", t);
+    engine.frame(t);
+    const body = root.nodes.get("body").attrs.transform;
+    ys.push(Number(/scale\(([\d.]+) ([\d.]+)\)/.exec(body)[2]));
+    const rot = Number(/rotate\((-?[\d.]+)/.exec(root.nodes.get("head").attrs.transform)[1]);
+    if (prevRot !== null) maxStep = Math.max(maxStep, Math.abs(rot - prevRot));
+    prevRot = rot;
+  }
+  const peaks = [];
+  for (let i = 1; i < ys.length - 1; i += 1) if (ys[i] > ys[i - 1] && ys[i] >= ys[i + 1] && ys[i] > 1.004) peaks.push(i / 60);
+  assert.ok(peaks.length >= 4, `breaths ${peaks.length}`);
+  const gaps = peaks.slice(1).map((p, i) => p - peaks[i]);
+  assert.ok(Math.max(...gaps) - Math.min(...gaps) > 0.2, "breath intervals vary");
+  assert.ok(maxStep < 0.6, `head rotation changes smoothly (${maxStep})`);
+});
