@@ -60,6 +60,7 @@ import { prewarmInterviewerUtterance, useSpeechWarmup, useVoiceReadiness } from 
 import { PageIntro } from "./components/shared";
 import { VoicePicker } from "./components/voice-picker";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
+import { LoadingLabel, LoadingRegion, Sk, SkCard, SkChart, SkLines } from "@/components/ui/loading-state";
 import { MetricSwatch, VoiceTrendChart } from "./components/charts/voice-trend-chart";
 
 const subscribeNever = () => () => {};
@@ -70,16 +71,21 @@ const loadProgressView = () => import("./components/progress-view").then((module
 const loadVoiceView = () => import("./components/voice-view").then((module) => module.VoiceView);
 const loadAdminUsageView = () => import("./components/admin-usage-view").then((module) => module.AdminUsageView);
 
-const ViewLoading = () => (
-  <main id="main-content" className="mx-auto w-full max-w-6xl px-4 pb-28 pt-7 sm:px-8 sm:pb-12">
-    <div className="skeleton h-10 w-56" />
-    <div className="skeleton mt-5 h-36 w-full !rounded-[var(--ds-r-panel)]" />
-    <div className="mt-5 grid gap-5 lg:grid-cols-2">
-      <div className="skeleton h-56 w-full !rounded-[var(--ds-r-card)]" />
-      <div className="skeleton h-56 w-full !rounded-[var(--ds-r-card)]" />
-    </div>
+const ViewLoading = () => {
+  const { t } = useLocale();
+  return (
+  <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14 lg:pb-16">
+    <LoadingRegion label={`${t("Preparando a tela")}…`} className="ld-fade">
+      <Sk h="clamp(2.25rem, 4vw, 3.25rem)" w="min(22rem, 70%)" r="0.75rem" />
+      <SkCard className="ld-panel" minHeight="9rem" i={2} lines={3} />
+      <div className="ld-grid-2">
+        <SkCard minHeight="12rem" i={4} />
+        <SkCard minHeight="12rem" i={6} />
+      </div>
+    </LoadingRegion>
   </main>
-);
+  );
+};
 
 const InterviewSetup = dynamic(loadInterviewSetup, { loading: ViewLoading });
 const TrainView = dynamic(loadTrainView, { loading: ViewLoading });
@@ -390,11 +396,19 @@ function HomeView({
       </section>
 
       {isLoading ? (
-        <section className="shl-home-flow ds-fade-in" aria-live="polite">
-          <p className="shl-home-label">{t("Organizando seu histórico")}</p>
-          <div className="mt-6 max-w-xl space-y-3">
-            <div className="skeleton h-4 w-2/3" />
-            <div className="skeleton h-4 w-full" />
+        <section className="shl-home-flow ld-fade" aria-busy="true">
+          <div className="shl-home-flow-label">
+            <LoadingLabel>{t("Organizando seu histórico")}…</LoadingLabel>
+          </div>
+          <div className="shl-home-flow-content" aria-hidden="true">
+            <Sk h="clamp(1.6rem, 1.3rem + 1.4vw, 2.3rem)" w="min(26rem, 88%)" r="0.6rem" />
+            <Sk className="mt-3" h="clamp(1.6rem, 1.3rem + 1.4vw, 2.3rem)" w="min(18rem, 62%)" r="0.6rem" i={1} />
+            <div className="mt-10 flex items-end gap-4">
+              <Sk h="clamp(3.5rem, 2.8rem + 4vw, 6rem)" w="clamp(3.5rem, 8vw, 5.5rem)" r="0.75rem" i={2} />
+              <Sk h="1.25rem" w="9rem" i={3} className="mb-2" />
+            </div>
+            <div className="mt-8 max-w-[26rem]"><SkChart bars={8} h="6.5rem" i={3} /></div>
+            <div className="mt-8 max-w-[28rem]"><SkLines lines={2} h="0.8rem" i={5} /></div>
           </div>
         </section>
       ) : hasInterviews ? (

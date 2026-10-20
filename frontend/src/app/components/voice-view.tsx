@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { LoadingRegion, Sk, SkCard, SkChart } from "@/components/ui/loading-state";
 import { ArrowRight, AudioLines, LoaderCircle, Mic, Play, Square, Volume2 } from "lucide-react";
 
 import { authorizedFetch } from "@/lib/auth/backend-auth";
@@ -333,14 +334,14 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
       title={t("Sua voz")}
       description={t("Repita frases suas, ouça com calma e acompanhe o que muda a cada tentativa.")}
     />
-    {isLoading ? <section className="mt-8 space-y-5" aria-busy="true" aria-label={t("Carregando sua voz")}>
-      <div className="vv-skeleton-grid">
-        <div className="skeleton h-36 w-full !rounded-[var(--ds-r-card)]" />
-        <div className="skeleton h-36 w-full !rounded-[var(--ds-r-card)]" />
-        <div className="skeleton h-36 w-full !rounded-[var(--ds-r-card)]" />
+    {isLoading ? <LoadingRegion label={`${t("Carregando sua voz")}…`} className="mt-8 ld-fade">
+      <div className="ld-grid-3">
+        <SkCard minHeight="9rem" i={1} lines={1}><Sk h="3rem" w="45%" r="0.6rem" i={2} /></SkCard>
+        <SkCard minHeight="9rem" i={3} lines={1}><Sk h="3rem" w="45%" r="0.6rem" i={4} /></SkCard>
+        <SkCard minHeight="9rem" i={5} lines={1}><Sk h="3rem" w="45%" r="0.6rem" i={6} /></SkCard>
       </div>
-      <div className="skeleton h-80 w-full !rounded-[var(--ds-r-card)]" />
-    </section> : error ? <section className="mt-8 rounded-[var(--ds-r-card)] bg-[var(--ds-surface)] p-6" role="alert">
+      <SkCard minHeight="20rem" i={7}><SkChart bars={12} h="10rem" i={8} /></SkCard>
+    </LoadingRegion> : error ? <section className="mt-8 rounded-[var(--ds-r-card)] bg-[var(--ds-surface)] p-6" role="alert">
       <p className="ds-h2">{t("Não foi possível carregar os dados da sua voz agora.")}</p>
       <button type="button" className="ds-btn ds-btn-soft mt-4" onClick={retry}>{t("Tentar novamente")}</button>
     </section> : !insights.hasVoiceData ? <section className="vv-empty ds-card ds-enter mt-8 p-6 sm:p-8">

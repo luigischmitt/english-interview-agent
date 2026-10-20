@@ -44,6 +44,7 @@ import { getCurrentLocale, t } from "@/lib/locale";
 import { VoiceAnswerButton } from "./voice-answer-button";
 import { LessonVisualDemo } from "./lesson-visual-demo";
 import { alternativesFor, applyEdits, dragReducer, gapsFromRects, nearestGap, orderFromGap, isOrderChanged, mistakeRegion, normalizeEdits, reorder, toBlocks, type DragState, type WordGap } from "@/lib/practice/word-blocks.mjs";
+import { LoadingLabel, LoadingRegion, SkCard } from "@/components/ui/loading-state";
 import "./train.css";
 
 let practiceAudioManifestPromise: Promise<typeof import("@/lib/practice/practice-audio-manifest.json")> | null = null;
@@ -446,11 +447,13 @@ export function TrainView({ onInterview, initialLesson, initialPart }: { onInter
         <>
           <ListHeader />
           {themeLoading ? (
-            <div className="tr-grid" aria-busy="true">
-              {[0, 1, 2, 3].map((index) => (
-                <div key={index} className="tr-skeleton skeleton h-56 w-full" />
-              ))}
-            </div>
+            <LoadingRegion label={`${t("Carregando exercícios")}…`} className="ld-fade">
+              <div className="tr-grid">
+                {[0, 1, 2, 3].map((index) => (
+                  <SkCard key={index} className="tr-skeleton" minHeight="14rem" i={index * 2} lines={3} />
+                ))}
+              </div>
+            </LoadingRegion>
           ) : (
             <>
       <PersonalPractice
@@ -1094,7 +1097,7 @@ function ThemeDetail({
               </div>
               <div className="tr-extra-body">
                 {attemptsLoading ? (
-                  <Loader2 className="tr-spinner size-5" aria-label={t("Carregando")} />
+                  <LoadingLabel>{t("Carregando")}…</LoadingLabel>
                 ) : attempts.length ? (
                   <ol className="tr-history">
                     {attempts.map((attempt) => (

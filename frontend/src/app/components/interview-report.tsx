@@ -14,6 +14,7 @@ import { deriveOverviewTiles, groupPatternsByType } from "@/lib/interview/report
 import { analysisCoverageNotice, buildReportDeltas, diffReportWords, displayInterviewerTakeaway, displayTechnicalFindings, isCompleteSentence } from "@/lib/interview/report-presentation.mjs";
 import { useReplayReveal } from "@/lib/use-replay-reveal";
 import { SplitTitle } from "@/components/ui/split-title";
+import { LoadingMark, LoadingRegion, SkCard } from "@/components/ui/loading-state";
 import { AzureVoiceReport } from "./azure-voice-report";
 import "./interview-report.css";
 
@@ -403,13 +404,23 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
       )}
       <div className="mt-6" aria-busy={reportState.status === "pending" || loadingTurns}>
         {loadingTurns && (
-          <p className="rp-hint mb-4" role="status">{t("Carregando perguntas e respostas…")}</p>
+          <LoadingRegion label={t("Carregando perguntas e respostas…")} className="mb-4 ld-fade">
+            <SkCard minHeight="9rem" i={1} lines={3} />
+            <SkCard minHeight="9rem" i={3} lines={3} />
+          </LoadingRegion>
         )}
         {reportState.status === "pending" ? (
-          <div className="ds-card rp-card rp-pending" role="status">
-            <div className="rp-bar" aria-hidden="true" />
-            <p className="rp-loading-step mt-3" key={loadingStep}>{t(reportLoadingSteps[loadingStep])}</p>
-            <p className="rp-hint mt-2">{t("Leva cerca de 30 segundos. Mantenha esta página aberta enquanto montamos o relatório.")}</p>
+          <div className="rp-pending-wrap ld-fade">
+            <div className="ds-card rp-card rp-pending" role="status" aria-live="polite">
+              <p className="rp-loading-step"><LoadingMark /><span key={loadingStep}>{t(reportLoadingSteps[loadingStep])}…</span></p>
+              <p className="rp-hint mt-2">{t("Leva cerca de 30 segundos. Mantenha esta página aberta enquanto montamos o relatório.")}</p>
+            </div>
+            <div className="ld-grid-3" aria-hidden="true">
+              <SkCard minHeight="8rem" i={1} lines={2} />
+              <SkCard minHeight="8rem" i={3} lines={2} />
+              <SkCard minHeight="8rem" i={5} lines={2} />
+            </div>
+            <SkCard minHeight="11rem" i={6} lines={4} />
           </div>
         ) : reportState.status === "unavailable" ? (
           <div className="rp-stack">
