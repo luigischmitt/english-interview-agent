@@ -120,47 +120,31 @@ function PatternCard({ pattern, reference }: { pattern: ReportPattern; reference
   );
 }
 
-const cardSpacingMs = 1400;
-
 /**
- * Plays the correction cards one after another, once each, as they come into view. Cards are marked `data-play="wait"` before
- * paint (hidden), queued when they scroll into view and released `cardSpacingMs` apart so each choreography can be read.
- * Under reduced motion / without IntersectionObserver nothing is marked and the cards stay visible.
+ * Each correction card plays its own fixed choreography (~1.7s, once) when it enters view. Cards are independent: nothing
+ * waits for another card, so the tempo is always the same. Cards are marked `data-play="wait"` before paint (hidden) and
+ * `data-play="go"` when at least 35% is visible. Under reduced motion / without IntersectionObserver nothing is marked and
+ * the cards stay visible and finished.
  */
-function usePatternSequence(listRef: React.RefObject<HTMLElement | null>, deps: readonly unknown[]) {
-  const state = useRef<{ queue: HTMLElement[]; timer: number | null; mountedAt: number }>({ queue: [], timer: null, mountedAt: 0 });
+function usePatternPlay(listRef: React.RefObject<HTMLElement | null>, deps: readonly unknown[]) {
   useLayoutEffect(() => {
     const list = listRef.current;
-    const current = state.current;
     if (!list || !("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    if (!current.mountedAt) current.mountedAt = performance.now();
-    const release = () => {
-      const next = current.queue.shift();
-      if (!next) { current.timer = null; return; }
-      next.setAttribute("data-play", "go");
-      current.timer = window.setTimeout(release, cardSpacingMs);
-    };
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
         observer.unobserve(entry.target);
-        if (!current.queue.includes(entry.target as HTMLElement)) current.queue.push(entry.target as HTMLElement);
+        entry.target.setAttribute("data-play", "go");
       }
-      current.queue.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-      if (current.timer === null && current.queue.length) {
-        const lead = performance.now() - current.mountedAt < 1200 ? 700 : 150;
-        current.timer = window.setTimeout(release, lead);
-      }
-    }, { threshold: 0.15, rootMargin: "0px 0px -8% 0px" });
+    }, { threshold: 0.35 });
     list.querySelectorAll<HTMLElement>("[data-pattern-card]").forEach((card) => {
-      if (card.dataset.play === "go" || current.queue.includes(card)) return;
+      if (card.dataset.play === "go") return;
       card.setAttribute("data-play", "wait");
       observer.observe(card);
     });
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
-  useEffect(() => () => { if (state.current.timer !== null) window.clearTimeout(state.current.timer); }, []);
 }
 
 /** "Antes → depois" rows tick in: the row slides in, the arrow points, then the new value lands. */
@@ -221,7 +205,13 @@ function ReadyReport({
   const takeaway = displayInterviewerTakeaway(result.interviewerTakeaway, technical.gaps);
   const coverageNotice = analysisCoverageNotice(result.analysisCoverage, reference);
   const patternListRef = useRef<HTMLDivElement>(null);
-  usePatternSequence(patternListRef, [visiblePatterns.length]);
+  usePatternPlay(patternListRef, [visiblePatterns.length]);
+  // The perception cards fly in from beyond the viewport edge: keep that from ever creating a horizontal scrollbar.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("rp-clip-x");
+    return () => root.classList.remove("rp-clip-x");
+  }, []);
 
   return (
     <div className="rp-stack rp-ready">
