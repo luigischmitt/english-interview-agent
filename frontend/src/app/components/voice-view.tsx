@@ -28,9 +28,12 @@ const formatMetric = (value: number | null) => value === null ? "—" : Math.rou
 
 function HighlightedText({ text, words }: { text: string; words: string[] }) {
   const attention = new Set(words.map((word) => word.toLocaleLowerCase()));
+  let order = 0;
   return <>{text.split(/(\s+)/u).map((part, index) => {
+    if (/^\s*$/u.test(part)) return part;
     const clean = part.replace(/[^\p{L}'’-]/gu, "").toLocaleLowerCase();
-    return attention.has(clean) ? <span className="vv-problem-word" key={`${part}-${index}`}>{part}</span> : part;
+    const style = { "--w": Math.min(order++, 10) } as CSSProperties;
+    return <span className={attention.has(clean) ? "vv-w vv-problem-word" : "vv-w"} style={style} key={`${part}-${index}`}>{part}</span>;
   })}</>;
 }
 
@@ -71,7 +74,7 @@ function AttemptResult({ attempts, focus, beforeAccuracy = null }: { attempts: V
       const delta = value !== null && before !== null ? Math.round(value) - Math.round(before) : null;
       return <div className="vv-score" data-focus={key === focus} key={key}>
         <span className="vv-score-name">{t(metricLabel[key])}</span>
-        <span className="vv-score-value">{value === null ? "—" : <CountUp value={Math.round(value)} duration={500} />}</span>
+        <span className="vv-score-value">{value === null ? "—" : <CountUp value={Math.round(value)} duration={700} delay={150} />}</span>
         {delta !== null && <span className="vv-score-delta" data-direction={delta > 0 ? "up" : delta < 0 ? "down" : "same"}>{delta > 0 ? `+${delta}` : delta === 0 ? t("igual") : delta}</span>}
         <span className="vv-score-bar" aria-hidden="true"><i style={{ "--vv-score": Math.max(0.02, Math.min(1, (value ?? 0) / 100)) } as CSSProperties} /></span>
       </div>;
@@ -106,6 +109,7 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
   const [startingCapture, setStartingCapture] = useState<string | null>(null);
   const [assessing, setAssessing] = useState<string | null>(null);
   const [loadingSpeech, setLoadingSpeech] = useState<string | null>(null);
+  const [phraseLive, setPhraseLive] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<"sentence" | "word">("sentence");
   const [attempts, setAttempts] = useState<Record<string, VoicePracticeAttempt[]>>(() => typeof window === "undefined" ? {} : readPracticeAttempts(window.localStorage));
@@ -296,6 +300,7 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
   const nextSentence = () => {
     if (!trainingPhrases.length) return;
     const nextIndex = (currentSentenceIndex + 1) % trainingPhrases.length;
+    setPhraseLive(true);
     setSelectedSentenceId(trainingPhrases[nextIndex].id);
   };
   const scrollTrainingIntoView = useCallback(() => {
@@ -345,7 +350,7 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
                   <h3 className="ds-label">{t(metric.label)}</h3>
                   {metric.key === insights.focus && <span className="vv-focus-note">{t("Seu foco agora")}</span>}
                 </div>
-                <p className="vv-metric-value">{metric.value === null ? "—" : <CountUp value={Math.round(metric.value)} />}<span>/ 100</span></p>
+                <p className="vv-metric-value">{metric.value === null ? "—" : <CountUp value={Math.round(metric.value)} duration={1100} delay={350} />}<span>/ 100</span></p>
                 <p className="ds-body mt-3">{t(metric.measure)}</p>
               </article>)}</div>
             </section>
@@ -356,8 +361,8 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
                 ariaLabel={t("Escolha um aspecto da sua voz para aprender")}
                 options={metricKeys.map((key) => ({ value: key, label: t(key === "accuracy" ? "Precisão" : key === "fluency" ? "Ritmo" : "Prosódia") }))}
                 value={activeMetric}
-                onChange={(value) => { setSelectedMetric(value as VoiceMetricKey); setSelectedSentenceId(null); }}
-                className="grid-cols-3 w-full sm:w-[24rem]"
+                onChange={(value) => { setSelectedMetric(value as VoiceMetricKey); setPhraseLive(true); setSelectedSentenceId(null); }}
+                className="ds-item grid-cols-3 w-full sm:w-[24rem]"
               />
               <div className="vv-lesson-card ds-card ds-item">
               <p className="vv-lesson-measure">{t(lesson.measure)}</p>
@@ -387,7 +392,7 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
                 </div>
                 {sentence.source === "english" && <><div className="vv-phrase-contrast"><p className="ds-small">{t("Você disse")}</p><p lang="en">{sentence.saidText}</p></div>
                 <p className="vv-source ds-small">{t("Forma para falar")}</p></>}
-                <p className="vv-training-sentence" lang="en"><HighlightedText text={sentence.referenceText} words={sentence.attentionWords} /></p>
+                <p className="vv-training-sentence" lang="en" key={sentence.id} data-live={phraseLive}><HighlightedText text={sentence.referenceText} words={sentence.attentionWords} /></p>
                 <div className="vv-training-actions">
                   <div className="vv-training-primary-actions">
                     <button type="button" className="ds-btn ds-btn-soft" onClick={() => void playText(sentence.referenceText)} disabled={activeCapture !== null || isSpeechLoading(sentence.referenceText)}>{isSpeechLoading(sentence.referenceText) ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Volume2 className="size-4" aria-hidden="true" />}{t("Ouvir")}</button>
@@ -395,14 +400,14 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
                   </div>
                   <button type="button" className="ds-btn ds-btn-quiet vv-next-sentence" onClick={nextSentence} disabled={activeCapture !== null || trainingPhrases.length < 2}>{t("Próxima frase")}<ArrowRight className="size-4 ds-arrow" aria-hidden="true" /></button>
                 </div>
-                {startingCapture === sentence.id ? <p key="starting" className="vv-status ds-small ds-fade-in" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t("Preparando o microfone…")}</p> : activeCapture === sentence.id ? <p key="recording" className="vv-status ds-small ds-fade-in" role="status"><span className="vv-rec-dot" aria-hidden="true" />{t("Gravando. Leia a frase e toque em Parar.")}</p> : assessing === sentence.id ? <p key="assessing" className="vv-status ds-small ds-fade-in" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t("Avaliando sua gravação…")}</p> : null}
+                <div className="vv-status-slot">{startingCapture === sentence.id ? <p key="starting" className="vv-status ds-small ds-fade-in" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t("Preparando o microfone…")}</p> : activeCapture === sentence.id ? <p key="recording" className="vv-status ds-small ds-fade-in" role="status"><span className="vv-rec-dot" aria-hidden="true" />{t("Gravando. Leia a frase e toque em Parar.")}</p> : assessing === sentence.id ? <p key="assessing" className="vv-status ds-small ds-fade-in" role="status"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />{t("Avaliando sua gravação…")}</p> : null}</div>
                 {message && messageTarget !== "word" && <p className="vv-message mt-4" role="alert">{message}</p>}
                 <p className="vv-local-note ds-small">{t("Histórico local: mostramos as últimas tentativas desta frase neste navegador.")}</p>
                 {attempts[sentence.id]?.length ? <AttemptResult attempts={attempts[sentence.id]} focus={activeMetric} beforeAccuracy={sentence.beforeAccuracy} /> : <p className="ds-body mt-4">{t("Ouça a forma correta e grave uma tentativa para ver as palavras avaliadas.")}</p>}
               </article> : <p className="ds-body mt-3">{t("Quando o relatório encontrar uma correção ou a análise de voz sinalizar uma frase, ela aparecerá aqui.")}</p>}
             </section>
             <section className="vv-section" aria-labelledby="work-words" data-reveal="group"><h2 id="work-words" className="ds-h2 ds-item">{t("Suas palavras de trabalho")}</h2>{plan.words.length ? <div className="vv-words ds-stagger">{plan.words.map((word) => { const key = `word:${word.word}`; const text = normalizePracticeSpokenText(word.word); const latest = attempts[key]?.at(-1); return <article className="vv-word ds-card ds-item ds-lift" key={word.word}><p lang="en" className="vv-word-name">{text}</p><div className="vv-word-actions"><button type="button" className="ds-btn ds-btn-quiet" onClick={() => void playText(text)} disabled={activeCapture !== null || isSpeechLoading(text)}>{isSpeechLoading(text) ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Volume2 className="size-4" aria-hidden="true" />}{t("Ouvir")}</button>{activeCapture === key ? <button type="button" className="ds-btn ds-btn-soft" onClick={() => void stopRecording()}><Square className="size-4 fill-current" aria-hidden="true" />{t("Parar")}</button> : <button type="button" className="ds-btn ds-btn-soft" onClick={() => void startRecording(key, text)} disabled={startingCapture !== null || activeCapture !== null || assessing !== null}>{startingCapture === key ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Mic className="size-4" aria-hidden="true" />}{t("Gravar")}</button>}</div>{latest && <p className="vv-word-score">{t("Precisão")}: {formatMetric(latest.scores.accuracy)}</p>}</article>; })}</div> : <p className="ds-body mt-3">{t("Quando uma palavra relevante aparecer em mais entrevistas, ela fica disponível aqui.")}</p>}</section>
-            <section className="vv-section" aria-labelledby="voice-evolution" data-reveal="group"><h2 id="voice-evolution" className="ds-h2 ds-item">{t("Evolução")}</h2><div className="vv-evolution ds-card ds-item">{insights.metrics.map((metric) => { const points = plan.evolution[metric.key]; const delta = points.length > 1 ? Math.round(points.at(-1)!.value - points[0].value) : 0; return <div className="vv-evolution-row" key={metric.key}><div className="vv-evolution-label"><span className="ds-label">{t(metric.label)}</span>{delta !== 0 && <span className="vv-evolution-delta">{t("{delta} desde a primeira", { delta: `${delta > 0 ? "+" : ""}${delta}` })}</span>}</div>{points.length ? <div className="vv-evolution-series ds-stagger">{points.map((point, index) => <div className="vv-evolution-point" key={point.id}><span className="vv-evolution-value">{index === points.length - 1 ? Math.round(point.value) : ""}</span><span className="vv-evolution-bar" data-latest={index === points.length - 1} style={{ "--vv-value": `${point.value}%` } as CSSProperties} aria-label={t("{metric}: {value} em {date}", { metric: metric.label, value: Math.round(point.value), date: point.date ? new Date(point.date).toLocaleDateString() : t("data não disponível") })}><span className="ds-grow-y" /></span></div>)}</div> : <span className="ds-body">{t("Dados confiáveis ainda não disponíveis.")}</span>}</div>; })}</div></section>
+            <section className="vv-section" aria-labelledby="voice-evolution" data-reveal="group"><h2 id="voice-evolution" className="ds-h2 ds-item">{t("Evolução")}</h2><div className="vv-evolution ds-card ds-item">{insights.metrics.map((metric) => { const points = plan.evolution[metric.key]; const delta = points.length > 1 ? Math.round(points.at(-1)!.value - points[0].value) : 0; return <div className="vv-evolution-row" key={metric.key}><div className="vv-evolution-label"><span className="ds-label">{t(metric.label)}</span>{delta !== 0 && <span className="vv-evolution-delta">{t("{delta} desde a primeira", { delta: `${delta > 0 ? "+" : ""}${delta}` })}</span>}</div>{points.length ? <div className="vv-evolution-series ds-stagger">{points.map((point, index) => <div className="vv-evolution-point" key={point.id}><span className="vv-evolution-value">{index === points.length - 1 ? Math.round(point.value) : ""}</span><span className="vv-evolution-bar" data-latest={index === points.length - 1} style={{ "--vv-value": `${point.value}%` } as CSSProperties} aria-label={t("{metric}: {value} em {date}", { metric: metric.label, value: Math.round(point.value), date: point.date ? new Date(point.date).toLocaleDateString() : t("data não disponível") })}><span /></span></div>)}</div> : <span className="ds-body">{t("Dados confiáveis ainda não disponíveis.")}</span>}</div>; })}</div></section>
             {message && messageTarget === "word" && <p className="vv-message" role="alert">{message}</p>}
           </div>}
   </main>;
