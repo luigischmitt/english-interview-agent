@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getCurrentLocale, t } from "@/lib/locale";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { answerOrdinalForSequence, pairInterviewTurns, type InterviewReportResult } from "@/lib/interview/report";
@@ -12,6 +12,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { findingsForAnswer } from "@/lib/interview/report-response.mjs";
 import { deriveOverviewTiles, groupPatternsByType } from "@/lib/interview/report-overview.mjs";
 import { analysisCoverageNotice, buildReportDeltas, diffReportWords, displayInterviewerTakeaway, displayTechnicalFindings, isCompleteSentence } from "@/lib/interview/report-presentation.mjs";
+import { useReplayReveal } from "@/lib/use-replay-reveal";
 import { AzureVoiceReport } from "./azure-voice-report";
 import "./interview-report.css";
 
@@ -95,7 +96,7 @@ function SectionHeading({
   id: string;
 }) {
   return (
-    <header className="rp-section-heading">
+    <header className="rp-section-heading ds-item">
       <h2 id={id} className="ds-h2">{t(title)}</h2>
       <p className="rp-hint mt-1">{t(description)}</p>
     </header>
@@ -135,14 +136,14 @@ function ReadyReport({
 
   return (
     <div className="rp-stack rp-ready">
-      {(takeaway.remember || takeaway.concern) && <section className="rp-section" aria-labelledby="perceived-title">
+      {(takeaway.remember || takeaway.concern) && <section className="rp-section" aria-labelledby="perceived-title" data-reveal="group">
         <SectionHeading id="perceived-title" title="Como você foi percebido" description="O que pode ficar na memória depois da conversa." />
-        <div className="rp-perception-grid">
-          {takeaway.remember && <article className="ds-card rp-card rp-perception" data-tone="remember"><h3 className="ds-label">{t("O que o entrevistador vai lembrar")}</h3><p>{takeaway.remember}</p></article>}
-          {takeaway.concern && <article className="ds-card rp-card rp-perception" data-tone="concern"><h3 className="ds-label">{t("O que pode pesar contra")}</h3><p>{takeaway.concern}</p></article>}
+        <div className="rp-perception-grid ds-stagger">
+          {takeaway.remember && <article className="ds-card rp-card rp-perception ds-item" data-tone="remember"><h3 className="ds-label">{t("O que o entrevistador vai lembrar")}</h3><p>{takeaway.remember}</p></article>}
+          {takeaway.concern && <article className="ds-card rp-card rp-perception ds-item" data-tone="concern"><h3 className="ds-label">{t("O que pode pesar contra")}</h3><p>{takeaway.concern}</p></article>}
         </div>
       </section>}
-      <section className="rp-section" aria-labelledby="overview-title">
+      <section className="rp-section" aria-labelledby="overview-title" data-reveal="group">
         <SectionHeading
           id="overview-title"
           title="Visão geral"
@@ -152,9 +153,9 @@ function ReadyReport({
           {isCompleteSentence(result.technicalContent.summary) && (
             <p className="rp-summary">{result.technicalContent.summary}</p>
           )}
-          <div className="rp-overview-grid">
+          <div className="rp-overview-grid ds-stagger">
             {tiles.map((tile) => (
-              <article className="rp-overview-tile" key={tile.id}>
+              <article className="rp-overview-tile ds-item ds-lift" key={tile.id}>
                 <h3 className="ds-label">{t(tile.title)}</h3>
                 <p>{tile.text ? t(tile.text) : t("Sem sinais suficientes nesta entrevista.")}</p>
                 <a href={`#${tile.id}-section`}>{t("Ver seção")}</a>
@@ -165,16 +166,16 @@ function ReadyReport({
         {coverageNotice && <p className="rp-coverage-note" role="status">{t(coverageNotice)}</p>}
         {deltas.length > 0 && <section className="rp-deltas" aria-label={t("Desde a última entrevista")}><h3 className="rp-subtitle">{t("Desde a última entrevista")}</h3>{deltas.map((delta) => <p key={delta.label} data-change={delta.change}>{t(delta.label)}</p>)}</section>}
       </section>
-      <section className="rp-section" id="english-section" aria-labelledby="english-title">
+      <section className="rp-section" id="english-section" aria-labelledby="english-title" data-reveal="group">
         <SectionHeading
           id="english-title"
           title="Seu inglês"
           description="Padrões que apareceram nas respostas, agrupados por tipo."
         />
-        <div className="rp-pattern-list">
+        <div className="rp-pattern-list ds-stagger">
           {visiblePatterns.map((pattern, index) => (
             <article
-              className="ds-card rp-card rp-pattern-card"
+              className="ds-card rp-card rp-pattern-card ds-lift" data-reveal
               key={`${pattern.type}-${pattern.sequenceNumber}-${index}`}
             >
               <span className="rp-pattern-eyebrow" data-type={pattern.type}>
@@ -209,14 +210,14 @@ function ReadyReport({
           </button>
         )}
       </section>
-      {(technical.strengths.length > 0 || technical.gaps.length > 0) && <section className="rp-section" id="technical-section" aria-labelledby="technical-title">
+      {(technical.strengths.length > 0 || technical.gaps.length > 0) && <section className="rp-section" id="technical-section" aria-labelledby="technical-title" data-reveal="group">
         <SectionHeading
           id="technical-title"
           title="Conteúdo técnico"
           description="O que suas respostas demonstraram e o que poderia ficar mais explícito."
         />
-        <div className="ds-card rp-card rp-cols">
-          {technical.strengths.length > 0 && <section>
+        <div className="ds-card rp-card rp-cols ds-stagger">
+          {technical.strengths.length > 0 && <section className="ds-item">
             <h3 className="rp-subtitle">{t("O que funcionou")}</h3>
             {technical.strengths.map((item, index) => (
               <p className="rp-answer-finding" key={index}>
@@ -224,7 +225,7 @@ function ReadyReport({
               </p>
             ))}
           </section>}
-          {technical.gaps.length > 0 && <section>
+          {technical.gaps.length > 0 && <section className="ds-item">
             <h3 className="rp-subtitle">{t("O que faltou")}</h3>
             {technical.gaps.map((item, index) => (
               <p className="rp-answer-finding" key={index}>
@@ -234,19 +235,19 @@ function ReadyReport({
           </section>}
         </div>
       </section>}
-      <section className="rp-section">
+      <section className="rp-section" data-reveal="group">
         <SectionHeading
           id="priorities-title"
           title="O que mais pesa"
           description="Até três pontos que mais influenciam a clareza das respostas."
         />
-        <div className="ds-card rp-card">
+        <div className="ds-card rp-card ds-stagger">
           {result.priorities.slice(0, 3).map((item, index) => (
-            <article className="rp-priority-item" data-area={item.area} key={index}><span className="rp-priority-number" aria-hidden="true">{index + 1}</span><div><span className="rp-priority-area">{t(item.area === "TECHNICAL_CONTENT" ? "Técnico" : "Inglês")}</span><strong>{item.focus}</strong>{item.evidence?.trim() && <span lang="en" className="rp-priority-evidence">“{item.evidence}”</span>}<span className="rp-phrase-ref">{t("Resposta ")}{reference(item.sequenceNumber)}</span></div></article>
+            <article className="rp-priority-item ds-item" data-area={item.area} key={index}><span className="rp-priority-number" aria-hidden="true">{index + 1}</span><div><span className="rp-priority-area">{t(item.area === "TECHNICAL_CONTENT" ? "Técnico" : "Inglês")}</span><strong>{item.focus}</strong>{item.evidence?.trim() && <span lang="en" className="rp-priority-evidence">“{item.evidence}”</span>}<span className="rp-phrase-ref">{t("Resposta ")}{reference(item.sequenceNumber)}</span></div></article>
           ))}
         </div>
       </section>
-      <section className="rp-section" id="voice-section">
+      <section className="rp-section" id="voice-section" data-reveal="group">
         <SectionHeading
           id="voice-title"
           title="Ritmo e voz"
@@ -284,6 +285,9 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
   const [loadedTurns, setLoadedTurns] = useState<Turns>(turns);
   const [loadingTurns, setLoadingTurns] = useState(historical && turns.length === 0 && Boolean(currentInterviewId));
   const [loadingStep, setLoadingStep] = useState(0);
+  const rootRef = useRef<HTMLElement>(null);
+  // Sections and their cards rise in once, the first time they are on screen (and again only for genuinely new content).
+  useReplayReveal(rootRef, [reportState.status, loadingTurns, loadedTurns.length], { once: true });
   useEffect(() => {
     if (reportState.status !== "pending") return;
     const interval = window.setInterval(() => setLoadingStep((step) => (step + 1) % reportLoadingSteps.length), 3_500);
@@ -302,7 +306,7 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
   const reportDirection = reportState.result?.jobDirection ?? config.jobDirection;
   const headingFacts = useMemo(() => config.interviewSource === "resume" ? RESUME_PRACTICE_LABEL : config.role, [config.interviewSource, config.role]);
   return (
-    <section className="rp-root mx-auto w-full max-w-4xl" aria-labelledby="interview-complete-title">
+    <section ref={rootRef} className="rp-root mx-auto w-full max-w-4xl" aria-labelledby="interview-complete-title">
       {historical && <button type="button" className="ds-btn ds-btn-quiet mb-3" onClick={onLeave}>
           <ArrowLeft className="size-4" aria-hidden="true" />
           {getCurrentLocale() === "en" ? "Back to Progress" : t("Voltar ao Progresso")}

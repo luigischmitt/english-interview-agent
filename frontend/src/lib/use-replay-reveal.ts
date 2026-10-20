@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, type RefObject } from "react";
+import { type RefObject } from "react";
+import { useIsomorphicLayoutEffect } from "./use-in-view";
 
 /**
  * Marks each `[data-reveal]` element while it is on screen. Surfaces that can be temporarily hidden may opt into
@@ -8,7 +9,7 @@ import { useEffect, type RefObject } from "react";
  * Without IntersectionObserver or under reduced motion nothing is marked, and the CSS keeps the content visible.
  */
 export function useReplayReveal(rootRef: RefObject<HTMLElement | null>, deps: readonly unknown[] = [], { once = false } = {}) {
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const root = rootRef.current;
     if (!root || !("IntersectionObserver" in window)) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;

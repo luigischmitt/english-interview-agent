@@ -6,7 +6,7 @@
 .vv-metric[data-focus="true"] { background: var(--ds-tint); }
 .vv-focus-note { color: var(--ds-green-deep); font-size: 0.75rem; font-weight: 600; line-height: 1.4; }
 .vv-metric-value { margin-top: 1rem; color: var(--ds-ink); font-size: 2rem; font-weight: 600; letter-spacing: -0.035em; line-height: 1; font-variant-numeric: tabular-nums; }
-.vv-metric-value span { margin-left: 0.25rem; color: var(--ds-text-2); font-size: 0.875rem; font-weight: 500; letter-spacing: 0; }
+.vv-metric-value > span:last-child { margin-left: 0.25rem; color: var(--ds-text-2); font-size: 0.875rem; font-weight: 500; letter-spacing: 0; }
 .vv-section { scroll-margin-top: 1rem; }
 .vv-section > .ds-h2 { margin-bottom: 0.875rem; }
 .vv-lesson-card { margin-top: 1rem; padding: clamp(1.25rem, 3vw, 1.75rem); }
@@ -57,11 +57,11 @@
 .vv-score-delta[data-direction="up"] { background: var(--ds-surface); color: var(--ds-green-deep); }
 .vv-score-delta[data-direction="down"] { background: var(--ds-warning-tint); color: var(--ds-warning); }
 .vv-score-bar { grid-column: 1 / -1; display: block; height: 0.3125rem; margin-top: 0.25rem; border-radius: var(--ds-r-pill); background: var(--ds-track); overflow: hidden; }
-.vv-score-bar > i { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--ds-green); transform: scaleX(var(--vv-score)); transform-origin: left; transition: transform 600ms var(--ease-out); }
+.vv-score-bar > i { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--ds-green); transform: scaleX(var(--vv-score)); transform-origin: left; transition: transform 600ms var(--ease-out); animation: ds-bar-x 600ms var(--ease-out) backwards; animation-delay: calc(100ms + var(--i, 0) * 40ms); }
 .vv-same { border-radius: var(--ds-r-lg); background: var(--ds-warning-tint); padding: 0.625rem 0.875rem; color: var(--ds-warning); }
 .vv-history b { color: var(--ds-ink); font-variant-numeric: tabular-nums; }
 @media (max-width: 479px) { .vv-score { padding: 0.625rem; } .vv-score-value { font-size: 1.375rem; } .vv-score-name { font-size: 0.75rem; } }
-@media (prefers-reduced-motion: reduce) { .vv-rec-dot { animation: none; } .vv-score-bar > i { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .vv-rec-dot { animation: none; } .vv-score-bar > i { transition: none; animation: none; } }
 .vv-attempt-words { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.625rem; color: var(--ds-text-2); font-size: 0.8125rem; }
 .vv-words { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .vv-word { display: grid; gap: 0.875rem; min-width: 0; padding: 1rem; }

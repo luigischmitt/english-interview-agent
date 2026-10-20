@@ -36,6 +36,7 @@ import { getHomeParallaxOffset } from "@/lib/home-motion.mjs";
 import { buildProgressInsights, type ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics } from "@/lib/interview/voice-trend.mjs";
 import { useReplayReveal } from "@/lib/use-replay-reveal";
+import { CountUp } from "@/components/ui/count-up";
 import { useLocale } from "@/lib/locale";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 
@@ -339,7 +340,7 @@ function HomeView({
     return () => { active = false; };
   }, []);
 
-  useReplayReveal(homeRef, [hasInterviews, isLoading]);
+  useReplayReveal(homeRef, [hasInterviews, isLoading], { once: true });
 
   useEffect(() => {
     const art = artRef.current;
@@ -371,7 +372,7 @@ function HomeView({
     <main ref={homeRef} id="main-content" className={`${pageMain} shl-home`}>
       <section className="shl-home-hero" aria-labelledby="home-title">
         <div className="shl-home-hero-copy">
-          <h1 id="home-title" className="shl-home-title">
+          <h1 id="home-title" className="shl-home-title ds-title-in">
             {t("Sua próxima entrevista começa aqui.")}
           </h1>
           <p className="shl-home-subcopy">
@@ -419,7 +420,7 @@ function HomeView({
             </div>
             <div className="shl-home-flow-content">
               <p className="shl-home-count">
-                <span>{insights.interviewCount}</span> {t(insights.interviewCount === 1 ? "entrevista concluída" : "entrevistas concluídas")}
+                <span><CountUp value={insights.interviewCount} /></span> {t(insights.interviewCount === 1 ? "entrevista concluída" : "entrevistas concluídas")}
               </p>
               <div
                 className="shl-home-weeks"
@@ -457,7 +458,7 @@ function HomeView({
                     return (
                       <div key={metric} data-focus={metric === voiceFocusKey}>
                         <dt><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === voiceFocusKey && <em>{t("foco")}</em>}</dt>
-                        <dd>{summary ? Math.round(summary.latest) : "—"}<small>/100</small></dd>
+                        <dd>{summary ? <CountUp value={Math.round(summary.latest)} /> : "—"}<small>/100</small></dd>
                       </div>
                     );
                   })}
@@ -697,6 +698,7 @@ export default function App({ initialView = "home", initialLesson, initialPart }
         <div className="min-w-0 flex-1">
           <Topbar view={view} />
           <SessionExpiredNotice />
+          <div key={view} className="ds-view">
           {view === "home" && (
             <HomeView
               onStart={() => navigate("interview-setup")}
@@ -727,6 +729,7 @@ export default function App({ initialView = "home", initialLesson, initialPart }
           {view === "voice" && <VoiceView onStart={() => navigate("interview-setup")} />}
           {view === "settings" && <SettingsView />}
           {view === "admin-usage" && isAdmin && <AdminUsageView />}
+          </div>
         </div>
       </div>
     </div>

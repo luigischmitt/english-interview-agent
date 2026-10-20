@@ -195,6 +195,7 @@ select.ds-field {
   .ds-btn-quiet:hover:not(:disabled) { background: var(--ds-hover-wash); }
   .ds-btn-cta:hover:not(:disabled) { background: var(--ds-inverse-hover); }
   .ds-btn-cta-green:hover:not(:disabled) { background: var(--ds-green-solid-hover); }
+  .ds-btn-cta-green:hover:not(:disabled):not(:active) { transform: translateY(-1px); box-shadow: var(--ds-shadow-btn); }
   .ds-btn-cta:hover .ds-arrow, .ds-btn-cta-green:hover .ds-arrow { transform: translate(2px, -2px); }
   .ds-option:hover:not(:has(input:checked)) { background: var(--ds-field-hover); }
   .ds-seg-item:hover:not(:has(input:checked)) { color: var(--ds-ink); }
@@ -292,7 +293,51 @@ select.ds-field {
   --ds-leaf-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 14C2 7 6 3 14 2 14 9.500 10 13.500 3.500 13.500L2 14Z'/%3E%3C/svg%3E");
 }
 
-/* Replayable scroll entrance: useReplayReveal sets data-inview on [data-reveal]; hidden only while explicitly "false". */
-[data-reveal] { transition: opacity 500ms var(--ease-out), transform 500ms var(--ease-out); }
-[data-reveal][data-inview="false"] { opacity: 0; transform: translateY(18px); transition: none; }
-@media (prefers-reduced-motion: reduce) { [data-reveal] { transition: none; } }
+/*
+ * ---- Motion layer (landing language, tuned for frequent use) ----
+ * Entrances are short (<= 400ms), staggered by <= 40ms per item, and play once per mount. Content is visible by default;
+ * it is only held back while an ancestor `[data-reveal]` is explicitly `data-inview="false"` (set by useReplayReveal when
+ * JS runs, motion is allowed and the block is still below the fold).
+ *
+ *   [data-reveal]            block that rises in when it first enters the viewport (use ="group" to leave the block
+ *                            itself still and animate only its `.ds-item` children).
+ *   .ds-item  + --i          child that rises with a 40ms x --i stagger once the ancestor reveals (also plays on mount).
+ *   .ds-stagger              sets --i on the first 8 children, so lists need no inline styles.
+ *   .ds-grow-x / .ds-grow-y  bars that grow from their base once.
+ *   .ds-lift                 card hover lift (pointer devices only).
+ *   .ds-view                 whole-screen fade on navigation (opacity only, so sticky/fixed children stay stable).
+ */
+[data-reveal] { transition: opacity 380ms var(--ease-out), transform 380ms var(--ease-out); }
+[data-reveal][data-inview="false"] { opacity: 0; transform: translateY(12px); transition: none; }
+[data-reveal="group"] { transition: none; }
+[data-reveal="group"][data-inview="false"] { opacity: 1; transform: none; }
+
+@keyframes ds-item-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes ds-view-in { from { opacity: 0; } }
+@keyframes ds-bar-x { from { transform: scaleX(0); } }
+@keyframes ds-bar-y { from { transform: scaleY(0); } }
+@keyframes ds-title-in { from { opacity: 0; transform: translateY(8px); filter: blur(6px); } }
+@keyframes ds-radio-pop { 0% { transform: scale(0.82); } 55% { transform: scale(1.1); } 100% { transform: scale(1); } }
+
+.ds-view { animation: ds-view-in 220ms var(--ease-out) backwards; }
+.ds-item { animation: ds-item-in 360ms var(--ease-out) backwards; animation-delay: calc(40ms + var(--i, 0) * 40ms); }
+.ds-grow-x { transform-origin: left; animation: ds-bar-x 600ms var(--ease-out) backwards; animation-delay: calc(120ms + var(--i, 0) * 40ms); }
+.ds-grow-y { transform-origin: bottom; animation: ds-bar-y 600ms var(--ease-out) backwards; animation-delay: calc(120ms + var(--i, 0) * 40ms); }
+[data-inview="false"] :is(.ds-item, .ds-grow-x, .ds-grow-y) { animation-play-state: paused; }
+.ds-stagger > :nth-child(1) { --i: 0; } .ds-stagger > :nth-child(2) { --i: 1; } .ds-stagger > :nth-child(3) { --i: 2; } .ds-stagger > :nth-child(4) { --i: 3; }
+.ds-stagger > :nth-child(5) { --i: 4; } .ds-stagger > :nth-child(6) { --i: 5; } .ds-stagger > :nth-child(7) { --i: 6; } .ds-stagger > :nth-child(n+8) { --i: 7; }
+
+.ds-title-in { animation: ds-title-in 320ms var(--ease-out) backwards; }
+.ds-radio:checked { animation: ds-radio-pop 240ms var(--ease-out); }
+
+@media (hover: hover) and (pointer: fine) {
+  .ds-lift { transition: transform 240ms var(--ease-out), box-shadow 240ms var(--ease-out); }
+  .ds-lift:hover { transform: translateY(-2px); box-shadow: var(--ds-shadow-pop); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] { transition: none; }
+  .ds-view, .ds-title-in, .ds-item, .ds-grow-x, .ds-grow-y, .ds-radio:checked { animation: none; }
+  .ds-lift, .ds-lift:hover { transform: none; transition: none; }
+  .ds-btn-cta-green:hover:not(:disabled):not(:active) { transform: none; }
+}

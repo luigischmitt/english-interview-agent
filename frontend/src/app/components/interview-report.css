@@ -134,10 +134,14 @@
 .rp-pattern-eyebrow[data-type="WORD_CHOICE"]::before { background: var(--ds-warning); }
 .rp-pattern-eyebrow[data-type="FALSE_COGNATE"]::before { background: var(--ds-error); }
 .rp-pattern-eyebrow[data-type="STRUCTURE"]::before { background: var(--ds-text-2); }
-.rp-diff-old { color: var(--ds-error); text-decoration: line-through; text-decoration-thickness: 1px; }
-.rp-diff-new { color: var(--ds-green-deep); background: var(--ds-tint); border-radius: 0.2em; padding-inline: 0.08em; }
+/* Corrections: when the card first scrolls into view the strike draws across the wrong words (ink to red), then the fix highlights. */
+.rp-diff-old { -webkit-box-decoration-break: clone; box-decoration-break: clone; color: var(--ds-error); background: linear-gradient(currentColor, currentColor) 0 58% / 100% 1px no-repeat; transition: background-size 300ms var(--ease-out) 260ms, color 300ms ease 260ms; }
+.rp-diff-new { color: var(--ds-green-deep); background: var(--ds-tint); border-radius: 0.2em; padding-inline: 0.08em; transition: background-color 360ms ease 560ms, color 360ms ease 560ms; }
+[data-inview="false"] .rp-diff-old { background-size: 0 1px; color: var(--ds-ink); transition: none; }
+[data-inview="false"] .rp-diff-new { background-color: transparent; color: var(--ds-ink); transition: none; }
 .rp-priority-item { display: flex; gap: 0.875rem; align-items: flex-start; }
 .rp-priority-item .rp-priority-number { flex: 0 0 1.75rem; display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--ds-tint); color: var(--ds-green-deep); font-size: 0.8125rem; font-weight: 700; }
 .rp-priority-item[data-area="ENGLISH_COMMUNICATION"] .rp-priority-number { background: var(--ds-warning-tint); color: var(--ds-warning); }
 .rp-priority-area { display: block; width: fit-content; margin-bottom: 0.25rem; color: var(--ds-text-2); font-size: 0.6875rem; }
 .rp-priority-evidence { display: block; margin-top: 0.25rem; color: var(--ds-text-2); font-size: 0.8125rem; }
+@media (prefers-reduced-motion: reduce) { .rp-diff-old, .rp-diff-new { transition: none; } }
