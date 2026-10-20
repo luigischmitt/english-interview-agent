@@ -82,3 +82,29 @@
 .vv-message { padding: 0.875rem 1rem; border-radius: var(--ds-r-field); background: var(--ds-warning-tint); color: var(--ds-warning); font-size: 0.875rem; line-height: 1.5; }
 @media (max-width: 639px) { .vv-lesson-example { align-items: flex-start; flex-direction: column; } .vv-lesson-example .ds-btn { width: 100%; } .vv-practice-now { width: 100%; justify-content: space-between; } .vv-training { min-height: 26rem; } }
 @media (max-width: 420px) { .vv-training-top { align-items: flex-start; flex-direction: column; gap: 0.25rem; } .vv-training-actions { display: grid; gap: 0.5rem; } .vv-training-primary-actions { gap: 0.5rem; } .vv-next-sentence { justify-self: end; margin-left: 0; } .vv-evolution-row { grid-template-columns: 1fr; gap: 0.625rem; } .vv-evolution-series { gap: 0.375rem; } .vv-evolution-delta { justify-self: start; } }
+
+/* Motion: the evolution chart forms like a recorded voice, left to right, row after row. */
+.vv-evolution-row:nth-child(1) { --vv-row: 0; } .vv-evolution-row:nth-child(2) { --vv-row: 1; } .vv-evolution-row:nth-child(3) { --vv-row: 2; }
+.vv-evolution-bar > span { position: relative; transform-origin: bottom; --vv-at: calc(var(--rd, 0ms) + 300ms + var(--vv-row, 0) * 200ms + var(--i, 0) * 150ms); animation: vv-form 900ms cubic-bezier(.3,.9,.3,1) var(--vv-at) backwards; }
+.vv-evolution-bar > span { background: color-mix(in srgb, var(--ds-green-solid) 26%, var(--ds-tint)); }
+.vv-evolution-bar[data-latest="true"] > span { background: var(--ds-green-solid); }
+.vv-evolution-bar:not([data-latest="true"]) > span::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--ds-green-solid); opacity: 0; animation: vv-tone 1500ms ease-out var(--vv-at) backwards; }
+.vv-evolution-value { animation: vv-value 700ms var(--ease-out) calc(var(--vv-at, 0ms) + 700ms) backwards; }
+.vv-evolution-point { --vv-at: calc(var(--rd, 0ms) + 300ms + var(--vv-row, 0) * 200ms + var(--i, 0) * 150ms); }
+.vv-evolution-bar[data-latest="true"] > span { animation: vv-form 900ms cubic-bezier(.3,.9,.3,1) var(--vv-at) backwards, vv-latest 900ms ease-out calc(var(--vv-at) + 850ms) backwards; }
+@keyframes vv-form { 0% { transform: scaleY(0); } 55% { transform: scaleY(1.07); } 78% { transform: scaleY(0.98); } 100% { transform: scaleY(1); } }
+@keyframes vv-tone { 0% { opacity: 1; } 35% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes vv-latest { 40% { filter: brightness(1.35); } }
+@keyframes vv-value { 0% { opacity: 0; transform: translateY(6px) scale(0.85); } 55% { opacity: 1; transform: translateY(0) scale(1.25); } 100% { opacity: 1; transform: none; } }
+/* Practice sentence: words arrive quickly after a new phrase is chosen. */
+.vv-training-sentence[data-live="true"] .vv-w { display: inline-block; animation: vv-word 320ms var(--ease-out) calc(var(--w, 0) * 32ms) backwards; }
+@keyframes vv-word { from { opacity: 0; transform: translateY(0.35em); filter: blur(2px); } }
+/* Fixed slot so listen / recording / evaluating states never push the layout. */
+.vv-status-slot { min-height: 2.5rem; }
+/* "Como melhorar" content rises gently, again when the aspect changes. */
+.vv-lesson-measure, .vv-techniques li, .vv-personalized li { animation: ds-item-in 600ms var(--ease-out) backwards; --rise-y: 10px; }
+.vv-techniques li:nth-child(1) { animation-delay: 120ms; } .vv-techniques li:nth-child(2) { animation-delay: 200ms; } .vv-techniques li:nth-child(3) { animation-delay: 280ms; } .vv-techniques li:nth-child(n+4) { animation-delay: 360ms; }
+.vv-personalized li:nth-child(1) { animation-delay: 240ms; } .vv-personalized li:nth-child(n+2) { animation-delay: 320ms; }
+.vv-lesson-measure { animation-delay: 60ms; }
+[data-inview="false"] :is(.vv-evolution-bar > span, .vv-evolution-bar > span::before, .vv-evolution-value, .vv-lesson-measure, .vv-techniques li, .vv-personalized li) { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .vv-evolution-bar > span, .vv-evolution-bar > span::before, .vv-evolution-value, .vv-training-sentence .vv-w, .vv-lesson-measure, .vv-techniques li, .vv-personalized li { animation: none !important; } }
