@@ -198,7 +198,8 @@ html.rp-clip-x { overflow-x: clip; }
 .rp-metric-bar { margin-top: 0.625rem; height: 0.3125rem; overflow: hidden; border-radius: var(--ds-r-pill); background: var(--ds-track); }
 .rp-metric-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--ds-green); transform: scaleX(var(--v, 0)); transform-origin: left; }
 .rp-metric[data-limited="true"] .rp-metric-bar > span { background: var(--ds-text-2); opacity: 0.55; }
-.rp-metric-bar > span.ds-grow-x { animation: rp-bar-fill 1300ms cubic-bezier(.23, 1, .32, 1) calc(var(--rd, 0ms) + 520ms + var(--i, 0) * 220ms) backwards; }
+/* in step with MetricNumber in azure-voice-report.tsx (700ms start, 260ms per metric, 2200ms, quadratic ease-out) */
+.rp-metric-bar > span.ds-grow-x { animation: rp-bar-fill 2200ms cubic-bezier(.5, 1, .89, 1) calc(var(--rd, 0ms) + 700ms + var(--i, 0) * 260ms) backwards; }
 @keyframes rp-bar-fill { from { transform: scaleX(0); } }
 .rp-metric.ds-item { animation: rp-metric-in 900ms var(--ease-out) calc(var(--rd, 0ms) + 150ms + var(--i, 0) * 220ms) backwards; }
 .rp-metric > :is(.rp-hint, .rp-reliability, .rp-metric-insight) { animation: rp-fade-up 600ms var(--ease-out) calc(var(--rd, 0ms) + 900ms + var(--i, 0) * 220ms) backwards; }
