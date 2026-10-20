@@ -313,7 +313,7 @@ const LIM = { r: 2.5, x: 3.7, y: 1.2, bt: 0.83, bx: 1.0, fin: 10 };
 function transforms(p) {
   const H = (x, y) => { const q = rot(x, y, p.headRot, 165, 150); return [q[0] + p.hX, q[1] + p.hY]; };
   const Hn = (x, y) => { const q = rot(x, y, p.nT, 165, 150); return [q[0] + p.nX, q[1] + p.nY]; };
-  const B = (x, y) => { const q = rot(110 + (x - 110) * p.sx, y, p.bT, 150, 236); return [q[0] + p.bX, q[1]]; };
+  const B = (x, y) => { const q = rot(110 + (x - 110) * p.sx, 236 + (y - 236) * p.sy, p.bT, 150, 236); return [q[0] + p.bX, q[1]]; };
   return { H, Hn, B };
 }
 
@@ -357,7 +357,7 @@ export function mouthWedgePath(mouth) {
   return `M${P(top[0])}${cv(top)}Q${P([s[0] + 14, s[1]])} ${P(tip)}Q${P([Rs[0] + 14, Rs[1]])} ${P(Rs)}${rv(bot)}Z`;
 }
 
-const REST = { headRot: 0, hX: 0, hY: 0, nT: 0, nX: 0, nY: 0, bT: 0, bX: 0, sx: 1 };
+const REST = { headRot: 0, hX: 0, hY: 0, nT: 0, nX: 0, nY: 0, bT: 0, bX: 0, sx: 1, sy: 1 };
 /** Paths for the first (server) render, before the engine runs. */
 export const REST_SKIN_PATH = skinPath(transforms(REST));
 export const REST_BIB_PATH = BIB_PATH_REST;
@@ -392,9 +392,17 @@ export function createToucanEngine({ root, rng = Math.random, reducedMotion = ()
     tilt: new Spring(0, 6.5), hx: new Spring(0, 6.5), hy: new Spring(0, 6.5), turn: new Spring(0, 6),
     nT: new Spring(0, 4.5), nX: new Spring(0, 4.5), nY: new Spring(0, 4.5),
     bT: new Spring(0, 3.4, 0.8), bX: new Spring(0, 3.4, 0.8),
-    tl: new Spring(0, 3, 0.6),
+    tl: new Spring(0, 3, 0.6), lean: new Spring(0, 2.4), sway: new Spring(0, 3), att: new Spring(0, 3.2), jawIdle: new Spring(0, 12, 0.8),
     lookX: new Spring(0, 22), lookY: new Spring(0, 22), lid: new Spring(0, 14), beat: new Spring(0, 7), ql: new Spring(0, 7), glance: new Spring(0, 6), lr: new Spring(0, 14, 0.7), lift: new Spring(0, 20, 0.5),
   };
+  // Smoothed state weights: continuous blends (breath rate, noise amplitude, lean...) never step when the state changes.
+  const W = { idle: new Spring(1, 2.6), listening: new Spring(0, 2.6), thinking: new Spring(0, 2.6), speaking: new Spring(0, 3.2) };
+  const micro = new NodScheduler();
+  let breathPhase = 0.3; let breathAmp = 1; let nextSigh = 18;
+  let nextFlick = 5; let flickAt = -9; let flickAmp = 0;
+  let nextBackchannel = 3; let voicedSince = 0; let levelSmooth = 0;
+  let thinkTwitch = { t: -9, a: 0 };
+  let nextTwitch = 2;
   const PHR = new Spring(0, 2.6);
   const PHR2 = new Spring(0, 5);
   const jaw = new JawModel();
@@ -421,7 +429,12 @@ export function createToucanEngine({ root, rng = Math.random, reducedMotion = ()
   let feed = null;
   let cur = { id: 0, ev: 0, pz: 0, ready: false };
 
-  const applyState = (s, t) => { shown = s; lookHold = 0; T.look = t + rnd(0.5, 1.5); };
+  const applyState = (s, t) => {
+    const changed = s !== shown;
+    shown = s; lookHold = 0; T.look = t + rnd(0.5, 1.5);
+    // People blink as attention moves: a blink just after each change of state, so the shift reads as a thought.
+    if (changed && t > 0.5) { blinkDur = [0.07, 0.2]; blinkStart = t + rnd(0.06, 0.22); T.blink = Math.max(T.blink, t + 1.2); }
+  };
 
   function emphasis(t, s) {
     if (s > 0.8 && t - lastEmph > 1.5 && rng() > 0.4) {
@@ -445,6 +458,9 @@ export function createToucanEngine({ root, rng = Math.random, reducedMotion = ()
     }
     if (blinkQueue.length && t > blinkQueue[0]) { blinkQueue.shift(); blinkStart = t; }
     if (t > T.sacc) { const a = shown === "thinking" ? 0.18 : 0.1; sacc = { x: rnd(-a, a), y: rnd(-a, a) * 0.7 }; T.sacc = t + rnd(0.25, 1.1); }
+    // Occasional tail flick and a tiny beak twitch while thinking: small life signs, never periodic.
+    if (t > nextFlick) { flickAt = t; flickAmp = rnd(2.5, 5) * (rng() < 0.5 ? -1 : 1); nextFlick = t + rnd(4, 11); }
+    if (t > nextTwitch) { thinkTwitch = { t, a: rnd(0.12, 0.22) }; nextTwitch = t + rnd(0.7, 2.2); }
     if (t > T.look) {
       if (lookHold) { lookHold = 0; look = { x: 0, y: 0 }; T.look = t + rnd(2.2, 5); }
       else if (shown === "idle") { look = { x: rnd(-1, 1) * 0.9, y: rnd(-0.2, 0.7) }; lookHold = 1; T.look = t + rnd(0.7, 1.7); }
@@ -458,7 +474,16 @@ export function createToucanEngine({ root, rng = Math.random, reducedMotion = ()
   }
 
   function candidateUpdate(t) {
-    const reaction = listener.update(t, candidateLevel, shown === "listening");
+    const listening = shown === "listening";
+    // Mid-phrase backchannel: while the candidate keeps talking, a barely-there nod now and then (never counted as a reaction).
+    if (listening && candidateLevel > 0.15) {
+      if (!voicedSince) voicedSince = t;
+      if (t - voicedSince > 2.2 && t > nextBackchannel) {
+        if (rng() < 0.7) micro.add(t + 0.05, "single");
+        nextBackchannel = t + rnd(2.8, 5.5);
+      }
+    } else if (candidateLevel <= 0.15) voicedSince = 0;
+    const reaction = listener.update(t, candidateLevel, listening);
     if (!reaction) return;
     if (reaction.kind === "tilt") tiltPulse = { t: reaction.at, a: reaction.a };
     else nods.add(reaction.at, reaction.kind);
@@ -499,6 +524,10 @@ export function createToucanEngine({ root, rng = Math.random, reducedMotion = ()
         target = genericBeakTarget(t);
       }
     }
+    if (shown === "thinking" && !reducedMotion()) {
+      const u = t - thinkTwitch.t;
+      if (u >= 0 && u < 0.5) target = thinkTwitch.a * Math.sin((u / 0.5) * Math.PI);
+    }
     mouth = jaw.step(dt, target, chatter);
   }
 
@@ -526,20 +555,36 @@ export function createToucanEngine({ root, rng = Math.random, reducedMotion = ()
     S.nT.t = HP.r * 0.8; S.nX.t = HP.x * 0.8; S.nY.t = HP.y * 0.8; // the neck follows the head's total motion, one frame behind
     S.bT.t = S.nT.x * 0.35; S.bX.t = S.nX.x * 0.4;
     S.tl.t = (-S.bT.x * 2 + noise(t, 5) * 1.8) * m;
+    // Weights, attentive lean (toward the viewer, eased by how loud the candidate is), thinking sway, idle tail flick.
+    for (const k in W) { W[k].t = shown === k ? 1 : 0; W[k].step(dt); }
+    levelSmooth += (clamp(candidateLevel, 0, 1) - levelSmooth) * (1 - Math.exp(-dt / 0.35));
+    const wl = clamp(W.listening.x, 0, 1); const wt = clamp(W.thinking.x, 0, 1); const ws = clamp(W.speaking.x, 0, 1);
+    S.lean.t = (wl * (0.55 + levelSmooth * 0.5) - wt * 0.25) * m;
+    S.att.t = wl * levelSmooth * m;
+    S.sway.t = wt * noise(t * 0.55, 31) * m;
+    if (t - flickAt < 0.5) S.tl.v += flickAmp * 30 * dt * Math.exp(-(t - flickAt) * 7);
     S.ql.t = jawQuestion; S.beat.t = t < beatUntil ? beatAmp : 0; S.glance.t = t < glUntil ? glAmp : 0;
     for (const k in S) S[k].step(dt);
     const lv = spk ? mouth : 0;
     PHR.t = lv; PHR.step(dt); PHR2.t = lv; PHR2.step(dt);
 
-    // Breathing: slow, asymmetric (longer exhale); moves chest + bib, not the whole bird.
-    const ph = (t % 4.6) / 4.6;
+    // Breathing: asymmetric (longer exhale), never on a fixed clock. The rate follows the state (calmer while thinking,
+    // quicker while talking) and wobbles with noise; each breath has its own depth and now and then comes a deeper sigh.
+    const period = 4.6 * (W.idle.x * 1 + wl * 0.9 + wt * 1.3 + ws * 0.8) / Math.max(0.2, W.idle.x + wl + wt + ws) * (1 + 0.16 * noise(t * 0.7, 9));
+    const prev = breathPhase;
+    breathPhase += dt / period;
+    if (Math.floor(breathPhase) !== Math.floor(prev)) {
+      breathAmp = rnd(0.75, 1.2);
+      if (t > nextSigh && shown !== "speaking") { breathAmp = 1.7; nextSigh = t + rnd(22, 40); }
+    }
+    const ph = breathPhase % 1;
     const br = ph < 0.42 ? Math.sin((ph / 0.42) * Math.PI / 2) : Math.cos(((ph - 0.42) / 0.58) * Math.PI / 2);
-    const brk = clamp(br, 0, 1);
-    const na = (spk ? 1.0 : 1.5) * m;
+    const brk = clamp(br, 0, 1) * breathAmp;
+    const na = (0.8 + 0.7 * (1 - ws)) * m * (1 - 0.35 * wt);
     // Everything that moves the head is summed, then smoothly saturated, so noise, gaze, phrase turns and emphasis never stack into a big excursion.
-    const rawR = S.tilt.x + noise(t, 2) * 1.0 * na - PHR.x * 0.5 * m + S.beat.x * 0.5 * emphSign * m + S.ql.x * -2.2 * m + S.glance.x * 0.7 * m + (PHR2.x - 0.25) * -0.9 * m;
-    const rawX = S.hx.x + noise(t, 3) * 1.2 * na + S.glance.x * 1.4 * m;
-    const rawY = S.hy.x + noise(t, 4) * 0.8 * na + PHR.x * 0.4 * m + PHR2.x * 0.25 * m - S.ql.x * 1.2 * m + S.beat.x * 1.0 * m - brk * 0.5 * m;
+    const rawR = S.tilt.x + S.sway.x * 2.4 - S.att.x * 0.5 + micro.rotation(t) * 0.4 * m + noise(t, 2) * 1.0 * na - PHR.x * 0.5 * m + S.beat.x * 0.5 * emphSign * m + S.ql.x * -2.2 * m + S.glance.x * 0.7 * m + (PHR2.x - 0.25) * -0.9 * m;
+    const rawX = S.hx.x + S.lean.x * 1.8 + noise(t, 3) * 1.2 * na + S.glance.x * 1.4 * m;
+    const rawY = S.hy.x + noise(t, 4) * 0.8 * na + PHR.x * 0.4 * m + PHR2.x * 0.25 * m - S.ql.x * 1.2 * m + S.beat.x * 1.0 * m - brk * 0.7 * m - S.att.x * 0.4;
     let headRot = sat(rawR, LIM.r);
     const hX = sat(rawX, LIM.x);
     const hY = sat(rawY, LIM.y);
@@ -548,13 +593,13 @@ export function createToucanEngine({ root, rng = Math.random, reducedMotion = ()
     const p = {
       headRot, hX, hY,
       nT: S.nT.x + nodR * 0.15, nX: S.nX.x, nY: S.nY.x,
-      bT: sat(S.bT.x, LIM.bt) + nodR * 0.05, bX: sat(S.bX.x, LIM.bx),
-      sx: 1 + brk * 0.014 * m,
+      bT: sat(S.bT.x + S.lean.x * 0.5, LIM.bt) + nodR * 0.05, bX: sat(S.bX.x + S.lean.x * 0.4 + noise(t * 0.4, 41) * 0.35 * m, LIM.bx),
+      sx: 1 + brk * 0.012 * m, sy: 1 + brk * 0.011 * m,
     };
     const tl = S.tl.x;
     const tf = transforms(p);
     attr(el.head, "transform", `translate(${f2(hX)} ${f2(hY)}) rotate(${f2(headRot)} 165 150)`);
-    attr(el.body, "transform", `translate(${f2(p.bX)} 0) rotate(${f2(p.bT)} 150 236) translate(110 0) scale(${p.sx.toFixed(4)} 1) translate(-110 0)`);
+    attr(el.body, "transform", `translate(${f2(p.bX)} 0) rotate(${f2(p.bT)} 150 236) translate(110 236) scale(${p.sx.toFixed(4)} ${p.sy.toFixed(4)}) translate(-110 -236)`);
     attr(el.tail, "transform", `rotate(${f2(tl + p.bT)} 125 205)`);
     attr(el.skin, "d", skinPath(tf));
     // Beak: the lower mandible hinges at the gape (max ~10 deg: slim wedge); the upper lifts a touch.
