@@ -177,7 +177,8 @@
 .shl-home-link:focus-visible { outline: var(--ds-focus-outline); outline-offset: 3px; }
 .shl-home-link .ds-arrow { transition: transform var(--ds-dur-base) var(--ease-out); }
 .shl-home-count, .shl-home-voice-score { max-width: 28ch; font-size: clamp(1.45rem, 1.15rem + 1vw, 2rem); line-height: 1.25; }
-.shl-home-count > span, .shl-home-voice-score > span { color: var(--ds-ink); font-family: var(--font-display); font-size: clamp(4rem, 3rem + 5vw, 7rem); letter-spacing: -0.055em; line-height: 0.8; vertical-align: -0.08em; font-variant-numeric: tabular-nums; }
+/* Instrument Serif numerals collide below ~-0.02em tracking (the 5's flag hits the 7's bar), so big numbers stay near 0. */
+.shl-home-count > span, .shl-home-voice-score > span { color: var(--ds-ink); font-family: var(--font-display); font-size: clamp(4rem, 3rem + 5vw, 7rem); letter-spacing: -0.01em; line-height: 0.8; vertical-align: -0.08em; font-variant-numeric: tabular-nums; }
 .shl-home-voice-score > span { color: var(--ds-green); }
 .shl-home-voice-score small { color: var(--ds-text-2); font-size: 0.875rem; font-weight: 600; }
 .shl-home-detail { max-width: 54ch; margin-top: 1.5rem; color: var(--ds-text-2); font-size: 0.9375rem; line-height: 1.65; }
@@ -195,14 +196,14 @@
 .shl-home-voice-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; max-width: 34rem; }
 .shl-home-voice-metrics dt { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; color: var(--ds-text-2); font-size: 0.8125rem; font-weight: 600; }
 .shl-home-voice-metrics em { color: var(--ds-green-deep); font-size: 0.625rem; font-style: normal; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
-.shl-home-voice-metrics dd { margin-top: 0.25rem; font-family: var(--font-display); font-size: clamp(2.75rem, 2.2rem + 2vw, 3.75rem); letter-spacing: -0.04em; line-height: 0.9; font-variant-numeric: tabular-nums; }
+.shl-home-voice-metrics dd { margin-top: 0.25rem; font-family: var(--font-display); font-size: clamp(2.75rem, 2.2rem + 2vw, 3.75rem); letter-spacing: -0.01em; line-height: 0.9; font-variant-numeric: tabular-nums; }
 .shl-home-voice-metrics [data-focus="true"] dd { color: var(--ds-green); }
 .shl-home-voice-metrics small { margin-left: 0.125rem; color: var(--ds-text-2); font-family: var(--font-sans); font-size: 0.75rem; font-weight: 600; letter-spacing: 0; }
 .shl-home-voice-chart { max-width: 34rem; margin-top: 1.75rem; }
 .shl-home-voice-chart .vt-legend { display: none; }
 .shl-home-steps { display: grid; gap: 2rem; margin: 0; padding: 0; list-style: none; }
 .shl-home-steps li { min-width: 0; }
-.shl-home-steps span { display: block; color: var(--ds-green); font-family: var(--font-display); font-size: clamp(3.5rem, 2.5rem + 3vw, 5rem); letter-spacing: -0.05em; line-height: 0.8; }
+.shl-home-steps span { display: block; color: var(--ds-green); font-family: var(--font-display); font-size: clamp(3.5rem, 2.5rem + 3vw, 5rem); letter-spacing: -0.01em; line-height: 0.8; }
 .shl-home-steps p { max-width: 22ch; margin-top: 1rem; color: var(--ds-text-2); font-size: 0.9375rem; line-height: 1.55; }
 /* Home sections: the two columns (label, content) rise one after the other; the section box itself stays put. */
 .shl-home [data-reveal], .shl-home [data-reveal][data-inview="false"] { opacity: 1; transform: none; transition: none; }
