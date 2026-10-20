@@ -93,7 +93,7 @@
 .pg-pattern-share small { font-size: 1rem; font-weight: 600; }
 .pg-pattern-of { margin-top: 0.25rem; color: var(--ds-text-2); font-size: 0.75rem; white-space: nowrap; }
 .pg-meter { height: 0.625rem; border-radius: var(--ds-r-pill); background: var(--ds-track); overflow: hidden; }
-.pg-meter > i { display: block; height: 100%; border-radius: inherit; background: color-mix(in srgb, var(--ds-ink) 72%, transparent); transform-origin: left; transition: transform 900ms var(--ease-out) calc(200ms + var(--i, 0) * 90ms); }
+.pg-meter > i { display: block; height: 100%; border-radius: inherit; background: color-mix(in srgb, var(--ds-ink) 72%, transparent); transform-origin: left; transition: transform 650ms var(--ease-out) calc(120ms + min(var(--i, 0), 8) * 40ms); }
 .pg-pattern-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
 .pg-trend { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: var(--ds-r-pill); padding: 0.125rem 0.625rem; font-size: 0.75rem; font-weight: 600; background: var(--ds-track); color: var(--ds-text-2); }
 .pg-trend[data-trend="up"] { background: var(--ds-warning-tint); color: var(--ds-warning); }
@@ -135,7 +135,7 @@
 .pg-weeks { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0.5rem; align-items: end; height: 11rem; }
 .pg-week { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; justify-items: center; gap: 0.375rem; height: 100%; font-variant-numeric: tabular-nums; }
 .pg-week-track { display: flex; align-items: flex-end; width: 100%; max-width: 2.25rem; height: 100%; }
-.pg-week-track > i { display: block; width: 100%; border-radius: 0.375rem 0.375rem 0.25rem 0.25rem; background: var(--ds-green); transform-origin: bottom; transition: transform 700ms var(--ease-out) calc(var(--i, 0) * 60ms); }
+.pg-week-track > i { display: block; width: 100%; border-radius: 0.375rem 0.375rem 0.25rem 0.25rem; background: var(--ds-green); transform-origin: bottom; transition: transform 550ms var(--ease-out) calc(min(var(--i, 0), 10) * 30ms); }
 .pg-week-track > i[data-empty="true"] { background: var(--ds-track); }
 .pg-week-n { min-height: 1rem; font-size: 0.75rem; font-weight: 600; color: var(--ds-ink); }
 .pg-week-l { font-size: 0.6875rem; color: var(--ds-text-2); white-space: nowrap; }
@@ -155,7 +155,7 @@
 @media (hover: hover) and (pointer: fine) { .pg-row:hover { background: var(--ds-hover-wash-faint); } }
 
 /* ---- One-time entrances ---- */
-.pg-metric, .pg-pattern, .pg-topic { transition: opacity 450ms var(--ease-out) calc(120ms + var(--i, 0) * 80ms), transform 450ms var(--ease-out) calc(120ms + var(--i, 0) * 80ms); }
+.pg-metric, .pg-pattern, .pg-topic { transition: opacity 360ms var(--ease-out) calc(60ms + min(var(--i, 0), 8) * 40ms), transform 360ms var(--ease-out) calc(60ms + min(var(--i, 0), 8) * 40ms); }
 [data-inview="false"] .pg-metric, [data-inview="false"] .pg-pattern, [data-inview="false"] .pg-topic { opacity: 0; transform: translateY(10px); transition: none; }
 [data-inview="false"] .pg-meter > i { transform: scaleX(0); transition: none; }
 [data-inview="false"] .pg-week-track > i { transform: scaleY(0); transition: none; }

@@ -39,7 +39,8 @@
   color: var(--ds-text-2);
   transition: color var(--ds-dur-fast) ease, transform var(--ds-dur-press) var(--ease-out);
 }
-.shl-nav-item svg { flex: none; transition: color var(--ds-dur-fast) ease; }
+.shl-nav-item svg, .shl-mobile-item svg { flex: none; transition: color var(--ds-dur-fast) ease, transform 280ms var(--ease-out); }
+.shl-nav-item[aria-current="page"] svg, .shl-mobile-item[aria-current="page"] svg { transform: scale(1.08); }
 .shl-nav-item:active { transform: scale(0.97); }
 .shl-nav-item[aria-current="page"] { color: var(--ds-ink); font-weight: 600; }
 .shl-nav-item[aria-current="page"] svg { color: var(--ds-green); }
@@ -84,10 +85,10 @@
 .shl-mobile-nav {
   padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
   padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
-  background: color-mix(in srgb, var(--ds-cream) 86%, transparent);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  box-shadow: var(--ds-shadow-bar);
+  background: color-mix(in srgb, var(--ds-cream) 78%, transparent);
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  box-shadow: var(--ds-shadow-bar), inset 0 1px 0 color-mix(in srgb, var(--ds-popover) 60%, transparent);
 }
 @media (prefers-reduced-transparency: reduce) { .shl-mobile-nav { background: var(--ds-cream); backdrop-filter: none; -webkit-backdrop-filter: none; } }
 .shl-mobile-list { position: relative; display: grid; grid-template-columns: repeat(var(--nav-count, 5), minmax(0, 1fr)); border-radius: var(--ds-r-lg); background: var(--ds-track); padding: 0.25rem; }
@@ -125,10 +126,11 @@
 
 /* ---- Topbar: translucent, wayfinding on the left, account on the right. ---- */
 .shl-topbar {
-  background: color-mix(in srgb, var(--ds-cream) 82%, transparent);
-  backdrop-filter: blur(14px) saturate(150%);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  box-shadow: 0 1px 0 var(--ds-line);
+  /* Same glass recipe as the landing pill: soft cream wash, 22px blur, 1.5 saturation, 1px light edge on top. */
+  background: color-mix(in srgb, var(--ds-cream) 72%, transparent);
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  box-shadow: 0 1px 0 var(--ds-line), inset 0 1px 0 color-mix(in srgb, var(--ds-popover) 60%, transparent);
   padding-top: env(safe-area-inset-top, 0px);
   height: calc(4rem + env(safe-area-inset-top, 0px));
 }
@@ -174,7 +176,7 @@
 .shl-home-link:focus-visible { outline: var(--ds-focus-outline); outline-offset: 3px; }
 .shl-home-link .ds-arrow { transition: transform var(--ds-dur-base) var(--ease-out); }
 .shl-home-count, .shl-home-voice-score { max-width: 28ch; font-size: clamp(1.45rem, 1.15rem + 1vw, 2rem); line-height: 1.25; }
-.shl-home-count span, .shl-home-voice-score > span { color: var(--ds-ink); font-family: var(--font-display); font-size: clamp(4rem, 3rem + 5vw, 7rem); letter-spacing: -0.055em; line-height: 0.8; vertical-align: -0.08em; font-variant-numeric: tabular-nums; }
+.shl-home-count > span, .shl-home-voice-score > span { color: var(--ds-ink); font-family: var(--font-display); font-size: clamp(4rem, 3rem + 5vw, 7rem); letter-spacing: -0.055em; line-height: 0.8; vertical-align: -0.08em; font-variant-numeric: tabular-nums; }
 .shl-home-voice-score > span { color: var(--ds-green); }
 .shl-home-voice-score small { color: var(--ds-text-2); font-size: 0.875rem; font-weight: 600; }
 .shl-home-detail { max-width: 54ch; margin-top: 1.5rem; color: var(--ds-text-2); font-size: 0.9375rem; line-height: 1.65; }
@@ -271,10 +273,12 @@
   .shl-thumb { transition: opacity var(--ds-dur-fast) ease; }
   .shl-nav-item:active, .shl-mobile-item:active, .shl-collapse:active, .shl-signout .btn:active:not(:disabled) { transform: none; }
   .shl-tooltip { animation: none; }
+  .shl-nav-item svg, .shl-mobile-item svg { transition: color var(--ds-dur-fast) ease; transform: none !important; }
 }
 @media (hover: hover) and (pointer: fine) {
   .shl-collapse:hover { background: var(--ds-hover-wash); color: var(--ds-ink); }
   .shl-nav-item:not([aria-current="page"]):hover { color: var(--ds-ink); }
+  .shl-nav-item:not([aria-current="page"]):hover svg { transform: translateX(2px); }
 }
 
 /* ---- Touch: finger-sized targets, and no fixed bars competing with the on-screen keyboard. ---- */

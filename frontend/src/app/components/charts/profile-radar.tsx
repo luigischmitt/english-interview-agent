@@ -35,10 +35,10 @@ export function ProfileRadar({ items, active, selected, onActive, onSelect, labe
 
   return (
     <svg viewBox="-66 -24 432 348" className="pr-svg" role="group" aria-label={label} onMouseLeave={() => onActive(null)}>
-      {[1, 0.75, 0.5, 0.25].map((fraction) => <polygon key={fraction} className="pr-ring" data-outer={fraction === 1} points={ring(fraction)} />)}
+      {[1, 0.75, 0.5, 0.25].map((fraction) => <polygon key={fraction} className="pr-ring" data-outer={fraction === 1} style={{ "--k": [1, 0.75, 0.5, 0.25].indexOf(fraction) } as React.CSSProperties} points={ring(fraction)} />)}
       {items.map((item, i) => {
         const edge = point(i, total, RADIUS);
-        return <line key={item.key} className="pr-axis" data-group={item.group} data-active={active === item.key} x1={CENTER} y1={CENTER} x2={edge.x} y2={edge.y} />;
+        return <line key={item.key} className="pr-axis" pathLength={1} data-group={item.group} data-active={active === item.key} x1={CENTER} y1={CENTER} x2={edge.x} y2={edge.y} />;
       })}
       <polygon className="pr-shape" points={shape} />
       {items.map((item, i) => {

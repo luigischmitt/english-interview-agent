@@ -16,6 +16,7 @@ import type {
 import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics, type VoiceTrendMetric } from "@/lib/interview/voice-trend.mjs";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import { useReplayReveal } from "@/lib/use-replay-reveal";
+import { CountUp } from "@/components/ui/count-up";
 import { MetricSwatch, VoiceTrendChart } from "../charts/voice-trend-chart";
 import { ProfileRadar, type RadarItem } from "../charts/profile-radar";
 import { SectionHeading } from "../shared";
@@ -160,7 +161,7 @@ function VoiceTrendView({ insights }: { insights: ProgressInsights }) {
         {summaries.map(({ metric, summary }, index) => (
           <div key={metric} className="pg-metric" data-focus={metric === focus} style={stagger(index)}>
             <p className="pg-metric-label"><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === focus && <span className="pg-focus">{t("seu foco")}</span>}</p>
-            <p className="pg-metric-value">{summary ? Math.round(summary.latest) : "—"}<small>/100</small></p>
+            <p className="pg-metric-value">{summary ? <CountUp value={Math.round(summary.latest)} /> : "—"}<small>/100</small></p>
             {summary && <ChangeLabel change={summary.change} />}
             <p className="pg-metric-measure">{t(voiceTrendCopy[metric].measure)}</p>
           </div>
@@ -187,8 +188,8 @@ export function ProgressHero({ insights }: { insights: ProgressInsights }) {
             : "Precisão, ritmo e prosódia medidos pelo Azure em cada entrevista. Não são nota de inglês nem de sotaque.")}</p>
         </div>
         <dl className="pg-totals">
-          <div><dt>{t("Entrevistas")}</dt><dd>{insights.sessionCount}</dd></div>
-          <div><dt>{t("Respostas")}</dt><dd>{insights.answerCount}</dd></div>
+          <div><dt>{t("Entrevistas")}</dt><dd><CountUp value={insights.sessionCount} /></dd></div>
+          <div><dt>{t("Respostas")}</dt><dd><CountUp value={insights.answerCount} /></dd></div>
           <div><dt>{t("Tempo falando")}</dt><dd>{formatPracticeDuration(insights.practiceMs)}</dd></div>
         </dl>
       </div>
@@ -256,7 +257,7 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
         <div className="pg-pattern-stat">
           {row.share !== null ? (
             <>
-              <p className="pg-pattern-share">{share}<small>%</small></p>
+              <p className="pg-pattern-share"><CountUp value={share} /><small>%</small></p>
               <p className="pg-pattern-of">{getCurrentLocale() === "en" ? `of answers had this issue (${row.affected} of ${total})` : `das respostas tiveram esse erro (${row.affected} de ${total})`}</p>
             </>
           ) : (
@@ -309,7 +310,7 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
 export function EnglishPatterns({ insights }: { insights: ProgressInsights }) {
   const rows = patternRows(insights);
   return (
-    <section aria-labelledby="pg-english" className="pg-section" data-reveal>
+    <section aria-labelledby="pg-english" className="pg-section" data-reveal="group">
       <div className="pg-section-head">
         <div>
           <h2 id="pg-english" className="pg-section-title">{t("Erros de inglês nas respostas")}</h2>
@@ -361,7 +362,7 @@ export function StudyTopics({ insights }: { insights: ProgressInsights }) {
   const topics = insights.studyTopics.slice(0, 3);
   const [primary, ...others] = topics;
   return (
-    <section aria-labelledby="pg-topics" className="pg-section" data-reveal>
+    <section aria-labelledby="pg-topics" className="pg-section" data-reveal="group">
       <div className="pg-section-head">
         <div>
           <h2 id="pg-topics" className="pg-section-title">{t("Seus focos atuais")}</h2>
@@ -391,7 +392,7 @@ export function PracticeRhythm({ insights }: { insights: ProgressInsights }) {
   const total = weekly.reduce((sum, week) => sum + week.count, 0);
   const activeWeeks = weekly.filter((week) => week.count > 0).length;
   return (
-    <section aria-labelledby="pg-weekly" className="pg-section" data-reveal>
+    <section aria-labelledby="pg-weekly" className="pg-section" data-reveal="group">
       <div className="pg-section-head">
         <div>
           <h2 id="pg-weekly" className="pg-section-title">{t("Seu ritmo de prática")}</h2>
