@@ -376,13 +376,13 @@ function HomeView({
           <h1 id="home-title" className="shl-home-title">
             <SplitTitle text={t("Sua próxima entrevista começa aqui.")} />
           </h1>
-          <p className="shl-home-subcopy ds-rise" style={{ "--d": "560ms" } as CSSProperties}>
+          <p className="shl-home-subcopy ds-rise" style={{ "--d": "700ms", "--rise-y": "8px", "--rise-t": "700ms" } as CSSProperties}>
             {t("Pratique em voz alta e leve mais clareza para a próxima conversa.")}
           </p>
-          <button type="button" className="ds-btn ds-btn-cta-green shl-home-primary ds-rise" style={{ "--d": "700ms" } as CSSProperties} onClick={onStart}>
+          <button type="button" className="ds-btn ds-btn-cta-green shl-home-primary ds-rise" style={{ "--d": "800ms", "--rise-y": "8px", "--rise-t": "700ms" } as CSSProperties} onClick={onStart}>
             <Play className="size-4 fill-current" aria-hidden="true" /> {t("Começar entrevista")}
           </button>
-          <p className="shl-home-signature ds-rise" style={{ "--d": "820ms" } as CSSProperties}>
+          <p className="shl-home-signature ds-rise" style={{ "--d": "900ms", "--rise-y": "6px", "--rise-t": "700ms" } as CSSProperties}>
             <Leaf className="size-3.5" aria-hidden="true" /> {t("Feito no Brasil, para vaga lá fora")}
           </p>
         </div>
@@ -459,7 +459,7 @@ function HomeView({
                     return (
                       <div key={metric} data-focus={metric === voiceFocusKey}>
                         <dt><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === voiceFocusKey && <em>{t("foco")}</em>}</dt>
-                        <dd>{summary ? <CountUp value={Math.round(summary.latest)} /> : "—"}<small>/100</small></dd>
+                        <dd>{summary ? Math.round(summary.latest) : "—"}<small>/100</small></dd>
                       </div>
                     );
                   })}
