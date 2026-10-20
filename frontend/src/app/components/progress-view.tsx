@@ -4,6 +4,7 @@
 import { useLocale, t } from "@/lib/locale";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Play } from "lucide-react";
+import { LoadingRegion, SkCard, SkChart } from "@/components/ui/loading-state";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import { purgeExpiredAnswerClips } from "@/lib/interview/answer-clips";
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
@@ -115,14 +116,14 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
         action={insights.sessionCount > 0 ? startAction : undefined}
       />
       {isLoading ? (
-        <section className="mt-8 space-y-5 lg:mt-10" aria-busy="true" aria-label={t("Carregando progresso")}>
-          <div className="skeleton h-80 w-full !rounded-[var(--ds-r-panel)]" />
-          <div className="grid gap-5 md:grid-cols-2">
-            <div className="skeleton h-56 w-full !rounded-[var(--ds-r-card)]" />
-            <div className="skeleton h-56 w-full !rounded-[var(--ds-r-card)]" />
+        <LoadingRegion label={`${t("Carregando progresso")}…`} className="mt-8 lg:mt-10 ld-fade">
+          <SkCard className="ld-panel" minHeight="20rem" i={1}><SkChart bars={12} h="11rem" i={2} /></SkCard>
+          <div className="ld-grid-2">
+            <SkCard minHeight="14rem" i={3} lines={4} />
+            <SkCard minHeight="14rem" i={5} lines={4} />
           </div>
-          <div className="skeleton h-64 w-full !rounded-[var(--ds-r-card)]" />
-        </section>
+          <SkCard minHeight="16rem" i={7} lines={5} />
+        </LoadingRegion>
       ) : error ? (
         <section className="mt-8 lg:mt-10" role="alert">
           <div className="shl-error ds-fade-in flex flex-col items-start gap-4 p-5 sm:p-6">

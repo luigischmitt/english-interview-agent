@@ -331,6 +331,8 @@ const englishCopy: Record<string, string> = {
   "Sua experiência merece ser ouvida.": "Your experience deserves to be heard.",
   "Escolha o cargo e o foco. Você responde falando; o relatório aponta o que vale levar para a próxima entrevista.": "Choose the role and focus. You answer by speaking; the report shows what to take into your next interview.",
   "Organizando seu histórico": "Gathering your history",
+  "Preparando a tela": "Getting the screen ready",
+  "Carregando uso e custos": "Loading usage and costs",
   "Sua última entrevista": "Your latest interview",
   "O relatório desta entrevista está disponível no seu progresso.": "The report for this interview is available in your progress.",
   "A análise desta entrevista ainda não está disponível.": "The analysis for this interview is not available yet.",

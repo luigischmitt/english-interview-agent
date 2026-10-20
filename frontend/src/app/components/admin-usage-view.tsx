@@ -4,6 +4,7 @@ import { ExternalLink, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { authorizedFetch } from "@/lib/auth/backend-auth";
+import { LoadingRegion, SkCard } from "@/components/ui/loading-state";
 import { useLocale } from "@/lib/locale";
 
 import { PageIntro } from "./shared";
@@ -64,7 +65,7 @@ export function AdminUsageView() {
         </button>
       </div>
       {failed && <p role="alert" className="alert alert-error mt-6 text-sm">{t("Não foi possível carregar os custos agora.")}</p>}
-      {loading && !usage && <div role="status" className="mt-8 grid gap-5 lg:grid-cols-2"><div className="skeleton h-64 w-full !rounded-[var(--ds-r-card)]" /><div className="skeleton h-64 w-full !rounded-[var(--ds-r-card)]" /></div>}
+      {loading && !usage && <LoadingRegion label={`${t("Carregando uso e custos")}…`} className="mt-8 ld-fade"><div className="ld-grid-2"><SkCard minHeight="16rem" i={1} lines={5} /><SkCard minHeight="16rem" i={3} lines={5} /></div></LoadingRegion>}
       {usage && <div aria-live="polite" className="mt-8 grid gap-5 lg:grid-cols-2">
         {usage.sources.map((source) => <section key={source.id} className="ds-card p-5 sm:p-6" aria-labelledby={`${source.id}-title`}>
           <div className="flex items-start justify-between gap-4">

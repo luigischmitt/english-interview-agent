@@ -62,9 +62,9 @@
 @media (min-width: 640px) { .rp-voice-training { width: auto; padding-inline: 1.5rem; } }
 
 /* Pending. */
-.rp-bar { position: relative; height: 0.25rem; overflow: hidden; border-radius: var(--ds-r-pill); background: var(--ds-track); }
-.rp-bar::after { content: ""; position: absolute; inset: 0; width: 40%; border-radius: inherit; background: var(--ds-green); animation: ds-slide 1.6s var(--ease-in-out) infinite; }
-.rp-loading-step { color: var(--ds-ink); font-size: 0.9375rem; font-weight: 600; line-height: 1.5; animation: rp-loading-fade var(--ds-dur-slow) var(--ease-out); }
+.rp-pending-wrap { display: grid; gap: 1.25rem; }
+.rp-loading-step { display: flex; align-items: center; gap: 0.75rem; color: var(--ds-ink); font-size: 0.9375rem; font-weight: 600; line-height: 1.5; }
+.rp-loading-step > span { animation: rp-loading-fade var(--ds-dur-slow) var(--ease-out); }
 @keyframes rp-loading-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .rp-foot { margin-top: 2rem; display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 1rem; }
@@ -83,8 +83,7 @@
 .rp-more[open] > summary { margin-bottom: 0.25rem; }
 
 @media (prefers-reduced-motion: reduce) {
-  .rp-bar::after { animation: ds-fade 1.6s ease-in-out infinite alternate; width: 55%; }
-  .rp-loading-step { animation: none; }
+  .rp-loading-step > span { animation: none; }
 }
 
 /* General-first ready report. */

@@ -1,6 +1,6 @@
 .vv-content { display: grid; gap: 2.5rem; }
-.vv-skeleton-grid, .vv-metric-grid { display: grid; gap: 0.75rem; }
-@media (min-width: 640px) { .vv-skeleton-grid, .vv-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; } }
+.vv-metric-grid { display: grid; gap: 0.75rem; }
+@media (min-width: 640px) { .vv-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; } }
 .vv-metric { min-width: 0; padding: 1.25rem; }
 .vv-metrics-intro { max-width: 68ch; margin: 0.5rem 0 1rem; }
 .vv-metric[data-focus="true"] { background: var(--ds-tint); }
