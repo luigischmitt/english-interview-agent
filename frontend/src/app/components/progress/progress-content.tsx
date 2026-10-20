@@ -257,7 +257,7 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
         <div className="pg-pattern-stat">
           {row.share !== null ? (
             <>
-              <p className="pg-pattern-share"><CountUp value={share} /><small>%</small></p>
+              <p className="pg-pattern-share"><CountUp value={share} duration={1000} delay={450 + Math.min(index, 8) * 110} /><small>%</small></p>
               <p className="pg-pattern-of">{getCurrentLocale() === "en" ? `of answers had this issue (${row.affected} of ${total})` : `das respostas tiveram esse erro (${row.affected} de ${total})`}</p>
             </>
           ) : (

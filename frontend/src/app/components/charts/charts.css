@@ -45,18 +45,18 @@
  * Same one-time reveal contract as the trend chart: rings open from the center, axes draw outward, the shape grows, points and labels fade in.
  */
 .pr-svg { display: block; width: 100%; max-width: 30rem; height: auto; margin-inline: auto; overflow: visible; }
-.pr-ring { fill: none; stroke: var(--ds-chart-ring); stroke-dasharray: 3 4; transform-origin: 150px 150px; animation: pr-ring 750ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 100ms + var(--k, 0) * 110ms); }
+.pr-ring { fill: none; stroke: var(--ds-chart-ring); stroke-dasharray: 3 4; transform-origin: 150px 150px; animation: pr-ring 800ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 150ms + var(--k, 0) * 110ms); }
 .pr-ring[data-outer="true"] { stroke-dasharray: none; }
-.pr-axis { stroke: var(--ds-chart-axis); stroke-width: 1; stroke-dasharray: 1; transition: stroke var(--ds-dur-fast) ease; animation: pr-axis 800ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 550ms + var(--k, 0) * 60ms); }
+.pr-axis { stroke: var(--ds-chart-axis); stroke-width: 1; stroke-dasharray: 1; transition: stroke var(--ds-dur-fast) ease; animation: pr-axis 650ms cubic-bezier(0.4, 0.1, 0.2, 1) backwards; animation-delay: calc(var(--rd, 0ms) + 450ms + var(--k, 0) * 60ms); }
 .pr-axis[data-active="true"] { stroke: var(--ds-green); stroke-width: 1.5; }
 .pr-axis[data-group="voice"][data-active="true"] { stroke: var(--ds-brand-warm); }
-.pr-shape { fill: color-mix(in srgb, var(--ds-green) 16%, transparent); stroke: var(--ds-green); stroke-width: 2; stroke-linejoin: round; transform-origin: 150px 150px; animation: pr-grow 1000ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 800ms); }
-.pr-point { stroke: var(--ds-surface); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: vt-pop 520ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 1500ms + var(--k, 0) * 90ms); }
+.pr-shape { fill: color-mix(in srgb, var(--ds-green) 16%, transparent); stroke: var(--ds-green); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; transform-origin: 150px 150px; animation: pr-grow 1050ms cubic-bezier(0.3, 0.6, 0.25, 1) backwards; animation-delay: calc(var(--rd, 0ms) + 650ms); }
+.pr-point { stroke: var(--ds-surface); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: pr-pop 500ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 1300ms + var(--k, 0) * 60ms); }
 .pr-point[data-group="english"] { fill: var(--ds-green); }
 .pr-point[data-group="voice"] { fill: var(--ds-brand-warm); }
 /* rotated diamonds only fade: a transform animation would drop their rotation */
-rect.pr-point { animation-name: vt-fade; }
-.pr-label { cursor: pointer; animation: vt-fade 600ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 1600ms + var(--k, 0) * 90ms); }
+rect.pr-point { animation-name: vt-fade; animation-duration: 560ms; }
+.pr-label { cursor: pointer; animation: vt-fade 700ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 1450ms + var(--k, 0) * 60ms); }
 .pr-label-name { fill: var(--ds-green); font-size: 12px; font-weight: 600; }
 .pr-label-value { fill: var(--ds-ink); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pr-label[data-active="true"] .pr-label-name { fill: var(--ds-green-deep); }
@@ -64,9 +64,10 @@ rect.pr-point { animation-name: vt-fade; }
 .pr-hit { fill: transparent; cursor: pointer; }
 .pr-hit:focus-visible { outline: none; stroke: var(--ds-green); stroke-width: 2; }
 
-@keyframes pr-ring { from { opacity: 0; transform: scale(0.45); } }
+@keyframes pr-ring { from { opacity: 0; transform: scale(0.15); } 35% { opacity: 1; } }
 @keyframes pr-axis { from { stroke-dashoffset: 1; } }
-@keyframes pr-grow { from { opacity: 0; transform: scale(0.25); } }
+@keyframes pr-grow { from { opacity: 0; transform: scale(0); } 25% { opacity: 1; } 78% { transform: scale(1.035); } to { transform: scale(1); } }
+@keyframes pr-pop { from { opacity: 0; transform: scale(0.2); } 65% { transform: scale(1.25); } }
 [data-inview="false"] :is(.pr-ring, .pr-axis, .pr-shape, .pr-point, .pr-label) { animation-play-state: paused; }
 
 @media (prefers-reduced-motion: reduce) {
