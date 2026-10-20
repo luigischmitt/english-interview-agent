@@ -21,6 +21,9 @@ function point(index: number, total: number, radius: number) {
  * and Azure voice scores (0–100) share one scale. Each axis is labeled with its name and value, so nothing depends on
  * hover; English points are green circles and voice points warm diamonds. Entrance replays through an ancestor [data-reveal].
  */
+/** A diamond drawn directly (no rotate transform), so CSS scale animations keep it on its axis. */
+const diamond = (x: number, y: number, r: number) => `${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}`;
+
 export function ProfileRadar({ items, active, selected, onActive, onSelect, label }: {
   items: RadarItem[];
   active: string | null;
@@ -47,7 +50,7 @@ export function ProfileRadar({ items, active, selected, onActive, onSelect, labe
         const size = on ? 6 : 4.5;
         const style = { "--k": i } as React.CSSProperties;
         return item.group === "voice"
-          ? <rect key={item.key} className="pr-point" data-group="voice" data-active={on} style={style} x={p.x - size} y={p.y - size} width={size * 2} height={size * 2} rx={1.5} transform={`rotate(45 ${p.x} ${p.y})`} />
+          ? <polygon key={item.key} className="pr-point" data-group="voice" data-active={on} style={style} points={diamond(p.x, p.y, size * Math.SQRT2)} />
           : <circle key={item.key} className="pr-point" data-group="english" data-active={on} style={style} cx={p.x} cy={p.y} r={size} />;
       })}
       {items.map((item, i) => {

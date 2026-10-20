@@ -205,28 +205,6 @@ export function VoiceTrendChart({ rows, variant = "full", focus = null }: { rows
         )}
       </div>
 
-      {!compact && (
-        <details className="vt-table">
-          <summary>{t("Ver dados em tabela")}</summary>
-          <table className="shl-table">
-            <caption className="sr-only">{t("Evolução da sua voz por entrevista")}</caption>
-            <thead>
-              <tr>
-                <th scope="col">{t("Entrevista")}</th>
-                {voiceTrendMetrics.map((metric) => <th key={metric} scope="col" className="text-right">{t(voiceTrendCopy[metric].label)}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.label}</td>
-                  {voiceTrendMetrics.map((metric) => <td key={metric} className="text-right tabular-nums">{row.values[metric] === null ? "—" : Math.round(row.values[metric] as number)}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-      )}
     </div>
   );
 }
