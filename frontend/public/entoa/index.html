@@ -505,7 +505,7 @@ main{overflow-x:clip}
 
 /* --- EXTRA: cursinho comparison, on the forest engraving --- */
 .cursec{position:relative;isolation:isolate;overflow:hidden;padding:clamp(72px,9vw,132px) 0}
-.cursec-art{position:absolute;inset:0;z-index:-1;pointer-events:none;-webkit-mask-image:linear-gradient(to bottom,transparent,#000 48px,#000 calc(100% - 48px),transparent);mask-image:linear-gradient(to bottom,transparent,#000 48px,#000 calc(100% - 48px),transparent)}
+.cursec-art{position:absolute;inset:0;z-index:-1;pointer-events:none;-webkit-mask-image:linear-gradient(to bottom,transparent,#000 26px,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(to bottom,transparent,#000 26px,#000 calc(100% - 30px),transparent)}
 .cursec-art img{width:100%;height:100%;object-fit:cover;object-position:center 40%;transform:scaleX(-1);opacity:.95}
 .cursec .vs-head{width:fit-content;max-width:100%;margin-inline:auto;padding:clamp(1.1rem,3vw,1.8rem) clamp(1.2rem,4vw,2.8rem);border-radius:28px;position:relative;isolation:isolate;
   background:rgba(224,225,221,.62);-webkit-backdrop-filter:blur(22px) saturate(1.5);backdrop-filter:blur(22px) saturate(1.5);border:1px solid rgba(255,255,255,.85);
@@ -536,7 +536,6 @@ html[data-extra="0"] #cursinho{display:none}
 .vs td:last-child{background:var(--tint);color:var(--ink)}
 .vs tbody tr+tr>*{border-top:1px solid rgba(14,42,31,.07)}
 @media(hover:hover){.vs tbody tr:hover th,.vs tbody tr:hover td:nth-child(2){background:rgba(31,107,69,.06)}.vs tbody tr:hover td:last-child{background:#d8eadf}}
-.vs-note{max-width:860px;margin:.9rem auto 0;text-align:center}
 @media(max-width:640px){
   .vs,.vs tbody,.vs tr,.vs th,.vs td{display:block}
   .vs thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
@@ -551,7 +550,7 @@ html[data-extra="0"] #cursinho{display:none}
 
 /* --- FAQ: white cards on cream; they fly in from far away, lock into the stack, then their questions form --- */
 .faqs{position:relative;isolation:isolate;overflow:hidden;padding:clamp(64px,8vw,110px) 0 clamp(48px,6vw,80px)}
-.faqs::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(60% 55% at 50% 0,rgba(31,107,69,.07),transparent 72%)}
+.faqs::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(60% 45% at 50% 40%,rgba(31,107,69,.05),transparent 72%)}
 .faq-sec{text-align:center}
 .faqs .faq{display:grid;gap:.7rem;margin:1.8rem auto 0;max-width:780px;text-align:left}
 .faqs .qa{border-radius:22px;box-shadow:0 2px 4px rgba(14,42,31,.1),0 18px 36px -20px rgba(14,42,31,.45);background:var(--surface);color:var(--ink);transition:box-shadow .3s}
@@ -568,7 +567,8 @@ html[data-extra="0"] #cursinho{display:none}
   35%{opacity:1}
   72%{transform:translate3d(0,5px,0) rotate(calc(var(--fr) * -.05));filter:blur(0)}
   100%{opacity:1;transform:none;filter:blur(0)}}
-.fx .pl .faq .qa{animation:qfly 1.15s cubic-bezier(.22,.8,.3,1) calc(.15s + var(--k) * .17s) backwards}
+.fx .faq .qa{opacity:0}
+.fx .pl .faq .qa{opacity:1;animation:qfly 1.15s cubic-bezier(.22,.8,.3,1) calc(.15s + var(--k) * .17s) backwards}
 
 /* --- você × nativo, with motion: strikes are drawn one by one, then the corrections light up --- */
 .fx .drow:first-child .seg:not(.ok){color:inherit;text-decoration:none;transition:color .45s var(--ease)}
@@ -852,14 +852,13 @@ AWS e observabilidade</div></div>
       </tbody>
     </table>
     </div>
-    <p class="sm vs-note rv">Se o seu inglês ainda está no começo, um curso ajuda. Se a entrevista já tem data, treine com ela.</p>
   </div>
 </section>
 
 <!-- FINAL: FAQ in the dark green block; closing call and footer on the forest art -->
 <section class="final">
   <div class="faqs" id="faqs">
-    <div class="wrap faqs-in" data-stage data-at=".3">
+    <div class="wrap faqs-in" data-stage data-at=".12">
       <div class="faq-sec">
         <h2 data-split="in">Antes de começar.</h2>
       </div>
