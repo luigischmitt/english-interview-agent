@@ -301,14 +301,14 @@ main{overflow-x:clip}
 .radar .ring.out{stroke-dasharray:none;stroke:rgba(14,42,31,.16)}
 .radar .axis{stroke:rgba(14,42,31,.08)}
 .radar .axis.on{stroke:var(--green);stroke-width:1.5}
-.radar .poly{fill:rgba(31,107,69,.16);stroke:var(--green);stroke-width:2;stroke-linejoin:round;transform-origin:150px 150px;transform:scale(.3);opacity:0;transition:transform calc(.9s/var(--pace)) var(--ease) calc(.15s/var(--pace)),opacity calc(.4s/var(--pace)) ease calc(.15s/var(--pace))}
+.radar .poly{fill:rgba(31,107,69,.16);stroke:var(--green);stroke-width:2;stroke-linejoin:round;transform-origin:150px 150px;transform:scale(.3);opacity:0;transition:transform .9s var(--ease) .15s,opacity .4s ease .15s}
 .rep.in .radar .poly{transform:none;opacity:1}
 .radar .pt{opacity:0;transition:opacity .3s ease}
-.rep.in .radar .pt{opacity:1;transition:opacity calc(.3s/var(--pace)) ease calc((.75s + var(--k)*60ms)/var(--pace))}
+.rep.in .radar .pt{opacity:1;transition:opacity .3s ease calc(.75s + var(--k)*60ms)}
 .radar .pt.on{stroke:var(--surface);stroke-width:2}
 .radar .lab{opacity:0;transition:opacity .35s ease}
 .radar .lab{cursor:pointer}
-.rep.in .radar .lab{opacity:1;transition:opacity calc(.35s/var(--pace)) ease calc((.9s + var(--k)*60ms)/var(--pace))}
+.rep.in .radar .lab{opacity:1;transition:opacity .35s ease calc(.9s + var(--k)*60ms)}
 .radar .ln{font:600 12px var(--sans)}
 .radar .lv{fill:var(--ink);font:700 17px var(--sans);font-variant-numeric:tabular-nums}
 .radar .lab.on .ln{fill:var(--green-deep)}
@@ -408,7 +408,7 @@ main{overflow-x:clip}
 [data-cta].mag{transition:transform .12s linear,background .16s}
 
 /* reveal */
-.rv{opacity:0;transform:translateY(14px);transition:opacity calc(.5s/var(--pace)) var(--ease),transform calc(.5s/var(--pace)) var(--ease)}
+.rv{opacity:0;transform:translateY(14px);transition:opacity .5s var(--ease),transform .5s var(--ease)}
 .rv.in{opacity:1;transform:none}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
@@ -416,7 +416,7 @@ main{overflow-x:clip}
 }
 
 /* ================= MERGE: hero, scroll effects, voz, extra, faq ================= */
-:root{--pace:1;--glass:rgba(232,236,227,.66);--glass-line:rgba(255,255,255,.6)}
+:root{--glass:rgba(232,236,227,.66);--glass-line:rgba(255,255,255,.6)}
 
 /* --- hero background: a voice waveform drawn on a canvas (see script) --- */
 .hero-bg{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
@@ -436,7 +436,9 @@ main{overflow-x:clip}
   50%{text-shadow:none;opacity:.7}
   66%{text-shadow:-.03em 0 0 color-mix(in srgb,currentColor 30%,transparent);opacity:1}
   100%{text-shadow:none;opacity:1}}
-.hx .sw path{stroke-dashoffset:1;animation:draw 0.7s var(--ease) 1.5s forwards}
+/* reveal the underline with a clip that sweeps left to right: a dash offset leaves the round cap showing as a stray dot before the draw */
+.hx .hero .sw{clip-path:inset(-60% 100% -60% -4%);animation:swr .7s var(--ease) 1.5s forwards}
+@keyframes swr{to{clip-path:inset(-60% -4% -60% -4%)}}
 @keyframes draw{to{stroke-dashoffset:0}}
 @keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
 .hx .hero .lead{animation:up .8s var(--ease) .65s both}
@@ -445,7 +447,7 @@ main{overflow-x:clip}
 
 /* --- reveal system: everything forms when it comes into view, plays by itself, and replays after it has left the screen --- */
 .fx .ch{display:inline-block;opacity:0}
-.fx .pl .ch{opacity:1;animation:hch calc(.7s/var(--pace)) var(--ease) calc((var(--d,0s) + var(--i) * var(--cs,17ms))/var(--pace)) backwards}
+.fx .pl .ch{opacity:1;animation:hch .7s var(--ease) calc(var(--d,0s) + var(--i) * var(--cs,17ms)) backwards}
 .sec-head{text-align:center;max-width:780px;margin:0 auto}
 .sec-head h2{margin-inline:auto;max-width:22ch}
 .sec-head .lead{margin:.6rem auto 0;max-width:46ch}
@@ -480,26 +482,26 @@ main{overflow-x:clip}
 
 /* initial states only when motion is on; the markup itself is the finished picture */
 .fx .vz .lead{opacity:0}
-.fx .vz.pl .lead{animation:up calc(.8s/var(--pace)) var(--ease) calc(.7s/var(--pace)) both}
+.fx .vz.pl .lead{animation:up .8s var(--ease) .7s both}
 .fx .vz-w{color:inherit}
-.fx .vz-w .sw{clip-path:inset(-30% 100% -30% 0);transition:clip-path calc(.8s/var(--pace)) var(--ease)}
-.fx .vz.s1 .vz-w{color:var(--danger);animation:stut calc(.6s/var(--pace)) steps(1,end) 2,wob calc(1.2s/var(--pace)) var(--ease)}
+.fx .vz-w .sw{clip-path:inset(-30% 100% -30% 0);transition:clip-path .8s var(--ease)}
+.fx .vz.s1 .vz-w{color:var(--danger);animation:stut .6s steps(1,end) 2,wob 1.2s var(--ease)}
 .fx .vz.fix .vz-w{color:var(--green-deep);animation:none}
 .fx .vz.fix .vz-w .sw{clip-path:inset(-30% -5% -30% -5%)}
 @keyframes wob{0%,100%{transform:none}15%{transform:translateX(-.03em) skewX(-4deg)}35%{transform:translateX(.04em) skewX(3deg)}55%{transform:translateX(-.02em)}75%{transform:translateX(.015em)}}
-.fx .vz-wave path{stroke-dashoffset:1;transition:stroke-dashoffset calc(.9s/var(--pace)) var(--ease),opacity calc(.45s/var(--pace)),stroke calc(.4s/var(--pace))}
+.fx .vz-wave path{stroke-dashoffset:1;transition:stroke-dashoffset .9s var(--ease),opacity .45s,stroke .4s}
 .fx .vz.wa .a{stroke-dashoffset:0}
-.fx .vz.s1 .b{opacity:1;stroke-dashoffset:0;transition-duration:calc(.8s/var(--pace)),calc(.2s/var(--pace)),calc(.2s/var(--pace))}
+.fx .vz.s1 .b{opacity:1;stroke-dashoffset:0;transition-duration:.8s,.2s,.2s}
 .fx .vz.fix .b{opacity:0;stroke-dashoffset:0}
 .fx .vz.fix .b2,.fx .vz.fix .c{stroke-dashoffset:0}
-.fx .vz.fix .c{transition-delay:calc(.35s/var(--pace))}
-.fx .vz-att{opacity:0;transition:opacity calc(.5s/var(--pace))}
+.fx .vz.fix .c{transition-delay:.35s}
+.fx .vz-att{opacity:0;transition:opacity .5s}
 .fx .vz.s1 .vz-att{opacity:1}
 .fx .vz-m li{opacity:0;transform:translateY(16px);filter:blur(6px)}
-.fx .vz.s1 .vz-m li{opacity:1;transform:none;filter:blur(0);transition:opacity calc(.7s/var(--pace)) var(--ease) calc(var(--k) * .12s/var(--pace)),transform calc(.8s/var(--pace)) var(--ease) calc(var(--k) * .12s/var(--pace)),filter calc(.7s/var(--pace)) var(--ease) calc(var(--k) * .12s/var(--pace))}
+.fx .vz.s1 .vz-m li{opacity:1;transform:none;filter:blur(0);transition:opacity .7s var(--ease) calc(var(--k) * .12s),transform .8s var(--ease) calc(var(--k) * .12s),filter .7s var(--ease) calc(var(--k) * .12s)}
 .fx .vz:not(.fix) .vz-v{color:var(--warm)}
 .fx .vz-d{opacity:0;transform:scale(.3)}
-.fx .vz.chip .vz-d{opacity:1;transform:none;transition:opacity calc(.25s/var(--pace)) calc(var(--k) * .13s/var(--pace)),transform calc(.6s/var(--pace)) cubic-bezier(.34,1.56,.64,1) calc(var(--k) * .13s/var(--pace))}
+.fx .vz.chip .vz-d{opacity:1;transform:none;transition:opacity .25s calc(var(--k) * .13s),transform .6s cubic-bezier(.34,1.56,.64,1) calc(var(--k) * .13s)}
 
 /* --- EXTRA: cursinho comparison, on the forest engraving --- */
 .cursec{position:relative;isolation:isolate;overflow:hidden;padding:clamp(72px,9vw,132px) 0}
@@ -513,10 +515,10 @@ main{overflow-x:clip}
 @keyframes cell{from{opacity:0;transform:translateY(14px);filter:blur(6px)}to{opacity:1;transform:none;filter:blur(0)}}
 @keyframes entoa{from{opacity:0;transform:translateX(24px) scale(.97);filter:blur(8px);background-color:transparent}60%{filter:blur(0)}}
 .fx .vs-wrap .vs thead th,.fx .vs-wrap .vs tbody tr>*{opacity:0}
-.fx .vs-wrap.pl .vs thead th{opacity:1;animation:cell calc(.7s/var(--pace)) var(--ease) calc(.1s/var(--pace)) backwards}
-.fx .vs-wrap.pl .vs tbody tr>*{opacity:1;animation:cell calc(.8s/var(--pace)) var(--ease) calc((.3s + var(--r) * .24s)/var(--pace)) backwards}
-.fx .vs-wrap.pl .vs thead th:last-child{animation:entoa calc(1s/var(--pace)) var(--ease) calc(1.7s/var(--pace)) backwards}
-.fx .vs-wrap.pl .vs tbody td:last-child{animation:entoa calc(1s/var(--pace)) var(--ease) calc((1.8s + var(--r) * .15s)/var(--pace)) backwards}
+.fx .vs-wrap.pl .vs thead th{opacity:1;animation:cell .7s var(--ease) .1s backwards}
+.fx .vs-wrap.pl .vs tbody tr>*{opacity:1;animation:cell .8s var(--ease) calc(.3s + var(--r) * .24s) backwards}
+.fx .vs-wrap.pl .vs thead th:last-child{animation:entoa 1s var(--ease) 1.7s backwards}
+.fx .vs-wrap.pl .vs tbody td:last-child{animation:entoa 1s var(--ease) calc(1.8s + var(--r) * .15s) backwards}
 
 /* --- EXTRA: cursinho comparison --- */
 html[data-extra="0"] #cursinho{display:none}
@@ -566,19 +568,19 @@ html[data-extra="0"] #cursinho{display:none}
   35%{opacity:1}
   72%{transform:translate3d(0,5px,0) rotate(calc(var(--fr) * -.05));filter:blur(0)}
   100%{opacity:1;transform:none;filter:blur(0)}}
-.fx .pl .faq .qa{animation:qfly calc(1.15s/var(--pace)) cubic-bezier(.22,.8,.3,1) calc((.15s + var(--k) * .17s)/var(--pace)) backwards}
+.fx .pl .faq .qa{animation:qfly 1.15s cubic-bezier(.22,.8,.3,1) calc(.15s + var(--k) * .17s) backwards}
 
 /* --- você × nativo, with motion: strikes are drawn one by one, then the corrections light up --- */
-.fx .drow:first-child .seg:not(.ok){color:inherit;text-decoration:none;transition:color calc(.3s/var(--pace)) var(--ease)}
-.fx .drow:first-child .seg:not(.ok) .w{padding-right:.3em;margin-right:-.3em;background:linear-gradient(#c9694a,#c9694a) 0 58%/0 1.5px no-repeat;transition:background-size calc(.3s/var(--pace)) var(--ease) calc(var(--wi,0) * 70ms/var(--pace))}
+.fx .drow:first-child .seg:not(.ok){color:inherit;text-decoration:none;transition:color .45s var(--ease)}
+.fx .drow:first-child .seg:not(.ok) .w{padding-right:.3em;margin-right:-.3em;background:linear-gradient(#c9694a,#c9694a) 0 58%/0 1.5px no-repeat;transition:background-size .4s var(--ease) calc(var(--wi,0) * 90ms)}
 .fx .drow:first-child .seg.bad:not(.ok){color:var(--err)}
 .fx .drow:first-child .seg.bad:not(.ok) .w{background-size:100% 1.5px}
 .fx .drow:first-child .seg.on:not(.ok) .w{background-size:0 1.5px}
 .fx .drow+.drow .seg:not(.lit){background:transparent;box-shadow:none;color:inherit}
-.fx .drow+.drow .seg{transition:background calc(.45s/var(--pace)) var(--ease),box-shadow calc(.45s/var(--pace)) var(--ease),color calc(.45s/var(--pace))}
+.fx .drow+.drow .seg{transition:background .6s var(--ease),box-shadow .6s var(--ease),color .6s}
 .fx .drow>span{opacity:0}
-.fx .diff.pl .drow>span{animation:up calc(.5s/var(--pace)) var(--ease) calc(.05s/var(--pace)) backwards;opacity:1}
-.fx .diff.pl .drow+.drow>span{animation-delay:calc(1.3s/var(--pace))}
+.fx .diff.pl .drow>span{animation:up .7s var(--ease) .1s backwards;opacity:1}
+.fx .diff.pl .drow+.drow>span{animation-delay:3.2s}
 </style>
 </head>
 <body>
@@ -661,8 +663,8 @@ h.setAttribute('aria-label','Você sabe a resposta. Em inglês, ela trava.');var
       <p class="lead">Em vermelho, o erro. Em verde, como um nativo diria.</p>
     </div>
     <div class="diff rv" id="diff" lang="en" data-at=".3">
-      <div class="drow"><span>Você</span><p data-split="in" style="--d:.1s;--cs:9ms">I have five years <button class="seg" data-d="0">experience on</button> backend and <button class="seg" data-d="1">I am working</button> with Go since 2021.</p></div>
-      <div class="drow"><span>Nativo</span><p data-split="in" style="--d:1.35s;--cs:9ms">I have five years <button class="seg" data-d="0">of experience in</button> backend and <button class="seg" data-d="1">I’ve been working</button> with Go since 2021.</p></div>
+      <div class="drow"><span>Você</span><p data-split="in" style="--d:.2s;--cs:14ms">I have five years <button class="seg" data-d="0">experience on</button> backend and <button class="seg" data-d="1">I am working</button> with Go since 2021.</p></div>
+      <div class="drow"><span>Nativo</span><p data-split="in" style="--d:3.3s;--cs:14ms">I have five years <button class="seg" data-d="0">of experience in</button> backend and <button class="seg" data-d="1">I’ve been working</button> with Go since 2021.</p></div>
     </div>
   </div>
 </section>
@@ -887,26 +889,6 @@ AWS e observabilidade</div></div>
 </section>
 </main>
 <script>
-/* scroll pace: --pace (1 = normal, up to 4) from a smoothed scroll velocity; set per element when its sequence starts and only ever raised while it runs */
-window.EP=(function(){
-  var MAX=4,v=0,lastY=scrollY,lastT=performance.now(),active=[],tick=0;
-  function cur(){var x=v*Math.exp(-(performance.now()-lastT)/160);
-    return Math.min(MAX,Math.max(1,Math.round((1+3*Math.min(1,Math.max(0,(x-.7)/2.8)))*4)/4))}
-  function adv(el){var n=performance.now();if(el._vt===undefined){el._vt=0;el._vl=n}el._vt+=(n-el._vl)*(el._pace||1);el._vl=n;return el._vt}
-  function raise(el,p){if(p<=(el._pace||1))return;adv(el);el._pace=p;el.style.setProperty('--pace',p)}
-  function onScroll(){
-    var n=performance.now(),dy=Math.abs(scrollY-lastY),dt=Math.max(1,n-lastT);
-    v=v*Math.exp(-dt/160)*.5+(dy/dt)*.5;lastY=scrollY;lastT=n;
-    if(!tick&&active.length)tick=requestAnimationFrame(function(){tick=0;var p=cur(),t=performance.now();
-      active=active.filter(function(a){return t-a.t<9000});active.forEach(function(a){raise(a.el,p)})})}
-  addEventListener('scroll',onScroll,{passive:true});
-  return{
-    start:function(el){var p=cur(),n=performance.now();el._pace=p;el._vt=0;el._vl=n;el.style.setProperty('--pace',p);
-      active=active.filter(function(a){return a.el!==el});active.push({el:el,t:n})},
-    now:adv
-  }})();
-</script>
-<script>
 (function(){
   const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
   const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1115,7 +1097,7 @@ window.EP=(function(){
   hl(-1);
   // Plays when the card is really in view (not when only its top edge peeks into the first screen) and replays on return.
   new IntersectionObserver(es=>es.forEach(e=>{const rep=e.target;
-    if(e.isIntersecting&&e.intersectionRatio>=.45){if(!rep.classList.contains('in'))EP.start(rep);rep.classList.add('in')}
+    if(e.isIntersecting&&e.intersectionRatio>=.45)rep.classList.add('in');
     else if(e.intersectionRatio<.12)rep.classList.remove('in');
   }),{threshold:[0,.12,.45]}).observe($('#rep'));
 
@@ -1306,10 +1288,8 @@ window.EP=(function(){
 
     /* timers per stage, cleared when the stage resets */
     const timers=new Map();
-    /* sequences run on the element's paced clock (EP.now), so they speed up together with the CSS when the user scrolls fast */
-    const T=(el,ms,fn)=>{let q=timers.get(el);if(!q){q={a:[],raf:0};timers.set(el,q)}q.a.push({at:ms,fn});
-      if(!q.raf)q.raf=requestAnimationFrame(function f(){q.raf=0;const t=EP.now(el),due=q.a.filter(x=>x.at<=t);q.a=q.a.filter(x=>x.at>t);due.forEach(x=>x.fn());if(q.a.length&&!q.raf)q.raf=requestAnimationFrame(f)})};
-    const clearT=el=>{const q=timers.get(el);if(q){q.a=[];cancelAnimationFrame(q.raf);q.raf=0}};
+    const T=(el,ms,fn)=>{const l=timers.get(el)||[];l.push(setTimeout(fn,ms));timers.set(el,l)};
+    const clearT=el=>{(timers.get(el)||[]).forEach(clearTimeout);timers.set(el,[])};
 
     /* --- você × nativo: the wrong parts are struck one after another, then the corrections light up --- */
     const diff=$('#diff');
@@ -1317,8 +1297,8 @@ window.EP=(function(){
       const r1=$$('.drow:first-child .seg:not(.ok)',diff),r2=$$('.drow+.drow .seg',diff);
       $$('.drow:first-child .seg',diff).forEach(sg=>$$('.w',sg).forEach((w,i)=>w.style.setProperty('--wi',i)));
       HOOKS.diff={
-        on(){T(diff,1000,()=>r1[0]&&r1[0].classList.add('bad'));T(diff,1400,()=>r1[1]&&r1[1].classList.add('bad'));
-             T(diff,2200,()=>r2[0]&&r2[0].classList.add('lit'));T(diff,2500,()=>r2[1]&&r2[1].classList.add('lit'))},
+        on(){T(diff,2100,()=>r1[0]&&r1[0].classList.add('bad'));T(diff,2800,()=>r1[1]&&r1[1].classList.add('bad'));
+             T(diff,5300,()=>r2[0]&&r2[0].classList.add('lit'));T(diff,5850,()=>r2[1]&&r2[1].classList.add('lit'))},
         off(){clearT(diff);$$('.seg',diff).forEach(b=>b.classList.remove('bad','lit'))}};
     }
 
@@ -1327,7 +1307,7 @@ window.EP=(function(){
       const MET=[[72,84],[68,77],[61,70]],lis=$$('#vzM li'),att=$('#vzAtt');
       let gen=0;
       const put=(i,v)=>{const li=lis[i];$('.vz-v',li).textContent=Math.round(v);$('.vz-bar i',li).style.setProperty('--p',v.toFixed(1)+'%')};
-      const count=(i,a,b,ms)=>{const g=gen,t0=EP.now(vz);(function f(){if(g!==gen)return;const k=clamp((EP.now(vz)-t0)/ms);put(i,a+(b-a)*ease(k));if(k<1)requestAnimationFrame(f)})()};
+      const count=(i,a,b,ms)=>{const g=gen,t0=performance.now();(function f(n){if(g!==gen)return;const k=clamp((n-t0)/ms);put(i,a+(b-a)*ease(k));if(k<1)requestAnimationFrame(f)})(t0)};
       const add=c=>vz.classList.add(c);
       HOOKS.vz={
         on(){buildWave();gen++;att.textContent='Tentativa 1';lis.forEach((_,i)=>put(i,0));
@@ -1343,7 +1323,7 @@ window.EP=(function(){
     /* --- observers: one decides when something starts (a bit inside the screen), one when it has fully left --- */
     const targets=$$('.rv,[data-stage],[data-split]:not([data-split="in"]),#diff,#vz');
     const uniq=[...new Set(targets)];
-    const start=el=>{if(el.classList.contains('pl'))return;EP.start(el);el.classList.add('pl');if(el.classList.contains('rv'))el.classList.add('in');const h=HOOKS[el.id];h&&h.on()};
+    const start=el=>{if(el.classList.contains('pl'))return;el.classList.add('pl');if(el.classList.contains('rv'))el.classList.add('in');const h=HOOKS[el.id];h&&h.on()};
     const stop=el=>{if(!el.classList.contains('pl')||el.hasAttribute('data-once'))return;el.classList.remove('pl','in');const h=HOOKS[el.id];h&&h.off()};
     const th=[];for(let i=0;i<=20;i++)th.push(i/20);
     const ioOn=new IntersectionObserver(es=>es.forEach(e=>{
