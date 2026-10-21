@@ -11,12 +11,13 @@ import type {
   ProgressCommonError,
   ProgressInsights,
   ProgressSessionRow,
+  ProgressStudyTopic,
 } from "@/lib/interview/progress-insights.mjs";
-import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics } from "@/lib/interview/voice-trend.mjs";
+import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics, type VoiceTrendMetric } from "@/lib/interview/voice-trend.mjs";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import { useReplayReveal } from "@/lib/use-replay-reveal";
 import { CountUp } from "@/components/ui/count-up";
-import { MetricSwatch } from "../charts/voice-trend-chart";
+import { MetricSwatch, VoiceTrendChart } from "../charts/voice-trend-chart";
 import { ProfileRadar, type RadarItem } from "../charts/profile-radar";
 import { SectionHeading } from "../shared";
 import "./progress.css";
@@ -65,8 +66,18 @@ function ChangeLabel({ change }: { change: number | null }) {
   );
 }
 
+const voiceExplainer: Record<VoiceTrendMetric, string> = {
+  accuracy: "Quão claro cada som e cada palavra saiu, segundo o Azure.",
+  fluency: "Pausas, hesitações e velocidade: se a fala flui sem travar.",
+  prosody: "Entonação e acento das palavras, a melodia da frase. Não é nota de sotaque.",
+};
+
 function radarItems(insights: ProgressInsights): (RadarItem & { explain: string })[] {
-  return insights.dimensions.filter((dimension) => dimension.kind === "pattern").map((dimension) => {
+  return insights.dimensions.map((dimension) => {
+    if (dimension.kind === "voice") {
+      const metric = dimension.key as VoiceTrendMetric;
+      return { key: metric, group: "voice", label: t(voiceTrendCopy[metric].label), value: dimension.value, display: String(Math.round(dimension.value)), explain: t(voiceExplainer[metric]) };
+    }
     const type = dimension.key as PatternType;
     return {
       key: type,
@@ -120,6 +131,7 @@ function ProfileView({ insights }: { insights: ProgressInsights }) {
         <div className="pg-profile-side">
           <ul className="pg-radar-legend">
             <li className="pg-radar-legend-english"><i aria-hidden="true" /><span><strong>{t("Inglês:")}</strong> {t("% das respostas sem erro prioritário identificado")}</span></li>
+            <li className="pg-radar-legend-voice"><i aria-hidden="true" /><span><strong>{t("Voz:")}</strong> {t("nota de 0 a 100")}</span></li>
           </ul>
           <p className="pg-radar-note">{t("Mais perto da borda é melhor. Escolha um ponto para ver o que ele mede.")}</p>
           <div className="pg-side-details">
@@ -136,6 +148,10 @@ function ProfileView({ insights }: { insights: ProgressInsights }) {
 function VoiceTrendView({ insights }: { insights: ProgressInsights }) {
   const rows = useMemo(() => mergeVoiceSeries(insights.series), [insights.series]);
   const summaries = voiceTrendMetrics.map((metric) => ({ metric, summary: voiceMetricSummary(rows, metric) }));
+  const focus = summaries
+    .filter((item) => item.summary)
+    .sort((a, b) => (a.summary?.latest ?? 0) - (b.summary?.latest ?? 0))[0]?.metric ?? null;
+
   if (rows.length === 0) {
     return <div className="pg-empty"><p>{t("Ainda não há fala avaliada suficiente. Respostas mais longas ajudam a deixar a precisão, o ritmo e a prosódia confiáveis.")}</p></div>;
   }
@@ -143,14 +159,19 @@ function VoiceTrendView({ insights }: { insights: ProgressInsights }) {
     <>
       <div className="pg-metrics">
         {summaries.map(({ metric, summary }, index) => (
-          <div key={metric} className="pg-metric" style={stagger(index)}>
-            <p className="pg-metric-label"><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}</p>
+          <div key={metric} className="pg-metric" data-focus={metric === focus} style={stagger(index)}>
+            <p className="pg-metric-label"><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === focus && <span className="pg-focus">{t("seu foco")}</span>}</p>
+            <p className="pg-metric-value">{summary ? <CountUp value={Math.round(summary.latest)} /> : "—"}<small>/100</small></p>
             {summary && <ChangeLabel change={summary.change} />}
             <p className="pg-metric-measure">{t(voiceTrendCopy[metric].measure)}</p>
           </div>
         ))}
       </div>
-      <p className="pg-note">{t("As mudanças comparam seus próprios sinais experimentais do Azure entre entrevistas. Elas não medem sotaque, nível geral nem garantem maior inteligibilidade.")}</p>
+      <div className="pg-chart">
+        {rows.length >= 2
+          ? <VoiceTrendChart rows={rows} focus={focus} />
+          : <p className="pg-note">{t("Com mais uma entrevista com fala avaliada, o gráfico mostra como cada métrica está mudando.")}</p>}
+      </div>
     </>
   );
 }
@@ -333,21 +354,46 @@ export function EnglishPatterns({ insights }: { insights: ProgressInsights }) {
   );
 }
 
-/* --------------------------------------------------------- Next steps */
+/* ----------------------------------------------------------- Study topics */
 
-export function StudyTopics() {
+function TopicItem({ topic, index, primary = false }: { topic: ProgressStudyTopic; index: number; primary?: boolean }) {
+  const focus = topic.focuses[0];
+  return (
+    <li className={`pg-topic${primary ? " pg-topic-primary" : " pg-topic-secondary"}`} style={stagger(index)}>
+      {primary && <span className="pg-topic-rank" aria-hidden="true">{topic.rank}</span>}
+      <div className="min-w-0">
+        <p className="pg-topic-kind">{primary ? t("Foco principal") : t("Outro foco")} · {t(topic.kind === "technical" ? "Conteúdo técnico" : "Inglês")} · {getCurrentLocale() === "en" ? plural(topic.sessionCount, "practice", "practices") : `em ${plural(topic.sessionCount, "prática", "práticas")}`}</p>
+        <h3 className="pg-topic-title">{t(topic.title)}</h3>
+        {primary && focus && <p className="pg-topic-evidence"><span>{t("Observado nos relatórios:")}</span> {focus}</p>}
+        <p className="pg-topic-source">{t(topic.exerciseSource === "report" ? "Exercício sugerido no relatório" : "Sugestão de exercício geral")}</p>
+        <p className="pg-topic-exercise">{topic.exercise}</p>
+      </div>
+    </li>
+  );
+}
+
+export function StudyTopics({ insights }: { insights: ProgressInsights }) {
+  const topics = insights.studyTopics.slice(0, 3);
+  const [primary, ...others] = topics;
   return (
     <section aria-labelledby="pg-topics" className="pg-section" data-reveal="group">
       <div className="pg-section-head">
         <div>
-          <h2 id="pg-topics" className="pg-section-title">{t("Continue a preparação")}</h2>
-          <p className="pg-section-sub">{t("Refaça um trecho real em Sua voz ou leve o que observou para uma nova entrevista.")}</p>
+          <h2 id="pg-topics" className="pg-section-title">{t("Seus focos atuais")}</h2>
+          <p className="pg-section-sub">{t("Focos priorizados pelo que aparece nos seus relatórios. Eles podem mudar quando novas práticas forem analisadas.")}</p>
         </div>
       </div>
-      <div className="flex flex-wrap gap-3">
-        <a className="ds-btn ds-btn-soft" href="/dashboard?view=voice">{t("Abrir Sua voz")}</a>
-        <a className="ds-btn ds-btn-quiet" href="/dashboard?view=interview-setup">{t("Nova entrevista")}</a>
-      </div>
+      {topics.length === 0
+        ? <p className="pg-note">{t("Seus focos aparecem depois que o primeiro relatório fica pronto.")}</p>
+        : <>
+          <ol className="pg-topics pg-topics-primary-list"><TopicItem key={primary.id} topic={primary} index={0} primary /></ol>
+          {others.length > 0 && <div className="pg-topics-others">
+            <h3 className="pg-topics-others-title">{t("Outros focos")}</h3>
+            <ol className="pg-topics">
+              {others.map((topic, index) => <TopicItem key={topic.id} topic={topic} index={index + 1} />)}
+            </ol>
+          </div>}
+        </>}
     </section>
   );
 }
@@ -453,7 +499,7 @@ export function ProgressContent({ insights, onOpenReport }: { insights: Progress
       <ProgressHero insights={insights} />
       <EnglishPatterns insights={insights} />
       <div className="pg-split">
-        <StudyTopics />
+        <StudyTopics insights={insights} />
         <PracticeRhythm insights={insights} />
       </div>
       <SessionHistory sessions={insights.sessions} onOpenReport={onOpenReport} />

@@ -18,6 +18,7 @@ export type ProgressRecord = {
 export type ProgressDimension = { key: string; kind: "pattern" | "voice"; label: string; fullLabel: string; value: number; detail: string };
 export type ProgressExample = { evidence: string; suggestion: string; rephrasedExample: string; date: string | null; role: string };
 export type ProgressCommonError = { type: PatternType; label: string; count: number; sessionCount: number; rate: number | null; trend: "up" | "down" | "steady" | "unknown"; share: number; examples: ProgressExample[] };
+export type ProgressStudyTopic = { id: string; kind: "english" | "technical"; patternType?: PatternType; title: string; count: number; sessionCount: number; exercise: string; exerciseSource: "report" | "default"; focuses: string[]; rank: number };
 export type ProgressPoint = { id: string; date: string | null; label: string; value: number };
 export type ProgressSeriesKey = "patterns" | "gaps" | AzureReportDimension;
 export type ProgressSessionRow = { id: string; date: string | null; role: string; seniority: string | null; durationMs: number | null; answerCount: number; reportStatus: "ready" | "pending" | "unavailable" | "none"; patternCount: number | null };
@@ -34,6 +35,7 @@ export type ProgressInsights = {
   dimensions: ProgressDimension[];
   attentionDimension: ProgressDimension | null;
   commonErrors: ProgressCommonError[];
+  studyTopics: ProgressStudyTopic[];
   series: Record<ProgressSeriesKey, ProgressPoint[]>;
   weekly: Array<{ start: string; label: string; count: number }>;
   sessionsUntilTrends: number;
@@ -42,6 +44,7 @@ export type ProgressInsights = {
 export const patternTypes: PatternType[];
 export const patternTypeCopy: Record<PatternType, { label: string; short: string }>;
 export const voiceDimensionCopy: Record<AzureReportDimension, { label: string; short: string }>;
+export const defaultExercises: Record<PatternType, string>;
 export const minAnswersForProfile: number;
 export const minSessionsForTrends: number;
 export function validatedPatterns(analysis: unknown): Array<{ type: PatternType; sequenceNumber: number; evidence: string; suggestion: string; rephrasedExample: string }> | null;

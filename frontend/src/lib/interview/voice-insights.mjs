@@ -127,7 +127,7 @@ function phrasesFor(records, metric) {
       }
     }
   }
-  return phrases.sort((first, second) => second.time - first.time || first.answerNumber - second.answerNumber || first.phraseIndex - second.phraseIndex);
+  return phrases.sort((first, second) => phraseSeverity(first) - phraseSeverity(second) || second.time - first.time || first.answerNumber - second.answerNumber || first.phraseIndex - second.phraseIndex);
 }
 
 function accuracyTips(records) {
@@ -244,7 +244,16 @@ export function buildVoiceInsights(input) {
       phrases: phrasesFor(records, key),
     };
   });
-  return { hasVoiceData, latestDate: latest ? dateOf(latest) : null, focus: null, metrics };
+  const focus = metrics.filter((metric) => reliable(metric.reliability) && metric.rawValue !== null).sort((first, second) => first.rawValue - second.rawValue)[0]?.key ?? null;
+  // A phrase is practiced in one section only: the focus metric picks first, then the others in display order.
+  const used = new Set();
+  for (const key of [focus, ...voiceMetrics.filter((metric) => metric !== focus)]) {
+    const metric = metrics.find((item) => item.key === key);
+    if (!metric) continue;
+    metric.phrases = metric.phrases.filter((phrase) => !used.has(`${phrase.interviewId}-${phrase.answerNumber}-${phrase.phraseIndex}`)).slice(0, 4);
+    for (const phrase of metric.phrases) used.add(`${phrase.interviewId}-${phrase.answerNumber}-${phrase.phraseIndex}`);
+  }
+  return { hasVoiceData, latestDate: latest ? dateOf(latest) : null, focus, metrics };
 }
 
 const practiceStorageKey = "eia:voice-practice:v2";
@@ -442,13 +451,23 @@ export function buildVoiceTrainingPhrases(input) {
       const referenceText = cleanPracticeSentence(pattern?.rephrasedExample);
       const saidText = isText(pattern?.evidence) ? normalizePracticeSpokenText(pattern.evidence) : null;
       if (!referenceText || !saidText) continue;
-      add({ referenceText, saidText, source: "english", sourceKind: "english_correction", interviewId: record.id, candidateSequenceNumber: pattern.sequenceNumber + 1, phraseIndex: null, time: timeOf(record), date: dateOf(record), attentionWords: [] });
+      add({ referenceText, saidText, source: "english", sourceKind: "english_correction", interviewId: record.id, candidateSequenceNumber: pattern.sequenceNumber + 1, phraseIndex: null, time: timeOf(record), date: dateOf(record), beforeAccuracy: null, attentionWords: [] });
     }
     for (const answer of record?.feedback?.azureSummary?.answers ?? []) {
       for (const phrase of answer?.phrases ?? []) {
         const referenceText = cleanPracticeSentence(phrase?.text);
-        const problemWords = Array.isArray(phrase?.problemWords) ? phrase.problemWords.filter((word) => isText(word?.word) && ((typeof word.errorType === "string" && word.errorType !== "None") || (Array.isArray(word.prosodyErrors) && word.prosodyErrors.some((error) => error === "UnexpectedBreak" || error === "MissingBreak")))) : [];
-        if (!referenceText || !Number.isSafeInteger(phrase?.phraseIndex) || !problemWords.length) continue;
+        const problemWords = Array.isArray(phrase?.problemWords)
+          ? phrase.problemWords.filter((word) => {
+              if (!isText(word?.word)) return false;
+              const hasLowScore = isScore(word?.score) && word.score < lowWordScore;
+              const hasPronunciationError = isText(word?.errorType) && word.errorType !== "None";
+              const hasTimingError = Array.isArray(word?.prosodyErrors)
+                && word.prosodyErrors.some((error) => error === "UnexpectedBreak" || error === "MissingBreak");
+              return hasLowScore || hasPronunciationError || hasTimingError;
+            })
+          : [];
+        const score = isScore(phrase?.score) ? phrase.score : null;
+        if (!referenceText || !Number.isSafeInteger(phrase?.phraseIndex) || (!problemWords.length && !(score !== null && score < lowWordScore))) continue;
         add({
           referenceText,
           saidText: referenceText,
@@ -459,6 +478,7 @@ export function buildVoiceTrainingPhrases(input) {
           phraseIndex: phrase.phraseIndex,
           time: timeOf(record),
           date: dateOf(record),
+          beforeAccuracy: score,
           attentionWords: problemWords.map((word) => word.word.trim()),
         });
       }

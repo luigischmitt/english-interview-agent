@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { t } from "@/lib/locale";
 import { azureMetricReliability, type AzureMetricSummary, type AzureReportDimension } from "@/lib/interview/report-metrics.mjs";
 import { answerCountLabel, azureMetricCopy, azureReliabilityCopy, azureReportIntro, coverageHelp } from "@/lib/interview/report-metric-copy.mjs";
-import { voiceDeliveryInterpretation } from "@/lib/interview/voice-report-insights.mjs";
+import { voiceDeliveryInterpretation, voiceMetricInterpretation } from "@/lib/interview/voice-report-insights.mjs";
 import "./interview-report.css";
 
 const dimensions: AzureReportDimension[] = ["accuracy", "fluency", "prosody"];
@@ -87,6 +87,7 @@ function Metric({ dimension, metric, index }: { dimension: AzureReportDimension;
       <p className="rp-hint mt-1">{answerCountLabel(metric.sampleCount)}</p>
       {limited && <p className="rp-reliability">{t(azureReliabilityCopy[reliability])}</p>}
       <p className="rp-hint mt-2">{t(help)}</p>
+      <p className="rp-metric-insight">{t(voiceMetricInterpretation(dimension, metric))}</p>
     </div>
   );
 }
@@ -109,7 +110,7 @@ export function AzureVoiceReport({ summary, coverage, step, title = "Sinais voca
         <p className="rp-delivery-insight">{delivery.insights.map((item, index) => <span key={item.key}>{index > 0 ? " " : ""}{t(item.key, item.values)}</span>)}</p>
       </div>}
       <p className="rp-hint mt-4 rp-voice-foot">{t("Cobertura: ")}{coverage.available} {t("de ")}{coverage.total} {t("respostas com sinais disponíveis.")}{coverage.pending ? ` ${coverage.pending} ${t("avaliação(ões) ainda em processamento; a conclusão da sessão não espera por elas.")}` : ""} {t(coverageHelp)}</p>
-      <a className="ds-btn ds-btn-cta-green rp-voice-training rp-voice-foot" href="/dashboard?view=voice">{t("Rever sua voz")}</a>
+      <a className="ds-btn ds-btn-cta-green rp-voice-training rp-voice-foot" href="/dashboard?view=voice">{t("Treinar minha voz")}</a>
     </section>
   );
 }

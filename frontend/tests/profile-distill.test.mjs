@@ -5,14 +5,14 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const progress = readFileSync(new URL("src/app/components/progress/progress-content.tsx", root), "utf8");
 const radar = readFileSync(new URL("src/app/components/charts/profile-radar.tsx", root), "utf8");
-const chartStyles = readFileSync(new URL("src/app/components/charts/charts.css", root), "utf8");
 const progressStyles = readFileSync(new URL("src/app/components/progress/progress.css", root), "utf8");
 const landing = readFileSync(new URL("public/entoa/index.html", root), "utf8");
 
 test("Progress keeps one radar for dimension values and a keyboard/touch explanation", () => {
   assert.match(progress, /<ProfileRadar[\s\S]*?onSelect=\{setPicked\}/);
   assert.match(progress, /pg-radar-legend-english[\s\S]*?Inglês:/);
-  assert.doesNotMatch(progress, /pg-radar-legend-voice|Voz:/);
+  assert.match(progress, /pg-radar-legend-voice[\s\S]*?Voz:/);
+  assert.match(progress, /nota de 0 a 100/);
   assert.match(progress, /Mais perto da borda é melhor\. Escolha um ponto para ver o que ele mede\./);
   assert.match(progress, /pg-side-detail-active" aria-live="polite"><strong>\{active\.label\}\.<\/strong> \{active\.explain\}/);
   assert.match(progress, /pg-side-detail-size" aria-hidden="true"/);
@@ -27,7 +27,8 @@ test("Progress keeps one radar for dimension values and a keyboard/touch explana
   assert.match(radar, /event\.key === "Enter" \|\| event\.key === " "/);
   assert.doesNotMatch(radar, /pr-ring-value/);
   assert.match(radar, /data-group=\{item\.group\}/);
-  assert.match(progress, /insights\.dimensions\.filter\(\(dimension\) => dimension\.kind === "pattern"\)/);
+  assert.match(progress, /insights\.dimensions\.map\(\(dimension\) =>/);
+  assert.match(progress, /dimension\.kind === "voice"/);
   assert.match(progressStyles, /--ds-brand-warm/);
 });
 

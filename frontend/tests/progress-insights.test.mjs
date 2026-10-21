@@ -62,7 +62,7 @@ test("pending and unavailable reports contribute nothing but still count as sess
   assert.equal(result.sessionCount, 3);
   assert.equal(result.reportReadyCount, 0);
   assert.deepEqual(result.sessions.map((s) => s.reportStatus), ["none", "unavailable", "pending"]);
-  assert.equal("studyTopics" in result, false);
+  assert.deepEqual(result.studyTopics, []);
 });
 
 test("common errors are ranked, deduplicated and carry the latest real example", () => {

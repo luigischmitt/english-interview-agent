@@ -10,9 +10,9 @@ const record = (id, completedAt, answers = [], patterns = []) => ({
 const voicePhrase = (text, phraseIndex = 0) => ({ phraseIndex, text, issue: "pronunciation", problemWords: [{ word: "latency", errorType: "Mispronunciation", prosodyErrors: [] }] });
 const answer = (sequenceNumber, phrase) => ({ sequenceNumber, phrases: [phrase] });
 
-test("does not automatically assign a lowest-score focus", () => {
+test("automatically prioritizes the lowest reliable voice metric", () => {
   const insights = buildVoiceInsights([record("one", "2026-04-01", [])]);
-  assert.equal(insights.focus, null);
+  assert.equal(insights.focus, "fluency");
 });
 
 test("builds one source-specific entry per interview occurrence and ranks recurrence before recency", () => {

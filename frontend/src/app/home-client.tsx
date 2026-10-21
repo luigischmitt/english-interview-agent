@@ -34,6 +34,7 @@ import { loadProgressRecords } from "@/lib/interview/persistence";
 import { buildHomeInsights } from "@/lib/interview/home-insights.mjs";
 import { getHomeParallaxOffset } from "@/lib/home-motion.mjs";
 import { buildProgressInsights, type ProgressRecord } from "@/lib/interview/progress-insights.mjs";
+import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics } from "@/lib/interview/voice-trend.mjs";
 import { useReplayReveal } from "@/lib/use-replay-reveal";
 import { CountUp } from "@/components/ui/count-up";
 import { SplitTitle } from "@/components/ui/split-title";
@@ -60,6 +61,7 @@ import { PageIntro } from "./components/shared";
 import { VoicePicker } from "./components/voice-picker";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
 import { LoadingLabel, LoadingRegion, Sk, SkCard, SkChart, SkLines } from "@/components/ui/loading-state";
+import { MetricSwatch, VoiceTrendChart } from "./components/charts/voice-trend-chart";
 
 const subscribeNever = () => () => {};
 
@@ -320,7 +322,12 @@ function HomeView({
   const [isLoading, setIsLoading] = useState(!cachedRecords);
   const insights = buildHomeInsights(records);
   const progress = useMemo(() => buildProgressInsights(records, { locale: locale === "en" ? "en" : "pt-BR" }), [records, locale]);
+  const voiceRows = useMemo(() => mergeVoiceSeries(progress.series), [progress.series]);
   const weeklyMax = Math.max(1, ...progress.weekly.map((week) => week.count));
+  const voiceFocusKey = voiceTrendMetrics
+    .map((metric) => ({ metric, summary: voiceMetricSummary(voiceRows, metric) }))
+    .filter((item) => item.summary)
+    .sort((a, b) => (a.summary?.latest ?? 0) - (b.summary?.latest ?? 0))[0]?.metric ?? null;
   const hasInterviews = insights.interviewCount > 0;
   const lastInterviewDate = insights.lastInterviewAt
     ? new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", year: "numeric" }).format(new Date(insights.lastInterviewAt))
@@ -452,12 +459,26 @@ function HomeView({
           <section className="shl-home-flow" aria-labelledby="voice-focus-title" data-reveal>
             <div className="shl-home-flow-label">
               <h2 id="voice-focus-title">{t("Sua voz")}</h2>
-              <p>{t("Trechos reais das entrevistas")}</p>
+              <p>{t("Um foco de cada vez")}</p>
             </div>
             <div className="shl-home-flow-content">
-              <p className="shl-home-detail">{t("Retome trechos reais das suas entrevistas, ouça a referência em texto com voz sintetizada e compare suas próprias tentativas.")}</p>
+              {voiceRows.length > 0 ? <>
+                <dl className="shl-home-voice-metrics">
+                  {voiceTrendMetrics.map((metric) => {
+                    const summary = voiceMetricSummary(voiceRows, metric);
+                    return (
+                      <div key={metric} data-focus={metric === voiceFocusKey}>
+                        <dt><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === voiceFocusKey && <em>{t("foco")}</em>}</dt>
+                        <dd>{summary ? Math.round(summary.latest) : "—"}<small>/100</small></dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+                {voiceRows.length >= 2 && <div className="shl-home-voice-chart"><VoiceTrendChart rows={voiceRows.slice(-10)} variant="compact" focus={voiceFocusKey} /></div>}
+                {voiceFocusKey && <p className="shl-home-detail"><strong>{t(voiceTrendCopy[voiceFocusKey].label)}:</strong> {t(voiceTrendCopy[voiceFocusKey].measure)}</p>}
+              </> : <p className="shl-home-detail">{t("Ainda não há áudio suficiente para mostrar um foco. Sua análise de voz aparece depois de respostas faladas avaliadas.")}</p>}
               <button type="button" className="shl-home-link" onClick={onVoice}>
-                {t("Abrir Sua voz")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
+                {t("Treinar minha voz")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
               </button>
             </div>
           </section>

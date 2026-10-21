@@ -29,6 +29,31 @@ const voiceDimensionCopyEn = {
   fluency: { label: "Speech rhythm", short: "Fluency" },
   prosody: { label: "Intonation", short: "Prosody" },
 };
+/** Used only when no saved report priority carries an exercise for the topic. Marked as `default` in the UI. */
+export const defaultExercises = {
+  GRAMMAR: "Escolha uma resposta sua e regrave-a em voz alta cuidando só do tempo verbal e dos artigos; compare com a versão corrigida do relatório.",
+  WORD_CHOICE: "Liste 3 expressões que você usou e troque cada uma por uma opção mais natural em inglês; use-as em uma nova resposta.",
+  FALSE_COGNATE: "Anote os falsos cognatos que apareceram, escreva uma frase correta com cada um e pratique dizê-las sem olhar.",
+  STRUCTURE: "Responda de novo em três passos: contexto, o que você fez e resultado. Fale por 60 segundos sem parar.",
+};
+const defaultExercisesEn = {
+  GRAMMAR: "Choose one of your answers and record it again, focusing only on verb tense and articles. Compare it with the corrected version in the report.",
+  WORD_CHOICE: "List three expressions you used and replace each with a more natural English option. Use them in a new answer.",
+  FALSE_COGNATE: "Write down the false cognates that came up, write a correct sentence with each one, and practice saying them without looking.",
+  STRUCTURE: "Answer again in three steps: context, what you did, and the result. Speak for 60 seconds without stopping.",
+};
+const topicTitleByType = {
+  GRAMMAR: "Gramática em respostas faladas",
+  WORD_CHOICE: "Escolha de palavras mais naturais",
+  FALSE_COGNATE: "Falsos cognatos do português",
+  STRUCTURE: "Estrutura das respostas",
+};
+const topicTitleByTypeEn = {
+  GRAMMAR: "Grammar in spoken answers",
+  WORD_CHOICE: "More natural word choice",
+  FALSE_COGNATE: "Portuguese false cognates",
+  STRUCTURE: "Answer structure",
+};
 const cleanPatternCopy = {
   GRAMMAR: "sem erro prioritário de gramática identificado",
   WORD_CHOICE: "sem erro prioritário de escolha de palavras identificado",
@@ -164,6 +189,14 @@ export function weeklySessions(sessions, now = Date.now(), locale = "pt-BR") {
 function normalizeText(text) {
   return text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 }
+function tokenSet(text) { return new Set(normalizeText(text).split(" ").filter((token) => token.length > 2)); }
+function similar(a, b) {
+  const first = tokenSet(a); const second = tokenSet(b);
+  if (first.size === 0 || second.size === 0) return normalizeText(a) === normalizeText(b);
+  let shared = 0;
+  for (const token of first) if (second.has(token)) shared += 1;
+  return shared / (first.size + second.size - shared) >= 0.6;
+}
 
 function trendOf(rateOlder, rateRecent) {
   if (rateOlder === null || rateRecent === null) return "unknown";
@@ -268,6 +301,70 @@ function buildCommonErrors(sessions, locale) {
   return errors.map((error) => ({ type: error.type, label: error.label, count: error.count, sessionCount: error.sessionCount, rate: error.rate, trend: error.trend, examples: error.examples, share: topCount ? round(error.count / topCount, 2) : 0 }));
 }
 
+function buildStudyTopics(sessions, locale) {
+  const titles = locale === "en" ? topicTitleByTypeEn : topicTitleByType;
+  const exercises = locale === "en" ? defaultExercisesEn : defaultExercises;
+  const withReport = sessions.filter((s) => s.reportStatus === "ready");
+  const topics = [];
+  const upsert = (candidate) => {
+    const existing = topics.find((t) => t.kind === candidate.kind && (t.patternType ? t.patternType === candidate.patternType : !candidate.patternType && similar(t.title, candidate.title)));
+    if (!existing) { topics.push(candidate); return; }
+    existing.score += candidate.score;
+    existing.count += candidate.count;
+    existing.sessionIds = new Set([...existing.sessionIds, ...candidate.sessionIds]);
+    if ((candidate.lastTime ?? 0) >= (existing.lastTime ?? 0)) {
+      existing.lastTime = candidate.lastTime;
+      if (candidate.exerciseSource === "report" || existing.exerciseSource === "default") { existing.exercise = candidate.exercise; existing.exerciseSource = candidate.exerciseSource; }
+    }
+    for (const focus of candidate.focuses) if (!existing.focuses.some((f) => similar(f, focus))) existing.focuses.push(focus);
+  };
+  withReport.forEach((session, index) => {
+    const age = withReport.length - 1 - index;
+    const weight = recencyDecay ** age;
+    const typeBySequence = new Map();
+    for (const pattern of session.patterns ?? []) typeBySequence.set(pattern.sequenceNumber, pattern.type);
+    const perType = new Map();
+    for (const pattern of session.patterns ?? []) perType.set(pattern.type, (perType.get(pattern.type) ?? 0) + 1);
+    for (const [type, count] of perType) {
+      upsert({ kind: "english", patternType: type, title: titles[type], count, score: count * weight, sessionIds: new Set([session.id]), lastTime: session.time, exercise: exercises[type], exerciseSource: "default", focuses: [] });
+    }
+    for (const priority of session.priorities) {
+      const linkedType = priority.area === "ENGLISH_COMMUNICATION" ? typeBySequence.get(priority.sequenceNumber) : undefined;
+      const exercise = priority.exercise.trim();
+      const focus = priority.focus.trim();
+      if (linkedType) {
+        upsert({ kind: "english", patternType: linkedType, title: titles[linkedType], count: 0, score: weight * 0.5, sessionIds: new Set([session.id]), lastTime: session.time, exercise, exerciseSource: "report", focuses: [focus] });
+      } else {
+        upsert({ kind: priority.area === "TECHNICAL_CONTENT" ? "technical" : "english", title: focus, count: 1, score: weight, sessionIds: new Set([session.id]), lastTime: session.time, exercise, exerciseSource: "report", focuses: [] });
+      }
+    }
+  });
+  const covered = (topic) => !topic.patternType && topics.some((other) => other.patternType && (other.focuses.some((focus) => similar(focus, topic.title)) || similar(other.exercise, topic.exercise)));
+  const seenExercises = [];
+  const isNewExercise = (topic) => {
+    if (seenExercises.some((exercise) => similar(exercise, topic.exercise))) return false;
+    seenExercises.push(topic.exercise);
+    return true;
+  };
+  return topics
+    .filter((topic) => !covered(topic))
+    .sort((a, b) => b.score - a.score || (b.lastTime ?? 0) - (a.lastTime ?? 0))
+    .filter(isNewExercise)
+    .sort((a, b) => b.score - a.score || (b.lastTime ?? 0) - (a.lastTime ?? 0))
+    .map((topic, index) => ({
+      id: `${topic.kind}-${topic.patternType ?? index}`,
+      kind: topic.kind,
+      patternType: topic.patternType,
+      title: topic.title,
+      count: topic.count,
+      sessionCount: topic.sessionIds.size,
+      exercise: topic.exercise,
+      exerciseSource: topic.exerciseSource,
+      focuses: topic.focuses,
+      rank: index + 1,
+    }));
+}
+
 function pointsFrom(sessions, valueOf, locale) {
   const points = [];
   for (const session of sessions) {
@@ -311,6 +408,7 @@ export function buildProgressInsights(records, { now = Date.now(), locale = "pt-
     dimensions,
     attentionDimension: attention && attention.value < 100 ? attention : null,
     commonErrors: buildCommonErrors(sessions, locale),
+    studyTopics: buildStudyTopics(sessions, locale),
     series,
     weekly: weeklySessions(sessions, now, locale),
     sessionsUntilTrends: Math.max(0, minSessionsForTrends - analyzedSessions),
