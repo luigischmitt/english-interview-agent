@@ -17,7 +17,7 @@
 /* Variant switches (?extra=0|1). Unused variants can be stripped later: delete their CSS keyed on html[data-*]. */
 (function(){var q=new URLSearchParams(location.search),d=document.documentElement;
 [['extra','1','01']].forEach(function(v){var x=q.get(v[0]);d.setAttribute('data-'+v[0],x&&v[2].indexOf(x)>-1&&x.length===1?x:v[1])});
-if(!matchMedia('(prefers-reduced-motion: reduce)').matches)d.classList.add('hx')})();
+})();
 </script>
 <style>
 :root{
@@ -43,6 +43,14 @@ h2{font-size:clamp(2rem,4.6vw,3.3rem);margin:.4rem 0 1rem;text-wrap:balance}
 section{padding:clamp(44px,6vw,80px) 0}
 .alt{background:linear-gradient(to bottom,var(--cream),var(--field) 96px,var(--field) calc(100% - 96px),var(--cream))}
 .sm{font-size:.82rem;color:var(--text2);line-height:1.4}
+/* section heads: kicker + two columns on desktop (title left, text right) */
+.kicker{display:inline-flex;align-items:center;gap:.55rem;font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--green-deep);margin:0 0 .9rem}
+.kicker::before{content:"";width:7px;height:7px;background:var(--green);flex:none}
+.shead{display:grid;gap:.8rem 3.5rem;align-items:end;margin-bottom:clamp(1.8rem,3.4vw,2.8rem)}
+.shead h2{margin:0;max-width:18ch}
+.shead .lead{margin:0;max-width:46ch}
+@media(min-width:900px){.shead{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}.shead .lead{padding-bottom:.35rem}}
+html{scroll-padding-top:72px}
 
 /* buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;min-height:48px;padding:0 1.4rem;border-radius:999px;border:0;font-weight:600;text-decoration:none;
@@ -79,15 +87,24 @@ section{padding:clamp(44px,6vw,80px) 0}
 @media(max-width:860px){.nav-links{display:none}.nav .wrap{grid-template-columns:minmax(0,1fr) auto}.nav .btn{white-space:nowrap}}
 @media(max-width:720px){.nav .wrap{grid-template-columns:minmax(0,1fr) auto;gap:.75rem;padding:10px calc(var(--pad) + .5rem) 0 calc(var(--pad) + 1rem)}.nav.stuck .wrap{padding:0 .5rem 0 1rem}.nav-links{display:none}.brand{font-size:.8rem}.brand img{width:22px}.nav .btn{padding:0 .8rem;font-size:.82rem;white-space:nowrap}}
 
-/* hero: fills the whole first screen (nothing of the forest below shows until you scroll), content centred */
-.hero{position:relative;display:flex;align-items:center;min-height:calc(100svh - 66px);padding:clamp(24px,3.6vw,52px) 0;text-align:center;isolation:isolate}
-.hero>.wrap{width:100%;position:relative;z-index:1}
-.hero-inner{position:relative}
-.hero h1{font-size:clamp(2.3rem,5vw,4.1rem);margin:0 auto 1rem;max-width:16ch;text-wrap:balance}
+/* hero: centred copy; the demo, framed on the forest art, follows right below */
+.hero{position:relative;padding:clamp(48px,7vw,104px) 0 clamp(32px,4vw,56px);text-align:center}
+.hero h1{font-size:clamp(2.6rem,5.4vw,4.4rem);margin:0 auto 1.1rem;max-width:15ch;text-wrap:balance}
 .hero h1 em{font-style:italic;color:var(--green);position:relative}
-.hero .lead{margin:0 auto 1.6rem;max-width:34ch;color:var(--text2);text-wrap:balance}
-.cta-row{display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap}
-@media(max-width:640px){.hero{padding-top:20px}.hero h1{font-size:2.2rem}.hero .lead{max-width:26ch}}
+.hero .lead{margin:0 auto 1.8rem;max-width:40ch;text-wrap:balance}
+.cta-row{display:flex;gap:.8rem;flex-wrap:wrap;justify-content:center}
+.hero-facts{list-style:none;margin:clamp(2.4rem,4vw,3.4rem) 0 0;padding:1rem 0;display:flex;flex-wrap:wrap;justify-content:center;gap:.6rem 2.4rem;border-block:1px solid rgba(14,42,31,.1);font-size:.92rem;font-weight:500;color:var(--text2)}
+.hero-facts li{display:flex;align-items:center;gap:.55rem}
+.hero-facts li::before{content:"";width:6px;height:6px;background:var(--green)}
+@media(max-width:640px){.hero-facts{display:grid;grid-template-columns:1fr 1fr;justify-items:start;gap:.7rem 1rem;text-align:left}}
+/* "trava": the word hesitates in ink, then settles green as its underline is drawn (once, on load) */
+@media(prefers-reduced-motion:no-preference){
+  .hero h1 em{animation:trava 1.1s var(--ease) .3s both}
+  .hero h1 .sw{clip-path:inset(-60% 100% -60% -4%);animation:trava-line .7s var(--ease) 1.1s forwards}
+}
+@keyframes trava{0%{color:var(--ink)}35%{color:var(--ink);opacity:.45}55%{opacity:1}100%{color:var(--green)}}
+@keyframes trava-line{to{clip-path:inset(-60% -4% -60% -4%)}}
+@media(max-width:640px){.hero h1{font-size:2.35rem}}
 .wordmark{font-family:var(--serif);font-size:1.45rem;font-weight:400;letter-spacing:-.01em;line-height:1}
 
 /* ===== windows (shared by demo + Treinar) ===== */
@@ -100,12 +117,15 @@ section{padding:clamp(44px,6vw,80px) 0}
 /* ===== DEMO ===== */
 html,body{overflow-x:hidden}@supports(overflow:clip){html,body{overflow-x:clip}}
 main{overflow-x:clip}
-.d-wrap{margin-top:clamp(1.4rem,4vw,3.4rem)}
+/* the demo window on the page itself, with its label centred above it */
+.demo-stage{padding-top:clamp(56px,7vw,104px)}
+.demo-head{display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:clamp(1rem,2.4vw,1.8rem)}
+.demo-head .kicker{margin-bottom:.5rem}
+.demo-title{margin:0;font-family:var(--serif);font-size:clamp(1.5rem,2.8vw,2.2rem);line-height:1.15;letter-spacing:-.02em;max-width:30ch;text-wrap:balance}
 /* the player stands out from the cream page: brighter screen, crisp edge, deeper shadow */
 .d-wrap .win{box-shadow:0 0 0 1px rgba(14,42,31,.14),0 2px 6px rgba(14,42,31,.08),0 40px 80px -30px rgba(14,42,31,.55)}
 .d-wrap .chrome{background:#dde4d8}
 .d-wrap .scenes{background:#e8ede4}
-.d-wrap.rv.in{transform:scale(var(--grow,1));transform-origin:50% 50%}
 .scenes{position:relative;height:clamp(520px,56vw,600px);overflow:hidden;background:var(--cream)}
 .sc{position:absolute;inset:0;opacity:0;visibility:hidden;transform:translateY(8px);transition:opacity .5s var(--ease),transform .5s var(--ease),visibility 0s .5s;overflow:hidden}
 .sc.on{opacity:1;visibility:visible;transform:none;transition-delay:0s}
@@ -249,12 +269,6 @@ main{overflow-x:clip}
 .scrub .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--green);border-radius:9px;pointer-events:none}
 .scrub .knob{position:absolute;margin:0;top:50%;width:16px;height:16px;border-radius:50%;background:var(--green);border:3px solid var(--surface);box-shadow:0 1px 5px rgba(14,42,31,.4);transform:translate(-50%,-50%);pointer-events:none;transition:transform .12s}
 .scrub:active .knob,.scrub:focus-visible .knob{transform:translate(-50%,-50%) scale(1.25)}
-.chap{display:flex;gap:3px;margin-top:.1rem;padding:0 8px}
-.chap button{border:0;background:none;padding:.2rem 0;text-align:left;font-size:.86rem;font-weight:600;color:var(--text2);min-height:36px}
-.chap button.act{color:var(--ink)}
-.chap .sh{display:none}
-@media(max-width:560px){.chap .lg{display:none}.chap .sh{display:inline}.chap button{font-size:.8rem}}
-.chap b{color:var(--green);margin-right:.3rem}
 .dctl{display:flex;align-items:center;gap:.8rem;margin-top:.6rem;flex-wrap:wrap}
 .dctl p{flex:1;min-width:200px;color:var(--text2);font-size:1rem}
 .icon-btn{border:0;background:var(--surface);box-shadow:var(--shadow);width:44px;height:44px;border-radius:50%;display:grid;place-items:center;flex:none;transition:background .2s,color .2s}
@@ -331,39 +345,25 @@ main{overflow-x:clip}
 
 .compact{padding:clamp(40px,5vw,72px) 0}
 /* ===== você × nativo ===== */
-.diff-head{text-align:center}
-.diff-head h2{max-width:20ch;margin-inline:auto}
-.diff-head .lead{margin-inline:auto;max-width:40ch}
-.diff{max-width:760px;margin:1.8rem auto 0;background:var(--surface);border-radius:24px;box-shadow:var(--shadow);overflow:hidden}
-.drow{display:grid;gap:.4rem;padding:1.2rem 1.3rem}
-@media(min-width:640px){.drow{grid-template-columns:5.5rem minmax(0,1fr);gap:1.2rem;padding:1.6rem 2rem;align-items:baseline}}
-.drow+.drow{background:var(--tint)}
-.drow>span{font-size:.74rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text2)}
-.drow+.drow>span{color:var(--green-deep)}
-.drow p{font-family:var(--serif);font-size:clamp(1.3rem,2.6vw,1.65rem);line-height:1.4}
-.drow:first-child p{color:var(--text2)}
 .seg{border:0;background:none;font:inherit;color:inherit;padding:0 .1em;margin:0 -.04em;border-radius:.28em;cursor:pointer;transition:background .2s,color .2s,box-shadow .2s}
-.drow:first-child .seg:not(.ok){color:var(--err);text-decoration:line-through;text-decoration-color:rgba(201,105,74,.55);text-decoration-thickness:1.5px}
-.drow+.drow .seg{color:#17603b;background:rgba(31,107,69,.16);box-shadow:inset 0 -2px 0 rgba(31,107,69,.45)}
-.seg.on{text-decoration-color:transparent}
-.seg.ok{text-decoration:underline dotted rgba(31,107,69,.45);text-underline-offset:.2em}
-.drow:first-child .seg.ok.on{background:var(--tint);box-shadow:inset 0 0 0 1.5px var(--green);color:var(--green-deep)}
-.drow:first-child .seg:not(.ok).on{background:var(--err-tint);box-shadow:inset 0 0 0 1.5px rgba(201,105,74,.5);text-decoration:none}
-.drow+.drow .seg.on{background:rgba(31,107,69,.26);box-shadow:inset 0 0 0 1.5px var(--green)}
-.why{display:flex;gap:.8rem;align-items:flex-start;padding:1rem 1.3rem 1.2rem;border-top:1px solid rgba(14,42,31,.08);min-height:5.2rem}
-@media(min-width:640px){.why{padding:1.1rem 2rem 1.3rem}}
-.why>b{flex:none;font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--green);padding-top:.2rem}
-.why p{color:var(--text2)}
-.why p b{color:var(--ink);font-weight:600}
-.why p.swap{animation:rise .3s var(--ease)}
+/* each card spans two rows of the pair grid (box, caption), so both boxes share one height and both captions start on the same line */
+.pair{display:grid;grid-template-columns:minmax(0,1fr);row-gap:0}
+@media(min-width:820px){.pair{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:1.4rem}}
+.pair-card{margin:0;display:grid;grid-row:span 2;grid-template-rows:subgrid}
+@media(max-width:819px){.pair-card+.pair-card{margin-top:1.6rem}}
+.pair-box{flex:1;display:flex;align-items:center;min-height:clamp(180px,18vw,240px);background:var(--surface);border:1px solid rgba(14,42,31,.1);border-radius:24px;padding:clamp(1.4rem,3vw,2.2rem)}
+.pair-card.good .pair-box{background:var(--tint);border-color:rgba(31,107,69,.25)}
+.pair-txt{font-family:var(--serif);font-size:clamp(1.35rem,2.4vw,1.8rem);line-height:1.35;color:var(--text2)}
+.pair-card.good .pair-txt{color:var(--ink)}
+.pair-card .seg{color:var(--err);text-decoration:line-through;text-decoration-color:rgba(201,105,74,.55);text-decoration-thickness:1.5px}
+.pair-card.good .seg{color:#17603b;text-decoration:none;background:rgba(31,107,69,.16);box-shadow:inset 0 -2px 0 rgba(31,107,69,.45)}
+.pair-card .seg.on{text-decoration:none;background:var(--err-tint);box-shadow:inset 0 0 0 1.5px rgba(201,105,74,.5)}
+.pair-card.good .seg.on{background:rgba(31,107,69,.28);box-shadow:inset 0 0 0 1.5px var(--green)}
+.pair-card figcaption{padding:1rem .2rem 0;color:var(--text2);font-size:.95rem;line-height:1.45;max-width:46ch}
+.pair-card figcaption b{display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink)}
+.pair-card figcaption b::before{content:"";width:7px;height:7px;background:var(--err)}
+.pair-card.good figcaption b::before{background:var(--green)}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}}
-.dtabs{display:flex;gap:.4rem;justify-content:center;margin-top:1rem;flex-wrap:wrap}
-.dtabs button{border:0;background:var(--surface);box-shadow:var(--shadow);border-radius:99px;padding:.45rem 1rem;font-size:.86rem;font-weight:500;color:var(--text2);transition:background .16s,color .16s}
-.dtabs button[aria-pressed=true]{background:var(--ink);color:var(--cream)}
-
-/* faq centered */
-.faq-sec{text-align:center}
-.faq{margin-inline:auto}
 
 /* faq */
 .faq{display:grid;gap:.6rem;margin-top:1.6rem;max-width:780px}
@@ -379,7 +379,7 @@ main{overflow-x:clip}
 
 /* final: dark green block around the FAQ, then the forest art carries the closing call and the footer */
 .final{position:relative;padding:clamp(8px,2vw,24px) 0 0;overflow:hidden}
-.faq-sec h2{margin-bottom:0}
+.faq-sec h2{margin:0 0 .8rem}
 .endart{position:relative;isolation:isolate;margin-top:clamp(28px,4vw,56px);height:clamp(460px,40vw,560px)}
 .end-img{position:absolute;inset:0;z-index:-1;width:100%;height:100%;object-fit:cover;object-position:center bottom;opacity:.92;pointer-events:none;
   mask-image:linear-gradient(to bottom,transparent,#000 32px);-webkit-mask-image:linear-gradient(to bottom,transparent,#000 32px)}
@@ -398,189 +398,140 @@ main{overflow-x:clip}
 .foot-base{font-size:.78rem;color:#2b4a3a}
 @media(max-width:640px){.foot-panel{border-radius:20px}}
 
-/* nav hides while the demo has the stage */
-.nav{transition:transform .45s var(--ease)}
-.nav.away{transform:translateY(-130%)}
 @media(prefers-reduced-motion:reduce){.nav .wrap{transition:none}}
+/* the nav slides away while scrolling down and while the demo is on screen (set from JS) */
+.nav{transition:transform .35s var(--ease)}
+.nav.away{transform:translateY(calc(-100% - 24px))}
 
-/* magnetic primary buttons (set from JS) */
-[data-cta]{transform:translate(var(--mx,0px),var(--my,0px));transition:transform .35s var(--ease),background .16s}
-[data-cta].mag{transition:transform .12s linear,background .16s}
 
-/* reveal */
-.rv{opacity:0;transform:translateY(14px);transition:opacity .5s var(--ease),transform .5s var(--ease)}
-.rv.in{opacity:1;transform:none}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
-  .rv{opacity:1;transform:none}html{scroll-behavior:auto}
+  html{scroll-behavior:auto}
 }
 
 /* ================= MERGE: hero, scroll effects, voz, extra, faq ================= */
 :root{--glass:rgba(232,236,227,.66);--glass-line:rgba(255,255,255,.6)}
 
-/* --- hero background: a voice waveform drawn on a canvas (see script) --- */
-.hero-bg{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
-.hero-bg canvas{position:absolute;inset:0;width:100%;height:100%}
-.hero-bg::after{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,transparent 78%,var(--cream))}
 
-/* --- hero entrance: letters form, "trava" stutters then resolves, underline is drawn, CTAs rise --- */
 .sw{position:absolute;left:-2%;right:-2%;bottom:-.1em;width:104%;height:.3em;overflow:visible;pointer-events:none}
 .sw path{fill:none;stroke:var(--green);stroke-width:2.6;stroke-linecap:round;vector-effect:non-scaling-stroke;stroke-dasharray:1;stroke-dashoffset:0}
-.hx .hch{display:inline-block;opacity:0;animation:hch .7s var(--ease) calc(.12s + var(--i)*17ms) forwards}
-@keyframes hch{from{opacity:0;transform:translateY(.5em);filter:blur(7px)}to{opacity:1;transform:none;filter:blur(0)}}
-.hx .hero h1 em{animation:stut .6s steps(1,end) 1.05s both}
-@keyframes stut{
-  0%{text-shadow:-.06em 0 0 color-mix(in srgb,currentColor 45%,transparent),.05em 0 0 color-mix(in srgb,currentColor 25%,transparent)}
-  16%{text-shadow:none;opacity:.5}
-  32%{text-shadow:.09em 0 0 color-mix(in srgb,currentColor 40%,transparent),-.04em 0 0 color-mix(in srgb,currentColor 22%,transparent);opacity:1}
-  50%{text-shadow:none;opacity:.7}
-  66%{text-shadow:-.03em 0 0 color-mix(in srgb,currentColor 30%,transparent);opacity:1}
-  100%{text-shadow:none;opacity:1}}
-/* reveal the underline with a clip that sweeps left to right: a dash offset leaves the round cap showing as a stray dot before the draw */
-.hx .hero .sw{clip-path:inset(-60% 100% -60% -4%);animation:swr .7s var(--ease) 1.5s forwards}
-@keyframes swr{to{clip-path:inset(-60% -4% -60% -4%)}}
-@keyframes draw{to{stroke-dashoffset:0}}
-@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
-.hx .hero .lead{animation:up .8s var(--ease) .65s both}
-.hx .hero .cta-row{animation:up .8s var(--ease) .95s both}
 .w{display:inline-block;white-space:nowrap}
+/* section titles fill in word by word as they scroll up (set from JS); without JS or with reduced motion they are simply dark */
+.fw{transition:opacity .2s linear}
 
-/* --- reveal system: everything forms when it comes into view, plays by itself, and replays after it has left the screen --- */
-.fx .ch{display:inline-block;opacity:0}
-.fx .pl .ch{opacity:1;animation:hch .7s var(--ease) calc(var(--d,0s) + var(--i) * var(--cs,17ms)) backwards}
 .sec-head{text-align:center;max-width:780px;margin:0 auto}
 .sec-head h2{margin-inline:auto;max-width:22ch}
 .sec-head .lead{margin:.6rem auto 0;max-width:46ch}
 
-/* --- VOZ: typographic animation (no app window) --- */
-.badge.ex{background:var(--tint)}
-.voz{position:relative;isolation:isolate;background:var(--cream);padding:clamp(64px,8vw,120px) 0}
-.vz{position:relative;isolation:isolate;max-width:980px;margin-inline:auto;text-align:center;border-radius:32px;padding:clamp(1.6rem,4vw,3.2rem) clamp(1rem,4vw,3rem);overflow:hidden;
-  background:rgba(224,225,221,.6);-webkit-backdrop-filter:blur(22px) saturate(1.5);backdrop-filter:blur(22px) saturate(1.5);border:1px solid rgba(255,255,255,.85);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 1px 2px rgba(30,30,28,.07),0 8px 18px -8px rgba(30,30,28,.2),0 40px 70px -34px rgba(30,30,28,.34)}
-.vz::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(to bottom,rgba(255,255,255,.55),rgba(255,255,255,0) 55%)}
-.vz h2{max-width:17ch;margin:.8rem auto .5rem}
-.vz .lead{margin:0 auto;max-width:44ch}
-.vz-stage{margin-top:clamp(1.4rem,3vw,2.4rem)}
-.vz-phrase{font-family:var(--serif);font-size:clamp(1.9rem,5.4vw,3.7rem);line-height:1.12;letter-spacing:-.02em;max-width:20ch;margin:0 auto;text-wrap:balance}
-.vz-w{display:inline-block;position:relative;color:var(--green-deep);transition:color .5s var(--ease)}
+/* --- VOZ: two attempts side by side --- */
+.voz{padding:clamp(64px,8vw,112px) 0}
+.vz-head{max-width:640px;margin-bottom:clamp(1.4rem,3vw,2.2rem)}
+.vz-head h2{margin:0 0 .8rem;max-width:16ch}
+/* the two attempts sit on the forest art, mirrored and cropped higher than the radar's, so the page does not repeat itself */
+.vz-frame{position:relative;isolation:isolate;padding:clamp(18px,5vw,64px);border-radius:28px;overflow:hidden;background:var(--field)}
+.vz-frame::before{content:"";position:absolute;inset:0;z-index:-1;background:url("/landing/hero-mata.webp") center 30%/cover;transform:scaleX(-1)}
+@media(max-width:767px){.vz-frame::before{background-image:url("/landing/hero-mata-mobile.webp")}}
+.vz-frame .vz-try{box-shadow:0 24px 48px -26px rgba(14,42,31,.55)}
+.vz-steps{list-style:none;padding:0;margin:0 0 1.4rem;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(.8rem,2.4vw,2rem)}
+.vz-steps li{display:flex;align-items:center;gap:.6rem;padding-top:.9rem;border-top:2px solid rgba(14,42,31,.14);font-weight:600;font-size:.95rem}
+.vz-steps b{font-size:.75rem;letter-spacing:.1em;color:var(--green)}
+.vz-pair{display:grid;gap:1rem}
+@media(min-width:820px){.vz-pair{grid-template-columns:1fr 1fr;gap:1.4rem}}
+.vz-try{background:var(--surface);border:1px solid rgba(14,42,31,.1);border-radius:24px;padding:clamp(1.2rem,2.6vw,1.8rem)}
+.vz-try.good{border-color:rgba(31,107,69,.35);box-shadow:0 24px 48px -32px rgba(14,42,31,.4)}
+.vz-try header{display:flex;justify-content:space-between;align-items:center;gap:.8rem;margin-bottom:1rem;flex-wrap:wrap}
+.vz-tl{font-size:.74rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text2)}
+.vz-tag{font-size:.8rem;font-weight:600;border-radius:99px;padding:.2rem .7rem;background:var(--tint);color:var(--green-deep)}
+.vz-tag.bad{background:var(--err-tint);color:var(--err)}
+.vz-phrase{font-family:var(--serif);font-size:clamp(1.5rem,2.6vw,2rem);line-height:1.2;letter-spacing:-.01em;margin-bottom:1.3rem}
+.vz-w{position:relative;display:inline-block;color:var(--green-deep)}
+.vz-w.bad{color:var(--err);text-decoration:underline wavy rgba(180,67,42,.55);text-underline-offset:.18em;text-decoration-thickness:1.5px}
 .vz-w .sw{bottom:-.06em;height:.26em}
-.vz-wave{display:block;width:100%;height:76px;margin-top:.7rem;overflow:visible}
-.vz-wave path{fill:none;stroke:var(--green);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:0}
-.vz-wave .b{opacity:0;stroke:var(--danger)}
-.vz-att{font-size:.78rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);margin-top:.2rem}
-.vz-m{list-style:none;padding:0;margin:clamp(1.2rem,3vw,1.8rem) 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(.5rem,2vw,1.1rem)}
-.vz-m li{background:rgba(255,255,255,.5);box-shadow:inset 0 0 0 1px rgba(30,30,28,.05);border-radius:18px;padding:clamp(.7rem,2vw,1.1rem);display:grid;gap:.35rem;justify-items:center;align-content:start}
-.vz-n{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--green)}
-.vz-nv{display:flex;align-items:baseline;justify-content:center;gap:.4rem;flex-wrap:wrap}
-.vz-v{font-size:clamp(1.8rem,4vw,2.6rem);font-weight:600;line-height:1;font-variant-numeric:tabular-nums;color:var(--green-deep);transition:color .5s var(--ease)}
-.vz-d{font-style:normal;font-size:.74rem;font-weight:700;color:var(--green-deep);background:rgba(255,255,255,.8);box-shadow:inset 0 0 0 1px rgba(31,107,69,.22);border-radius:99px;padding:.1rem .5rem}
-.vz-bar{display:block;width:100%;height:6px;border-radius:9px;background:rgba(30,30,28,.1);overflow:hidden}
-.vz-bar i{display:block;height:100%;width:var(--p,84%);background:var(--green);border-radius:inherit}
-.vz-ds{font-size:.8rem;color:var(--text2);line-height:1.35}
-@media(max-width:560px){.vz-ds{display:none}}
+.vz-m{list-style:none;padding:0;margin:0;display:grid;gap:.75rem}
+.vz-m li{display:grid;grid-template-columns:6.5rem 4.6rem minmax(0,1fr);align-items:center;gap:.8rem;font-size:.9rem;color:var(--text2)}
+.vz-m b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.vz-m em{font-style:normal;font-size:.75rem;font-weight:700;color:var(--green-deep)}
+.vz-m i{display:block;height:6px;border-radius:9px;background:linear-gradient(var(--warm),var(--warm)) 0 0/var(--p) 100% no-repeat,rgba(14,42,31,.08)}
+.vz-try.good .vz-m i{background:linear-gradient(var(--green),var(--green)) 0 0/var(--p) 100% no-repeat,rgba(14,42,31,.08)}
+.vz-foot{margin-top:1rem;font-size:.85rem;color:var(--text2)}
+@media(max-width:560px){.vz-steps{grid-template-columns:1fr;gap:.5rem}.vz-steps li{border-top:0;padding-top:0}.vz-m li{grid-template-columns:5.4rem 3.9rem minmax(0,1fr)}}
 
-/* initial states only when motion is on; the markup itself is the finished picture */
-.fx .vz .lead{opacity:0}
-.fx .vz.pl .lead{animation:up .8s var(--ease) .7s both}
-.fx .vz-w{color:inherit}
-.fx .vz-w .sw{clip-path:inset(-30% 100% -30% 0);transition:clip-path .8s var(--ease)}
-.fx .vz.s1 .vz-w{color:var(--danger);animation:stut .6s steps(1,end) 2,wob 1.2s var(--ease)}
-.fx .vz.fix .vz-w{color:var(--green-deep);animation:none}
-.fx .vz.fix .vz-w .sw{clip-path:inset(-30% -5% -30% -5%)}
-@keyframes wob{0%,100%{transform:none}15%{transform:translateX(-.03em) skewX(-4deg)}35%{transform:translateX(.04em) skewX(3deg)}55%{transform:translateX(-.02em)}75%{transform:translateX(.015em)}}
-.fx .vz-wave path{stroke-dashoffset:1;transition:stroke-dashoffset .9s var(--ease),opacity .45s,stroke .4s}
-.fx .vz.wa .a{stroke-dashoffset:0}
-.fx .vz.s1 .b{opacity:1;stroke-dashoffset:0;transition-duration:.8s,.2s,.2s}
-.fx .vz.fix .b{opacity:0;stroke-dashoffset:0}
-.fx .vz.fix .b2,.fx .vz.fix .c{stroke-dashoffset:0}
-.fx .vz.fix .c{transition-delay:.35s}
-.fx .vz-att{opacity:0;transition:opacity .5s}
-.fx .vz.s1 .vz-att{opacity:1}
-.fx .vz-m li{opacity:0;transform:translateY(16px);filter:blur(6px)}
-.fx .vz.s1 .vz-m li{opacity:1;transform:none;filter:blur(0);transition:opacity .7s var(--ease) calc(var(--k) * .12s),transform .8s var(--ease) calc(var(--k) * .12s),filter .7s var(--ease) calc(var(--k) * .12s)}
-.fx .vz:not(.fix) .vz-v{color:var(--warm)}
-.fx .vz-d{opacity:0;transform:scale(.3)}
-.fx .vz.chip .vz-d{opacity:1;transform:none;transition:opacity .25s calc(var(--k) * .13s),transform .6s cubic-bezier(.34,1.56,.64,1) calc(var(--k) * .13s)}
 
-/* --- EXTRA: cursinho comparison, on the forest engraving --- */
-.cursec{position:relative;isolation:isolate;overflow:hidden;padding:clamp(72px,9vw,132px) 0}
-.cursec-art{position:absolute;inset:0;z-index:-1;pointer-events:none;-webkit-mask-image:linear-gradient(to bottom,transparent,#000 26px,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(to bottom,transparent,#000 26px,#000 calc(100% - 30px),transparent)}
-.cursec-art img{width:100%;height:100%;object-fit:cover;object-position:center 40%;transform:scaleX(-1);opacity:.95}
-.cursec .vs-head{width:fit-content;max-width:100%;margin-inline:auto;padding:clamp(1.1rem,3vw,1.8rem) clamp(1.2rem,4vw,2.8rem);border-radius:28px;position:relative;isolation:isolate;
-  background:rgba(224,225,221,.62);-webkit-backdrop-filter:blur(22px) saturate(1.5);backdrop-filter:blur(22px) saturate(1.5);border:1px solid rgba(255,255,255,.85);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 1px 2px rgba(30,30,28,.07),0 18px 40px -22px rgba(30,30,28,.4)}
-.cursec .vs-head h2{margin:0 auto .5rem}
-.cursec .vs-head .lead{margin-bottom:0}
-@keyframes cell{from{opacity:0;transform:translateY(14px);filter:blur(6px)}to{opacity:1;transform:none;filter:blur(0)}}
-@keyframes entoa{from{opacity:0;transform:translateX(24px) scale(.97);filter:blur(8px);background-color:transparent}60%{filter:blur(0)}}
-.fx .vs-wrap .vs thead th,.fx .vs-wrap .vs tbody tr>*{opacity:0}
-.fx .vs-wrap.pl .vs thead th{opacity:1;animation:cell .7s var(--ease) .1s backwards}
-.fx .vs-wrap.pl .vs tbody tr>*{opacity:1;animation:cell .8s var(--ease) calc(.3s + var(--r) * .24s) backwards}
-.fx .vs-wrap.pl .vs thead th:last-child{animation:entoa 1s var(--ease) 1.7s backwards}
-.fx .vs-wrap.pl .vs tbody td:last-child{animation:entoa 1s var(--ease) calc(1.8s + var(--r) * .15s) backwards}
 
-/* --- EXTRA: cursinho comparison --- */
-html[data-extra="0"] #cursinho{display:none}
-.vs-head{text-align:center}
-.vs-head h2{max-width:20ch;margin-inline:auto}
-.vs-head .lead{margin-inline:auto;max-width:44ch}
-.vs-wrap{width:min(860px,100%);margin:1.8rem auto 0;background:var(--surface);border-radius:24px;box-shadow:var(--shadow),0 30px 60px -36px rgba(14,42,31,.4);overflow:hidden}
-.vs{width:100%;border-collapse:separate;border-spacing:0;text-align:left}
-.vs caption,.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-.vs th,.vs td{padding:1.05rem 1.3rem;vertical-align:top;font-size:1rem;line-height:1.45;transition:background .3s}
-.vs thead th{font-size:.74rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);padding-block:1rem .8rem}
-.vs thead th:last-child{color:var(--green-deep)}
-.vs tbody th{width:26%;font-weight:600;color:var(--ink)}
-.vs td{color:var(--text2)}
-.vs td:last-child{background:var(--tint);color:var(--ink)}
-.vs tbody tr+tr>*{border-top:1px solid rgba(14,42,31,.07)}
-@media(hover:hover){.vs tbody tr:hover th,.vs tbody tr:hover td:nth-child(2){background:rgba(31,107,69,.06)}.vs tbody tr:hover td:last-child{background:#d8eadf}}
-@media(max-width:640px){
-  .vs,.vs tbody,.vs tr,.vs th,.vs td{display:block}
-  .vs thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-  .vs tbody th{width:auto;padding:1.1rem 1.2rem .2rem}
-  .vs td{padding:.2rem 1.2rem .7rem}
-  .vs td::before{content:attr(data-l);display:block;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text2)}
-  .vs td:last-child{padding-bottom:1.1rem}
-  .vs td:last-child::before{color:var(--green-deep)}
-  .vs tbody tr+tr>*{border-top:0}
-  .vs tbody tr+tr>th{border-top:1px solid rgba(14,42,31,.07)}
-}
-
-/* --- FAQ: white cards on cream; they fly in from far away, lock into the stack, then their questions form --- */
+/* --- FAQ: two columns, hairline list; rows fade in once --- */
 .faqs{position:relative;isolation:isolate;overflow:hidden;padding:clamp(64px,8vw,110px) 0 clamp(48px,6vw,80px)}
-.faqs::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(60% 45% at 50% 40%,rgba(31,107,69,.05),transparent 72%)}
-.faq-sec{text-align:center}
-.faqs .faq{display:grid;gap:.7rem;margin:1.8rem auto 0;max-width:780px;text-align:left}
-.faqs .qa{border-radius:22px;box-shadow:0 2px 4px rgba(14,42,31,.1),0 18px 36px -20px rgba(14,42,31,.45);background:var(--surface);color:var(--ink);transition:box-shadow .3s}
-.faqs .q-btn{min-height:64px;font-size:1.02rem;border-radius:22px;padding:0 1.4rem}
-.faqs .a p{padding:0 1.4rem 1.3rem;max-width:60ch}
+.faqs-in{display:grid;gap:2rem}
+@media(min-width:960px){.faqs-in{grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:4rem;align-items:start}}
+.faq-sec .lead{margin-bottom:1.4rem;max-width:34ch}
+.faqs .faq{display:grid;gap:0;margin:0;max-width:none;border-top:1px solid rgba(14,42,31,.12)}
+.faqs .qa{border-radius:0;box-shadow:none;background:none;border-bottom:1px solid rgba(14,42,31,.12)}
+.faqs .q-btn{min-height:68px;font-size:1.05rem;border-radius:0;padding:0}
+.faqs .a p{padding:0 0 1.3rem;max-width:60ch}
 .q-btn .qt{pointer-events:none}
-.faqs .qa:nth-child(1){--fx:-64vw;--fy:-40px;--fr:-16deg}
-.faqs .qa:nth-child(2){--fx:64vw;--fy:30px;--fr:14deg}
-.faqs .qa:nth-child(3){--fx:0px;--fy:75vh;--fr:-7deg}
-.faqs .qa:nth-child(4){--fx:70vw;--fy:-50px;--fr:11deg}
-.faqs .qa:nth-child(5){--fx:-70vw;--fy:40px;--fr:-12deg}
-@keyframes qfly{
-  0%{opacity:0;transform:translate3d(var(--fx),var(--fy),0) rotate(var(--fr)) scale(.85);filter:blur(12px)}
-  35%{opacity:1}
-  72%{transform:translate3d(0,5px,0) rotate(calc(var(--fr) * -.05));filter:blur(0)}
-  100%{opacity:1;transform:none;filter:blur(0)}}
-.fx .faq .qa{opacity:0}
-.fx .pl .faq .qa{opacity:1;animation:qfly 1.15s cubic-bezier(.22,.8,.3,1) calc(.15s + var(--k) * .17s) backwards}
 
-/* --- você × nativo, with motion: strikes are drawn one by one, then the corrections light up --- */
-.fx .drow:first-child .seg:not(.ok){color:inherit;text-decoration:none;transition:color .45s var(--ease)}
-.fx .drow:first-child .seg:not(.ok) .w{padding-right:.3em;margin-right:-.3em;background:linear-gradient(#c9694a,#c9694a) 0 58%/0 1.5px no-repeat;transition:background-size .4s var(--ease) calc(var(--wi,0) * 90ms)}
-.fx .drow:first-child .seg.bad:not(.ok){color:var(--err)}
-.fx .drow:first-child .seg.bad:not(.ok) .w{background-size:100% 1.5px}
-.fx .drow:first-child .seg.on:not(.ok) .w{background-size:0 1.5px}
-.fx .drow+.drow .seg:not(.lit){background:transparent;box-shadow:none;color:inherit}
-.fx .drow+.drow .seg{transition:background .6s var(--ease),box-shadow .6s var(--ease),color .6s}
-.fx .drow>span{opacity:0}
-.fx .diff.pl .drow>span{animation:up .7s var(--ease) .1s backwards;opacity:1}
-.fx .diff.pl .drow+.drow>span{animation-delay:3.2s}
+
+/* --- relatório em formato paper: one printed page, read top to bottom --- */
+.pp-sec{padding:clamp(64px,8vw,112px) 0}
+.pp-grid{display:grid;gap:2.2rem}
+.pp-copy h2{max-width:14ch;margin:0 0 .9rem}
+.pp-list{list-style:none;margin:1.6rem 0 0;padding:0}
+.pp-list li{display:flex;align-items:center;gap:.75rem;padding:.75rem 0;border-top:1px solid rgba(14,42,31,.1);font-weight:600;color:var(--ink)}
+.pp-list li:last-child{border-bottom:1px solid rgba(14,42,31,.1)}
+.pp-list li::before{content:"";width:7px;height:7px;flex:none;border-radius:50%;background:var(--green)}
+.pp-bar{display:flex;align-items:center;margin:0 0 .6rem;font-size:.78rem;color:var(--text2)}
+.pp-file{display:inline-flex;align-items:center;gap:.5rem}
+.pp-file::before{content:"";box-sizing:border-box;width:10px;height:13px;border:1.5px solid var(--text2);border-radius:1px;flex:none}
+.pp-stage{min-width:0}
+.pp-page{display:flex;flex-direction:column;gap:1.2rem;margin:0;background:#fff;border-radius:6px;padding:clamp(1.2rem,3vw,2.2rem) clamp(1.1rem,3.4vw,2.4rem);box-shadow:0 1px 2px rgba(14,42,31,.1),0 30px 60px -36px rgba(14,42,31,.5);font-size:.92rem;color:var(--ink)}
+.pp-page s{color:var(--err);text-decoration-thickness:1px}
+.pp-page u{color:var(--green-deep);text-decoration:none;background:var(--tint);border-radius:3px;padding:0 .15em}
+.pp-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem 1rem;padding-bottom:.8rem;border-bottom:1px solid rgba(14,42,31,.12);font-size:.74rem;color:var(--text2)}
+.pp-brand{display:flex;align-items:center;gap:.5rem;color:var(--ink)}
+.pp-brand img{display:block;width:18px;height:21px}
+.pp-brand span{font-family:var(--serif);font-size:1.1rem;line-height:1}
+.pp-cover{display:grid;gap:.7rem}
+.pp-tl{display:flex;justify-content:space-between;align-items:center;gap:.8rem;flex-wrap:wrap}
+.pp-title{margin:0;font-family:var(--serif);font-weight:400;font-size:1.7rem;line-height:1.1;letter-spacing:-.02em;color:var(--ink)}
+.pp-facts{display:flex;flex-wrap:wrap;gap:.4rem 1.8rem;margin:0}
+.pp-facts dt{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text2)}
+.pp-facts dd{margin:0;font-size:.9rem;color:var(--ink)}
+.pp-block{display:flex;flex-direction:column;gap:.6rem;padding:0}
+.pp-h{margin:0;padding-top:.85rem;border-top:1px solid rgba(14,42,31,.12);display:flex;align-items:center;gap:.55rem;font-family:var(--sans);font-size:.7rem;font-weight:700;letter-spacing:.1em;line-height:1.2;text-transform:uppercase;color:var(--ink)}
+.pp-h::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:var(--green)}
+.pp-summary{margin:0;font-family:var(--serif);font-size:1.08rem;line-height:1.45;color:var(--ink)}
+/* errors: what you said next to the right form, with the rule underneath */
+.pp-errh,.pp-errs li{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:1.2rem}
+.pp-errh span{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text2)}
+.pp-errs{list-style:none;margin:0;padding:0}
+.pp-errs li{row-gap:.25rem;padding:.6rem 0;border-top:1px solid rgba(14,42,31,.08)}
+.pp-said,.pp-right{margin:0;font-family:var(--serif);font-size:1rem;line-height:1.35}
+.pp-said{color:var(--text2)}
+.pp-errs small{grid-column:1 / -1;font-size:.8rem;line-height:1.4;color:var(--text2)}
+/* voice: the three Azure scores, side by side */
+.pp-voice{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.8rem}
+.pp-voice li{display:grid;gap:.1rem;padding:.75rem .85rem;border-radius:8px;background:var(--field)}
+.pp-voice b{font-size:1.6rem;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;color:var(--ink)}
+.pp-voice span{font-weight:600;font-size:.88rem}
+.pp-voice small{font-size:.76rem;line-height:1.3;color:var(--text2)}
+.pp-voice li::after{content:"";height:3px;margin-top:.45rem;border-radius:2px;background:linear-gradient(var(--green),var(--green)) 0 0/var(--p) 100% no-repeat,var(--track)}
+.pp-note{margin:0;font-size:.76rem;color:var(--text2)}
+.pp-prio{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.8rem;counter-reset:pp}
+.pp-prio li{counter-increment:pp;display:grid;gap:.1rem;padding-left:1.6rem;position:relative}
+.pp-prio li::before{content:counter(pp);position:absolute;left:0;top:-.05rem;font-family:var(--serif);font-size:1.35rem;line-height:1;color:var(--green)}
+.pp-prio b{font-weight:600;font-size:.9rem}
+.pp-prio span{font-size:.78rem;color:var(--text2)}
+.pp-foot{padding-top:.8rem;border-top:1px solid rgba(14,42,31,.12);font-size:.74rem;color:var(--text2)}
+/* the left column stays in view while the page scrolls, only when the screen is tall enough to show all of it */
+@media(min-width:1000px){.pp-grid{grid-template-columns:minmax(0,.78fr) minmax(0,1.22fr);gap:3.5rem;align-items:start}}
+@media(min-width:1000px) and (min-height:700px){.pp-copy{position:sticky;top:88px}}
+@media(max-width:640px){
+  .pp-errh{display:none}
+  .pp-errs li{grid-template-columns:minmax(0,1fr)}
+  .pp-voice,.pp-prio{grid-template-columns:minmax(0,1fr)}
+  .pp-voice li{grid-template-columns:auto minmax(0,1fr);column-gap:.8rem;align-items:center}
+  .pp-voice b{grid-row:span 2}
+  .pp-voice li::after{grid-column:1 / -1}
+}
 </style>
 </head>
 <body>
@@ -589,8 +540,10 @@ html[data-extra="0"] #cursinho{display:none}
   <div class="wrap">
     <a class="brand" href="#"><img src="/landing/tucano-mark.webp" alt="" width="26" height="30"> <span class="wordmark">Entoa</span></a>
     <nav class="nav-links" aria-label="Principal">
-      <a href="#relatorio">Relatório</a>
       <a href="#demo">Como funciona</a>
+      <a href="#relatorio-doc">Relatório</a>
+      <a href="#voz">Treino de voz</a>
+      <a href="#faqs">Perguntas</a>
     </nav>
     <div class="nav-act">
       <a class="btn soft" href="/login">Entrar</a>
@@ -602,33 +555,21 @@ html[data-extra="0"] #cursinho{display:none}
 <main>
 <!-- HERO -->
 <section class="hero" id="hero">
-  <div class="hero-bg" aria-hidden="true"><canvas id="hbCanvas"></canvas></div>
-  <div class="wrap hero-inner">
+  <div class="wrap">
     <h1 id="h1">Você sabe a resposta. Em inglês, ela <em>trava<svg class="sw" viewBox="0 0 120 12" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M2 8 C 28 2, 62 12, 118 4"/></svg></em>.</h1>
     <p class="lead">Entrevista por voz para dev brasileiro: cole a vaga e veja cada erro corrigido.</p>
     <div class="cta-row">
       <a class="btn" href="/signup" data-cta>Treinar minha entrevista <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </div>
+    <ul class="hero-facts" aria-label="Como é o Entoa"><li>Você responde falando, em inglês</li><li>As perguntas saem da sua vaga</li><li>Cada erro vem com a frase certa</li><li>Sessões de 5 a 25 minutos</li></ul>
   </div>
 </section>
-<script>
-/* split the headline into letters before first paint so the entrance can form it */
-(function(){var h=document.getElementById('h1');if(!document.documentElement.classList.contains('hx'))return;
-h.setAttribute('aria-label','Você sabe a resposta. Em inglês, ela trava.');var i=0;
-(function walk(n){Array.prototype.slice.call(n.childNodes).forEach(function(c){
- if(c.nodeType===3){var f=document.createDocumentFragment();c.textContent.split(/(\s+)/).forEach(function(t){if(!t)return;
-  if(/^\s+$/.test(t)){f.appendChild(document.createTextNode(' '));return}
-  var w=document.createElement('span');w.className='w';w.setAttribute('aria-hidden','true');
-  Array.prototype.forEach.call(t,function(ch){var k=document.createElement('span');k.className='hch';k.style.setProperty('--i',i++);k.textContent=ch;w.appendChild(k)});f.appendChild(w)});
-  n.replaceChild(f,c)}
- else if(c.nodeType===1&&c.tagName.toLowerCase()!=='svg')walk(c)})})(h)})();
-</script>
 
 <!-- RELATÓRIO sobre a mata (gráfico do site atual, com menos texto) -->
 <section id="relatorio" class="rstage" aria-label="Exemplo de relatório">
   <picture class="stage-art" aria-hidden="true"><source media="(max-width:767px)" srcset="/landing/hero-mata-mobile.webp" width="704" height="552"><img src="/landing/hero-mata.webp" srcset="/landing/hero-mata-1152.webp 1152w, /landing/hero-mata.webp 1536w" sizes="100vw" alt="" width="1536" height="1024" fetchpriority="low" decoding="async"></picture>
   <div class="wrap">
-    <div class="rep" id="rep">
+    <div class="rep in" id="rep">
       <div class="rep-top">
         <div>
           <span class="badge"><i></i>Exemplo</span>
@@ -654,28 +595,15 @@ h.setAttribute('aria-label','Você sabe a resposta. Em inglês, ela trava.');var
   </div>
 </section>
 
-<!-- VOCÊ × NATIVO -->
-<section id="diferenca" class="compact">
-  <div class="wrap">
-    <div class="diff-head rv">
-      <h2 data-split>Seu conteúdo é bom. O inglês esconde.</h2>
-      <p class="lead">Em vermelho, o erro. Em verde, como um nativo diria.</p>
-    </div>
-    <div class="diff rv" id="diff" lang="en" data-at=".3">
-      <div class="drow"><span>Você</span><p data-split="in" style="--d:.2s;--cs:14ms">I have five years <button class="seg" data-d="0">experience on</button> backend and <button class="seg" data-d="1">I am working</button> with Go since 2021.</p></div>
-      <div class="drow"><span>Nativo</span><p data-split="in" style="--d:3.3s;--cs:14ms">I have five years <button class="seg" data-d="0">of experience in</button> backend and <button class="seg" data-d="1">I’ve been working</button> with Go since 2021.</p></div>
-    </div>
-  </div>
-</section>
-
 <!-- DEMO -->
-<section id="demo">
+<section id="demo" class="demo-stage" aria-label="Como funciona">
   <div class="wrap">
-    <div class="rv">
-      <h2 data-split>Veja uma entrevista do começo ao fim.</h2>
-    </div>
-
     <div class="d-wrap rv" data-once>
+      <div class="demo-head">
+        <p class="kicker">Demonstração</p>
+        <h2 class="demo-title">Veja uma entrevista do começo ao fim, em menos de um minuto.</h2>
+      </div>
+      <div class="demo-frame">
       <div class="win" id="screen" role="img" aria-label="Animação do produto: a IA analisa a descrição da vaga, a sala de entrevista por voz com legendas e o relatório final">
         <div class="chrome"><i></i><i></i><i></i><span>Entoa · entrevista</span></div>
         <div class="scenes" id="scenes">
@@ -788,15 +716,11 @@ AWS e observabilidade</div></div>
           <svg class="cur" id="cur" viewBox="0 0 22 22" aria-hidden="true"><path d="M3 2l15 7-6.5 2L9 18z" fill="#0e2a1f" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>
         </div>
       </div>
+      </div>
       <div class="pbar">
         <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Posição da animação" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="tr" id="tr"><i style="flex:25.5"></i><i style="flex:38"></i><i style="flex:11.5"></i><span class="fill" id="fill"></span></div>
           <div class="kz"><span class="knob" id="knob" style="left:0"></span></div>
-        </div>
-        <div class="chap" id="chap">
-          <button data-t="0" style="flex:25.5"><b>1</b><span class="lg">Escolha a vaga</span><span class="sh">Vaga</span></button>
-          <button data-t="25.5" style="flex:38"><b>2</b><span class="lg">Responda por voz</span><span class="sh">Voz</span></button>
-          <button data-t="63.5" style="flex:11.5"><b>3</b><span class="lg">Receba o relatório</span><span class="sh">Relatório</span></button>
         </div>
       </div>
       <div class="dctl">
@@ -809,64 +733,146 @@ AWS e observabilidade</div></div>
   </div>
 </section>
 
-<!-- VOZ: typographic animation -->
-<section id="voz" class="voz" aria-labelledby="vozT">
+<!-- PROBLEMA -->
+<section id="problema" class="compact">
   <div class="wrap">
-    <div class="vz rv" id="vz" data-at=".25">
-      <span class="badge ex"><i></i>Exemplo</span>
-      <h2 id="vozT" data-split="in">Depois do relatório, treine a sua voz.</h2>
-      <p class="lead">Repita as suas próprias frases, ouça a forma certa e veja cada tentativa melhorar.</p>
-      <div class="vz-stage" id="vzStage" role="img" aria-label="Exemplo animado: na frase I have five years of experience in backend, a palavra experience trava na primeira tentativa e sai clara na segunda. As notas sobem: Precisão de 72 para 84, Ritmo de 68 para 77 e Prosódia de 61 para 70.">
-        <p class="vz-phrase" lang="en" data-split="in" data-cs="26" style="--d:1.2s;--cs:26ms">I have five years of <span class="vz-w" id="vzWord">experience<svg class="sw" viewBox="0 0 120 12" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M2 8 C 28 2, 62 12, 118 4"/></svg></span> in backend.</p>
-        <svg class="vz-wave" id="vzWave" aria-hidden="true"><path class="a" pathLength="1"/><path class="b" pathLength="1"/><path class="b2" pathLength="1"/><path class="c" pathLength="1"/></svg>
-        <p class="vz-att" id="vzAtt">Tentativa 2</p>
-        <ul class="vz-m" id="vzM">
-          <li style="--k:0"><span class="vz-n">Precisão</span><div class="vz-nv"><b class="vz-v">84</b><em class="vz-d">+12</em></div><span class="vz-bar"><i style="--p:84%"></i></span><span class="vz-ds">Clareza de cada som e palavra.</span></li>
-          <li style="--k:1"><span class="vz-n">Ritmo</span><div class="vz-nv"><b class="vz-v">77</b><em class="vz-d">+9</em></div><span class="vz-bar"><i style="--p:77%"></i></span><span class="vz-ds">Pausas, hesitações e velocidade.</span></li>
-          <li style="--k:2"><span class="vz-n">Prosódia</span><div class="vz-nv"><b class="vz-v">70</b><em class="vz-d">+9</em></div><span class="vz-bar"><i style="--p:70%"></i></span><span class="vz-ds">Entonação e acento das palavras.</span></li>
-        </ul>
-      </div>
+    <div class="shead">
+      <div><p class="kicker">O problema</p><h2 data-fill>Seu conteúdo é bom. O inglês esconde.</h2></div>
+      <p class="lead">Você conhece o sistema que construiu. Na hora de explicar em inglês, sai a tradução do português, e o entrevistador ouve o erro antes de ouvir a sua experiência.</p>
+    </div>
+    <div class="pair" id="diff" lang="en">
+      <figure class="pair-card">
+        <div class="pair-box"><p class="pair-txt">I have five years <button class="seg" data-d="0">experience on</button> backend and <button class="seg" data-d="1">I am working</button> with Go since 2021.</p></div>
+        <figcaption lang="pt-BR"><b>O que você disse</b>A preposição e o tempo verbal saem do jeito do português.</figcaption>
+      </figure>
+      <figure class="pair-card good">
+        <div class="pair-box"><p class="pair-txt">I have five years <button class="seg" data-d="0">of experience in</button> backend and <button class="seg" data-d="1">I’ve been working</button> with Go since 2021.</p></div>
+        <figcaption lang="pt-BR"><b>Como soa melhor</b>Experiência numa área pede <em>in</em>. O que começou em 2021 e continua hoje pede <em>I’ve been working</em>.</figcaption>
+      </figure>
     </div>
   </div>
 </section>
 
-<!-- EXTRA: cursinho (hide with ?extra=0) -->
-<section id="cursinho" class="cursec">
-  <picture class="cursec-art" aria-hidden="true"><source media="(max-width:767px)" srcset="/landing/hero-mata-mobile.webp"><img src="/landing/hero-mata.webp" srcset="/landing/hero-mata-1152.webp 1152w, /landing/hero-mata.webp 1536w" sizes="100vw" alt="" width="1536" height="1024" loading="lazy" decoding="async"></picture>
+<!-- RELATÓRIO EM PAPER: the document the person gets after each interview -->
+<section id="relatorio-doc" class="pp-sec" aria-labelledby="ppT">
+  <div class="wrap pp-grid">
+    <div class="pp-copy">
+      <p class="kicker">Seu relatório</p>
+      <h2 id="ppT">Escrito a partir das suas respostas, para a sua vaga.</h2>
+      <p class="lead">Depois de cada entrevista você recebe um documento curto, na ordem em que vale a pena ler.</p>
+      <ul class="pp-list">
+        <li>Resumo da entrevista</li>
+        <li>Seus erros e a forma certa</li>
+        <li>Notas da sua voz</li>
+        <li>Prioridades para praticar</li>
+      </ul>
+    </div>
+    <div class="pp-stage">
+      <p class="pp-bar"><span class="pp-file">relatorio-backend-engineer.pdf</span></p>
+      <article class="pp-page" aria-label="Exemplo de relatório de entrevista">
+        <header class="pp-top">
+          <div class="pp-brand"><img src="/landing/tucano-mark.webp" alt="" width="18" height="21"><span>Entoa</span></div>
+          <span>Relatório de entrevista · 23 out. 2026</span>
+        </header>
+        <div class="pp-cover">
+          <div class="pp-tl"><h3 class="pp-title">Backend Engineer · Sênior</h3><span class="badge"><i></i>Exemplo</span></div>
+          <dl class="pp-facts">
+            <div><dt>Foco</dt><dd>Profundidade técnica</dd></div>
+            <div><dt>Duração</dt><dd>15 min</dd></div>
+            <div><dt>Respostas</dt><dd>6</dd></div>
+          </dl>
+        </div>
+        <section class="pp-block">
+          <h4 class="pp-h">Resumo da entrevista</h4>
+          <p class="pp-summary">Você explicou bem como evitou cobranças duplicadas e deu exemplos concretos de AWS. Os erros se concentram em preposições e no present perfect, quando você fala da sua experiência.</p>
+        </section>
+        <section class="pp-block">
+          <h4 class="pp-h">Seus erros</h4>
+          <div class="pp-errh" aria-hidden="true"><span>Você disse</span><span>O certo</span></div>
+          <ul class="pp-errs">
+            <li><p class="pp-said" lang="en">I have five years experience <s>on</s> backend.</p><p class="pp-right" lang="en">I have five years of experience <u>in</u> backend.</p><small>Experiência numa área pede <em>in</em>.</small></li>
+            <li><p class="pp-said" lang="en">I <s>am working</s> here since 2021.</p><p class="pp-right" lang="en">I <u>’ve been working</u> here since 2021.</p><small>O que começou no passado e continua hoje pede o present perfect.</small></li>
+            <li><p class="pp-said" lang="en">I <s>pretend</s> to lead the team.</p><p class="pp-right" lang="en">I <u>intend</u> to lead the team.</p><small><em>Pretend</em> quer dizer fingir.</small></li>
+          </ul>
+        </section>
+        <section class="pp-block">
+          <h4 class="pp-h">Notas da sua voz</h4>
+          <ul class="pp-voice">
+            <li style="--p:84%"><b>84</b><span>Precisão</span><small>Clareza de cada som</small></li>
+            <li style="--p:78%"><b>78</b><span>Ritmo</span><small>Pausas e velocidade</small></li>
+            <li style="--p:72%"><b>72</b><span>Prosódia</span><small>Entonação e acento</small></li>
+          </ul>
+          <p class="pp-note">De 0 a 100. A análise não avalia sotaque.</p>
+        </section>
+        <section class="pp-block">
+          <h4 class="pp-h">Prioridades para praticar</h4>
+          <ol class="pp-prio">
+            <li><b>Preposições</b><span>3 vezes</span></li>
+            <li><b>Present perfect</b><span>2 vezes</span></li>
+            <li><b>Falsos cognatos</b><span>1 vez</span></li>
+          </ol>
+        </section>
+        <footer class="pp-foot">Entoa · Exemplo ilustrativo com dados de uma entrevista simulada</footer>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- VOZ: two attempts side by side -->
+<section id="voz" class="voz" aria-labelledby="vozT">
   <div class="wrap">
-    <div class="vs-head">
-      <h2 data-split>Por que não um cursinho de inglês?</h2>
-      <p class="lead">Cursinho ensina inglês. Aqui você ensaia a sua entrevista.</p>
+    <div class="vz-head">
+      <p class="kicker">Treino de voz</p>
+      <h2 id="vozT" data-fill>Depois do relatório, treine a sua voz.</h2>
+      <p class="lead">Você repete as frases da sua própria entrevista e compara as notas de cada tentativa. A análise mede clareza, ritmo e entonação, sem avaliar o seu sotaque.</p>
     </div>
-    <div class="vs-wrap" data-stage data-at=".25">
-    <table class="vs">
-      <caption>Comparação entre um cursinho de inglês e o Entoa</caption>
-      <thead><tr><th scope="col"><span class="sr">Critério</span></th><th scope="col">Cursinho</th><th scope="col">Entoa</th></tr></thead>
-      <tbody>
-        <tr style="--r:0"><th scope="row">O que você treina</th><td data-l="Cursinho">Inglês em geral, o mesmo conteúdo para toda a turma.</td><td data-l="Entoa">A entrevista da sua vaga, com perguntas sobre o seu cargo.</td></tr>
-        <tr style="--r:1"><th scope="row">Quando</th><td data-l="Cursinho">No horário da turma.</td><td data-l="Entoa">Quando você quiser, em 5 a 25 minutos.</td></tr>
-        <tr style="--r:2"><th scope="row">Feedback</th><td data-l="Cursinho">Depende de o professor ter tempo para cada aluno.</td><td data-l="Entoa">Relatório com cada erro seu, a frase corrigida e a regra.</td></tr>
-        <tr style="--r:3"><th scope="row">Depois</th><td data-l="Cursinho">Você segue o cronograma do curso.</td><td data-l="Entoa">Você treina só o que errou, sem repetir o que já sabe.</td></tr>
-        <tr style="--r:4"><th scope="row">Custo</th><td data-l="Cursinho">Mensalidade.</td><td data-l="Entoa">Grátis por enquanto.</td></tr>
-      </tbody>
-    </table>
+    <ol class="vz-steps">
+      <li><b>1</b><span>Ouça a frase corrigida</span></li>
+      <li><b>2</b><span>Repita em voz alta</span></li>
+      <li><b>3</b><span>Compare as notas</span></li>
+    </ol>
+    <div class="vz-frame">
+    <div class="vz-pair">
+      <article class="vz-try" aria-label="Tentativa 1">
+        <header><span class="vz-tl">Tentativa 1</span><span class="vz-tag bad">Travou em “experience”</span></header>
+        <p class="vz-phrase" lang="en">I have five years of <span class="vz-w bad">experience</span> in backend.</p>
+        <ul class="vz-m">
+          <li><span>Precisão</span><b>72</b><i style="--p:72%"></i></li>
+          <li><span>Ritmo</span><b>68</b><i style="--p:68%"></i></li>
+          <li><span>Prosódia</span><b>61</b><i style="--p:61%"></i></li>
+        </ul>
+      </article>
+      <article class="vz-try good" aria-label="Tentativa 2">
+        <header><span class="vz-tl">Tentativa 2</span><span class="vz-tag">Saiu clara</span></header>
+        <p class="vz-phrase" lang="en">I have five years of <span class="vz-w">experience<svg class="sw" viewBox="0 0 120 12" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M2 8 C 28 2, 62 12, 118 4"/></svg></span> in backend.</p>
+        <ul class="vz-m">
+          <li><span>Precisão</span><b>84 <em>+12</em></b><i style="--p:84%"></i></li>
+          <li><span>Ritmo</span><b>77 <em>+9</em></b><i style="--p:77%"></i></li>
+          <li><span>Prosódia</span><b>70 <em>+9</em></b><i style="--p:70%"></i></li>
+        </ul>
+      </article>
     </div>
+    </div>
+    <p class="vz-foot">Exemplo ilustrativo. Precisão é a clareza de cada som e palavra; ritmo, as pausas e a velocidade; prosódia, a entonação e o acento.</p>
   </div>
 </section>
 
 <!-- FINAL: FAQ in the dark green block; closing call and footer on the forest art -->
 <section class="final">
   <div class="faqs" id="faqs">
-    <div class="wrap faqs-in" data-stage data-at=".12">
+    <div class="wrap faqs-in">
       <div class="faq-sec">
-        <h2 data-split="in">Antes de começar.</h2>
+        <p class="kicker">Perguntas</p>
+        <h2>Antes de começar.</h2>
+        <p class="lead">Por enquanto é grátis. Você só precisa de um microfone.</p>
+        <a class="btn" href="/signup" data-cta>Treinar minha entrevista</a>
       </div>
       <div class="faq" id="faq">
-        <div class="qa" style="--k:0"><button class="q-btn" aria-expanded="false" aria-controls="a1" id="b1"><span class="qt" data-split="in" style="--d:0.75s;--cs:18ms">Preciso falar inglês perfeito?</span></button><div class="a" id="a1" role="region" aria-labelledby="b1"><div><p>Não. O objetivo é ser entendido com clareza e confiança. Sotaque brasileiro não é defeito.</p></div></div></div>
-        <div class="qa" style="--k:1"><button class="q-btn" aria-expanded="false" aria-controls="a2" id="b2"><span class="qt" data-split="in" style="--d:0.92s;--cs:18ms">O que o relatório mostra?</span></button><div class="a" id="a2" role="region" aria-labelledby="b2"><div><p>Seus principais erros com a frase corrigida e a regra, a pontuação da fala e o que estudar primeiro.</p></div></div></div>
-        <div class="qa" style="--k:2"><button class="q-btn" aria-expanded="false" aria-controls="a3" id="b3"><span class="qt" data-split="in" style="--d:1.09s;--cs:18ms">Quanto custa?</span></button><div class="a" id="a3" role="region" aria-labelledby="b3"><div><p>Por enquanto é grátis. Ainda não existe plano pago.</p></div></div></div>
-        <div class="qa" style="--k:3"><button class="q-btn" aria-expanded="false" aria-controls="a4" id="b4"><span class="qt" data-split="in" style="--d:1.26s;--cs:18ms">É só para quem trabalha com tecnologia?</span></button><div class="a" id="a4" role="region" aria-labelledby="b4"><div><p>É feito para dev brasileiro mirando vaga na gringa.</p></div></div></div>
-        <div class="qa" style="--k:4"><button class="q-btn" aria-expanded="false" aria-controls="a5" id="b5"><span class="qt" data-split="in" style="--d:1.43s;--cs:18ms">Preciso de microfone?</span></button><div class="a" id="a5" role="region" aria-labelledby="b5"><div><p>Sim, você responde falando. Há um teste de microfone antes de começar.</p></div></div></div>
+        <div class="qa" style="--k:0"><button class="q-btn" aria-expanded="false" aria-controls="a1" id="b1"><span class="qt">Preciso falar inglês perfeito?</span></button><div class="a" id="a1" role="region" aria-labelledby="b1"><div><p>Não. O objetivo é ser entendido com clareza e confiança. Sotaque brasileiro não é defeito.</p></div></div></div>
+        <div class="qa" style="--k:1"><button class="q-btn" aria-expanded="false" aria-controls="a2" id="b2"><span class="qt">O que o relatório mostra?</span></button><div class="a" id="a2" role="region" aria-labelledby="b2"><div><p>Seus principais erros com a frase corrigida e a regra, a pontuação da fala e o que estudar primeiro.</p></div></div></div>
+        <div class="qa" style="--k:2"><button class="q-btn" aria-expanded="false" aria-controls="a3" id="b3"><span class="qt">Quanto custa?</span></button><div class="a" id="a3" role="region" aria-labelledby="b3"><div><p>Por enquanto é grátis. Ainda não existe plano pago.</p></div></div></div>
+        <div class="qa" style="--k:3"><button class="q-btn" aria-expanded="false" aria-controls="a4" id="b4"><span class="qt">É só para quem trabalha com tecnologia?</span></button><div class="a" id="a4" role="region" aria-labelledby="b4"><div><p>É feito para dev brasileiro mirando vaga na gringa.</p></div></div></div>
+        <div class="qa" style="--k:4"><button class="q-btn" aria-expanded="false" aria-controls="a5" id="b5"><span class="qt">Preciso de microfone?</span></button><div class="a" id="a5" role="region" aria-labelledby="b5"><div><p>Sim, você responde falando. Há um teste de microfone antes de começar.</p></div></div></div>
       </div>
     </div>
   </div>
@@ -1001,7 +1007,7 @@ AWS e observabilidade</div></div>
     renderSetup(t);renderRoom(t);renderReport(t);
     placeCursor(t);
     const pc=Math.min(100,t/DUR*100);css(scrubFill,'width',pc+'%');css(knob,'left',pc+'%');scrub.setAttribute('aria-valuenow',Math.round(pc));
-    chapBtns.forEach((b,i)=>tg(b,'act',i===s));
+    chapBtns.forEach((b,i)=>{tg(b,'act',i===s);if(i===s)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current')});
     txt($('#dCap'),CAPTXT[s]);
   }
 
@@ -1093,11 +1099,6 @@ AWS e observabilidade</div></div>
     labs.forEach((l,i)=>l.classList.toggle('on',i===on));hits.forEach((h,i)=>h.setAttribute('aria-pressed',String(i===pinned)));
     detail.innerHTML=`<strong>${DIM[on][0]}:</strong> ${DIM[on][3]}`}
   hl(-1);
-  // Plays when the card is really in view (not when only its top edge peeks into the first screen) and replays on return.
-  new IntersectionObserver(es=>es.forEach(e=>{const rep=e.target;
-    if(e.isIntersecting&&e.intersectionRatio>=.45)rep.classList.add('in');
-    else if(e.intersectionRatio<.12)rep.classList.remove('in');
-  }),{threshold:[0,.12,.45]}).observe($('#rep'));
 
   /* ================= você × nativo ================= */
   // hovering or tapping a marked part lights up the same part in the other sentence
@@ -1106,37 +1107,12 @@ AWS e observabilidade</div></div>
   $('#diff').addEventListener('pointerleave',()=>dPick(-1));
   $('#diff').addEventListener('click',e=>{const b=e.target.closest('.seg');if(b)dPick(+b.dataset.d)});
 
-  /* ================= focus on the demo: the nav slides away and the window grows a little ================= */
-  const nav=$('.nav'),screen=$('#screen'),dwrap=$('.d-wrap');
-  const navSc=()=>nav.classList.toggle('stuck',scrollY>8);addEventListener('scroll',navSc,{passive:true});navSc();
-  let focusTick=false;
-  function focusDemo(){
-    focusTick=false;
-    const r=dwrap.getBoundingClientRect(),vh=innerHeight,vw=document.documentElement.clientWidth;
-    const w=dwrap.offsetWidth,h=dwrap.offsetHeight;
-    // 1 when the window is centred, 0 when it is ~60% of a screen away from the centre
-    const p=clamp(1-Math.abs(r.top+r.height/2-vh/2)/(vh*.6));
-    const maxGrow=vw<720?1:Math.max(1,Math.min(1.12,(vw-24)/w,(vh-24)/h));
-    const g=1+(maxGrow-1)*ease(p);
-    if(!reduce)css(dwrap,'--grow',g.toFixed(4));
-    tg(nav,'away',p>.55);
-  }
-  addEventListener('scroll',()=>{if(!focusTick){focusTick=true;requestAnimationFrame(focusDemo)}},{passive:true});
-  addEventListener('resize',focusDemo);focusDemo();
+  const dwrap=$('.d-wrap');
   // "Como funciona" lands on the video itself, a little below the top of the screen
   $$('a[href="#demo"]').forEach(a=>a.addEventListener('click',e=>{
     e.preventDefault();const r=dwrap.getBoundingClientRect();
     scrollTo({top:scrollY+r.top+r.height/2-innerHeight/2+24,behavior:reduce?'auto':'smooth'});
   }));
-
-  /* ================= magnetic CTAs: the button leans toward the pointer ================= */
-  if(!reduce&&matchMedia('(hover:hover) and (pointer:fine)').matches){
-    $$('[data-cta]').forEach(b=>{
-      b.addEventListener('pointermove',e=>{const r=b.getBoundingClientRect();b.classList.add('mag');
-        b.style.setProperty('--mx',((e.clientX-r.left-r.width/2)*.22).toFixed(1)+'px');b.style.setProperty('--my',((e.clientY-r.top-r.height/2)*.3).toFixed(1)+'px')});
-      b.addEventListener('pointerleave',()=>{b.classList.remove('mag');b.style.setProperty('--mx','0px');b.style.setProperty('--my','0px')});
-    });
-  }
 
   /* ================= faq ================= */
   $$('#faq .q-btn').forEach(b=>b.addEventListener('click',()=>{
@@ -1150,191 +1126,39 @@ AWS e observabilidade</div></div>
 (function(){
   const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
   const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const root=document.documentElement;
   const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
-  const ease=x=>1-Math.pow(1-x,3);
-  const hero=$('#hero');
 
-  /* ===== hero: a voice drawn as living waves ===== */
-  // slow "speech" breathing, brand-coloured strokes with a glow on the lead lines, swell and bend toward the pointer
-  // (touch: tap), scroll adds energy, and the waves stall for a beat with the "trava" stutter of the headline
-  let heroVisible=true;
-  const cv=$('#hbCanvas'),ctx=cv.getContext('2d');
-  let W=0,H=0,T=0,last=0,ptx=.5,pty=.5,px=.5,py=.5,pin=0,pinT=0,swell=0,lastY=scrollY,raf=0,tapTimer=0;
-  const RGB={mint:'143,209,171',g:'31,107,69',gd:'23,86,58',teal:'60,150,130',amb:'174,107,48'};
-  const LN=[];
-  for(let i=0;i<12;i++){
-    const lead=i<3,mid=i>=3&&i<8;
-    LN.push({k:1.1+i*.31,k2:2.6+i*.55,s:.28+.07*i,ph:i*1.37,a:lead?1:mid?.85:.6,lw:lead?2.4:mid?1.4:.9,al:lead?.95:mid?.62:.34,glow:lead,
-      c1:i%5===2?RGB.amb:i%3===0?RGB.mint:RGB.g,c2:i%4===1?RGB.teal:i%3===2?RGB.gd:RGB.g,y0:(i-6)*h0(i)});
-  }
-  function h0(i){return .012*(i%2?1:-1)}
-  let EL={cx:0,cy:0,rx:1,ry:1};
-  function measure(){const hr=hero.getBoundingClientRect(),a=$('#h1').getBoundingClientRect(),c=$('.cta-row').getBoundingClientRect();const l=Math.min(a.left,c.left)-hr.left,r=Math.max(a.right,c.right)-hr.left,t=a.top-hr.top,b=c.bottom-hr.top;EL={cx:(l+r)/2,cy:(t+b)/2,rx:(r-l)/2*1.05+30,ry:(b-t)/2*1.12+24}}
-  function size(){const dpr=Math.min(2,devicePixelRatio||1);W=cv.clientWidth;H=cv.clientHeight;cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);measure()}
-  size();addEventListener('load',measure);if(document.fonts)document.fonts.ready.then(measure);
-  addEventListener('resize',()=>{size();if(!raf)draw(performance.now())});
-  const setP=e=>{const r=hero.getBoundingClientRect();ptx=(e.clientX-r.left)/r.width;pty=(e.clientY-r.top)/r.height;pin=1;clearTimeout(tapTimer);if(e.pointerType!=='mouse')tapTimer=setTimeout(()=>{pin=0},1600)};
-  hero.addEventListener('pointermove',setP);hero.addEventListener('pointerdown',setP);
-  hero.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse')pin=0});
-  const sm=x=>x*x*(3-2*x);
-  function draw(now){
-    const dt=Math.min(.05,(now-last)/1000||.016);last=now;
-    pinT+=dt;
-    // time warp: after the entrance the waves hold their breath while "trava" stutters, then pick up again
-    let sp=1,hold=1;
-    if(!reduce){sp=pinT>1.15&&pinT<2.15?(pinT<1.45?0:sm(clamp((pinT-1.45)/.7))):1;hold=1-.45*(sm(clamp((pinT-1.1)/.2))-sm(clamp((pinT-1.45)/.7)))}
-    T+=dt*sp;
-    const rev=reduce?1:ease(clamp((pinT-.15)/1.9));
-    const dY=scrollY-lastY;lastY=scrollY;swell+=(Math.min(1,Math.abs(dY)/40)-swell)*.12;
-    px+=(ptx-px)*.1;py+=(pty-py)*.1;const pf=pin?1:0;pinf+=(pf-pinf)*.06;
-    const w=W,h=H,cy=h*.5,fade=1-clamp(scrollY/(h*.9));
-    ctx.clearRect(0,0,w,h);
-    const X=px*w,Y=py*h;
-    const speech=.74+.26*Math.sin(T*1.05)*Math.sin(T*.41+1.2)+.1*Math.sin(T*2.1+.5);
-    const x0=w/2-rev*w/2,x1=w/2+rev*w/2,sg=Math.pow(w*.13,2)*2;
-    ctx.lineCap='round';ctx.lineJoin='round';
-    let pcy=EL.cy;const phone=w<600;
-    if(phone){const hr0=hero.getBoundingClientRect();let a=1e9,z=-1e9;['#h1','.hero .lead'].forEach(q=>{const e=$(q);if(!e)return;const rr=e.getBoundingClientRect();a=Math.min(a,rr.top);z=Math.max(z,rr.bottom)});if(z>a)pcy=(a+z)/2-hr0.top}
-    const step=6,mob=w<900,kf=mob?Math.max(.5,w/900):1;
-    for(let li=LN.length-1;li>=0;li--){
-      const l=LN[li];
-      if(phone&&![0,1,2,3,5,7,9].includes(li))continue;
-      // gradient along the stroke (alpha fades out at both ends of the revealed span)
-      const g=ctx.createLinearGradient(x0,0,x1,0);
-      g.addColorStop(0,'rgba('+l.c1+',0)');g.addColorStop(.2,'rgba('+l.c1+',1)');g.addColorStop(.5,'rgba('+l.c2+',1)');g.addColorStop(.8,'rgba('+l.c1+',1)');g.addColorStop(1,'rgba('+l.c1+',0)');
-      const yb=mob?(phone?pcy:EL.cy)+l.y0*h:cy+l.y0*h;
-      const amp=(mob?Math.min(h*.22,EL.ry*(phone?.8:1.05)):h*.22)*l.a*(speech*hold+.08*Math.sin(T*.7+l.ph))*(1+swell*.7);
-      const path=new Path2D();
-      for(let x=0;x<=w;x+=step){
-        const u=x/w,d=Math.abs(u-.5)*2,env=.18+.82*d*d*(3-2*d);
-        const gau=Math.exp(-Math.pow(x-X,2)/sg)*pinf;
-        let y=yb+(Math.sin(u*l.k*kf*6.283+l.ph+T*l.s+scrollY*.003)+.45*Math.sin(u*l.k2*kf*6.283-T*l.s*1.6+l.ph))*amp*env*(1+gau*1.7);
-        y+=(Y-y)*gau*(l.glow?.45:.3);
-        x?path.lineTo(x,y):path.moveTo(x,y);
-      }
-      ctx.strokeStyle=g;
-      if(l.glow){ctx.globalAlpha=.1*fade;ctx.lineWidth=l.lw*5;ctx.stroke(path)}
-      ctx.globalAlpha=l.al*fade;ctx.lineWidth=l.lw;ctx.stroke(path);
-    }
-    ctx.globalAlpha=1;
-    // fade the waves out behind the headline, lead and buttons (soft ellipse), so no line crosses the letters
-    if(mob){
-      // phones: one soft-edged rounded cut-out over the whole text block (headline + lead + buttons)
-      const hr=hero.getBoundingClientRect();
-      (phone?[['#h1','.hero .lead'],['.hero .cta-row .btn']]:[['#h1','.hero .lead','.hero .cta-row .btn']]).forEach(grp=>{let l=1e9,t0=1e9,r=-1e9,b=-1e9;
-      grp.forEach(q=>$$(q).forEach(e=>{const rg=document.createRange();rg.selectNodeContents(e);const rs=e.matches('.btn')?[e.getBoundingClientRect()]:[...rg.getClientRects()];rs.forEach(x=>{if(x.width>4){l=Math.min(l,x.left);r=Math.max(r,x.right);t0=Math.min(t0,x.top);b=Math.max(b,x.bottom)}})}));
-      if(r>l){ctx.save();ctx.globalCompositeOperation='destination-out';const F=Math.min(100,Math.max(60,w*.16)),Fx=phone?24:F,n=18;let prev=1;
-        // eased, wide feather: erasure ramps from 0 at the outer edge to ~90% in the core (lines stay a faint 10%)
-        for(let k=0;k<n;k++){const t=(k+1)/n,e=t*t*(3-2*t),R=1-(phone?.97:.9)*e,al=1-R/prev;prev=R;const p=F*(1-k/(n-1)),px=phone?Fx*(1-k/(n-1))-6:p,x=l-hr.left-px,y=t0-hr.top-p,ww=r-l+px*2,hh=b-t0+p*2;ctx.fillStyle='rgba(0,0,0,'+al.toFixed(4)+')';ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y,ww,hh,Math.max(10,p+14)):ctx.rect(x,y,ww,hh);ctx.fill()}ctx.restore()}
-      });
-    }else{
-    ctx.save();ctx.globalCompositeOperation='destination-out';ctx.translate(EL.cx,EL.cy+(scrollY?0:0));ctx.scale(EL.rx,EL.ry);
-    const mg=ctx.createRadialGradient(0,0,0,0,0,1);mg.addColorStop(0,'rgba(0,0,0,1)');mg.addColorStop(.5,'rgba(0,0,0,.95)');mg.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=mg;ctx.fillRect(-1,-1,2,2);ctx.restore();}
-    raf=(!reduce&&heroVisible)?requestAnimationFrame(draw):0;
-  }
-  let pinf=0;
-  // once the hero has fully left the screen, coming back replays the whole entrance (letters, stutter, underline, CTAs, wave stall)
-  let heroLeft=false;
-  const replayHero=()=>{const r=document.documentElement;r.classList.remove('hx');void r.offsetWidth;r.classList.add('hx');pinT=0};
-  if(!reduce){new IntersectionObserver(es=>es.forEach(e=>{heroVisible=e.isIntersecting;if(!heroVisible){heroLeft=true;return}if(heroLeft){heroLeft=false;replayHero()}if(!raf){last=performance.now();raf=requestAnimationFrame(draw)}}),{threshold:0}).observe(hero);raf=requestAnimationFrame(draw)}
-  else{T=2.6;draw(performance.now())}
-
-  /* ===== reveal: everything plays by itself when it comes into view and replays after it has fully left ===== */
-  const HOOKS={};
-  const vz=$('#vz');
-  /* --- voz: wave drawn from the real position of the hard word --- */
-  function buildWave(){
-    const svg=$('#vzWave'),word=$('#vzWord');if(!svg||!word)return;
-    const sr=svg.getBoundingClientRect(),wr=word.getBoundingClientRect();
-    const W=Math.max(200,Math.round(sr.width)),H=76,m=H/2;
-    svg.setAttribute('viewBox','0 0 '+W+' '+H);
-    const x0=clamp(wr.left-sr.left,16,W-80),x1=clamp(wr.right-sr.left,x0+60,W-16);
-    const env=x=>Math.pow(Math.sin(Math.PI*clamp(x/W)),.7);
-    const f=x=>Math.sin(x*.045)*.55+Math.sin(x*.11+1.3)*.35+Math.sin(x*.27+.4)*.2;
-    const sm=t=>t*t*(3-2*t);
-    const seg=(a,b,amp,ta,tb)=>{let d='';for(let x=a;x<=b+.1;x+=3){const k=(ta?sm(clamp((x-a)/28)):1)*(tb?sm(clamp((b-x)/28)):1);const y=m-amp*env(x)*f(x)*k;d+=(d?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)}return d};
-    const hs=[0,-5,0,0,-22,22,0,0,-16,13,0,0,-4,0];
-    let jag='';hs.forEach((h,i)=>{const x=x0+(x1-x0)*i/(hs.length-1);jag+=(i?'L':'M')+x.toFixed(1)+' '+(m+h).toFixed(1)});
-    $('.a',svg).setAttribute('d',seg(0,x0,28,false,true));
-    $('.b',svg).setAttribute('d',jag);
-    $('.b2',svg).setAttribute('d',seg(x0,x1,28,true,true));
-    $('.c',svg).setAttribute('d',seg(x1,W,28,true,false));
-  }
-  if(vz){
-    buildWave();addEventListener('resize',buildWave);if(document.fonts)document.fonts.ready.then(buildWave);addEventListener('load',buildWave);
-  }
+  /* ===== section titles fill in word by word as they rise through the screen (the page's only scroll effect) ===== */
   if(!reduce){
-    root.classList.add('fx');
-    /* letters: words stay unbroken, every letter forms in sequence (headings keep an aria-label; elsewhere the text stays readable) */
-    function split(h){
-      const hd=/^H[1-6]$/.test(h.tagName);
-      if(hd)h.setAttribute('aria-label',h.textContent.replace(/\s+/g,' ').trim());
-      let i=0;
+    const heads=$$('[data-fill]').map(h=>{
+      h.setAttribute('aria-label',h.textContent.replace(/\s+/g,' ').trim());
+      const ws=[];
       (function walk(n){[...n.childNodes].forEach(c=>{
         if(c.nodeType===3){const f=document.createDocumentFragment();
           c.textContent.split(/(\s+)/).forEach(t=>{if(!t)return;
-            if(/^\s+$/.test(t)){f.appendChild(document.createTextNode(' '));return}
-            const w=document.createElement('span');w.className='w';if(hd)w.setAttribute('aria-hidden','true');
-            [...t].forEach(ch=>{const k=document.createElement('span');k.className='ch';k.style.setProperty('--i',i++);k.textContent=ch;w.appendChild(k)});f.appendChild(w)});
+            if(/^\s+$/.test(t)){f.appendChild(document.createTextNode(t));return}
+            const w=document.createElement('span');w.className='fw';w.setAttribute('aria-hidden','true');w.textContent=t;f.appendChild(w);ws.push(w)});
           n.replaceChild(f,c)}
-        else if(c.nodeType===1&&c.tagName!=='svg')walk(c)})})(h);
-    }
-    $$('[data-split]').forEach(split);
-    buildWave();
-
-    /* timers per stage, cleared when the stage resets */
-    const timers=new Map();
-    const T=(el,ms,fn)=>{const l=timers.get(el)||[];l.push(setTimeout(fn,ms));timers.set(el,l)};
-    const clearT=el=>{(timers.get(el)||[]).forEach(clearTimeout);timers.set(el,[])};
-
-    /* --- você × nativo: the wrong parts are struck one after another, then the corrections light up --- */
-    const diff=$('#diff');
-    if(diff){
-      const r1=$$('.drow:first-child .seg:not(.ok)',diff),r2=$$('.drow+.drow .seg',diff);
-      $$('.drow:first-child .seg',diff).forEach(sg=>$$('.w',sg).forEach((w,i)=>w.style.setProperty('--wi',i)));
-      HOOKS.diff={
-        on(){T(diff,2100,()=>r1[0]&&r1[0].classList.add('bad'));T(diff,2800,()=>r1[1]&&r1[1].classList.add('bad'));
-             T(diff,5300,()=>r2[0]&&r2[0].classList.add('lit'));T(diff,5850,()=>r2[1]&&r2[1].classList.add('lit'))},
-        off(){clearT(diff);$$('.seg',diff).forEach(b=>b.classList.remove('bad','lit'))}};
-    }
-
-    /* --- voz: the phrase forms, "experience" stutters in red, resolves to green, the scores count up --- */
-    if(vz){
-      const MET=[[72,84],[68,77],[61,70]],lis=$$('#vzM li'),att=$('#vzAtt');
-      let gen=0;
-      const put=(i,v)=>{const li=lis[i];$('.vz-v',li).textContent=Math.round(v);$('.vz-bar i',li).style.setProperty('--p',v.toFixed(1)+'%')};
-      const count=(i,a,b,ms)=>{const g=gen,t0=performance.now();(function f(n){if(g!==gen)return;const k=clamp((n-t0)/ms);put(i,a+(b-a)*ease(k));if(k<1)requestAnimationFrame(f)})(t0)};
-      const add=c=>vz.classList.add(c);
-      HOOKS.vz={
-        on(){buildWave();gen++;att.textContent='Tentativa 1';lis.forEach((_,i)=>put(i,0));
-          T(vz,1900,()=>add('wa'));
-          T(vz,2600,()=>{add('s1');lis.forEach((_,i)=>count(i,0,MET[i][0],1000))});
-          T(vz,4300,()=>{add('fix');att.textContent='Tentativa 2'});
-          T(vz,4500,()=>lis.forEach((_,i)=>count(i,MET[i][0],MET[i][1],1100)));
-          T(vz,5500,()=>add('chip'))},
-        off(){clearT(vz);gen++;['wa','s1','fix','chip'].forEach(c=>vz.classList.remove(c))}};
-      lis.forEach((_,i)=>put(i,0));
-    }
-
-    /* --- observers: one decides when something starts (a bit inside the screen), one when it has fully left --- */
-    const targets=$$('.rv,[data-stage],[data-split]:not([data-split="in"]),#diff,#vz');
-    const uniq=[...new Set(targets)];
-    const start=el=>{if(el.classList.contains('pl'))return;el.classList.add('pl');if(el.classList.contains('rv'))el.classList.add('in');const h=HOOKS[el.id];h&&h.on()};
-    const stop=el=>{if(!el.classList.contains('pl')||el.hasAttribute('data-once'))return;el.classList.remove('pl','in');const h=HOOKS[el.id];h&&h.off()};
-    const th=[];for(let i=0;i<=20;i++)th.push(i/20);
-    const ioOn=new IntersectionObserver(es=>es.forEach(e=>{
-      const el=e.target,need=Math.min(e.boundingClientRect.height*(+el.dataset.at||.5),innerHeight*.3);
-      if(e.isIntersecting&&e.intersectionRect.height>=need-1)start(el);
-    }),{threshold:th,rootMargin:'0px 0px -8% 0px'});
-    const ioOff=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting)stop(e.target)}),{threshold:0});
-    uniq.forEach(el=>{ioOn.observe(el);ioOff.observe(el)});
+        else if(c.nodeType===1)walk(c)})})(h);
+      return {h,ws};
+    });
+    let tick=false;
+    // a title starts filling when its top reaches 85% of the screen and is fully dark by 40%
+    function paint(){tick=false;const vh=innerHeight;
+      heads.forEach(({h,ws})=>{const p=clamp((vh*.85-h.getBoundingClientRect().top)/(vh*.45)),n=ws.length,span=4;
+        ws.forEach((w,i)=>{w.style.opacity=(.14+.86*clamp((p*(n+span)-i)/span)).toFixed(3)})})}
+    addEventListener('scroll',()=>{if(!tick){tick=true;requestAnimationFrame(paint)}},{passive:true});
+    addEventListener('resize',paint);paint();
   }
 
-
-  /* ===== radar: replay on every re-entry (threshold list lets it reset once mostly out of view) ===== */
-  /* handled in the main script */
+  /* ===== nav: glass pill once the page scrolls; slides away while scrolling down, and stays away while the demo is on screen ===== */
+  const nav=$('.nav'),screen=$('#screen');let lastY=scrollY,down=false,onDemo=false;
+  function navSc(){const y=scrollY;nav.classList.toggle('stuck',y>8);
+    if(Math.abs(y-lastY)>6){down=y>lastY;lastY=y}
+    nav.classList.toggle('away',!nav.contains(document.activeElement)&&(onDemo||(down&&y>240)))}
+  addEventListener('scroll',navSc,{passive:true});navSc();
+  if(screen)new IntersectionObserver(es=>es.forEach(e=>{onDemo=e.isIntersecting;navSc()}),{threshold:.5}).observe(screen);
+  nav.addEventListener('focusin',()=>nav.classList.remove('away'));
 })();
 </script>
 </body>
