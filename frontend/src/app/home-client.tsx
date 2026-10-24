@@ -358,44 +358,48 @@ function HomeView({
           </ul>
         </div>
 
-          <div className="ds-block shl-home-card">
-            {isLoading ? (
-              <div className="grid gap-4" aria-busy="true">
-                <LoadingLabel>{t("Organizando seu histórico")}…</LoadingLabel>
-                <Sk h="1.6rem" w="88%" r="0.5rem" />
-                <Sk h="1.6rem" w="62%" r="0.5rem" i={1} />
-                <Sk h="1rem" w="40%" i={2} />
-              </div>
-            ) : hasInterviews ? (
-              <>
-                <div className="shl-home-card-head">
-                  <p className="ds-kicker">{t("Sua última entrevista")}</p>
-                  <p className="ds-small">{lastInterviewDate ?? t("Data não disponível")}</p>
-                </div>
-                <blockquote className="shl-home-takeaway">
+        <figure className="ds-art shl-home-art" aria-hidden="true" style={{ "--art-ratio": "5 / 4", "--art-pos": "center 60%" } as CSSProperties}>
+          <img src="/landing/hero-mata-mobile.webp" alt="" width={704} height={552} decoding="async" />
+        </figure>
+      </section>
+
+      <section className="shl-home-block" aria-labelledby={isLoading ? undefined : "last-interview-title"}>
+        <div className="ds-block shl-home-last">
+          {isLoading ? (
+            <div className="grid gap-4" aria-busy="true">
+              <LoadingLabel>{t("Organizando seu histórico")}…</LoadingLabel>
+              <Sk h="1.6rem" w="88%" r="0.5rem" />
+              <Sk h="1.6rem" w="62%" r="0.5rem" i={1} />
+              <Sk h="1rem" w="40%" i={2} />
+            </div>
+          ) : hasInterviews ? (
+            <div className="shl-home-last-grid">
+              <div className="min-w-0">
+                <p className="ds-kicker" id="last-interview-title">{t("Sua última entrevista")}</p>
+                <p className="ds-small mt-1">{lastInterviewDate ?? t("Data não disponível")}</p>
+                <blockquote className="shl-home-takeaway mt-4">
                   {insights.lastTakeaway ?? t(insights.lastReportReady ? "O relatório desta entrevista está disponível no seu progresso." : "A análise desta entrevista ainda não está disponível.")}
                 </blockquote>
-                <div className="ds-hairline-top shl-home-card-foot">
-                  <button type="button" className="shl-home-link" onClick={onProgress}>
-                    {t("Ver relatório e progresso")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="ds-kicker">{t("Como a Entoa funciona")}</p>
-                <ol className="shl-home-steps ds-rows">
-                  <li><span>1</span><p>{t("Você faz uma entrevista por voz.")}</p></li>
-                  <li><span>2</span><p>{t("Recebe um relatório do que ficou claro e do que praticar.")}</p></li>
-                  <li><span>3</span><p>{t("Leva um foco para a próxima entrevista.")}</p></li>
-                </ol>
-              </>
-            )}
-          </div>
+              </div>
+              <button type="button" className="shl-home-link" onClick={onProgress}>
+                {t("Ver relatório e progresso")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
+              </button>
+            </div>
+          ) : (
+            <div>
+              <p className="ds-kicker" id="last-interview-title">{t("Como a Entoa funciona")}</p>
+              <ol className="shl-home-steps ds-rows mt-4">
+                <li><span>1</span><p>{t("Você faz uma entrevista por voz.")}</p></li>
+                <li><span>2</span><p>{t("Recebe um relatório do que ficou claro e do que praticar.")}</p></li>
+                <li><span>3</span><p>{t("Leva um foco para a próxima entrevista.")}</p></li>
+              </ol>
+            </div>
+          )}
+        </div>
       </section>
 
       {!isLoading && hasInterviews && (
-        <section className="shl-home-block" aria-labelledby="practice-history-title">
+        <section className="shl-home-block ds-alt" aria-labelledby="practice-history-title">
           <div className="ds-sec-head" data-layout="split">
             <div>
               <p className="ds-kicker">{t("Até aqui")}</p>
@@ -477,6 +481,7 @@ function HomeView({
           </div>
         </section>
       )}
+      <div className="ds-band" aria-hidden="true" />
     </main>
   );
 }
@@ -607,7 +612,7 @@ export default function App({ initialView = "home" }: { initialView?: InitialVie
   const resolvedInitialView = initialView;
   const [view, setView] = useState<View>(resolvedInitialView);
   const dashboardPrefetchStarted = useRef(false);
-  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [startError, setStartError] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 

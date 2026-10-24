@@ -8,7 +8,7 @@
 :root { --shl-bottom-nav-h: calc(4.25rem + max(0.5rem, env(safe-area-inset-bottom))); }
 
 /* ---- Sidebar (desktop). Solid cream ground with a hairline edge; the active item is a surface chip with a hairline ring. ---- */
-.shl-sidebar { background: var(--ds-cream); box-shadow: 1px 0 0 var(--ds-hairline); }
+.shl-sidebar { background: var(--ds-field); box-shadow: 1px 0 0 var(--ds-hairline); }
 
 .shl-nav-list { position: relative; display: flex; flex-direction: column; gap: 0.25rem; }
 
@@ -127,8 +127,7 @@
 .shl-signout .btn:focus-visible { outline: var(--ds-focus-outline); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) { .shl-signout .btn:hover:not(:disabled) { background: var(--ds-hover-wash); color: var(--ds-ink); } }
 
-/* ---- Home: kicker, title and one action on the left; the last interview on a framed card on the right. Solid surfaces, hairlines between blocks. ---- */
-.shl-home { overflow: clip; }
+/* ---- Home: kicker, title and one action on the left; the engraving on the right. Then the last interview (or the 3 steps) as a grey block, and the practice band. ---- */
 .shl-home-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -141,15 +140,11 @@
 .shl-home-subcopy { max-width: 40ch; margin-top: 1.25rem; }
 .shl-home-primary { width: auto; margin-top: 2rem; padding-inline: 1.5rem; }
 .shl-home-facts { margin-top: 2.25rem; }
-.shl-home-card {
-  display: grid;
-  align-content: start;
-  gap: 1rem;
-  min-height: 15rem;
-  padding: clamp(1.25rem, 2.6vw, 2rem);
-}
-.shl-home-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; }
+.shl-home-art { width: 100%; }
+.shl-home-last { display: grid; gap: 1.25rem; }
+.shl-home-last-grid { display: grid; gap: 1.25rem; }
 .shl-home-takeaway {
+  max-width: 38ch;
   margin: 0;
   color: var(--ds-ink);
   font-family: var(--font-display);
@@ -164,6 +159,7 @@
 .shl-home-steps span { font-family: var(--font-display); font-size: 1.6rem; line-height: 1; color: var(--ds-green); }
 .shl-home-steps p { margin: 0; color: var(--ds-text-2); font-size: 0.9375rem; line-height: 1.5; }
 .shl-home-block { padding-top: clamp(3rem, 7vw, 5.5rem); }
+.shl-home-block.ds-alt { padding-top: clamp(2.5rem, 5vw, 4rem); margin-top: clamp(2rem, 4vw, 3rem); }
 
 /* Practice: count and weekly bars on the left, the next focus on the right. */
 .shl-home-practice { display: grid; }
@@ -208,8 +204,14 @@
   .shl-home-voice { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .shl-home-voice > div + div { border-top: 0; border-left: 1px solid var(--ds-hairline); }
 }
+@media (min-width: 900px) {
+  .shl-home-last-grid { grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 2rem; }
+  .shl-home-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; }
+  .shl-home-steps > li { border-top: 0; }
+}
 @media (min-width: 1024px) {
   .shl-home-hero { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: clamp(2rem, 5vw, 4.5rem); }
+  .shl-home { padding-bottom: 0; }
 }
 @media (max-width: 767.98px) {
   .shl-home-primary { width: 100%; justify-content: center; }

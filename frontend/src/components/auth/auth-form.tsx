@@ -158,6 +158,7 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
 
   return (
     <main className="au-page antialiased">
+      <div className="au-center">
         <section className="au-shell">
           <Link href="/" className="au-brand">
             <Image src="/landing/tucano-mark.webp" alt="" width={30} height={34} priority />
@@ -302,6 +303,8 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
           </div>
           <p className="au-foot">Suas sessões ficam privadas na sua conta.</p>
         </section>
+      </div>
+      <div className="ds-band au-band" aria-hidden="true" />
     </main>
   );
 }

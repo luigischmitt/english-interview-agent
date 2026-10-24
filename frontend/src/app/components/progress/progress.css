@@ -7,7 +7,9 @@
 .pg-error { border-radius: var(--ds-r-card); background: var(--ds-error-tint); color: var(--ds-error); }
 
 /* ---- Empty state: first practice ---- */
-.pg-first { max-width: 36rem; padding: clamp(1.5rem, 3vw, 2.25rem); }
+.pg-first-wrap { display: grid; gap: 1.5rem; align-items: stretch; }
+@media (min-width: 900px) { .pg-first-wrap { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); } }
+.pg-first { max-width: none; padding: clamp(1.5rem, 3vw, 2.25rem); }
 .pg-first-btn { width: auto; padding-inline: 1.5rem; }
 
 /* ---- Hero: hairline surface with the view switch ---- */

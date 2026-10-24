@@ -264,9 +264,10 @@
   --ds-chart-ring: #c9d8cf;
   --ds-chart-axis: #d5e1d9;
   /* Voice metric series (precision, rhythm, prosody): validated for CVD and contrast on surface; always paired with direct labels and marker shapes. */
-  --ds-series-accuracy: #1f6b45; /* = --ds-green */
-  --ds-series-fluency: #17563a;  /* = --ds-green-deep */
-  --ds-series-prosody: #44604f;  /* = --ds-text-2 */
+  /* Voice chart series: mata green, sea teal, sun amber — distinct hues, always paired with marker shapes and labels. */
+  --ds-series-accuracy: #1f6b45;
+  --ds-series-fluency: #2a7891;
+  --ds-series-prosody: #b07d12;
   --ds-forest-filter: none;  /* landing illustrations */
   --ds-forest-opacity: 0.9;
   /* Interview stage (call-stage.css): tile, captions, dock, toasts */
@@ -396,8 +397,8 @@
   --ds-chart-ring: #3a3e46;
   --ds-chart-axis: #2e3137;
   --ds-series-accuracy: #5fd08f;
-  --ds-series-fluency: #8fe3b2;
-  --ds-series-prosody: #a6aba5;
+  --ds-series-fluency: #6cc2dc;
+  --ds-series-prosody: #e2bd78;
   --ds-forest-filter: brightness(0.62) saturate(0.85);
   --ds-forest-opacity: 0.8;
   --ds-tile-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 4px 12px -6px rgba(0, 0, 0, 0.5);

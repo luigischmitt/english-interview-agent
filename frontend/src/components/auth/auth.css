@@ -1,7 +1,10 @@
 /* Auth screens (ENG-111). Scoped by the `au-` prefix; uses --ds-* tokens and ds-* primitives. */
 
-.au-page { display: flex; min-height: 100dvh; flex-direction: column; align-items: center; justify-content: center; background: var(--ds-cream); color: var(--ds-ink); padding: 2rem 1rem; }
-@media (min-width: 640px) { .au-page { padding: 3rem 2rem; } }
+.au-page { display: flex; min-height: 100dvh; flex-direction: column; background: var(--ds-cream); color: var(--ds-ink); }
+.au-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem 1rem; }
+@media (min-width: 640px) { .au-center { padding: 3rem 2rem; } }
+/* Closing forest band in normal flow, below the card (never behind it). */
+.au-page > .au-band { margin-top: 0; flex: none; }
 
 .au-shell { display: flex; width: 100%; max-width: 27.5rem; flex-direction: column; gap: 1.5rem; }
 .au-brand { display: inline-flex; align-items: center; align-self: center; gap: 0.625rem; border-radius: 0.5rem; font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.012em; }

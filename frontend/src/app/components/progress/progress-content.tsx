@@ -156,7 +156,7 @@ function VoiceTrendView({ insights }: { insights: ProgressInsights }) {
           <div key={metric} className="pg-metric" data-focus={metric === focus}>
             <p className="pg-metric-label"><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === focus && <span className="pg-focus">{t("seu foco")}</span>}</p>
             <p className="pg-metric-value"><span className="ds-num">{summary ? <CountUp value={Math.round(summary.latest)} /> : "—"}</span><small>/100</small></p>
-            <span className="ds-meter" aria-hidden="true" style={{ "--p": `${summary ? Math.round(summary.latest) : 0}%` } as CSSProperties} />
+            <span className="ds-meter" aria-hidden="true" style={{ "--p": `${summary ? Math.round(summary.latest) : 0}%`, "--ds-meter": `var(--ds-series-${metric})` } as CSSProperties} />
             {summary && <ChangeLabel change={summary.change} />}
             <p className="pg-metric-measure">{t(voiceTrendCopy[metric].measure)}</p>
           </div>
@@ -310,7 +310,7 @@ function PatternItem({ row, total }: { row: PatternRow; total: number }) {
 export function EnglishPatterns({ insights }: { insights: ProgressInsights }) {
   const rows = patternRows(insights);
   return (
-    <section aria-labelledby="pg-english" className="pg-section">
+    <section aria-labelledby="pg-english" className="pg-section ds-alt">
       <div className="ds-sec-head" data-layout="split">
         <div>
           <p className="ds-kicker">{t("Inglês")}</p>

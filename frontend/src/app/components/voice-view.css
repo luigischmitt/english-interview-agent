@@ -32,7 +32,9 @@
 .vv-practice-now { min-width: 10.75rem; margin-top: 1rem; padding-inline: 1rem; }
 
 /* Empty state. */
-.vv-empty { display: grid; justify-items: start; gap: 0.875rem; max-width: 34rem; padding: clamp(1.5rem, 3vw, 2.25rem); }
+.vv-empty-wrap { display: grid; gap: 1.5rem; align-items: stretch; }
+@media (min-width: 900px) { .vv-empty-wrap { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); } }
+.vv-empty { display: grid; justify-items: start; gap: 0.875rem; max-width: none; padding: clamp(1.5rem, 3vw, 2.25rem); }
 .vv-cta { width: auto; padding-inline: 1.5rem; }
 
 /* Practice. */

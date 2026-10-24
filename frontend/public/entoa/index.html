@@ -303,21 +303,24 @@ main{overflow-x:clip}
 .rep-read li{display:grid;grid-template-columns:14px minmax(0,1fr);align-items:baseline;gap:.55rem}
 .rep-read b{color:var(--ink);font-weight:600}
 .rep-read i{justify-self:center;width:8px;height:8px;border-radius:50%;background:var(--green);transform:translateY(-1px)}
-.rep-read i.v{border-radius:1.5px;background:var(--warm);transform:translateY(-1px) rotate(45deg) scale(.9)}
+.rep-read i.v{border-radius:1.5px;background:var(--green-deep);transform:translateY(-1px) rotate(45deg) scale(.9)}
 .rep-read .en b{color:var(--green)}
-.rep-read .v+span b{color:var(--warm)}
+.rep-read .v+span b{color:var(--green-deep)}
 .rep-note{margin-top:.75rem;color:var(--text2);font-size:.88rem;line-height:1.4;max-width:30ch}
 .radar{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
 .radar svg{width:100%;max-width:500px;height:auto;overflow:visible}
 .radar .ring{fill:none;stroke:rgba(14,42,31,.13);stroke-dasharray:3 4}
 .radar .ring.out{stroke-dasharray:none;stroke:rgba(14,42,31,.16)}
 .radar .axis{stroke:rgba(14,42,31,.08)}
+.radar .axis{transition:stroke .2s ease}
+.radar .axis.on{stroke:var(--green);stroke-width:1.5}
+.radar .axis.v.on{stroke:var(--green-deep)}
 .radar .poly{fill:rgba(31,107,69,.16);stroke:var(--green);stroke-width:2;stroke-linejoin:round;transform-origin:150px 150px;transform:scale(.3);opacity:0;transition:transform .9s var(--ease) .15s,opacity .4s ease .15s}
 .rep.in .radar .poly{transform:none;opacity:1}
 .radar .pt{opacity:0;transition:opacity .3s ease}
 .rep.in .radar .pt{opacity:1;transition:opacity .3s ease calc(.75s + var(--k)*60ms)}
 .radar .pt.on{stroke:rgba(31,107,69,.3);stroke-width:5;paint-order:stroke}
-.radar rect.pt.on{stroke:rgba(174,107,48,.32)}
+.radar rect.pt.on{stroke:rgba(23,86,58,.32)}
 .radar .lab{opacity:0;transition:opacity .35s ease}
 .radar .lab{cursor:pointer}
 .rep.in .radar .lab{opacity:1;transition:opacity .35s ease calc(.9s + var(--k)*60ms)}
@@ -327,7 +330,7 @@ main{overflow-x:clip}
 /* the chart only changes on a click or tap: hovering a point just lights its halo, so nothing jumps around under the pointer */
 /* English and voice read as two groups: green circles vs warm diamonds, names in the same colour. */
 .radar .ln{fill:var(--green)}
-.radar .lab.v .ln,.radar .lab.v.on .ln{fill:var(--warm)}
+.radar .lab.v .ln,.radar .lab.v.on .ln{fill:var(--green-deep)}
 /* the chosen point gets a thin ring of its own colour (see .pt.on) instead of the browser's square focus box; keyboard focus keeps a thin ring */
 .radar .hit{fill:transparent;cursor:pointer;outline:none;-webkit-tap-highlight-color:transparent;transition:fill .25s ease}
 .radar .hit:focus{outline:none}
@@ -1107,7 +1110,7 @@ AWS e observabilidade</div></div>
   radar.appendChild(mk('polygon',{class:'poly',points:poly(d=>d[1]/100)}));
   DIM.forEach((d,i)=>{
     const [x,y]=rpt(i,R*d[1]/100),k=`--k:${i}`;
-    const pt=d[2]==='v'?mk('rect',{class:'pt',x:x-4,y:y-4,width:8,height:8,rx:1.5,fill:'#ae6b30',transform:`rotate(45 ${x} ${y})`,style:k}):mk('circle',{class:'pt',cx:x,cy:y,r:4.5,fill:'#1f6b45',style:k});
+    const pt=d[2]==='v'?mk('rect',{class:'pt',x:x-4,y:y-4,width:8,height:8,rx:1.5,fill:'#17563a',transform:`rotate(45 ${x} ${y})`,style:k}):mk('circle',{class:'pt',cx:x,cy:y,r:4.5,fill:'#1f6b45',style:k});
     radar.appendChild(pt);pts.push(pt);
     const [lx,ly]=rpt(i,R+22),c=Math.cos(ang(i)),anchor=Math.abs(c)<.2?'middle':c>0?'start':'end';
     const g=mk('g',{class:d[2]==='v'?'lab v':'lab',style:k}),dy=Math.sin(ang(i))<-.5?-14:Math.sin(ang(i))>.5?6:-4;
@@ -1118,7 +1121,6 @@ AWS e observabilidade</div></div>
     const hit=mk('circle',{class:'hit',cx:x,cy:y,r:16,role:'button',tabindex:'0','aria-label':`${d[0]}: ${metric}`,'aria-pressed':'false'});
     radar.appendChild(hit);hits.push(hit);
     g.addEventListener('click',()=>{pinned=i;hl(i)});
-    hit.addEventListener('focus',()=>hl(i));
     hit.addEventListener('click',()=>{pinned=i;hl(i)});
     hit.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pinned=i;hl(i)}});
   });
