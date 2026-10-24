@@ -6,15 +6,15 @@ import { prefersStaticMotion, useIsomorphicLayoutEffect } from "./use-in-view";
 // Quadratic ease-out: the climb stays visible to the end instead of jumping most of the way in the first frames.
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 2);
 /** A count shorter than this reads as a jump, not a climb. */
-const minDurationMs = 1500;
+const minDurationMs = 1200;
 
 /**
- * Counts a number up from 0 once its element is well inside the screen and its section has been revealed (≥1.5s, ease-out, after a short `delay` so it starts as
+ * Counts a number up from 0 once its element is well inside the screen and its section has been revealed (≥1.2s, ease-out, after a short `delay` so it starts as
  * its section settles). The first render and SSR show the final value, so nothing is missing without JS; the value resets
  * to 0 only on the client, before the first paint. Later changes of `value` (a genuine content change) tween from what is
  * shown to the new value in a shorter run. Under reduced motion the final value is always shown.
  */
-export function useCountUp<T extends Element>(value: number, { duration = 1800, delay = 450, threshold = 0.6 } = {}) {
+export function useCountUp<T extends Element>(value: number, { duration = 1500, delay = 120, threshold = 0.3 } = {}) {
   const ref = useRef<T>(null);
   const [shown, setShown] = useState(value);
   const state = useRef({ played: false, current: value, target: value, frame: 0, timer: 0 });
@@ -60,7 +60,7 @@ export function useCountUp<T extends Element>(value: number, { duration = 1800, 
         start();
       });
       watcher.observe(section, { attributes: true, attributeFilter: ["data-inview"] });
-    }, { threshold, rootMargin: "0px 0px -15% 0px" });
+    }, { threshold, rootMargin: "0px 0px -5% 0px" });
     observer.observe(element);
     return () => { observer.disconnect(); watcher?.disconnect(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
