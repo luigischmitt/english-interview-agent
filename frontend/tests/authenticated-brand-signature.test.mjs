@@ -56,11 +56,11 @@ test("the warm bird accent keeps 3:1 contrast on light and dark app surfaces", (
   assert.match(design, /`--ds-brand-warm` is a small decorative accent[\s\S]+never use it for text, status/u);
 });
 
-test("authenticated Home shows the forest as its own image and band, never under product", () => {
+test("authenticated Home keeps product on plain blocks, without forest overlays", () => {
   assert.doesNotMatch(home, /data-home-item=/u);
-  assert.match(home, /<figure className="ds-art shl-home-art" aria-hidden="true"/u);
-  assert.match(home, /className="ds-band" aria-hidden="true"/u);
+  assert.match(home, /className="ds-block shl-home-card"/u);
   assert.doesNotMatch(home, /ds-mata-frame|--ds-brand-warm/u);
+  assert.doesNotMatch(home, /src="\/landing\/hero-mata/u);
   assert.match(shell, /\.shl-nav-item\[aria-current="page"\] svg \{ color: var\(--ds-green\); \}/u);
   assert.match(shell, /\.shl-mobile-item\[aria-current="page"\] svg \{ color: var\(--ds-green\); \}/u);
   assert.doesNotMatch(shell, /data-home-item="true"\]\[aria-current="page"\]/u);

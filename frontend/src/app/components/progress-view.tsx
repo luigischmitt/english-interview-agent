@@ -3,7 +3,6 @@
 
 import { useLocale, t } from "@/lib/locale";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import { Play } from "lucide-react";
 import { LoadingRegion, SkCard, SkChart } from "@/components/ui/loading-state";
 import { loadProgressRecords } from "@/lib/interview/persistence";
@@ -197,19 +196,14 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
         </section>
       ) : insights.sessionCount === 0 ? (
         <section className="mt-8 lg:mt-10">
-          <div className="pg-first-wrap">
-            <div className="ds-card pg-first">
-              <h2 className="ds-card-title">{t("Sua primeira prática começa o seu painel.")}</h2>
-              <p className="ds-body mt-2 max-w-xl">
-                {t("Depois de concluir uma entrevista você vê aqui seus erros mais comuns, o que estudar primeiro e a evolução a cada prática. Sessões em andamento ou abandonadas não entram. ")}</p>
-              {onStart && (
-                <button type="button" className="ds-btn ds-btn-cta-green pg-first-btn mt-6" onClick={onStart}>
-                  <Play className="size-4 fill-current" aria-hidden="true" /> {t("Começar primeira prática ")}</button>
-              )}
-            </div>
-            <figure className="ds-art pg-first-art" aria-hidden="true" style={{ "--art-ratio": "4 / 3" } as CSSProperties}>
-              <img src="/landing/hero-mata-mobile.webp" alt="" width={704} height={552} loading="lazy" decoding="async" />
-            </figure>
+          <div className="ds-card pg-first">
+            <h2 className="ds-card-title">{t("Sua primeira prática começa o seu painel.")}</h2>
+            <p className="ds-body mt-2 max-w-xl">
+              {t("Depois de concluir uma entrevista você vê aqui seus erros mais comuns, o que estudar primeiro e a evolução a cada prática. Sessões em andamento ou abandonadas não entram. ")}</p>
+            {onStart && (
+              <button type="button" className="ds-btn ds-btn-cta-green pg-first-btn mt-6" onClick={onStart}>
+                <Play className="size-4 fill-current" aria-hidden="true" /> {t("Começar primeira prática ")}</button>
+            )}
           </div>
         </section>
       ) : (
@@ -242,7 +236,6 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
           )}
         </>
       )}
-      {!selectedSession && <div className="ds-band" aria-hidden="true" />}
     </main>
   );
 }

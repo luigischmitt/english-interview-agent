@@ -310,7 +310,7 @@ function PatternItem({ row, total }: { row: PatternRow; total: number }) {
 export function EnglishPatterns({ insights }: { insights: ProgressInsights }) {
   const rows = patternRows(insights);
   return (
-    <section aria-labelledby="pg-english" className="pg-section ds-alt">
+    <section aria-labelledby="pg-english" className="pg-section">
       <div className="ds-sec-head" data-layout="split">
         <div>
           <p className="ds-kicker">{t("Inglês")}</p>

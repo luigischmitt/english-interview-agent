@@ -381,19 +381,14 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
     </LoadingRegion> : error ? <section className="mt-8 rounded-[var(--ds-r-card)] bg-[var(--ds-surface)] p-6" role="alert">
       <p className="ds-h2">{t("Não foi possível carregar os dados da sua voz agora.")}</p>
       <button type="button" className="ds-btn ds-btn-soft mt-4" onClick={retry}>{t("Tentar novamente")}</button>
-    </section> : !insights.hasVoiceData ? <div className="vv-empty-wrap mt-8">
-      <section className="ds-card vv-empty">
-        <AudioLines className="size-6 text-[var(--ds-green)]" aria-hidden="true" />
-        <p className="ds-body">{t("Sua análise de voz aparece aqui depois da próxima entrevista com respostas faladas.")}</p>
-        {onStart && <button type="button" className="ds-btn ds-btn-cta-green vv-cta" onClick={onStart}>
-          <Play className="size-4 fill-current" aria-hidden="true" />
-          {t("Começar entrevista")}
-        </button>}
-      </section>
-      <figure className="ds-art vv-empty-art" aria-hidden="true" style={{ "--art-ratio": "4 / 3" } as CSSProperties}>
-        <img src="/landing/hero-mata-mobile.webp" alt="" width={704} height={552} loading="lazy" decoding="async" />
-      </figure>
-    </div> : <div className="vv-content mt-8 lg:mt-10">
+    </section> : !insights.hasVoiceData ? <section className="ds-card vv-empty mt-8">
+      <AudioLines className="size-6 text-[var(--ds-green)]" aria-hidden="true" />
+      <p className="ds-body">{t("Sua análise de voz aparece aqui depois da próxima entrevista com respostas faladas.")}</p>
+      {onStart && <button type="button" className="ds-btn ds-btn-cta-green vv-cta" onClick={onStart}>
+        <Play className="size-4 fill-current" aria-hidden="true" />
+        {t("Começar entrevista")}
+      </button>}
+    </section> : <div className="vv-content mt-8 lg:mt-10">
       <section aria-labelledby="voice-metrics-title">
         <div className="ds-sec-head">
           <div>
@@ -411,7 +406,7 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
           <p className="ds-small mt-3">{t(metric.measure)}</p>
         </article>)}</div>
       </section>
-      <section className="vv-lesson vv-section ds-alt" aria-labelledby="how-to-improve">
+      <section className="vv-lesson vv-section" aria-labelledby="how-to-improve">
         <div className="ds-sec-head">
           <div><h2 id="how-to-improve" className="ds-section-title">{t("Como melhorar")}</h2></div>
           <p className="ds-lead">{t("Escolha um aspecto da sua voz e veja o que fazer.")}</p>
@@ -489,6 +484,5 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
       </section>
       {message && messageTarget === "word" && <p className="vv-message" role="alert">{message}</p>}
     </div>}
-    <div className="ds-band" aria-hidden="true" />
   </main>;
 }
