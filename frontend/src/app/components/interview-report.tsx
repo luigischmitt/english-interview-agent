@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import Image from "next/image";
 import { getCurrentLocale, t } from "@/lib/locale";
-import { ArrowLeft, ArrowUpRight } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Download } from "lucide-react";
 import { answerOrdinalForSequence, pairInterviewTurns, type InterviewReportResult } from "@/lib/interview/report";
 import type { AzureMetricSummary } from "@/lib/interview/report-metrics.mjs";
 import type { InterviewConfig } from "@/lib/interview/types";
@@ -10,13 +11,25 @@ import type { ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { RESUME_PRACTICE_LABEL } from "@/lib/interview/resume-neutral.mjs";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { findingsForAnswer } from "@/lib/interview/report-response.mjs";
-import { deriveOverviewTiles, groupPatternsByType } from "@/lib/interview/report-overview.mjs";
-import { analysisCoverageNotice, buildReportDeltas, diffReportWords, displayInterviewerTakeaway, displayTechnicalFindings, isCompleteSentence } from "@/lib/interview/report-presentation.mjs";
+import { analysisCoverageNotice, buildReportDeltas, displayInterviewerTakeaway, displayTechnicalFindings, isCompleteSentence } from "@/lib/interview/report-presentation.mjs";
+import { buildErrorRows, buildJobCoverage, buildPracticePriorities, buildVoiceNotes, formatReportDate, reportFileBase, reportSummaryText, type JobCoverageItem } from "@/lib/interview/report-document.mjs";
 import { useReplayReveal } from "@/lib/use-replay-reveal";
-import { SplitTitle } from "@/components/ui/split-title";
 import { LoadingMark, LoadingRegion, SkCard } from "@/components/ui/loading-state";
 import { AzureVoiceReport } from "./azure-voice-report";
 import "./interview-report.css";
+
+/** Joins neighbouring changed words (and the spaces between them) so a correction reads as one mark, like the landing. */
+function mergeChanged(parts: Array<{ text: string; changed: boolean }>) {
+  const merged: Array<{ text: string; changed: boolean }> = [];
+  parts.forEach((part, index) => {
+    const bridge = !part.changed && !part.text.trim() && parts[index - 1]?.changed && parts[index + 1]?.changed;
+    const changed = part.changed || Boolean(bridge);
+    const last = merged.at(-1);
+    if (last && last.changed === changed) last.text += part.text;
+    else merged.push({ text: part.text, changed });
+  });
+  return merged;
+}
 
 export type ReportState = { status: "idle" | "pending" | "ready" | "unavailable"; result?: InterviewReportResult; message?: string };
 type Turns = ReturnType<typeof pairInterviewTurns>;
@@ -26,6 +39,16 @@ const reportLoadingSteps = [
   "Analisando seu inglês",
   "Juntando os sinais da sua voz",
 ];
+const maxVisibleErrors = 5;
+const maxStrengths = 4;
+const seniorityLabels: Record<string, string> = { junior: "Júnior", "mid-level": "Pleno", senior: "Sênior" };
+const jobStatusLabels: Record<JobCoverageItem["status"], string> = {
+  shown: "Citado nas respostas",
+  partial: "Citado, com lacunas",
+  missing: "Ainda não apareceu",
+};
+
+const rise = (index: number) => ({ "--i": index }) as CSSProperties;
 
 function AnswerCard({ turn, result, ordinal }: { turn: Turns[number]; result: InterviewReportResult; ordinal: number }) {
   const [expanded, setExpanded] = useState(false);
@@ -81,74 +104,7 @@ function CapturedAnswers({ turns }: { turns: Turns }) {
   return <details className="rp-more"><summary>{t("Transcrição completa")}</summary><ol className="rp-transcript">{turns.map((turn, index) => <li key={`${turn.sequenceNumber}-${index}`}><p lang="en"><span className="font-semibold">{t("Pergunta:")}</span> {turn.question}</p><p lang="en" className="mt-2"><span className="font-semibold">{t("Sua resposta:")}</span> {turn.answer}</p></li>)}</ol></details>;
 }
 
-const patternTypeLabels: Record<string, string> = {
-  GRAMMAR: "Gramática",
-  WORD_CHOICE: "Escolha de palavras",
-  FALSE_COGNATE: "Falso cognato",
-  STRUCTURE: "Estrutura",
-};
-
-
-type ReportPattern = ReturnType<typeof groupPatternsByType>[number]["items"][number];
-
-/** One correction card: the wrong words get struck word by word, then the natural sentence forms and its changes light up. */
-function PatternCard({ pattern, reference }: { pattern: ReportPattern; reference: (sequenceNumber: number) => number | null | undefined }) {
-  const diff = diffReportWords(pattern.evidence ?? "", pattern.rephrasedExample ?? "");
-  const oldCount = diff.original.filter((part) => part.changed).length;
-  let oldIndex = 0;
-  let newIndex = 0;
-  return (
-    <article className="ds-card rp-card rp-pattern-card ds-lift" data-pattern-card style={{ "--ko": Math.min(oldCount, 5) } as CSSProperties}>
-      <span className="rp-pattern-eyebrow" data-type={pattern.type}>
-        {t(patternTypeLabels[pattern.type] ?? pattern.type)}
-      </span>
-      <p lang="en" className="rp-said">
-        <span className="rp-quiet-label">{t("Você disse")}</span>
-        <br />
-        {diff.original.map((part, partIndex) => part.changed ? <del className="rp-diff-old" style={{ "--k": Math.min(oldIndex++, 5) } as CSSProperties} key={partIndex}>{part.text}</del> : <span key={partIndex}>{part.text}</span>)}
-      </p>
-      <p lang="en" className="rp-rephrase-text rp-natural">
-        <span className="rp-quiet-label">{t("Mais natural")}</span>
-        <br />
-        {diff.revised.map((part, partIndex) => part.changed ? <mark className="rp-diff-new" style={{ "--k": Math.min(newIndex++, 5) } as CSSProperties} key={partIndex}>{part.text}</mark> : <span key={partIndex}>{part.text}</span>)}
-      </p>
-      {isCompleteSentence(pattern.suggestion) && <p className="rp-hint mt-2">{pattern.suggestion}</p>}
-      {isCompleteSentence(pattern.why) && (
-        <p className="rp-hint mt-1">{t("Por que acontece: ")}{pattern.why}</p>
-      )}
-      <p className="rp-phrase-ref">{t("Resposta ")}{reference(pattern.sequenceNumber)}</p>
-    </article>
-  );
-}
-
-/**
- * Each correction card plays its own fixed choreography (~1.7s, once) when it enters view. Cards are independent: nothing
- * waits for another card, so the tempo is always the same. Cards are marked `data-play="wait"` before paint (hidden) and
- * `data-play="go"` when at least 35% is visible. Under reduced motion / without IntersectionObserver nothing is marked and
- * the cards stay visible and finished.
- */
-function usePatternPlay(listRef: React.RefObject<HTMLElement | null>, deps: readonly unknown[]) {
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    if (!list || !("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        observer.unobserve(entry.target);
-        entry.target.setAttribute("data-play", "go");
-      }
-    }, { threshold: 0.35 });
-    list.querySelectorAll<HTMLElement>("[data-pattern-card]").forEach((card) => {
-      if (card.dataset.play === "go") return;
-      card.setAttribute("data-play", "wait");
-      observer.observe(card);
-    });
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-}
-
-/** "Antes → depois" rows tick in: the row slides in, the arrow points, then the new value lands. */
+/** Antes → depois rows tick in: the row slides in, the arrow points, then the new value lands. */
 function DeltaRow({ label, change, index }: { label: string; change?: string; index: number }) {
   const [from, to] = label.split(" → ");
   return (
@@ -175,47 +131,148 @@ function SectionHeading({
   );
 }
 
-function ReadyReport({
-  result,
-  turns,
-  azureSummary,
-  coverage,
-  progressRecords,
-  currentInterviewId,
-  answerCount,
-}: {
-  result: InterviewReportResult;
-  turns: Turns;
-  azureSummary: AzureMetricSummary;
-  coverage: { available: number; pending: number; total: number };
-  progressRecords: ProgressRecord[];
-  currentInterviewId?: string;
-  answerCount: number;
-}) {
-  const answers = azureSummary.answers ?? [];
-  const tiles = deriveOverviewTiles(result, answers);
-  const patterns = groupPatternsByType(turns.flatMap((turn) => findingsForAnswer(result, turn.sequenceNumber).patterns));
-  const [showAllPatterns, setShowAllPatterns] = useState(false);
+/** Everything the ready report shows, derived once from the result (shared by the paper and the appendix). */
+function buildReadyModel(result: InterviewReportResult, turns: Turns, azureSummary: AzureMetricSummary, progressRecords: ProgressRecord[], currentInterviewId: string | undefined, answerCount: number) {
   const reference = (sequenceNumber: number) => answerOrdinalForSequence(turns, sequenceNumber);
-  const allPatterns = patterns.flatMap((group) => group.items);
-  const visiblePatterns = showAllPatterns ? allPatterns : allPatterns.slice(0, 4);
-  const patternCount = allPatterns.length;
-  const deltas = buildReportDeltas(result, azureSummary, progressRecords, currentInterviewId, answerCount);
+  const allPatterns = turns.flatMap((turn) => findingsForAnswer(result, turn.sequenceNumber).patterns);
   const initialTakeaway = displayInterviewerTakeaway(result.interviewerTakeaway);
   const technical = displayTechnicalFindings(result.technicalContent.strengths, result.technicalContent.gaps, initialTakeaway.concern ? [{ explanation: initialTakeaway.concern }] : []);
-  const takeaway = displayInterviewerTakeaway(result.interviewerTakeaway, technical.gaps);
-  const coverageNotice = analysisCoverageNotice(result.analysisCoverage, reference);
-  const patternListRef = useRef<HTMLDivElement>(null);
-  usePatternPlay(patternListRef, [visiblePatterns.length]);
-  // The perception cards fly in from beyond the viewport edge: keep that from ever creating a horizontal scrollbar.
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.add("rp-clip-x");
-    return () => root.classList.remove("rp-clip-x");
-  }, []);
+  return {
+    reference,
+    summary: reportSummaryText(result),
+    coverageNotice: analysisCoverageNotice(result.analysisCoverage, reference),
+    strengths: technical.strengths.slice(0, maxStrengths),
+    errorRows: buildErrorRows(allPatterns),
+    voiceNotes: buildVoiceNotes(azureSummary),
+    priorities: buildPracticePriorities(result),
+    takeaway: displayInterviewerTakeaway(result.interviewerTakeaway, technical.gaps),
+    deltas: buildReportDeltas(result, azureSummary, progressRecords, currentInterviewId, answerCount),
+  };
+}
 
+type ReadyModel = ReturnType<typeof buildReadyModel>;
+
+function refLabel(sequenceNumber: number | null | undefined) {
+  return sequenceNumber === null || sequenceNumber === undefined ? null : `${t("Resposta ")}${sequenceNumber}`;
+}
+
+/** The document itself: the blocks that the landing's printed report shows, in the same order. */
+function ReadyDocument({ model, jobItems, dateLabel }: { model: ReadyModel; jobItems: JobCoverageItem[]; dateLabel: string }) {
+  const [showAllErrors, setShowAllErrors] = useState(false);
+  const { reference, errorRows } = model;
+  const hasVoice = model.voiceNotes.some((note) => note.value !== null);
   return (
-    <div className="rp-stack rp-ready">
+    <>
+      {(model.summary || model.coverageNotice) && (
+        <section className="rp-pblock ds-item" style={rise(0)}>
+          <h2 className="rp-ph">{t("Resumo da entrevista")}</h2>
+          {model.summary && <p className="rp-psummary">{model.summary}</p>}
+          {model.coverageNotice && <p className="rp-pnote">{t(model.coverageNotice)}</p>}
+        </section>
+      )}
+      {model.strengths.length > 0 && (
+        <section className="rp-pblock ds-item" style={rise(1)}>
+          <h2 className="rp-ph">{t("O que funcionou")}</h2>
+          <ul className="rp-good">
+            {model.strengths.map((item, index) => <li key={index}>{item.explanation}</li>)}
+          </ul>
+        </section>
+      )}
+      {jobItems.length > 0 && (
+        <section className="rp-pblock ds-item" style={rise(2)}>
+          <h2 className="rp-ph">{t("Ligado à vaga")}</h2>
+          <ul className="rp-job">
+            {jobItems.map((item) => (
+              <li key={item.competency} data-status={item.status}>
+                <b>{item.competency}</b>
+                <span>{t(jobStatusLabels[item.status])}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <section className="rp-pblock ds-item" style={rise(3)}>
+        <h2 className="rp-ph">{t("Seus erros")}</h2>
+        {errorRows.length > 0 ? (
+          <>
+            <div className="rp-errh" aria-hidden="true"><span>{t("Você disse")}</span><span>{t("O certo")}</span></div>
+            <ul className={`rp-errs${showAllErrors ? " is-all" : ""}`}>
+              {errorRows.map((row, index) => {
+                const meta = [row.note, refLabel(row.sequenceNumber === undefined ? null : reference(row.sequenceNumber))].filter(Boolean).join(" · ");
+                return (
+                  <li key={`${row.sequenceNumber}-${index}`} className={index >= maxVisibleErrors ? "rp-extra" : undefined}>
+                    <p lang="en" className="rp-said">
+                      {mergeChanged(row.said).map((part, partIndex) => part.changed ? <s key={partIndex}>{part.text}</s> : <span key={partIndex}>{part.text}</span>)}
+                    </p>
+                    <p lang="en" className="rp-right">
+                      {mergeChanged(row.right).map((part, partIndex) => part.changed ? <u key={partIndex}>{part.text}</u> : <span key={partIndex}>{part.text}</span>)}
+                    </p>
+                    {meta && <small>{meta}</small>}
+                  </li>
+                );
+              })}
+            </ul>
+            {errorRows.length > maxVisibleErrors && (
+              <button type="button" className="rp-inline-button rp-noprint" aria-expanded={showAllErrors} onClick={() => setShowAllErrors((value) => !value)}>
+                {showAllErrors ? t("Ver menos") : t("Ver todos os {n} erros", { n: errorRows.length })}
+              </button>
+            )}
+          </>
+        ) : (
+          <p className="rp-pnote">{t("Nenhum erro de inglês recorrente apareceu nesta entrevista.")}</p>
+        )}
+      </section>
+      <section className="rp-pblock ds-item" style={rise(4)}>
+        <h2 className="rp-ph">{t("Notas da sua voz")}</h2>
+        {hasVoice ? (
+          <>
+            <ul className="rp-voice">
+              {model.voiceNotes.map((note) => (
+                <li key={note.key} style={{ "--p": `${note.value ?? 0}%` } as CSSProperties}>
+                  <b>{note.value ?? "—"}</b>
+                  <span>{t(note.label)}</span>
+                  <small>{t(note.measure)}</small>
+                </li>
+              ))}
+            </ul>
+            <p className="rp-pnote">{t("De 0 a 100. A análise não avalia sotaque.")}</p>
+          </>
+        ) : (
+          <p className="rp-pnote">{t("Sem sinais de voz suficientes nesta entrevista.")}</p>
+        )}
+      </section>
+      {model.priorities.length > 0 && (
+        <section className="rp-pblock ds-item" style={rise(5)}>
+          <h2 className="rp-ph">{t("Prioridades para praticar")}</h2>
+          <ol className="rp-prio">
+            {model.priorities.map((item, index) => {
+              const areaText = item.area === "english" ? t("Inglês") : t("Conteúdo técnico");
+              return (
+                <li key={index}>
+                  <b>{item.count !== null ? t(item.title) : item.title}</b>
+                  <span>
+                    {item.count !== null
+                      ? (item.count === 1 ? t("1 vez") : t("{n} vezes", { n: item.count }))
+                      : [areaText, refLabel(item.sequenceNumber === null ? null : reference(item.sequenceNumber))].filter(Boolean).join(" · ")}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      )}
+      <footer className="rp-pfoot ds-item" style={rise(6)}>
+        {t("Entoa · Gerado a partir da sua entrevista simulada de {date}", { date: dateLabel })}
+      </footer>
+    </>
+  );
+}
+
+/** Screen-only extras below the paper: perception, changes since last time, the detailed voice data and each answer. */
+function ReadyAppendix({ result, model, turns, azureSummary, coverage }: { result: InterviewReportResult; model: ReadyModel; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number } }) {
+  const { takeaway, deltas } = model;
+  return (
+    <div className="rp-appendix">
       {(takeaway.remember || takeaway.concern) && <section className="rp-section" aria-labelledby="perceived-title" data-reveal="group">
         <SectionHeading id="perceived-title" title="Como você foi percebido" description="O que pode ficar na memória depois da conversa." />
         <div className="rp-perception-grid ds-stagger">
@@ -223,96 +280,10 @@ function ReadyReport({
           {takeaway.concern && <article className="ds-card rp-card rp-perception ds-item" data-tone="concern"><h3 className="ds-label">{t("O que pode pesar contra")}</h3><p>{takeaway.concern}</p></article>}
         </div>
       </section>}
-      <section className="rp-section" aria-labelledby="overview-title" data-reveal="group">
-        <SectionHeading
-          id="overview-title"
-          title="Visão geral"
-          description="Um panorama do conteúdo, do inglês e da sua voz nesta entrevista."
-        />
-        <div className="ds-card rp-card ds-item">
-          {isCompleteSentence(result.technicalContent.summary) && (
-            <p className="rp-summary">{result.technicalContent.summary}</p>
-          )}
-          <div className="rp-overview-grid ds-stagger">
-            {tiles.map((tile) => (
-              <article className="rp-overview-tile ds-item ds-lift" key={tile.id}>
-                <h3 className="ds-label">{t(tile.title)}</h3>
-                <p>{tile.text ? t(tile.text) : t("Sem sinais suficientes nesta entrevista.")}</p>
-                <a href={`#${tile.id}-section`}>{t("Ver seção")}</a>
-              </article>
-            ))}
-          </div>
-        </div>
-        {coverageNotice && <p className="rp-coverage-note" role="status">{t(coverageNotice)}</p>}
-        {deltas.length > 0 && <section className="rp-deltas" aria-label={t("Desde a última entrevista")}><h3 className="rp-subtitle">{t("Desde a última entrevista")}</h3>{deltas.map((delta, index) => <DeltaRow key={delta.label} label={t(delta.label)} change={delta.change} index={index} />)}</section>}
-      </section>
-      <section className="rp-section" id="english-section" aria-labelledby="english-title" data-reveal="group">
-        <SectionHeading
-          id="english-title"
-          title="Seu inglês"
-          description="Padrões que apareceram nas respostas, agrupados por tipo."
-        />
-        <div className="rp-pattern-list" ref={patternListRef}>
-          {visiblePatterns.map((pattern, index) => (
-            <PatternCard pattern={pattern} reference={reference} key={`${pattern.type}-${pattern.sequenceNumber}-${index}`} />
-          ))}
-        </div>
-        {patternCount > 4 && (
-          <button
-            type="button"
-            className="rp-inline-button"
-            aria-expanded={showAllPatterns}
-            onClick={() => setShowAllPatterns((value) => !value)}
-          >
-            {t(showAllPatterns ? "Ver menos" : "Ver todos")}
-          </button>
-        )}
-      </section>
-      {(technical.strengths.length > 0 || technical.gaps.length > 0) && <section className="rp-section" id="technical-section" aria-labelledby="technical-title" data-reveal="group">
-        <SectionHeading
-          id="technical-title"
-          title="Conteúdo técnico"
-          description="O que suas respostas demonstraram e o que poderia ficar mais explícito."
-        />
-        <div className="ds-card rp-card rp-cols ds-stagger">
-          {technical.strengths.length > 0 && <section className="ds-item">
-            <h3 className="rp-subtitle">{t("O que funcionou")}</h3>
-            {technical.strengths.map((item, index) => (
-              <p className="rp-answer-finding" key={index}>
-                {item.explanation} <span className="rp-phrase-ref">{t("Resposta ")}{reference(item.sequenceNumber)}</span>
-              </p>
-            ))}
-          </section>}
-          {technical.gaps.length > 0 && <section className="ds-item">
-            <h3 className="rp-subtitle">{t("O que faltou")}</h3>
-            {technical.gaps.map((item, index) => (
-              <p className="rp-answer-finding" key={index}>
-                {item.explanation} <span className="rp-phrase-ref">{t("Resposta ")}{reference(item.sequenceNumber)}</span>
-              </p>
-            ))}
-          </section>}
-        </div>
-      </section>}
+      {deltas.length > 0 && <section className="rp-deltas" data-reveal="group" aria-label={t("Desde a última entrevista")}><h3 className="rp-subtitle">{t("Desde a última entrevista")}</h3>{deltas.map((delta, index) => <DeltaRow key={delta.label} label={t(delta.label)} change={delta.change} index={index} />)}</section>}
       <section className="rp-section" data-reveal="group">
-        <SectionHeading
-          id="priorities-title"
-          title="O que mais pesa"
-          description="Até três pontos que mais influenciam a clareza das respostas."
-        />
-        <div className="ds-card rp-card ds-stagger">
-          {result.priorities.slice(0, 3).map((item, index) => (
-            <article className="rp-priority-item ds-item" data-area={item.area} key={index}><span className="rp-priority-number" aria-hidden="true">{index + 1}</span><div><span className="rp-priority-area">{t(item.area === "TECHNICAL_CONTENT" ? "Técnico" : "Inglês")}</span><strong>{item.focus}</strong>{item.evidence?.trim() && <span lang="en" className="rp-priority-evidence">“{item.evidence}”</span>}<span className="rp-phrase-ref">{t("Resposta ")}{reference(item.sequenceNumber)}</span></div></article>
-          ))}
-        </div>
-      </section>
-      <section className="rp-section" id="voice-section" data-reveal="group">
-        <SectionHeading
-          id="voice-title"
-          title="Ritmo e voz"
-          description="Sinais de entrega vocal e uma estimativa experimental da pronúncia."
-        />
         <div className="rp-voice-compact">
-          <AzureVoiceReport summary={azureSummary} coverage={coverage} title={t("Sinais vocais")} />
+          <AzureVoiceReport summary={azureSummary} coverage={coverage} title={t("Ritmo da fala")} />
         </div>
       </section>
       <details className="rp-more rp-response-details">
@@ -337,7 +308,21 @@ function ReadyReport({
   );
 }
 
-export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceLabel, persistenceMessage, feedbackSyncMessage, reportState, turns, azureSummary, coverage, onLeave, progressRecords, currentInterviewId, historical = false, onRetry, retrying = false }: {
+/** Opens the browser's print dialog on the paper only; the file name becomes the suggested PDF name. */
+function exportPdf(fileBase: string) {
+  const root = document.documentElement;
+  const previousTitle = document.title;
+  const restore = () => {
+    document.title = previousTitle;
+    root.classList.remove("rp-printing");
+  };
+  document.title = fileBase;
+  root.classList.add("rp-printing");
+  window.addEventListener("afterprint", restore, { once: true });
+  window.print();
+}
+
+export function InterviewReport({ config, elapsed, totalClock, answerCount, persistenceMessage, feedbackSyncMessage, reportState, turns, azureSummary, coverage, onLeave, progressRecords, currentInterviewId, historical = false, onRetry, retrying = false }: {
   config: InterviewConfig; elapsed: string; totalClock: string; answerCount: number; persistenceLabel: string; persistenceMessage: string | null; feedbackSyncMessage: string | null; reportState: ReportState; progressRecords: ProgressRecord[]; currentInterviewId?: string; historical?: boolean; turns: Turns; azureSummary: AzureMetricSummary; coverage: { available: number; pending: number; total: number }; onLeave: () => void; onRetry?: () => void; retrying?: boolean;
 }): ReactNode {
   const [loadedTurns, setLoadedTurns] = useState<Turns>(turns);
@@ -362,53 +347,73 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
     return () => { active = false; };
   }, [historical, turns, currentInterviewId]);
   const reportDirection = reportState.result?.jobDirection ?? config.jobDirection;
-  const headingFacts = useMemo(() => config.interviewSource === "resume" ? RESUME_PRACTICE_LABEL : config.role, [config.interviewSource, config.role]);
+  const isResume = config.interviewSource === "resume";
+  const role = isResume ? t(RESUME_PRACTICE_LABEL) : config.role;
+  // The document date is the record's own date when this interview is in progress history, otherwise today. Computed once per record set.
+  const reportDate = useMemo(() => {
+    const record = currentInterviewId ? progressRecords.find((item) => item.id === currentInterviewId) : undefined;
+    const value = record?.completedAt ?? record?.startedAt ?? record?.createdAt;
+    const parsed = value ? new Date(value) : null;
+    return parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date();
+  }, [progressRecords, currentInterviewId]);
+  const fileBase = useMemo(() => reportFileBase(role, reportDate), [role, reportDate]);
+  const dateLabel = formatReportDate(reportDate, getCurrentLocale() === "en" ? "en" : "pt-BR");
+  const seniorityLabel = config.seniority === "staff" ? "Staff / Lead" : seniorityLabels[config.seniority] ? t(seniorityLabels[config.seniority]) : null;
+  const focusLabel = config.focus === "technical-depth" ? t("Profundidade técnica")
+    : config.focus === "communication" ? t("Comunicação e clareza")
+      : config.focus === "behavioral" ? t("Respostas comportamentais")
+        : t("Prática equilibrada");
+  const duration = historical ? elapsed : `${elapsed} / ${totalClock}`;
+  const readyModel = useMemo(
+    () => reportState.result ? buildReadyModel(reportState.result, loadedTurns, azureSummary, progressRecords, currentInterviewId, answerCount) : null,
+    [reportState.result, loadedTurns, azureSummary, progressRecords, currentInterviewId, answerCount],
+  );
+  const jobItems = useMemo(
+    () => !isResume && reportDirection?.priorityCompetencies?.length && reportState.result
+      ? buildJobCoverage(reportDirection.priorityCompetencies, reportState.result.technicalContent.strengths, reportState.result.technicalContent.gaps)
+      : [],
+    [isResume, reportDirection, reportState.result],
+  );
+  const readyResult = reportState.status === "ready" ? reportState.result : undefined;
+  const ready = readyResult && readyModel ? { result: readyResult, model: readyModel } : null;
   return (
     <section ref={rootRef} className="rp-root mx-auto w-full max-w-4xl" aria-labelledby="interview-complete-title">
       {historical && <button type="button" className="ds-btn ds-btn-quiet mb-3" onClick={onLeave}>
           <ArrowLeft className="size-4" aria-hidden="true" />
           {getCurrentLocale() === "en" ? "Back to Progress" : t("Voltar ao Progresso")}
         </button>}
-      <header className="rp-hero">
-        <h1 id="interview-complete-title" className="font-display text-balance rp-title">
-          <SplitTitle text={t("Seu relatório de entrevista")} rise={0.55} blur={9} duration={950} budget={650} maxStagger={32} />
-        </h1>
-        <p className="ds-body ds-rise mt-3 max-w-[60ch]" style={{ "--d": "700ms" } as CSSProperties}>
-          {t(persistenceLabel)}. {t("Suas respostas foram transcritas.")}
-        </p>
-        <dl className="rp-facts ds-rise" style={{ "--d": "850ms" } as CSSProperties}>
-          <div>
-            <dt>{t(config.interviewSource === "resume" ? "Modo" : "Cargo")}</dt>
-            <dd>{config.interviewSource === "resume" ? t(headingFacts) : headingFacts}</dd>
-          </div>
-          <div>
-            <dt>{t(historical ? "Tempo registrado" : "Tempo")}</dt>
-            <dd className="tabular-nums">
-              {historical ? elapsed : <>{elapsed} {t("/ ")}{totalClock}</>}
-            </dd>
-          </div>
-          <div>
-            <dt>{t("Respostas")}</dt>
-            <dd>{answerCount}</dd>
-          </div>
-        </dl>
-        {reportDirection && config.interviewSource !== "resume" && (
-          <p className="rp-hint mt-3">{t("Direção da vaga: ")}{reportDirection.mainInterviewEmphasis}</p>
-        )}
-      </header>
+      <div className="rp-docbar">
+        <span className="rp-file">{fileBase}.pdf</span>
+        <button type="button" className="rp-pdf" disabled={reportState.status !== "ready"} onClick={() => exportPdf(fileBase)}>
+          <Download width={14} height={14} aria-hidden="true" />
+          {t("Exportar PDF")}
+        </button>
+      </div>
       {persistenceMessage && (
         <div role="status" className="rp-alert mt-5">{t(persistenceMessage)}</div>
       )}
       {feedbackSyncMessage && (
         <div role="status" className="rp-alert mt-4">{t(feedbackSyncMessage)}</div>
       )}
-      <div className="mt-6" aria-busy={reportState.status === "pending" || loadingTurns}>
-        {loadingTurns && (
-          <LoadingRegion label={t("Carregando perguntas e respostas…")} className="mb-4 ld-fade">
-            <SkCard minHeight="9rem" i={1} lines={3} />
-            <SkCard minHeight="9rem" i={3} lines={3} />
-          </LoadingRegion>
-        )}
+      {loadingTurns && (
+        <LoadingRegion label={t("Carregando perguntas e respostas…")} className="mt-4 mb-4 ld-fade">
+          <SkCard minHeight="9rem" i={1} lines={3} />
+          <SkCard minHeight="9rem" i={3} lines={3} />
+        </LoadingRegion>
+      )}
+      <article className="rp-paper" data-reveal="group" aria-busy={reportState.status === "pending" || loadingTurns}>
+        <header className="rp-ptop">
+          <div className="rp-brand"><Image src="/landing/tucano-mark.webp" width={18} height={21} alt="" unoptimized /><span>Entoa</span></div>
+          <span>{t("Relatório de entrevista")} · {dateLabel}</span>
+        </header>
+        <div className="rp-cover">
+          <h1 id="interview-complete-title" className="rp-ptitle">{role}{seniorityLabel && !isResume ? ` · ${seniorityLabel}` : ""}</h1>
+          <dl className="rp-pfacts">
+            <div><dt>{t("Foco")}</dt><dd>{focusLabel}</dd></div>
+            <div><dt>{t("Duração")}</dt><dd className="tabular-nums">{duration}</dd></div>
+            <div><dt>{t("Respostas")}</dt><dd>{answerCount}</dd></div>
+          </dl>
+        </div>
         {reportState.status === "pending" ? (
           <div className="rp-pending-wrap ld-fade">
             <div className="ds-card rp-card rp-pending" role="status" aria-live="polite">
@@ -443,18 +448,11 @@ export function InterviewReport({ config, elapsed, totalClock, answerCount, pers
             {loadedTurns.length > 0 && <CapturedAnswers turns={loadedTurns} />}
             <AzureVoiceReport summary={azureSummary} coverage={coverage} />
           </div>
-        ) : reportState.status === "ready" && reportState.result ? (
-          <ReadyReport
-            result={reportState.result}
-            turns={loadedTurns}
-            azureSummary={azureSummary}
-            coverage={coverage}
-            progressRecords={progressRecords}
-            currentInterviewId={currentInterviewId}
-            answerCount={answerCount}
-          />
+        ) : ready ? (
+          <ReadyDocument model={ready.model} jobItems={jobItems} dateLabel={dateLabel} />
         ) : null}
-      </div>
+      </article>
+      {ready && <ReadyAppendix result={ready.result} model={ready.model} turns={loadedTurns} azureSummary={azureSummary} coverage={coverage} />}
       <div className="rp-foot">
         <button type="button" className={`ds-btn ${reportState.status === "pending" ? "ds-btn-quiet" : "ds-btn-cta-green"} rp-back`} onClick={onLeave}>{t(historical ? "Voltar ao Progresso " : "Voltar ao dashboard ")}
           <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
