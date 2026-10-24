@@ -8,13 +8,7 @@
 /* Keep a focused card (and its open combobox popover) above the cards that follow it. */
 .isu-root .ds-card:focus-within { position: relative; z-index: 5; }
 
-/* Summary panel. */
-.isu-aside {
-  --mata-color: #6fc796; --mata-opacity: 0.22; --mata-size: auto 78%; --mata-pos: right bottom;
-  --mata-fade: linear-gradient(to top left, #000 0%, rgba(0,0,0,0.55) 40%, transparent 78%);
-  border-radius: var(--ds-r-panel); background: var(--ds-panel); color: var(--ds-on-panel); box-shadow: var(--ds-shadow-panel); }
-
-/* Mobile action bar: a material, not an opaque strip. */
+/* Mobile action bar: a solid cream bar with a hairline, not a glass material. */
 .isu-bar {
   /* Anchored to the screen bottom and padded by the nav height, so the opaque bar also fills the strip behind the
      shell's floating mobile nav: no scrolled content can show between the button and the nav. The nav stays on top. */
@@ -23,12 +17,9 @@
   padding-bottom: calc(var(--shl-bottom-nav-h, 0px) + 0.75rem);
   padding-left: max(1rem, env(safe-area-inset-left, 0px));
   padding-right: max(1rem, env(safe-area-inset-right, 0px));
-  background: color-mix(in srgb, var(--ds-cream) 94%, transparent); /* nearly opaque: scrolling content must not show through the button */
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  background: var(--ds-cream);
   box-shadow: var(--ds-shadow-bar);
 }
-@media (prefers-reduced-transparency: reduce) { .isu-bar { background: var(--ds-cream); backdrop-filter: none; -webkit-backdrop-filter: none; } }
 
 .isu-bar .ds-hint { margin-bottom: 0.5rem; font-size: 0.75rem; line-height: 1.35; }
 .isu-bar .ds-btn-cta-green { min-height: 3rem; }
@@ -47,9 +38,10 @@
 .isu-mic[data-heard="hearing"] { background: var(--ds-tint); }
 .isu-mic[data-heard="silent"] { background: var(--ds-error-tint); }
 .isu-mic select.ds-field { min-height: 2.75rem; width: 100%; text-overflow: ellipsis; background-color: var(--ds-popover); }
-.isu-mic-meter { position: relative; height: 0.5rem; overflow: hidden; border-radius: var(--ds-r-pill); background: color-mix(in srgb, var(--ds-ink) 10%, transparent); }
-.isu-mic-fill { position: absolute; inset: 0; border-radius: inherit; background: var(--ds-green); transform: scaleX(0); transform-origin: left; will-change: transform; }
+.isu-mic-meter { position: relative; height: 0.5rem; overflow: hidden; border-radius: var(--ds-r-pill); background: var(--ds-track); }
+.isu-mic-fill { position: absolute; inset: 0; border-radius: inherit; background: var(--ds-green); transform: scaleX(0); transform-origin: left; will-change: transform; transition: transform 70ms linear; }
 .isu-mic[data-heard="silent"] .isu-mic-fill { opacity: 0.5; }
+@media (prefers-reduced-motion: reduce) { .isu-mic-fill { transition: none; } }
 
 /* Interviewer voice picker: compact trigger that expands into a grouped list of radio rows with a sample button. */
 .vp-trigger {
@@ -90,77 +82,28 @@
 @media (min-width: 640px) { .vp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .vp-trigger:active:not(:disabled), .vp-play:active { transform: none; } }
 
-/* ------------------------------------------------------------------------------------------------
- * Motion: "dealing the choices". The cards (and the option groups inside the first one) arrive like cards
- * dealt onto a table: a slight rotation that straightens and settles, staggered, ~1.3s in total.
- * Nothing blocks input; transform/opacity only; `backwards` fill so the settled state is the plain layout.
- * ---------------------------------------------------------------------------------------------- */
-@keyframes isu-deal {
-  0%   { opacity: 0; transform: translate3d(0, 54px, 0) rotate(var(--rot, -2deg)) scale(0.96); }
-  45%  { opacity: 1; }
-  68%  { transform: translate3d(0, -5px, 0) rotate(calc(var(--rot, -2deg) * -0.22)) scale(1.004); }
-  86%  { transform: translate3d(0, 1px, 0) rotate(calc(var(--rot, -2deg) * 0.06)) scale(1); }
-  100% { opacity: 1; transform: none; }
-}
-@keyframes isu-rise-in { from { opacity: 0; transform: translate3d(0, 16px, 0); } to { opacity: 1; transform: none; } }
-@keyframes isu-meter-in { from { opacity: 0; clip-path: inset(0 100% 0 0 round 999px); } to { opacity: 1; clip-path: inset(0 0 0 0 round 999px); } }
-@keyframes isu-row-in { from { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.97); } to { opacity: 1; transform: none; } }
-@keyframes isu-cta-sheen { from { transform: translateX(-120%) skewX(-18deg); } to { transform: translateX(260%) skewX(-18deg); } }
+/* Step number of each card: a quiet serif numeral in the brand green, aligned to the title baseline. */
+.isu-step { min-width: 1.25rem; font-family: var(--font-display); font-size: 1.5rem; line-height: 1; color: var(--ds-green); }
 
-.isu-root .ds-enter {
-  transform-origin: 50% 0%;
-  animation: isu-deal 820ms cubic-bezier(.23, 1, .32, 1) backwards;
-  animation-delay: calc(150ms + var(--i, 0) * 120ms);
-}
-.isu-root .isu-deal {
-  transform-origin: 30% 0%;
-  animation: isu-deal 720ms cubic-bezier(.23, 1, .32, 1) backwards;
-  animation-delay: calc(420ms + var(--j, 0) * 140ms);
-}
-/* Voice picker is inside a collapsed panel; it is not part of the opening deal. */
-.isu-root .isu-deal-late { animation: none; }
+/* Resume upload: a calm well with a hairline inset, not a nested card. */
+.isu-upload { border-radius: var(--ds-r-xl); background: var(--ds-field); box-shadow: inset 0 0 0 1px var(--ds-line); padding: 1rem 1.125rem; }
+.isu-upload-icon { display: grid; width: 2.5rem; height: 2.5rem; flex: none; place-items: center; border-radius: var(--ds-r-md); background: var(--ds-surface); box-shadow: inset 0 0 0 1px var(--ds-hairline); color: var(--ds-text-2); }
 
-/* Reveal panels: the content rises in as the panel opens (job text, resume upload, analysis results, room options). */
-.isu-root .ds-reveal[data-open="true"] > div > * { animation: isu-rise-in 560ms cubic-bezier(.23, 1, .32, 1) 90ms backwards; }
-.isu-root .isu-rise > * { animation: isu-rise-in 520ms cubic-bezier(.23, 1, .32, 1) backwards; animation-delay: calc(40ms + var(--k, 0) * 70ms); }
-.isu-root .isu-rise > :nth-child(2) { --k: 1; }
-.isu-root .isu-rise > :nth-child(3) { --k: 2; }
-.isu-root .isu-rise > :nth-child(4) { --k: 3; }
-.isu-root .isu-rise > :nth-child(5) { --k: 4; }
-/* Inside the opening deal, the group's own children wait for the group. */
-.isu-root .isu-deal.isu-rise > * { animation-delay: calc(700ms + var(--j, 0) * 140ms + var(--k, 0) * 70ms); }
+/* Warning notices: calm tint, same warning tokens as the in-app notice. */
+.isu-notice { border-radius: var(--ds-r-lg); background: var(--ds-warning-tint); color: var(--ds-warning); padding: 0.75rem 1rem; font-size: 0.875rem; line-height: 1.5; }
 
-/* Selection: the segmented thumb glides with a little spring (overshoot), the chosen label settles. */
-.isu-root .ds-seg-thumb[data-animate="true"] { transition: transform 520ms cubic-bezier(.34, 1.5, .5, 1); }
-.isu-root .ds-seg-item:active { transform: scale(0.96); }
+/* Job direction summary: a hairline frame inside the card. */
+.isu-direction { border: 1px solid var(--ds-hairline); border-radius: var(--ds-r-xl); background: var(--ds-surface); padding: 1rem 1.125rem; }
+@media (min-width: 640px) { .isu-direction { padding: 1.25rem 1.5rem; } }
 
-/* Voice rows are dealt when the list opens. A checked row keeps the shared selection pop. */
-.isu-root .ds-reveal[data-open="true"] .vp-row { animation: isu-row-in 460ms cubic-bezier(.23, 1, .32, 1) backwards; animation-delay: calc(120ms + var(--r, 0) * 45ms); }
-.isu-root .ds-reveal[data-open="true"] .vp-row:has(input:checked) { animation: isu-row-in 460ms cubic-bezier(.23, 1, .32, 1) backwards, ds-option-pop 380ms cubic-bezier(.23, 1, .32, 1); animation-delay: calc(120ms + var(--r, 0) * 45ms), 0ms; }
-.vp-grid > .vp-row:nth-child(2) { --r: 1; } .vp-grid > .vp-row:nth-child(3) { --r: 2; } .vp-grid > .vp-row:nth-child(4) { --r: 3; }
-.vp-grid > .vp-row:nth-child(5) { --r: 4; } .vp-grid > .vp-row:nth-child(6) { --r: 5; } .vp-grid > .vp-row:nth-child(n+7) { --r: 6; }
-.vp-play[aria-pressed="true"] { animation: ds-radio-pop 360ms cubic-bezier(.23, 1, .32, 1); }
-
-/* Microphone level meter: draws open, the fill follows the voice fluidly and glows while it hears you. */
-.isu-mic-meter { height: 0.625rem; animation: isu-meter-in 520ms cubic-bezier(.23, 1, .32, 1) backwards; }
-.isu-mic-meter::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), color-mix(in srgb, var(--ds-field) 85%, transparent) calc(10% - 2px) 10%); }
-.isu-mic-fill { background: linear-gradient(90deg, var(--ds-green), color-mix(in srgb, var(--ds-green) 60%, var(--ds-brand-warm, #ae6b30))); transition: transform 70ms linear; }
-.isu-mic[data-heard="hearing"] .isu-mic-fill { box-shadow: 0 0 14px color-mix(in srgb, var(--ds-green) 55%, transparent); }
-
-/* Primary action: confident hover (lift + sheen + arrow) and a firm press. */
-.isu-aside .ds-btn-cta, .isu-bar .ds-btn-cta-green { position: relative; overflow: hidden; isolation: isolate; transition: background-color var(--ds-dur-fast) ease, transform 220ms cubic-bezier(.23, 1, .32, 1), box-shadow 220ms ease, opacity var(--ds-dur-fast) ease; }
-.isu-aside .ds-btn-cta::before, .isu-bar .ds-btn-cta-green::before { content: ""; position: absolute; inset: 0; z-index: -1; width: 38%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent); transform: translateX(-120%) skewX(-18deg); pointer-events: none; }
-.isu-aside .ds-btn-cta:active:not(:disabled), .isu-bar .ds-btn-cta-green:active:not(:disabled) { transform: scale(0.97); }
-@media (hover: hover) and (pointer: fine) {
-  .isu-aside .ds-btn-cta:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.5); }
-  .isu-aside .ds-btn-cta:hover:not(:disabled)::before, .isu-bar .ds-btn-cta-green:hover:not(:disabled)::before { animation: isu-cta-sheen 760ms cubic-bezier(.23, 1, .32, 1); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .isu-root .ds-enter, .isu-root .isu-deal, .isu-root .isu-rise > *, .isu-root .ds-reveal[data-open="true"] > div > *,
-  .isu-root .ds-reveal[data-open="true"] .vp-row, .isu-root .ds-reveal[data-open="true"] .vp-row:has(input:checked), .isu-mic-meter, .vp-play[aria-pressed="true"] { animation: none; }
-  .isu-root .ds-seg-thumb[data-animate="true"], .isu-mic-fill { transition: none; }
-  .isu-aside .ds-btn-cta:hover:not(:disabled), .isu-aside .ds-btn-cta:active:not(:disabled), .isu-bar .ds-btn-cta-green:active:not(:disabled) { transform: none; }
-  .isu-aside .ds-btn-cta::before, .isu-bar .ds-btn-cta-green::before { display: none; }
-}
+/* Summary panel: the forest frame behind an opaque card. */
+.isu-frame { padding: 14px; }
+.isu-aside { padding: 1.5rem; }
+.isu-aside-title { margin-top: 0.75rem; font-size: 1.75rem; line-height: 1.1; overflow-wrap: anywhere; }
+.isu-aside-list { margin: 1.25rem 0 0; font-size: 0.875rem; }
+.isu-aside-list > div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 0.625rem 0; }
+.isu-aside-list dt { flex: none; color: var(--ds-text-2); }
+.isu-aside-list dd { margin: 0; min-width: 0; text-align: right; font-weight: 500; overflow-wrap: anywhere; }
+@media (min-width: 1024px) and (min-height: 760px) { .isu-aside-wrap { position: sticky; top: 6rem; } }
+/* Collapsed reveal panels (job text, resume) take no space: cancel the flex gap they would otherwise leave behind. */
+.isu-root .gap-6 > .ds-reveal:not([data-open="true"]) { margin-top: -1.5rem; }

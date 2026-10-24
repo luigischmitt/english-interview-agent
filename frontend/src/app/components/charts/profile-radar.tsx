@@ -19,16 +19,17 @@ function point(index: number, total: number, radius: number) {
 /**
  * Profile radar: every axis goes from 0 (center) to 100 (edge), so English patterns (% of answers without the error)
  * and Azure voice scores (0–100) share one scale. Each axis is labeled with its name and value, so nothing depends on
- * hover; English points are green circles and voice points warm diamonds. Entrance replays through an ancestor [data-reveal].
+ * hover; English points are green circles and voice points warm diamonds. The entrance plays once on mount.
  */
 /** A diamond drawn directly (no rotate transform), so CSS scale animations keep it on its axis. */
 const diamond = (x: number, y: number, r: number) => `${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}`;
 
-export function ProfileRadar({ items, active, selected, onActive, onSelect, label }: {
+export function ProfileRadar({ items, active, selected, onSelect, label }: {
   items: RadarItem[];
   active: string | null;
   selected: string | null;
-  onActive: (key: string | null) => void;
+  /** Kept optional for compatibility; content no longer changes on hover or focus. */
+  onActive?: (key: string | null) => void;
   onSelect: (key: string) => void;
   label: string;
 }) {
@@ -37,11 +38,11 @@ export function ProfileRadar({ items, active, selected, onActive, onSelect, labe
   const shape = items.map((item, i) => { const p = point(i, total, (RADIUS * Math.max(0, Math.min(100, item.value))) / 100); return `${p.x},${p.y}`; }).join(" ");
 
   return (
-    <svg viewBox="-66 -24 432 348" className="pr-svg" role="group" aria-label={label} onMouseLeave={() => onActive(null)}>
-      {[1, 0.75, 0.5, 0.25].map((fraction) => <polygon key={fraction} className="pr-ring" data-outer={fraction === 1} style={{ "--k": [1, 0.75, 0.5, 0.25].indexOf(fraction) } as React.CSSProperties} points={ring(fraction)} />)}
+    <svg viewBox="-66 -24 432 348" className="pr-svg" role="group" aria-label={label}>
+      {[1, 0.75, 0.5, 0.25].map((fraction) => <polygon key={fraction} className="pr-ring" data-outer={fraction === 1} points={ring(fraction)} />)}
       {items.map((item, i) => {
         const edge = point(i, total, RADIUS);
-        return <line key={item.key} className="pr-axis" pathLength={1} data-group={item.group} data-active={active === item.key} style={{ "--k": i } as React.CSSProperties} x1={CENTER} y1={CENTER} x2={edge.x} y2={edge.y} />;
+        return <line key={item.key} className="pr-axis" pathLength={1} data-group={item.group} data-active={active === item.key} x1={CENTER} y1={CENTER} x2={edge.x} y2={edge.y} />;
       })}
       <polygon className="pr-shape" points={shape} />
       {items.map((item, i) => {
@@ -67,7 +68,6 @@ export function ProfileRadar({ items, active, selected, onActive, onSelect, labe
             data-group={item.group}
             data-active={active === item.key}
             style={{ "--k": i } as React.CSSProperties}
-            onMouseEnter={() => onActive(item.key)}
             onClick={() => onSelect(item.key)}
           >
             <text className="pr-label-name" x={at.x} y={at.y + dy} textAnchor={anchor}>{item.label}</text>
@@ -88,9 +88,6 @@ export function ProfileRadar({ items, active, selected, onActive, onSelect, labe
             tabIndex={0}
             aria-label={`${item.label}: ${item.display}`}
             aria-pressed={selected === item.key}
-            onMouseEnter={() => onActive(item.key)}
-            onFocus={() => onActive(item.key)}
-            onBlur={() => onActive(null)}
             onClick={() => onSelect(item.key)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {

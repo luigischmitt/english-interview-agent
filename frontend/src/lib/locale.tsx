@@ -1216,6 +1216,23 @@ const englishCopy: Record<string, string> = {
   "Não foi possível comparar os padrões agora. Tente novamente.": "Could not compare patterns now. Try again.",
   "Não foi possível concluir a comparação. Tente novamente.": "Could not complete the comparison. Try again.",
   "Nova tentativa concluída": "New attempt complete",
+  "Nova entrevista": "New interview",
+  "Treino de voz": "Voice training",
+  "Escolha um aspecto da sua voz e veja o que fazer.": "Choose an aspect of your voice and see what to do.",
+  "Palavras que se repetem nas suas entrevistas.": "Words that repeat across your interviews.",
+  "Ouça a forma certa, grave e compare com as tentativas anteriores.": "Listen to the right form, record, and compare with your previous attempts.",
+  "Cada barra é uma entrevista. A mais recente fica em destaque.": "Each bar is one interview. The latest is highlighted.",
+  "Última em {date}": "Last on {date}",
+  "Uma entrevista por voz, em inglês, com perguntas da sua vaga e um relatório no final.": "A voice interview in English, with questions from your role and a report at the end.",
+  "Sessões de 5 a 25 minutos": "5 to 25 minute sessions",
+  "Você responde falando, em inglês": "You answer out loud, in English",
+  "As perguntas saem da sua vaga": "Questions come from your role",
+  "Próximo foco": "Next focus",
+  "Precisão, ritmo e prosódia das suas entrevistas, de 0 a 100.": "Accuracy, rhythm and prosody across your interviews, from 0 to 100.",
+  "Conta": "Account",
+  "Prioridades": "Priorities",
+  "O certo": "Correct form",
+  "O que se repete nas suas respostas e como você evolui a cada entrevista.": "What repeats in your answers and how you improve with each interview.",
 };
 
 const interpolate = (text: string, values?: Record<string, string | number>) => values

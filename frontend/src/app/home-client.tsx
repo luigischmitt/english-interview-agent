@@ -9,14 +9,12 @@ import {
   Home,
   AudioLines,
   Gauge,
-  Leaf,
   LineChart,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
   SlidersHorizontal,
   Video,
-  Volume2,
 } from "lucide-react";
 
 import { SessionExpiredNotice } from "@/components/auth/session-expired-notice";
@@ -32,12 +30,9 @@ import { readStoredInterviewerCharacter, storeInterviewerCharacter } from "@/lib
 import { readDashboardCache } from "@/lib/dashboard-data-cache.mjs";
 import { loadProgressRecords } from "@/lib/interview/persistence";
 import { buildHomeInsights } from "@/lib/interview/home-insights.mjs";
-import { getHomeParallaxOffset } from "@/lib/home-motion.mjs";
 import { buildProgressInsights, type ProgressRecord } from "@/lib/interview/progress-insights.mjs";
 import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics } from "@/lib/interview/voice-trend.mjs";
-import { useReplayReveal } from "@/lib/use-replay-reveal";
 import { CountUp } from "@/components/ui/count-up";
-import { SplitTitle } from "@/components/ui/split-title";
 import { useLocale } from "@/lib/locale";
 import { authorizedFetch } from "@/lib/auth/backend-auth";
 
@@ -60,8 +55,7 @@ import { prewarmInterviewerUtterance, useSpeechWarmup, useVoiceReadiness } from 
 import { PageIntro } from "./components/shared";
 import { VoicePicker } from "./components/voice-picker";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
-import { LoadingLabel, LoadingRegion, Sk, SkCard, SkChart, SkLines } from "@/components/ui/loading-state";
-import { MetricSwatch, VoiceTrendChart } from "./components/charts/voice-trend-chart";
+import { LoadingLabel, LoadingRegion, Sk, SkCard } from "@/components/ui/loading-state";
 
 const subscribeNever = () => () => {};
 
@@ -185,10 +179,8 @@ function Navigation({
     );
   };
 
-  const primaryIndex = primaryNavigationItems.findIndex((item) => isNavigationItemActive(view, item.id));
   const utilityNavigationItems = isAdmin ? [settingsNavigationItem, adminNavigationItem] : [settingsNavigationItem];
   const navigationItems = [...primaryNavigationItems, ...utilityNavigationItems];
-  const mobileIndex = navigationItems.findIndex((item) => isNavigationItemActive(view, item.id));
 
   return (
     <>
@@ -196,7 +188,7 @@ function Navigation({
         id="desktop-sidebar"
         aria-label={t("Navegação para desktop")}
         className={`shl-sidebar fixed inset-y-0 left-0 z-10 hidden h-dvh max-h-dvh min-h-0 shrink-0 overflow-y-auto px-3.5 py-5 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
-          sidebarExpanded ? "w-72" : "w-20"
+          sidebarExpanded ? "w-64" : "w-20"
         }`}
       >
         <div className={`flex items-center pb-8 ${sidebarExpanded ? "justify-between gap-2 pl-2" : "flex-col gap-3"}`}>
@@ -220,15 +212,13 @@ function Navigation({
           </button>
         </div>
         <nav aria-label={t("Navegação principal")}>
-          <ul className="shl-nav-list" style={{ "--idx": Math.max(primaryIndex, 0) } as CSSProperties}>
-            <li aria-hidden="true" className="shl-thumb" data-hidden={primaryIndex < 0} />
+          <ul className="shl-nav-list">
             {primaryNavigationItems.map(renderNavigationItem)}
           </ul>
         </nav>
         <div className="mt-auto pt-4">
           <nav aria-label={t("Navegação utilitária")}>
             <ul className="shl-nav-list">
-              <li aria-hidden="true" className="shl-thumb" data-hidden={!utilityNavigationItems.some((item) => view === item.id)} />
               {utilityNavigationItems.map(renderNavigationItem)}
             </ul>
           </nav>
@@ -251,8 +241,7 @@ function Navigation({
         aria-label={t("Navegação móvel")}
         className="shl-mobile-nav fixed inset-x-0 bottom-0 z-20 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden"
       >
-        <ul className="shl-mobile-list" style={{ "--idx": Math.max(mobileIndex, 0), "--nav-count": navigationItems.length } as CSSProperties}>
-          <li aria-hidden="true" className="shl-thumb" />
+        <ul className="shl-mobile-list" style={{ "--nav-count": navigationItems.length } as CSSProperties}>
           {navigationItems.map(({ id, label: sourceLabel, icon: Icon }) => {
             const label = t(sourceLabel);
             return (
@@ -315,8 +304,6 @@ function HomeView({
   onVoice: () => void;
 }) {
   const { locale, t } = useLocale();
-  const homeRef = useRef<HTMLElement>(null);
-  const artRef = useRef<HTMLDivElement>(null);
   const cachedRecords = readDashboardCache("progress") as ProgressRecord[] | undefined;
   const [records, setRecords] = useState<ProgressRecord[]>(() => cachedRecords ?? []);
   const [isLoading, setIsLoading] = useState(!cachedRecords);
@@ -343,157 +330,155 @@ function HomeView({
     return () => { active = false; };
   }, []);
 
-  useReplayReveal(homeRef, [hasInterviews, isLoading], { once: true });
-
-  useEffect(() => {
-    const art = artRef.current;
-    if (!art || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let frame = 0;
-    const update = () => {
-      frame = 0;
-      if (!window.matchMedia("(min-width: 1024px)").matches) {
-        art.style.transform = "none";
-        return;
-      }
-      const offset = getHomeParallaxOffset(art.getBoundingClientRect().top, window.innerHeight);
-      art.style.transform = `translate3d(0, ${offset}px, 0)`;
-    };
-    const onScroll = () => {
-      if (!frame) frame = window.requestAnimationFrame(update);
-    };
-    update();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-      if (frame) window.cancelAnimationFrame(frame);
-    };
-  }, []);
-
   return (
-    <main ref={homeRef} id="main-content" className={`${pageMain} shl-home`}>
+    <main id="main-content" className={`${pageMain} shl-home`}>
       <section className="shl-home-hero" aria-labelledby="home-title">
         <div className="shl-home-hero-copy">
-          <h1 id="home-title" className="shl-home-title">
-            <SplitTitle text={t("Sua próxima entrevista começa aqui.")} />
-          </h1>
-          <p className="shl-home-subcopy ds-rise" style={{ "--d": "700ms", "--rise-y": "8px", "--rise-t": "700ms" } as CSSProperties}>
-            {t("Pratique em voz alta e leve mais clareza para a próxima conversa.")}
+          <p className="ds-kicker">{t("Feito no Brasil, para vaga lá fora")}</p>
+          <h1 id="home-title" className="ds-title shl-home-title">{t("Sua próxima entrevista começa aqui.")}</h1>
+          <p className="ds-lead shl-home-subcopy">
+            {t("Uma entrevista por voz, em inglês, com perguntas da sua vaga e um relatório no final.")}
           </p>
-          <button type="button" className="ds-btn ds-btn-cta-green shl-home-primary ds-rise" style={{ "--d": "800ms", "--rise-y": "8px", "--rise-t": "700ms" } as CSSProperties} onClick={onStart}>
+          <button type="button" className="ds-btn ds-btn-cta-green shl-home-primary" onClick={onStart}>
             <Play className="size-4 fill-current" aria-hidden="true" /> {t("Começar entrevista")}
           </button>
-          <p className="shl-home-signature ds-rise" style={{ "--d": "900ms", "--rise-y": "6px", "--rise-t": "700ms" } as CSSProperties}>
-            <Leaf className="size-3.5" aria-hidden="true" /> {t("Feito no Brasil, para vaga lá fora")}
-          </p>
+          <ul className="ds-facts shl-home-facts">
+            {hasInterviews ? (
+              <>
+                <li><span><b>{insights.interviewCount}</b> {t(insights.interviewCount === 1 ? "entrevista concluída" : "entrevistas concluídas")}</span></li>
+                {lastInterviewDate && <li>{t("Última em {date}", { date: lastInterviewDate })}</li>}
+                <li>{t("Sessões de 5 a 25 minutos")}</li>
+              </>
+            ) : (
+              <>
+                <li>{t("Você responde falando, em inglês")}</li>
+                <li>{t("As perguntas saem da sua vaga")}</li>
+                <li>{t("Sessões de 5 a 25 minutos")}</li>
+              </>
+            )}
+          </ul>
         </div>
-        <div ref={artRef} className="shl-home-hero-art" aria-hidden="true" />
+
+        <div className="ds-mata-frame shl-home-stage" style={{ "--frame-pos": "center 65%" } as CSSProperties}>
+          <div className="ds-card shl-home-card">
+            {isLoading ? (
+              <div className="grid gap-4" aria-busy="true">
+                <LoadingLabel>{t("Organizando seu histórico")}…</LoadingLabel>
+                <Sk h="1.6rem" w="88%" r="0.5rem" />
+                <Sk h="1.6rem" w="62%" r="0.5rem" i={1} />
+                <Sk h="1rem" w="40%" i={2} />
+              </div>
+            ) : hasInterviews ? (
+              <>
+                <div className="shl-home-card-head">
+                  <p className="ds-kicker">{t("Sua última entrevista")}</p>
+                  <p className="ds-small">{lastInterviewDate ?? t("Data não disponível")}</p>
+                </div>
+                <blockquote className="shl-home-takeaway">
+                  {insights.lastTakeaway ?? t(insights.lastReportReady ? "O relatório desta entrevista está disponível no seu progresso." : "A análise desta entrevista ainda não está disponível.")}
+                </blockquote>
+                <div className="ds-hairline-top shl-home-card-foot">
+                  <button type="button" className="shl-home-link" onClick={onProgress}>
+                    {t("Ver relatório e progresso")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="ds-kicker">{t("Como a Entoa funciona")}</p>
+                <ol className="shl-home-steps ds-rows">
+                  <li><span>1</span><p>{t("Você faz uma entrevista por voz.")}</p></li>
+                  <li><span>2</span><p>{t("Recebe um relatório do que ficou claro e do que praticar.")}</p></li>
+                  <li><span>3</span><p>{t("Leva um foco para a próxima entrevista.")}</p></li>
+                </ol>
+              </>
+            )}
+          </div>
+        </div>
       </section>
 
-      {isLoading ? (
-        <section className="shl-home-flow ld-fade" aria-busy="true">
-          <div className="shl-home-flow-label">
-            <LoadingLabel>{t("Organizando seu histórico")}…</LoadingLabel>
+      {!isLoading && hasInterviews && (
+        <section className="shl-home-block" aria-labelledby="practice-history-title">
+          <div className="ds-sec-head" data-layout="split">
+            <div>
+              <p className="ds-kicker">{t("Até aqui")}</p>
+              <h2 id="practice-history-title" className="ds-section-title">{t("Prática que já conta")}</h2>
+            </div>
+            <p className="ds-lead">{t("Entrevistas por semana, nas últimas 8 semanas.")}</p>
           </div>
-          <div className="shl-home-flow-content" aria-hidden="true">
-            <Sk h="clamp(1.6rem, 1.3rem + 1.4vw, 2.3rem)" w="min(26rem, 88%)" r="0.6rem" />
-            <Sk className="mt-3" h="clamp(1.6rem, 1.3rem + 1.4vw, 2.3rem)" w="min(18rem, 62%)" r="0.6rem" i={1} />
-            <div className="mt-10 flex items-end gap-4">
-              <Sk h="clamp(3.5rem, 2.8rem + 4vw, 6rem)" w="clamp(3.5rem, 8vw, 5.5rem)" r="0.75rem" i={2} />
-              <Sk h="1.25rem" w="9rem" i={3} className="mb-2" />
-            </div>
-            <div className="mt-8 max-w-[26rem]"><SkChart bars={8} h="6.5rem" i={3} /></div>
-            <div className="mt-8 max-w-[28rem]"><SkLines lines={2} h="0.8rem" i={5} /></div>
-          </div>
-        </section>
-      ) : hasInterviews ? (
-        <>
-          <section className="shl-home-flow" aria-labelledby="last-interview-title" data-reveal>
-            <div className="shl-home-flow-label">
-              <h2 id="last-interview-title">{t("Sua última entrevista")}</h2>
-              <p>{lastInterviewDate ?? t("Data não disponível")}</p>
-            </div>
-            <div className="shl-home-flow-content">
-              <blockquote className="shl-home-takeaway">
-                {insights.lastTakeaway ?? t(insights.lastReportReady ? "O relatório desta entrevista está disponível no seu progresso." : "A análise desta entrevista ainda não está disponível.")}
-              </blockquote>
-              <button type="button" className="shl-home-link" onClick={onProgress}>
-                {t("Ver relatório e progresso")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
-              </button>
-            </div>
-          </section>
-
-          <section className="shl-home-flow" aria-labelledby="practice-history-title" data-reveal>
-            <div className="shl-home-flow-label">
-              <h2 id="practice-history-title">{t("Até aqui")}</h2>
-              <p>{t("Prática que já conta")}</p>
-            </div>
-            <div className="shl-home-flow-content">
+          <div className="ds-card shl-home-practice">
+            <div>
               <p className="shl-home-count">
-                <span><CountUp value={insights.interviewCount} /></span> {t(insights.interviewCount === 1 ? "entrevista concluída" : "entrevistas concluídas")}
+                <span className="ds-num"><CountUp value={insights.interviewCount} /></span> {t(insights.interviewCount === 1 ? "entrevista concluída" : "entrevistas concluídas")}
               </p>
               <div
                 className="shl-home-weeks"
                 role="img"
                 aria-label={locale === "en" ? `Practices per week: ${progress.weekly.map((week) => `${week.label}, ${week.count}`).join("; ")}.` : `Práticas por semana: ${progress.weekly.map((week) => `${week.label}, ${week.count}`).join("; ")}.`}
               >
-                {progress.weekly.map((week, index) => (
-                  <div key={week.start} className="shl-home-week" style={{ "--i": index } as CSSProperties}>
+                {progress.weekly.map((week) => (
+                  <div key={week.start} className="shl-home-week">
                     <span className="shl-home-week-n">{week.count || ""}</span>
                     <div className="shl-home-week-track"><i data-empty={week.count === 0} style={{ height: week.count === 0 ? "3px" : `${Math.max(12, (week.count / weeklyMax) * 100)}%` }} /></div>
                     <span className="shl-home-week-l">{week.label}</span>
                   </div>
                 ))}
               </div>
-              <p className="shl-home-caption">{t("Entrevistas por semana, nas últimas 8 semanas.")}</p>
-              <p className="shl-home-detail">
-                {insights.topPattern ? <><strong>{t("Em inglês, observe")}{insights.topPattern.type ? ` ${t(insights.topPattern.type)}` : ""}:</strong> {insights.topPattern.suggestion}</> : t("Seu próximo relatório vai mostrar o padrão de inglês que mais vale observar.")}
+            </div>
+            <div>
+              <p className="ds-label">
+                {insights.topPattern ? <>{t("Em inglês, observe")}{insights.topPattern.type ? ` ${t(insights.topPattern.type)}` : ""}</> : t("Próximo foco")}
+              </p>
+              <p className="ds-body mt-2">
+                {insights.topPattern ? insights.topPattern.suggestion : t("Seu próximo relatório vai mostrar o padrão de inglês que mais vale observar.")}
               </p>
               <button type="button" className="shl-home-link" onClick={onProgress}>
                 {t("Ver progresso")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
               </button>
             </div>
-          </section>
+          </div>
+        </section>
+      )}
 
-          <section className="shl-home-flow" aria-labelledby="voice-focus-title" data-reveal>
-            <div className="shl-home-flow-label">
-              <h2 id="voice-focus-title">{t("Sua voz")}</h2>
-              <p>{t("Um foco de cada vez")}</p>
+      {!isLoading && hasInterviews && (
+        <section className="shl-home-block" aria-labelledby="voice-focus-title">
+          <div className="ds-sec-head">
+            <div>
+              <p className="ds-kicker" data-tone="voice">{t("Sua voz")}</p>
+              <h2 id="voice-focus-title" className="ds-section-title">{t("Um foco de cada vez")}</h2>
             </div>
-            <div className="shl-home-flow-content">
-              {voiceRows.length > 0 ? <>
-                <dl className="shl-home-voice-metrics">
+            <p className="ds-lead">{t("Precisão, ritmo e prosódia das suas entrevistas, de 0 a 100.")}</p>
+          </div>
+          <div className="ds-card shl-home-voice-card">
+            {voiceRows.length > 0 ? (
+              <>
+                <dl className="shl-home-voice">
                   {voiceTrendMetrics.map((metric) => {
                     const summary = voiceMetricSummary(voiceRows, metric);
+                    const value = summary ? Math.round(summary.latest) : 0;
                     return (
                       <div key={metric} data-focus={metric === voiceFocusKey}>
-                        <dt><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === voiceFocusKey && <em>{t("foco")}</em>}</dt>
-                        <dd>{summary ? Math.round(summary.latest) : "—"}<small>/100</small></dd>
+                        <dt>{t(voiceTrendCopy[metric].label)}{metric === voiceFocusKey && <em>{t("foco")}</em>}</dt>
+                        <dd><span className="ds-num">{summary ? value : "—"}</span><small>/100</small><span className="ds-meter" data-tone="voice" style={{ "--p": `${value}%` } as CSSProperties} aria-hidden="true" /></dd>
                       </div>
                     );
                   })}
                 </dl>
-                {voiceRows.length >= 2 && <div className="shl-home-voice-chart"><VoiceTrendChart rows={voiceRows.slice(-10)} variant="compact" focus={voiceFocusKey} /></div>}
-                {voiceFocusKey && <p className="shl-home-detail"><strong>{t(voiceTrendCopy[voiceFocusKey].label)}:</strong> {t(voiceTrendCopy[voiceFocusKey].measure)}</p>}
-              </> : <p className="shl-home-detail">{t("Ainda não há áudio suficiente para mostrar um foco. Sua análise de voz aparece depois de respostas faladas avaliadas.")}</p>}
+                {voiceFocusKey && (
+                  <p className="ds-small shl-home-voice-note ds-hairline-top">
+                    <strong>{t(voiceTrendCopy[voiceFocusKey].label)}:</strong> {t(voiceTrendCopy[voiceFocusKey].measure)}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="ds-body p-6">{t("Ainda não há áudio suficiente para mostrar um foco. Sua análise de voz aparece depois de respostas faladas avaliadas.")}</p>
+            )}
+            <div className="ds-hairline-top shl-home-card-foot shl-home-voice-foot">
               <button type="button" className="shl-home-link" onClick={onVoice}>
                 {t("Treinar minha voz")} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
               </button>
             </div>
-          </section>
-        </>
-      ) : (
-        <section className="shl-home-how" aria-labelledby="how-it-works-title" data-reveal>
-          <div className="shl-home-flow-label">
-            <h2 id="how-it-works-title">{t("Como a Entoa funciona")}</h2>
-            <p>{t("No seu ritmo")}</p>
           </div>
-          <ol className="shl-home-steps">
-            <li><span>01</span><p>{t("Você faz uma entrevista por voz.")}</p></li>
-            <li><span>02</span><p>{t("Recebe um relatório do que ficou claro e do que praticar.")}</p></li>
-            <li><span>03</span><p>{t("Leva um foco para a próxima entrevista.")}</p></li>
-          </ol>
         </section>
       )}
     </main>
@@ -528,94 +513,94 @@ function SettingsView() {
   return (
     <main id="main-content" className={`${pageMain} max-w-4xl`}>
       <PageIntro
+        kicker={t("Conta")}
         title={t("Configurações")}
         description={t("Escolha como você prefere usar a plataforma.")}
       />
-      <section className="ds-card ds-enter mt-8 p-5 sm:p-7 lg:mt-10" aria-labelledby="language-title">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <h2 id="language-title" className="ds-h2">{t("Idioma")}</h2>
-            <p id="platform-language-help" className="ds-small mt-1">{t("Escolha o idioma da plataforma.")}</p>
+      <section className="ds-card shl-settings mt-8 lg:mt-10" aria-label={t("Configurações")}>
+        <div className="ds-rows">
+          <div className="shl-setting">
+            <div className="shl-setting-text">
+              <h2 id="language-title" className="ds-label">{t("Idioma")}</h2>
+              <p id="platform-language-help" className="ds-small mt-1">{t("Escolha o idioma da plataforma.")}</p>
+            </div>
+            <div className="shl-setting-control">
+              <SlidingSegmented
+                name="platform-language"
+                ariaLabel={t("Idioma")}
+                ariaDescribedBy="platform-language-help"
+                className="w-full grid-cols-2 sm:max-w-[20rem]"
+                itemClassName="min-h-11"
+                options={[
+                  { value: "pt-BR", label: t("Português (Brasil)") },
+                  { value: "en", label: t("English") },
+                ]}
+                value={locale}
+                onChange={(value) => setLocale(value === "en" ? "en" : "pt-BR")}
+              />
+            </div>
           </div>
-          <SlidingSegmented
-            name="platform-language"
-            ariaLabel={t("Idioma")}
-            ariaDescribedBy="platform-language-help"
-            className="w-full grid-cols-2 sm:w-[18rem]"
-            itemClassName="min-h-11"
-            options={[
-              { value: "pt-BR", label: t("Português (Brasil)") },
-              { value: "en", label: t("English") },
-            ]}
-            value={locale}
-            onChange={(value) => setLocale(value === "en" ? "en" : "pt-BR")}
-          />
-        </div>
-      </section>
-      <section className="ds-card ds-enter mt-5 px-5 py-2 sm:px-7 lg:mt-6" aria-labelledby="appearance-title">
-        <h2 id="appearance-title" className="ds-label pt-5 text-text-2">{t("Aparência")}</h2>
-        <div className="shl-row">
-          <div className="min-w-0 flex-1">
-            <p className="ds-label">{t("Tema da plataforma")}</p>
-            <p className="ds-small mt-1">{t("Escolha entre claro, escuro ou acompanhar o tema do seu dispositivo.")}</p>
+          <div className="shl-setting">
+            <div className="shl-setting-text">
+              <h2 id="theme-title" className="ds-label">{t("Tema da plataforma")}</h2>
+              <p className="ds-small mt-1">{t("Escolha entre claro, escuro ou acompanhar o tema do seu dispositivo.")}</p>
+            </div>
+            <div className="shl-setting-control">
+              <ThemeToggle />
+            </div>
+          </div>
+          <div className="shl-setting">
+            <div className="shl-setting-text">
+              <h2 id="voice-title" className="ds-label">{t("Voz do entrevistador")}</h2>
+              <p className="ds-small mt-1">{t("A escolha fica salva neste navegador e pode ser alterada ao preparar cada entrevista.")}</p>
+            </div>
+            <div className="shl-setting-control">
+              <VoicePicker value={voice} onChange={chooseVoice} speed={speechSpeed} />
+              <div className="mt-5">
+                <p id="interviewer-speech-speed" className="ds-label">{t("Velocidade da fala")}</p>
+                <SlidingSegmented
+                  name="interviewer-speech-speed"
+                  ariaLabel={t("Velocidade da fala")}
+                  ariaDescribedBy="interviewer-speech-speed-help"
+                  className="mt-2 grid-cols-4"
+                  options={[{ value: "0.8", label: "0,8×" }, { value: "0.9", label: "0,9×" }, { value: "1", label: "1×" }, { value: "1.1", label: "1,1×" }]}
+                  value={String(speechSpeed)}
+                  onChange={chooseSpeechSpeed}
+                />
+                <p id="interviewer-speech-speed-help" className="ds-small mt-2">{t("Diminua se a voz parecer rápida demais.")}</p>
+              </div>
+            </div>
+          </div>
+          <div className="shl-setting">
+            <div className="shl-setting-text">
+              <h2 id="character-title" className="ds-label">{t("Câmera e avatar do entrevistador")}</h2>
+              <p className="ds-small mt-1">{t("Escolha se o entrevistador aparece como personagem animado na sala. Você também pode alterar esta opção antes de iniciar uma entrevista.")}</p>
+            </div>
+            <div className="shl-setting-control">
+              <label htmlFor="settings-interviewer-character" className="ds-toggle">
+                <input
+                  id="settings-interviewer-character"
+                  type="checkbox"
+                  role="switch"
+                  className="ds-switch"
+                  checked={showCharacter}
+                  onChange={(event) => chooseCharacter(event.target.checked)}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                    <span className="text-sm font-semibold">{t("Personagem animado do entrevistador")}</span>
+                    <span className={`shrink-0 text-xs font-semibold ${showCharacter ? "text-green" : "text-text-3"}`}>{t(showCharacter ? "Ligado" : "Desligado")}</span>
+                  </span>
+                  <span className="ds-small mt-1 block">{t("Desative para mostrar somente a marca TUC estática na sala.")}</span>
+                </span>
+              </label>
+            </div>
           </div>
         </div>
-        <div className="pb-6 pt-2">
-          <ThemeToggle />
-        </div>
-      </section>
-      <section className="ds-card ds-enter mt-5 px-5 py-2 sm:px-7 lg:mt-6" aria-labelledby="interview-experience-title">
-        <h2 id="interview-experience-title" className="ds-label pt-5 text-text-2">{t("Experiência da entrevista")}</h2>
-        <div className="shl-row">
-          <span className="shl-icon-tile" aria-hidden="true"><Volume2 className="size-5" /></span>
-          <div className="min-w-0 flex-1">
-            <p className="ds-label">{t("Voz do entrevistador")}</p>
-            <p className="ds-small mt-1">{t("A escolha fica salva neste navegador e pode ser alterada ao preparar cada entrevista.")}</p>
-          </div>
-        </div>
-        <div className="pb-6 pt-2 sm:pl-[3.75rem]">
-          <VoicePicker value={voice} onChange={chooseVoice} speed={speechSpeed} />
-          <div className="mt-5">
-            <p id="interviewer-speech-speed" className="ds-label">{t("Velocidade da fala")}</p>
-            <SlidingSegmented
-              name="interviewer-speech-speed"
-              ariaLabel={t("Velocidade da fala")}
-              ariaDescribedBy="interviewer-speech-speed-help"
-              className="mt-2 grid-cols-4"
-              options={[{ value: "0.8", label: "0,8×" }, { value: "0.9", label: "0,9×" }, { value: "1", label: "1×" }, { value: "1.1", label: "1,1×" }]}
-              value={String(speechSpeed)}
-              onChange={chooseSpeechSpeed}
-            />
-            <p id="interviewer-speech-speed-help" className="ds-small mt-2">{t("Diminua se a voz parecer rápida demais.")}</p>
-          </div>
-        </div>
-        <div className="shl-row">
-          <span className="shl-icon-tile" aria-hidden="true"><Video className="size-5" /></span>
-          <div className="min-w-0 flex-1">
-            <p className="ds-label">{t("Câmera e avatar do entrevistador")}</p>
-            <p className="ds-small mt-1">{t("Escolha se o entrevistador aparece como personagem animado na sala. Você também pode alterar esta opção antes de iniciar uma entrevista.")}</p>
-          </div>
-        </div>
-        <label htmlFor="settings-interviewer-character" className="ds-toggle -mx-1 mb-3 sm:ml-[3.25rem] sm:mr-0">
-          <input
-            id="settings-interviewer-character"
-            type="checkbox"
-            role="switch"
-            className="ds-switch"
-            checked={showCharacter}
-            onChange={(event) => chooseCharacter(event.target.checked)}
-          />
-          <span className="min-w-0 flex-1">
-            <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-              <span className="text-sm font-semibold">{t("Personagem animado do entrevistador")}</span>
-              <span className={`shrink-0 text-xs font-semibold ${showCharacter ? "text-green" : "text-text-3"}`}>{t(showCharacter ? "Ligado" : "Desligado")}</span>
-            </span>
-            <span className="ds-small mt-1 block">{t("Desative para mostrar somente a marca TUC estática na sala.")}</span>
-          </span>
-        </label>
       </section>
     </main>
   );
+
 }
 
 export default function App({ initialView = "home" }: { initialView?: InitialView }) {
@@ -626,7 +611,7 @@ export default function App({ initialView = "home" }: { initialView?: InitialVie
   const resolvedInitialView = initialView;
   const [view, setView] = useState<View>(resolvedInitialView);
   const dashboardPrefetchStarted = useRef(false);
-  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [startError, setStartError] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -703,13 +688,13 @@ export default function App({ initialView = "home" }: { initialView?: InitialVie
         <div
           aria-hidden="true"
           className={`pointer-events-none hidden shrink-0 transition-[width] duration-200 ease-out lg:block ${
-            sidebarExpanded ? "w-72" : "w-20"
+            sidebarExpanded ? "w-64" : "w-20"
           }`}
         />
         <div className="min-w-0 flex-1">
           <Topbar view={view} />
           <SessionExpiredNotice />
-          <div key={view} className="ds-view">
+          <div key={view}>
           {view === "home" && (
             <HomeView
               onStart={() => navigate("interview-setup")}

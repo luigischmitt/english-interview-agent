@@ -172,7 +172,7 @@ export function MicrophoneTest({ deviceId, onDeviceChange, ref }: {
       </div>
 
       {revealed && inputs.length > 0 && (
-        <div className="isu-rise mt-4 flex flex-col gap-2">
+        <div className="mt-4 flex flex-col gap-2">
           <label htmlFor={`${uid}-device`} className="ds-label">{t("Microfone usado na entrevista")}</label>
           <select id={`${uid}-device`} className="ds-field" value={selectValue} onChange={(event) => choose(event.target.value)} disabled={busy}>
             <option value="">{t("Padrão do sistema")}</option>

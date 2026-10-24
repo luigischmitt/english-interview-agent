@@ -2,7 +2,7 @@
 
 
 import { getCurrentLocale, t } from "@/lib/locale";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { minAnswersForProfile, minSessionsForTrends } from "@/lib/interview/progress-insights.mjs";
@@ -15,14 +15,10 @@ import type {
 } from "@/lib/interview/progress-insights.mjs";
 import { mergeVoiceSeries, voiceMetricSummary, voiceTrendCopy, voiceTrendMetrics, type VoiceTrendMetric } from "@/lib/interview/voice-trend.mjs";
 import { SlidingSegmented } from "@/components/ui/sliding-segmented";
-import { useReplayReveal } from "@/lib/use-replay-reveal";
 import { CountUp } from "@/components/ui/count-up";
 import { MetricSwatch, VoiceTrendChart } from "../charts/voice-trend-chart";
 import { ProfileRadar, type RadarItem } from "../charts/profile-radar";
-import { SectionHeading } from "../shared";
 import "./progress.css";
-
-const stagger = (index: number) => ({ "--i": index }) as CSSProperties;
 
 export function formatPracticeDuration(milliseconds: number | null) {
   if (milliseconds === null) return t("Indisponível");
@@ -100,9 +96,8 @@ function ProfileView({ insights }: { insights: ProgressInsights }) {
   const items = useMemo(() => radarItems(insights), [insights]);
   const weakest = [...items].sort((a, b) => a.value - b.value)[0] ?? null;
   const [picked, setPicked] = useState<string | null>(null);
-  const [hovered, setHovered] = useState<string | null>(null);
-  const activeKey = hovered ?? picked ?? weakest?.key ?? null;
-  const selectedKey = picked ?? weakest?.key ?? null;
+  const activeKey = picked ?? weakest?.key ?? null;
+  const selectedKey = activeKey;
   const active = items.find((item) => item.key === activeKey) ?? null;
 
   if (items.length < 3) {
@@ -123,7 +118,6 @@ function ProfileView({ insights }: { insights: ProgressInsights }) {
             items={items}
             active={activeKey}
             selected={selectedKey}
-            onActive={setHovered}
             onSelect={setPicked}
             label={`${t("Seu perfil")}: ${summary}.`}
           />
@@ -158,10 +152,11 @@ function VoiceTrendView({ insights }: { insights: ProgressInsights }) {
   return (
     <>
       <div className="pg-metrics">
-        {summaries.map(({ metric, summary }, index) => (
-          <div key={metric} className="pg-metric" data-focus={metric === focus} style={stagger(index)}>
+        {summaries.map(({ metric, summary }) => (
+          <div key={metric} className="pg-metric" data-focus={metric === focus}>
             <p className="pg-metric-label"><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === focus && <span className="pg-focus">{t("seu foco")}</span>}</p>
-            <p className="pg-metric-value">{summary ? <CountUp value={Math.round(summary.latest)} /> : "—"}<small>/100</small></p>
+            <p className="pg-metric-value"><span className="ds-num">{summary ? <CountUp value={Math.round(summary.latest)} /> : "—"}</span><small>/100</small></p>
+            <span className="ds-meter" data-tone="voice" aria-hidden="true" style={{ "--p": `${summary ? Math.round(summary.latest) : 0}%` } as CSSProperties} />
             {summary && <ChangeLabel change={summary.change} />}
             <p className="pg-metric-measure">{t(voiceTrendCopy[metric].measure)}</p>
           </div>
@@ -178,33 +173,20 @@ function VoiceTrendView({ insights }: { insights: ProgressInsights }) {
 
 export function ProgressHero({ insights }: { insights: ProgressInsights }) {
   const [view, setView] = useState<"profile" | "trend">("profile");
-  const chartRef = useRef<HTMLDivElement>(null);
-  const [switches, setSwitches] = useState(0);
-  // Picking a view brings its chart to the middle of the screen, where it forms again (the view remounts).
-  useEffect(() => {
-    if (!switches) return;
-    const frame = requestAnimationFrame(() => {
-      const chart = chartRef.current;
-      if (!chart) return;
-      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const tall = chart.getBoundingClientRect().height > window.innerHeight - 96;
-      chart.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: tall ? "start" : "center" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [switches]);
   return (
-    <section className="pg-hero" aria-labelledby="pg-hero-title" data-reveal>
+    <section className="pg-hero" aria-labelledby="pg-hero-title">
       <div className="pg-hero-head">
-        <div>
-          <h2 id="pg-hero-title" className="pg-hero-title">{t(view === "profile" ? "Seu perfil de entrevista" : "Sua voz, entrevista a entrevista")}</h2>
-          <p className="pg-hero-sub">{t(view === "profile"
+        <div className="grid gap-3">
+          <p className="ds-kicker">{t(view === "profile" ? "Perfil" : "Voz")}</p>
+          <h2 id="pg-hero-title" className="ds-section-title">{t(view === "profile" ? "Seu perfil de entrevista" : "Sua voz, entrevista a entrevista")}</h2>
+          <p className="ds-lead">{t(view === "profile"
             ? "Cada ponta do gráfico é uma parte da sua fala. Quanto mais perto da borda, melhor."
             : "Precisão, ritmo e prosódia medidos pelo Azure em cada entrevista. Não são nota de inglês nem de sotaque.")}</p>
         </div>
         <dl className="pg-totals">
-          <div><dt>{t("Entrevistas")}</dt><dd><CountUp value={insights.sessionCount} /></dd></div>
-          <div><dt>{t("Respostas")}</dt><dd><CountUp value={insights.answerCount} /></dd></div>
-          <div><dt>{t("Tempo falando")}</dt><dd>{formatPracticeDuration(insights.practiceMs)}</dd></div>
+          <div><dt>{t("Entrevistas")}</dt><dd className="ds-num"><CountUp value={insights.sessionCount} /></dd></div>
+          <div><dt>{t("Respostas")}</dt><dd className="ds-num"><CountUp value={insights.answerCount} /></dd></div>
+          <div><dt>{t("Tempo falando")}</dt><dd className="ds-num">{formatPracticeDuration(insights.practiceMs)}</dd></div>
         </dl>
       </div>
       <SlidingSegmented
@@ -212,10 +194,10 @@ export function ProgressHero({ insights }: { insights: ProgressInsights }) {
         ariaLabel={t("O que mostrar")}
         options={[{ value: "profile", label: t("Perfil") }, { value: "trend", label: t("Evolução da voz") }]}
         value={view}
-        onChange={(value) => { setView(value as "profile" | "trend"); setSwitches((count) => count + 1); }}
+        onChange={(value) => setView(value as "profile" | "trend")}
         className="pg-view-switch grid-cols-2"
       />
-      <div ref={chartRef} className="min-w-0 scroll-mt-24">{view === "profile" ? <ProfileView insights={insights} /> : <VoiceTrendView insights={insights} />}</div>
+      <div className="min-w-0">{view === "profile" ? <ProfileView insights={insights} /> : <VoiceTrendView insights={insights} />}</div>
     </section>
   );
 }
@@ -254,7 +236,7 @@ function patternRows(insights: ProgressInsights): PatternRow[] {
   return rows.sort((a, b) => (b.share ?? 0) - (a.share ?? 0) || (b.error?.count ?? 0) - (a.error?.count ?? 0));
 }
 
-function PatternItem({ row, total, index }: { row: PatternRow; total: number; index: number }) {
+function PatternItem({ row, total }: { row: PatternRow; total: number }) {
   const [open, setOpen] = useState(false);
   const examples = row.error?.examples ?? [];
   const [exampleIndex, setExampleIndex] = useState(0);
@@ -262,7 +244,7 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
   const trend = row.error && row.error.trend !== "unknown" ? trendCopy[row.error.trend] : null;
   const share = row.share ?? 0;
   return (
-    <li className="pg-pattern" style={stagger(index)}>
+    <li className="pg-pattern">
       <div className="pg-pattern-main">
         <div className="pg-pattern-text">
           <h3 className="pg-pattern-name">{t(patternIssueLabel[row.type])}</h3>
@@ -271,7 +253,7 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
         <div className="pg-pattern-stat">
           {row.share !== null ? (
             <>
-              <p className="pg-pattern-share"><CountUp value={share} duration={1000} delay={450 + Math.min(index, 8) * 110} /><small>%</small></p>
+              <p className="pg-pattern-share ds-num">{share}<small>%</small></p>
               <p className="pg-pattern-of">{getCurrentLocale() === "en" ? `of answers had this issue (${row.affected} of ${total})` : `das respostas tiveram esse erro (${row.affected} de ${total})`}</p>
             </>
           ) : (
@@ -280,9 +262,7 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
         </div>
       </div>
       {row.share !== null && (
-        <div className="pg-meter" role="img" aria-label={getCurrentLocale() === "en" ? `This issue appeared in ${share}% of answers` : `Este erro apareceu em ${share}% das respostas`}>
-          <i style={{ width: `${Math.max(share, 2)}%` }} />
-        </div>
+        <span className="ds-meter pg-pattern-meter" data-tone="error" role="img" aria-label={getCurrentLocale() === "en" ? `This issue appeared in ${share}% of answers` : `Este erro apareceu em ${share}% das respostas`} style={{ "--p": `${Math.max(share, 2)}%` } as CSSProperties} />
       )}
       <div className="pg-pattern-foot">
         {trend && <span className="pg-trend" data-trend={row.error?.trend}><trend.Icon className="size-3.5" aria-hidden="true" />{t(trend.text)}</span>}
@@ -308,10 +288,16 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
                   </button>
                 </div>
               )}
-              <p className="pg-ex-label">{t("Você disse")}{example.date ? ` · ${formatDate(example.date, false)}` : ""}</p>
-              <p className="pg-ex-said" lang="en">{example.evidence}</p>
-              <p className="pg-ex-label">{t("Soa melhor")}</p>
-              <p className="pg-ex-better" lang="en">{example.rephrasedExample}</p>
+              <div className="pg-example-pair">
+                <div className="pg-example-said">
+                  <p className="pg-ex-label">{t("Você disse")}{example.date ? ` · ${formatDate(example.date, false)}` : ""}</p>
+                  <p className="pg-ex-said" lang="en">{example.evidence}</p>
+                </div>
+                <div className="pg-example-better">
+                  <p className="pg-ex-label">{t("O certo")}</p>
+                  <p className="pg-ex-better" lang="en">{example.rephrasedExample}</p>
+                </div>
+              </div>
               {example.suggestion && <p className="pg-ex-why">{example.suggestion}</p>}
             </div>
           </div>
@@ -324,12 +310,13 @@ function PatternItem({ row, total, index }: { row: PatternRow; total: number; in
 export function EnglishPatterns({ insights }: { insights: ProgressInsights }) {
   const rows = patternRows(insights);
   return (
-    <section aria-labelledby="pg-english" className="pg-section" data-reveal="group">
-      <div className="pg-section-head">
+    <section aria-labelledby="pg-english" className="pg-section">
+      <div className="ds-sec-head" data-layout="split">
         <div>
-          <h2 id="pg-english" className="pg-section-title">{t("Erros de inglês nas respostas")}</h2>
-          <p className="pg-section-sub">{t("Cada porcentagem mostra quantas respostas tiveram aquele tipo de erro. Quanto menor, melhor. Erros de transcrição não entram.")}</p>
+          <p className="ds-kicker">{t("Inglês")}</p>
+          <h2 id="pg-english" className="ds-section-title">{t("Erros de inglês nas respostas")}</h2>
         </div>
+        <p className="ds-lead">{t("Cada porcentagem mostra quantas respostas tiveram aquele tipo de erro. Quanto menor, melhor. Erros de transcrição não entram.")}</p>
       </div>
       {rows.length === 0 ? (
         <p className="pg-note">
@@ -340,7 +327,7 @@ export function EnglishPatterns({ insights }: { insights: ProgressInsights }) {
       ) : (
         <>
           <ol className="pg-patterns">
-            {rows.map((row, index) => <PatternItem key={row.type} row={row} total={insights.analyzedAnswers} index={index} />)}
+            {rows.map((row) => <PatternItem key={row.type} row={row} total={insights.analyzedAnswers} />)}
           </ol>
           {insights.analyzedAnswers < minAnswersForProfile && (
             <p className="pg-note">{getCurrentLocale() === "en" ? `Percentages appear after ${minAnswersForProfile} analyzed answers. You have ${insights.analyzedAnswers}.` : `As porcentagens aparecem a partir de ${minAnswersForProfile} respostas analisadas. Você tem ${insights.analyzedAnswers}.`}</p>
@@ -356,10 +343,10 @@ export function EnglishPatterns({ insights }: { insights: ProgressInsights }) {
 
 /* ----------------------------------------------------------- Study topics */
 
-function TopicItem({ topic, index, primary = false }: { topic: ProgressStudyTopic; index: number; primary?: boolean }) {
+function TopicItem({ topic, primary = false }: { topic: ProgressStudyTopic; primary?: boolean }) {
   const focus = topic.focuses[0];
   return (
-    <li className={`pg-topic${primary ? " pg-topic-primary" : " pg-topic-secondary"}`} style={stagger(index)}>
+    <li className={`pg-topic${primary ? " pg-topic-primary" : " pg-topic-secondary"}`}>
       {primary && <span className="pg-topic-rank" aria-hidden="true">{topic.rank}</span>}
       <div className="min-w-0">
         <p className="pg-topic-kind">{primary ? t("Foco principal") : t("Outro foco")} · {t(topic.kind === "technical" ? "Conteúdo técnico" : "Inglês")} · {getCurrentLocale() === "en" ? plural(topic.sessionCount, "practice", "practices") : `em ${plural(topic.sessionCount, "prática", "práticas")}`}</p>
@@ -376,21 +363,22 @@ export function StudyTopics({ insights }: { insights: ProgressInsights }) {
   const topics = insights.studyTopics.slice(0, 3);
   const [primary, ...others] = topics;
   return (
-    <section aria-labelledby="pg-topics" className="pg-section" data-reveal="group">
-      <div className="pg-section-head">
+    <section aria-labelledby="pg-topics" className="pg-section">
+      <div className="ds-sec-head">
         <div>
-          <h2 id="pg-topics" className="pg-section-title">{t("Seus focos atuais")}</h2>
-          <p className="pg-section-sub">{t("Focos priorizados pelo que aparece nos seus relatórios. Eles podem mudar quando novas práticas forem analisadas.")}</p>
+          <p className="ds-kicker">{t("Prioridades")}</p>
+          <h2 id="pg-topics" className="ds-section-title">{t("Seus focos atuais")}</h2>
         </div>
+        <p className="ds-lead">{t("Focos priorizados pelo que aparece nos seus relatórios. Eles podem mudar quando novas práticas forem analisadas.")}</p>
       </div>
       {topics.length === 0
         ? <p className="pg-note">{t("Seus focos aparecem depois que o primeiro relatório fica pronto.")}</p>
         : <>
-          <ol className="pg-topics pg-topics-primary-list"><TopicItem key={primary.id} topic={primary} index={0} primary /></ol>
+          <ol className="pg-topics pg-topics-primary-list"><TopicItem key={primary.id} topic={primary} primary /></ol>
           {others.length > 0 && <div className="pg-topics-others">
             <h3 className="pg-topics-others-title">{t("Outros focos")}</h3>
             <ol className="pg-topics">
-              {others.map((topic, index) => <TopicItem key={topic.id} topic={topic} index={index + 1} />)}
+              {others.map((topic) => <TopicItem key={topic.id} topic={topic} />)}
             </ol>
           </div>}
         </>}
@@ -406,20 +394,21 @@ export function PracticeRhythm({ insights }: { insights: ProgressInsights }) {
   const total = weekly.reduce((sum, week) => sum + week.count, 0);
   const activeWeeks = weekly.filter((week) => week.count > 0).length;
   return (
-    <section aria-labelledby="pg-weekly" className="pg-section" data-reveal="group">
-      <div className="pg-section-head">
+    <section aria-labelledby="pg-weekly" className="pg-section">
+      <div className="ds-sec-head">
         <div>
-          <h2 id="pg-weekly" className="pg-section-title">{t("Seu ritmo de prática")}</h2>
-          <p className="pg-section-sub">{total === 0 ? t("Nenhuma prática concluída nas últimas 8 semanas.") : getCurrentLocale() === "en" ? `${plural(total, "prática", "práticas")} in the last 8 weeks, in ${activeWeeks} of 8 weeks.` : `${plural(total, "prática", "práticas")} nas últimas 8 semanas, em ${activeWeeks} de 8 semanas.`}</p>
+          <p className="ds-kicker">{t("Ritmo")}</p>
+          <h2 id="pg-weekly" className="ds-section-title">{t("Seu ritmo de prática")}</h2>
         </div>
+        <p className="ds-lead">{total === 0 ? t("Nenhuma prática concluída nas últimas 8 semanas.") : getCurrentLocale() === "en" ? `${plural(total, "prática", "práticas")} in the last 8 weeks, in ${activeWeeks} of 8 weeks.` : `${plural(total, "prática", "práticas")} nas últimas 8 semanas, em ${activeWeeks} de 8 semanas.`}</p>
       </div>
       <div
         className="pg-weeks"
         role="img"
         aria-label={getCurrentLocale() === "en" ? `Practices per week: ${weekly.map((w) => `week of ${w.label}, ${w.count}`).join("; ")}.` : `Práticas por semana: ${weekly.map((w) => `semana de ${w.label}, ${w.count}`).join("; ")}.`}
       >
-        {weekly.map((week, index) => (
-          <div key={week.start} className="pg-week" style={stagger(index)}>
+        {weekly.map((week) => (
+          <div key={week.start} className="pg-week">
             <span className="pg-week-n">{week.count || ""}</span>
             <div className="pg-week-track"><i data-empty={week.count === 0} style={{ height: week.count === 0 ? "4px" : `${Math.max(14, (week.count / max) * 100)}%` }} /></div>
             <span className="pg-week-l">{week.label}</span>
@@ -444,9 +433,10 @@ export function SessionHistory({ sessions, onOpenReport }: { sessions: ProgressS
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? sessions : sessions.slice(0, historyPageSize);
   return (
-    <section className="ds-card overflow-hidden pt-5 sm:pt-6" aria-labelledby="pg-history" data-reveal>
+    <section className="ds-card overflow-hidden pt-5 sm:pt-6" aria-labelledby="pg-history">
       <div className="px-5 sm:px-6">
-        <SectionHeading title={t("Sessões concluídas")} description={t("Suas práticas de entrevista, da mais recente para a mais antiga.")} />
+        <h2 className="ds-card-title">{t("Sessões concluídas")}</h2>
+        <p className="ds-small mt-1">{t("Suas práticas de entrevista, da mais recente para a mais antiga.")}</p>
       </div>
       <h2 id="pg-history" className="sr-only">{t("Lista de sessões concluídas")}</h2>
       <ul className="pg-history mt-3">
@@ -455,13 +445,9 @@ export function SessionHistory({ sessions, onOpenReport }: { sessions: ProgressS
             <div className="min-w-0">
               <p className="font-medium text-ink [overflow-wrap:anywhere]">{s.role || t("Prática de entrevista")}{s.seniority ? ` · ${seniorityLabel(s.seniority)}` : ""}</p>
               <p className="ds-small">{formatDate(s.date)}</p>
+              <p className="pg-row-meta">{[plural(s.answerCount, "resposta", "respostas"), formatPracticeDuration(s.durationMs), s.patternCount !== null ? plural(s.patternCount, "erro de inglês", "erros de inglês") : null].filter(Boolean).join(" · ")}</p>
             </div>
-            <div className="pg-row-meta">
-              <span className="pg-chip">{plural(s.answerCount, "resposta", "respostas")}</span>
-              <span className="pg-chip">{formatPracticeDuration(s.durationMs)}</span>
-              {s.patternCount !== null && <span className="pg-chip">{plural(s.patternCount, "erro de inglês", "erros de inglês")}</span>}
-              <span className={`shl-pill ${s.reportStatus === "ready" ? "shl-pill-on" : "shl-pill-off"}`}>{t(reportChip[s.reportStatus])}</span>
-            </div>
+            <span className="pg-status" data-ready={s.reportStatus === "ready"}>{t(reportChip[s.reportStatus])}</span>
             {onOpenReport && (
               <span className="pg-row-open" aria-hidden="true">
                 {getCurrentLocale() === "en" ? (s.reportStatus === "ready" ? "Open report" : "Recover report") : t(s.reportStatus === "ready" ? "Abrir relatório" : "Recuperar relatório")}
@@ -492,10 +478,8 @@ export function SessionHistory({ sessions, onOpenReport }: { sessions: ProgressS
 /* ------------------------------------------------------------------- Page */
 
 export function ProgressContent({ insights, onOpenReport }: { insights: ProgressInsights; onOpenReport?: (sessionId: string) => void }) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  useReplayReveal(rootRef, [insights], { once: true });
   return (
-    <div ref={rootRef} className="pg-page mt-8 lg:mt-10">
+    <div className="pg-page mt-8 lg:mt-10">
       <ProgressHero insights={insights} />
       <EnglishPatterns insights={insights} />
       <div className="pg-split">
