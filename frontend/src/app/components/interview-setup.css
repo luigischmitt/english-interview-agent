@@ -96,14 +96,16 @@
 .isu-direction { border: 1px solid var(--ds-hairline); border-radius: var(--ds-r-xl); background: var(--ds-surface); padding: 1rem 1.125rem; }
 @media (min-width: 640px) { .isu-direction { padding: 1.25rem 1.5rem; } }
 
-/* Summary panel: the forest frame behind an opaque card. */
-.isu-frame { padding: 14px; }
-.isu-aside { padding: 1.5rem; }
-.isu-aside-title { margin-top: 0.75rem; font-size: 1.75rem; line-height: 1.1; overflow-wrap: anywhere; }
-.isu-aside-list { margin: 1.25rem 0 0; font-size: 0.875rem; }
-.isu-aside-list > div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 0.625rem 0; }
+/* Summary panel: a plain card, kept on screen beside the form while it scrolls on desktop. */
+.isu-aside { padding: 1.25rem 1.5rem; }
+.isu-aside-title { margin-top: 0.5rem; font-size: 1.5rem; line-height: 1.1; overflow-wrap: anywhere; }
+.isu-aside-list { margin: 0.75rem 0 0; font-size: 0.8125rem; }
+.isu-aside-list > div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; }
 .isu-aside-list dt { flex: none; color: var(--ds-text-2); }
 .isu-aside-list dd { margin: 0; min-width: 0; text-align: right; font-weight: 500; overflow-wrap: anywhere; }
-@media (min-width: 1024px) and (min-height: 760px) { .isu-aside-wrap { position: sticky; top: 6rem; } }
+@media (min-width: 1024px) {
+  .isu-aside-wrap { position: sticky; top: 5.5rem; align-self: start; }
+  .isu-aside { max-height: calc(100dvh - 9rem); overflow-y: auto; overscroll-behavior: contain; }
+}
 /* Collapsed reveal panels (job text, resume) take no space: cancel the flex gap they would otherwise leave behind. */
 .isu-root .gap-6 > .ds-reveal:not([data-open="true"]) { margin-top: -1.5rem; }

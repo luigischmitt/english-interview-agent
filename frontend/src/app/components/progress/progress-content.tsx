@@ -156,7 +156,7 @@ function VoiceTrendView({ insights }: { insights: ProgressInsights }) {
           <div key={metric} className="pg-metric" data-focus={metric === focus}>
             <p className="pg-metric-label"><MetricSwatch metric={metric} />{t(voiceTrendCopy[metric].label)}{metric === focus && <span className="pg-focus">{t("seu foco")}</span>}</p>
             <p className="pg-metric-value"><span className="ds-num">{summary ? <CountUp value={Math.round(summary.latest)} /> : "—"}</span><small>/100</small></p>
-            <span className="ds-meter" data-tone="voice" aria-hidden="true" style={{ "--p": `${summary ? Math.round(summary.latest) : 0}%` } as CSSProperties} />
+            <span className="ds-meter" aria-hidden="true" style={{ "--p": `${summary ? Math.round(summary.latest) : 0}%` } as CSSProperties} />
             {summary && <ChangeLabel change={summary.change} />}
             <p className="pg-metric-measure">{t(voiceTrendCopy[metric].measure)}</p>
           </div>
@@ -197,7 +197,7 @@ export function ProgressHero({ insights }: { insights: ProgressInsights }) {
         onChange={(value) => setView(value as "profile" | "trend")}
         className="pg-view-switch grid-cols-2"
       />
-      <div className="min-w-0">{view === "profile" ? <ProfileView insights={insights} /> : <VoiceTrendView insights={insights} />}</div>
+      <div className="pg-hero-body">{view === "profile" ? <ProfileView insights={insights} /> : <VoiceTrendView insights={insights} />}</div>
     </section>
   );
 }

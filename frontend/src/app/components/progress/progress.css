@@ -7,13 +7,13 @@
 .pg-error { border-radius: var(--ds-r-card); background: var(--ds-error-tint); color: var(--ds-error); }
 
 /* ---- Empty state: first practice ---- */
-.pg-empty-frame { padding: clamp(18px, 5vw, 56px); }
 .pg-first { max-width: 36rem; padding: clamp(1.5rem, 3vw, 2.25rem); }
 .pg-first-btn { width: auto; padding-inline: 1.5rem; }
 
 /* ---- Hero: hairline surface with the view switch ---- */
 .pg-hero { display: grid; gap: 1.75rem; border: 1px solid var(--ds-hairline); border-radius: 28px; background: var(--ds-surface); padding: 1.5rem; box-shadow: var(--ds-shadow-card); min-width: 0; }
 @media (min-width: 768px) { .pg-hero { padding: 2.25rem 2.5rem 2rem; } }
+.pg-hero-body { display: grid; gap: 1.5rem; min-width: 0; }
 .pg-hero-head { display: grid; gap: 1.5rem; }
 @media (min-width: 900px) { .pg-hero-head { grid-template-columns: minmax(0, 1fr) auto; align-items: end; } }
 .pg-totals { display: grid; grid-template-columns: repeat(3, auto); gap: 0; justify-content: start; margin: 0; }
@@ -65,9 +65,9 @@
 .pg-radar-legend { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; color: var(--ds-text-2); font-size: 0.8125rem; line-height: 1.35; }
 .pg-radar-legend li { display: grid; grid-template-columns: 0.875rem minmax(0, 1fr); align-items: baseline; gap: 0.5rem; }
 .pg-radar-legend i { width: 0.5rem; height: 0.5rem; justify-self: center; border-radius: var(--ds-r-pill); background: var(--ds-green); transform: translateY(-0.0625rem); }
-.pg-radar-legend-voice i { border-radius: 0.09375rem; background: var(--ds-brand-warm); transform: translateY(-0.0625rem) rotate(45deg) scale(0.9); }
+.pg-radar-legend-voice i { border-radius: 0.09375rem; background: var(--ds-green-deep); transform: translateY(-0.0625rem) rotate(45deg) scale(0.9); }
 .pg-radar-legend-english strong { color: var(--ds-green); }
-.pg-radar-legend-voice strong { color: var(--ds-brand-warm); }
+.pg-radar-legend-voice strong { color: var(--ds-green-deep); }
 .pg-radar-legend strong { font-weight: 600; }
 .pg-radar-note { max-width: 32ch; color: var(--ds-text-2); font-size: 0.8125rem; line-height: 1.45; }
 .pg-side-details { display: grid; max-width: 34ch; margin-top: 0.25rem; }
@@ -166,4 +166,4 @@
 @media (prefers-reduced-motion: reduce) {
   .pg-example-toggle svg { transition: none; }
 }
-.pg-focus::before { content: ""; width: 6px; height: 6px; flex: none; background: var(--ds-brand-warm); }
+.pg-focus::before { content: ""; width: 6px; height: 6px; flex: none; background: var(--ds-green); }

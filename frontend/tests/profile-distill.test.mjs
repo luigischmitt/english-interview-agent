@@ -29,7 +29,7 @@ test("Progress keeps one radar for dimension values and a keyboard/touch explana
   assert.match(radar, /data-group=\{item\.group\}/);
   assert.match(progress, /insights\.dimensions\.map\(\(dimension\) =>/);
   assert.match(progress, /dimension\.kind === "voice"/);
-  assert.match(progressStyles, /--ds-brand-warm/);
+  assert.match(progressStyles, /\.pg-radar-legend-voice i \{[^}]*--ds-green-deep/);
 });
 
 test("public report shows the radar and correction example without a repeated dimension grid", () => {

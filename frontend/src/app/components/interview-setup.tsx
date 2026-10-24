@@ -2,7 +2,7 @@
 
 
 import { getCurrentLocale, t } from "@/lib/locale";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { ArrowUpRight, ArrowLeft, ChevronDown, FileText } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import type { JobDirection, JobSeniority } from "@/lib/interview/job-direction.mjs";
@@ -756,29 +756,27 @@ export function InterviewSetup({
 
         {/* Summary + primary action: sticky beside the form on desktop, recap in flow on mobile */}
         <div className="isu-aside-wrap">
-          <div className="ds-mata-frame isu-frame" data-shape="portrait" style={{ "--frame-pos": "center 70%" } as CSSProperties}>
-            <aside className="ds-card isu-aside" aria-labelledby="session-preview-title">
-              <p className="ds-kicker">{t("Sua sessão ")}</p>
-              <h2 id="session-preview-title" key={cargoSummary.value} className="ds-card-title isu-aside-title">
-                {t(cargoSummary.value)}
-              </h2>
-              <dl className="ds-rows isu-aside-list">
-                {restSummary.map(({ label, value }) => (
-                  <div key={label}>
-                    <dt>{label}</dt>
-                    <dd key={value}>{value}</dd>
-                  </div>
-                ))}
-              </dl>
-              <button type="submit" className="ds-btn ds-btn-cta-green mt-6 hidden lg:flex" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint-desktop" : undefined}>
-                {config.playInterviewerAudio && voiceReadiness === "warming" && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
-                {t(startLabel)} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
-              </button>
-              {startBlocked && <p id="start-hint-desktop" className="ds-hint mt-3 hidden text-text-2 lg:block">{t(startHint)}</p>}
-              <button type="button" className="ds-btn ds-btn-quiet mt-1 hidden w-full lg:flex" onClick={onBack}>
-                {t("Cancelar ")}</button>
-            </aside>
-          </div>
+          <aside className="ds-card isu-aside" aria-labelledby="session-preview-title">
+            <p className="ds-kicker">{t("Sua sessão ")}</p>
+            <h2 id="session-preview-title" key={cargoSummary.value} className="ds-card-title isu-aside-title">
+              {t(cargoSummary.value)}
+            </h2>
+            <dl className="ds-rows isu-aside-list">
+              {restSummary.map(({ label, value }) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd key={value}>{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <button type="submit" className="ds-btn ds-btn-cta-green mt-4 hidden lg:flex" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint-desktop" : undefined}>
+              {config.playInterviewerAudio && voiceReadiness === "warming" && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
+              {t(startLabel)} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
+            </button>
+            {startBlocked && <p id="start-hint-desktop" className="ds-hint mt-3 hidden text-text-2 lg:block">{t(startHint)}</p>}
+            <button type="button" className="ds-btn ds-btn-quiet mt-1 hidden w-full lg:flex" onClick={onBack}>
+              {t("Cancelar ")}</button>
+          </aside>
           <p className="ds-small mt-4 px-2">
             {t("Você pode encerrar a qualquer momento. Uma resposta já iniciada pode terminar após o tempo planejado. ")}</p>
         </div>

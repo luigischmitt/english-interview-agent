@@ -162,7 +162,7 @@ export function MicrophoneTest({ deviceId, onDeviceChange, ref }: {
   return (
     <div ref={rootRef} className="isu-mic" data-state={state} data-heard={state === "on" ? heard : undefined}>
       <div className="flex flex-col gap-2 min-[460px]:flex-row min-[460px]:items-center">
-        <button type="button" className="ds-btn ds-btn-soft gap-2" onClick={() => (state === "on" ? stop() : void start(deviceId))} disabled={busy} aria-pressed={state === "on"}>
+        <button type="button" className="ds-btn ds-btn-soft shrink-0 gap-2 whitespace-nowrap" onClick={() => (state === "on" ? stop() : void start(deviceId))} disabled={busy} aria-pressed={state === "on"}>
           <Mic className="size-4" aria-hidden="true" />
           {busy ? "Abrindo o microfone…" : state === "on" ? "Parar teste" : "Testar microfone"}
         </button>

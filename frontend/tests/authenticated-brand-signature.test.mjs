@@ -56,20 +56,19 @@ test("the warm bird accent keeps 3:1 contrast on light and dark app surfaces", (
   assert.match(design, /`--ds-brand-warm` is a small decorative accent[\s\S]+never use it for text, status/u);
 });
 
-test("authenticated Home carries its Brazilian signature and retains its optimized forest detail", () => {
-  assert.match(home, /Feito no Brasil, para vaga lá fora/u);
+test("authenticated Home keeps product on plain blocks, without forest overlays", () => {
   assert.doesNotMatch(home, /data-home-item=/u);
-  assert.match(home, /className="ds-mata-frame shl-home-stage"/u);
+  assert.match(home, /className="ds-block shl-home-card"/u);
+  assert.doesNotMatch(home, /ds-mata-frame|--ds-brand-warm/u);
   assert.doesNotMatch(home, /src="\/landing\/hero-mata/u);
   assert.match(shell, /\.shl-nav-item\[aria-current="page"\] svg \{ color: var\(--ds-green\); \}/u);
   assert.match(shell, /\.shl-mobile-item\[aria-current="page"\] svg \{ color: var\(--ds-green\); \}/u);
   assert.doesNotMatch(shell, /data-home-item="true"\]\[aria-current="page"\]/u);
-  assert.match(designSystem, /\.ds-mata-frame::before \{[^}]+pointer-events: none;[^}]+hero-mata-1152\.webp/u);
-  assert.match(designSystem, /@media \(max-width: 767px\) \{ \.ds-mata-frame::before \{[^}]+hero-mata-mobile\.webp/u);
+  assert.match(designSystem, /\.ds-block \{[^}]+background: var\(--ds-field\)/u);
 });
 
 test("setup and true first-use progress marks remain decorative", () => {
-  assert.match(setup, /className="ds-mata-frame isu-frame"[^>]*>\s*<aside className="ds-card isu-aside"/u);
+  assert.match(setup, /<div className="isu-aside-wrap">\s*<aside className="ds-card isu-aside"/u);
   assert.match(progress, /insights\.sessionCount === 0 && <span className="pg-tucano" aria-hidden="true" \/>/u);
   assert.match(progressCss, /\.pg-tucano \{[^}]*tucano-mark\.webp/u);
 });

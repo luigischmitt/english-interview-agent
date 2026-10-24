@@ -265,7 +265,7 @@
   --ds-chart-axis: #d5e1d9;
   /* Voice metric series (precision, rhythm, prosody): validated for CVD and contrast on surface; always paired with direct labels and marker shapes. */
   --ds-series-accuracy: #1f6b45; /* = --ds-green */
-  --ds-series-fluency: #ae6b30;  /* = --ds-brand-warm */
+  --ds-series-fluency: #17563a;  /* = --ds-green-deep */
   --ds-series-prosody: #44604f;  /* = --ds-text-2 */
   --ds-forest-filter: none;  /* landing illustrations */
   --ds-forest-opacity: 0.9;
@@ -396,7 +396,7 @@
   --ds-chart-ring: #3a3e46;
   --ds-chart-axis: #2e3137;
   --ds-series-accuracy: #5fd08f;
-  --ds-series-fluency: #e2bd78;
+  --ds-series-fluency: #8fe3b2;
   --ds-series-prosody: #a6aba5;
   --ds-forest-filter: brightness(0.62) saturate(0.85);
   --ds-forest-opacity: 0.8;

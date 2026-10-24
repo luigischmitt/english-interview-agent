@@ -137,18 +137,15 @@
   padding-top: clamp(0.5rem, 2vw, 1.5rem);
 }
 .shl-home-hero-copy { min-width: 0; }
-.shl-home-title { max-width: 13ch; margin-top: 1rem; font-size: clamp(2.6rem, 1.8rem + 3vw, 4rem); }
+.shl-home-title { max-width: 13ch; margin-top: 0; font-size: clamp(2.6rem, 1.8rem + 3vw, 4rem); }
 .shl-home-subcopy { max-width: 40ch; margin-top: 1.25rem; }
 .shl-home-primary { width: auto; margin-top: 2rem; padding-inline: 1.5rem; }
 .shl-home-facts { margin-top: 2.25rem; }
-.shl-home-stage { padding: clamp(18px, 4vw, 48px); }
 .shl-home-card {
   display: grid;
   align-content: start;
   gap: 1rem;
-  max-width: 30rem;
   min-height: 15rem;
-  margin-inline: auto;
   padding: clamp(1.25rem, 2.6vw, 2rem);
 }
 .shl-home-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; }
@@ -187,8 +184,6 @@
 .shl-home-voice > div { min-width: 0; padding: clamp(1.25rem, 2.4vw, 1.75rem); }
 .shl-home-voice > div + div { border-top: 1px solid var(--ds-hairline); }
 .shl-home-voice dt { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; color: var(--ds-ink); font-size: 0.875rem; font-weight: 600; }
-.shl-home-voice dt em { font-style: normal; font-size: 0.625rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ds-text-2); display: inline-flex; align-items: center; gap: 0.35rem; }
-.shl-home-voice dt em::before { content: ""; width: 6px; height: 6px; background: var(--ds-brand-warm); }
 .shl-home-voice dd { margin: 0.5rem 0 0; }
 .shl-home-voice dd .ds-meter { margin-top: 0.75rem; }
 .shl-home-voice dd .ds-num { color: var(--ds-ink); font-size: 2.25rem; line-height: 1; }

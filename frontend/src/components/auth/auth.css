@@ -1,23 +1,7 @@
 /* Auth screens (ENG-111). Scoped by the `au-` prefix; uses --ds-* tokens and ds-* primitives. */
 
-.au-page { display: grid; min-height: 100dvh; background: var(--ds-cream); color: var(--ds-ink); }
-.au-main { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem 1rem; }
-@media (min-width: 640px) { .au-main { padding: 3rem 2rem; } }
-.au-art { display: none; }
-@media (min-width: 1024px) {
-  .au-page { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); padding: 16px; gap: 16px; }
-  .au-art { display: flex; align-items: center; justify-content: center; min-height: calc(100dvh - 32px); --frame-pos: center 60%; }
-}
-
-.au-sample { width: 100%; max-width: 26rem; padding: 1.75rem; }
-.au-sample-title { margin: .75rem 0 1rem; font-family: var(--font-display); font-size: 1.6rem; line-height: 1.15; letter-spacing: -0.02em; }
-.au-sample-rows > div { padding: .75rem 0; }
-.au-sample-label { margin: 0 0 .25rem; font-size: .6875rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ds-text-2); }
-.au-sample-said, .au-sample-right { margin: 0; font-family: var(--font-display); font-size: 1.15rem; line-height: 1.35; }
-.au-sample-said { color: var(--ds-text-2); }
-.au-sample-said s { color: var(--ds-error); text-decoration-thickness: 1px; }
-.au-sample-right u { color: var(--ds-green-deep); text-decoration: none; background: var(--ds-tint); border-radius: 3px; padding: 0 .15em; }
-.au-sample-rule { margin: .5rem 0 0; padding-top: .75rem; border-top: 1px solid var(--ds-hairline); font-size: .8125rem; color: var(--ds-text-2); }
+.au-page { display: flex; min-height: 100dvh; flex-direction: column; align-items: center; justify-content: center; background: var(--ds-cream); color: var(--ds-ink); padding: 2rem 1rem; }
+@media (min-width: 640px) { .au-page { padding: 3rem 2rem; } }
 
 .au-shell { display: flex; width: 100%; max-width: 27.5rem; flex-direction: column; gap: 1.5rem; }
 .au-brand { display: inline-flex; align-items: center; align-self: center; gap: 0.625rem; border-radius: 0.5rem; font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.012em; }

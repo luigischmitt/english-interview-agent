@@ -158,7 +158,6 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
 
   return (
     <main className="au-page antialiased">
-      <div className="au-main">
         <section className="au-shell">
           <Link href="/" className="au-brand">
             <Image src="/landing/tucano-mark.webp" alt="" width={30} height={34} priority />
@@ -303,24 +302,6 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
           </div>
           <p className="au-foot">Suas sessões ficam privadas na sua conta.</p>
         </section>
-      </div>
-      <div className="au-art ds-mata-frame" aria-hidden="true">
-        <div className="ds-card au-sample">
-          <p className="ds-kicker">Exemplo do relatório</p>
-          <p className="au-sample-title">Cada erro vem com a frase certa.</p>
-          <div className="ds-rows au-sample-rows">
-            <div>
-              <p className="au-sample-label">Você disse</p>
-              <p className="au-sample-said" lang="en">I have five years experience <s>on</s> backend.</p>
-            </div>
-            <div>
-              <p className="au-sample-label">O certo</p>
-              <p className="au-sample-right" lang="en">I have five years of experience <u>in</u> backend.</p>
-            </div>
-          </div>
-          <p className="au-sample-rule">Experiência numa área pede <em lang="en">in</em>.</p>
-        </div>
-      </div>
     </main>
   );
 }

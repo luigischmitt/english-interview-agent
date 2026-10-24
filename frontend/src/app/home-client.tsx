@@ -334,7 +334,6 @@ function HomeView({
     <main id="main-content" className={`${pageMain} shl-home`}>
       <section className="shl-home-hero" aria-labelledby="home-title">
         <div className="shl-home-hero-copy">
-          <p className="ds-kicker">{t("Feito no Brasil, para vaga lá fora")}</p>
           <h1 id="home-title" className="ds-title shl-home-title">{t("Sua próxima entrevista começa aqui.")}</h1>
           <p className="ds-lead shl-home-subcopy">
             {t("Uma entrevista por voz, em inglês, com perguntas da sua vaga e um relatório no final.")}
@@ -359,8 +358,7 @@ function HomeView({
           </ul>
         </div>
 
-        <div className="ds-mata-frame shl-home-stage" style={{ "--frame-pos": "center 65%" } as CSSProperties}>
-          <div className="ds-card shl-home-card">
+          <div className="ds-block shl-home-card">
             {isLoading ? (
               <div className="grid gap-4" aria-busy="true">
                 <LoadingLabel>{t("Organizando seu histórico")}…</LoadingLabel>
@@ -394,7 +392,6 @@ function HomeView({
               </>
             )}
           </div>
-        </div>
       </section>
 
       {!isLoading && hasInterviews && (
@@ -444,10 +441,9 @@ function HomeView({
         <section className="shl-home-block" aria-labelledby="voice-focus-title">
           <div className="ds-sec-head">
             <div>
-              <p className="ds-kicker" data-tone="voice">{t("Sua voz")}</p>
+              <p className="ds-kicker">{t("Sua voz")}</p>
               <h2 id="voice-focus-title" className="ds-section-title">{t("Um foco de cada vez")}</h2>
             </div>
-            <p className="ds-lead">{t("Precisão, ritmo e prosódia das suas entrevistas, de 0 a 100.")}</p>
           </div>
           <div className="ds-card shl-home-voice-card">
             {voiceRows.length > 0 ? (
@@ -458,8 +454,8 @@ function HomeView({
                     const value = summary ? Math.round(summary.latest) : 0;
                     return (
                       <div key={metric} data-focus={metric === voiceFocusKey}>
-                        <dt>{t(voiceTrendCopy[metric].label)}{metric === voiceFocusKey && <em>{t("foco")}</em>}</dt>
-                        <dd><span className="ds-num">{summary ? value : "—"}</span><small>/100</small><span className="ds-meter" data-tone="voice" style={{ "--p": `${value}%` } as CSSProperties} aria-hidden="true" /></dd>
+                        <dt>{t(voiceTrendCopy[metric].label)}{metric === voiceFocusKey && <span className="ds-focus-mark">{t("foco")}</span>}</dt>
+                        <dd><span className="ds-num">{summary ? value : "—"}</span><small>/100</small><span className="ds-meter" style={{ "--p": `${value}%` } as CSSProperties} aria-hidden="true" /></dd>
                       </div>
                     );
                   })}

@@ -368,7 +368,6 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
   return <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14 lg:pb-16">
     <PageIntro
       kicker={t("Treino de voz")}
-      kickerTone="voice"
       title={t("Sua voz")}
       description={t("Repita frases suas, ouça com calma e acompanhe o que muda a cada tentativa.")}
     />
@@ -382,31 +381,28 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
     </LoadingRegion> : error ? <section className="mt-8 rounded-[var(--ds-r-card)] bg-[var(--ds-surface)] p-6" role="alert">
       <p className="ds-h2">{t("Não foi possível carregar os dados da sua voz agora.")}</p>
       <button type="button" className="ds-btn ds-btn-soft mt-4" onClick={retry}>{t("Tentar novamente")}</button>
-    </section> : !insights.hasVoiceData ? <section className="ds-mata-frame vv-empty-frame mt-8">
-      <div className="ds-card vv-empty">
-        <AudioLines className="size-6 text-[var(--ds-green)]" aria-hidden="true" />
-        <p className="ds-body">{t("Sua análise de voz aparece aqui depois da próxima entrevista com respostas faladas.")}</p>
-        {onStart && <button type="button" className="ds-btn ds-btn-cta-green vv-cta" onClick={onStart}>
-          <Play className="size-4 fill-current" aria-hidden="true" />
-          {t("Começar entrevista")}
-        </button>}
-      </div>
+    </section> : !insights.hasVoiceData ? <section className="ds-card vv-empty mt-8">
+      <AudioLines className="size-6 text-[var(--ds-green)]" aria-hidden="true" />
+      <p className="ds-body">{t("Sua análise de voz aparece aqui depois da próxima entrevista com respostas faladas.")}</p>
+      {onStart && <button type="button" className="ds-btn ds-btn-cta-green vv-cta" onClick={onStart}>
+        <Play className="size-4 fill-current" aria-hidden="true" />
+        {t("Começar entrevista")}
+      </button>}
     </section> : <div className="vv-content mt-8 lg:mt-10">
       <section aria-labelledby="voice-metrics-title">
-        <div className="ds-sec-head" data-layout="split">
+        <div className="ds-sec-head">
           <div>
-            <p className="ds-kicker" data-tone="voice">{t("Visão geral")}</p>
+            <p className="ds-kicker">{t("Visão geral")}</p>
             <h2 id="voice-metrics-title" className="ds-section-title">{t("Visão geral da sua voz")}</h2>
           </div>
-          <p className="ds-lead">{t("Médias das entrevistas com fala suficiente. O menor resultado indica onde vale praticar primeiro; não é nota de inglês nem de sotaque.")}</p>
         </div>
         <div className="ds-card vv-metric-grid">{insights.metrics.map((metric) => <article className="vv-metric" data-focus={metric.key === insights.focus} key={metric.key}>
           <div className="flex items-start justify-between gap-3">
             <h3 className="ds-label">{t(metric.label)}</h3>
-            {metric.key === insights.focus && <span className="vv-focus-note">{t("Seu foco agora")}</span>}
+            {metric.key === insights.focus && <span className="ds-focus-mark">{t("Seu foco agora")}</span>}
           </div>
           <p className="vv-metric-value"><span className="ds-num">{metric.value === null ? "—" : <CountUp value={Math.round(metric.value)} duration={1100} />}</span><span>/ 100</span></p>
-          <span className="ds-meter" data-tone="voice" aria-hidden="true" style={{ "--p": `${metric.value === null ? 0 : Math.round(metric.value)}%` } as CSSProperties} />
+          <span className="ds-meter" aria-hidden="true" style={{ "--p": `${metric.value === null ? 0 : Math.round(metric.value)}%` } as CSSProperties} />
           <p className="ds-small mt-3">{t(metric.measure)}</p>
         </article>)}</div>
       </section>
@@ -445,13 +441,12 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
       <section ref={trainingRef} className="vv-section" aria-labelledby="today-training">
         <div className="ds-sec-head" data-layout="split">
           <div>
-            <p className="ds-kicker" data-tone="voice">{t("Prática")}</p>
+            <p className="ds-kicker">{t("Prática")}</p>
             <h2 id="today-training" className="ds-section-title">{t("Frases para treinar")}</h2>
           </div>
           <p className="ds-lead">{t("Ouça a forma certa, grave e compare com as tentativas anteriores.")}</p>
         </div>
-        {sentence ? <div className="ds-mata-frame vv-training-frame" data-crop="mirror" style={{ "--frame-pos": "center 30%" } as CSSProperties}>
-          <article className="vv-training ds-card">
+        {sentence ? <article className="vv-training ds-card">
             <div className="vv-training-top">
               <p className="ds-small">{t(sentence.source === "english" ? "Correção do relatório" : "Trecho com pronúncia para revisar")}</p>
               <p className="ds-small">{t("{current} de {total}", { current: currentSentenceIndex + 1, total: trainingPhrases.length })}</p>
@@ -459,12 +454,12 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
             {(() => {
               const sentenceLine = <p className="vv-training-sentence" lang="en" key={sentence.id}><HighlightedText text={sentence.referenceText} words={sentence.attentionWords} /></p>;
               return sentence.source === "english" ? <div className="vv-pair">
-                <div className="vv-pair-said"><p className="vv-pair-label">{t("Você disse")}</p><p lang="en">{sentence.saidText}</p></div>
-                <div className="vv-pair-right"><p className="vv-pair-label">{t("Forma para falar")}</p>{sentenceLine}</div>
-              </div> : <>
-                <p className="vv-pair-label mt-6">{t("Forma para falar")}</p>
+                <div className="ds-block vv-pair-block"><p className="vv-pair-label">{t("Você disse")}</p><p className="vv-pair-said" lang="en">{sentence.saidText}</p></div>
+                <div className="ds-block vv-pair-block" data-tone="good"><p className="vv-pair-label">{t("Forma para falar")}</p>{sentenceLine}</div>
+              </div> : <div className="ds-block vv-pair-block mt-5" data-tone="good">
+                <p className="vv-pair-label">{t("Forma para falar")}</p>
                 {sentenceLine}
-              </>;
+              </div>;
             })()}
             <div className="vv-training-actions">
               <div className="vv-training-primary-actions">
@@ -477,8 +472,7 @@ export function VoiceView({ onStart }: { onStart?: () => void } = {}) {
             {message && messageTarget !== "word" && <p className="vv-message mt-4" role="alert">{message}</p>}
             <p className="vv-local-note ds-small">{t("Histórico local: mostramos as últimas tentativas desta frase neste navegador.")}</p>
             {attempts[sentence.id]?.length ? <AttemptResult attempts={attempts[sentence.id]} focus={activeMetric} beforeAccuracy={sentence.beforeAccuracy} /> : <p className="ds-body mt-4">{t("Ouça a forma correta e grave uma tentativa para ver as palavras avaliadas.")}</p>}
-          </article>
-        </div> : <p className="ds-body mt-3">{t("Quando o relatório encontrar uma correção ou a análise de voz sinalizar uma frase, ela aparecerá aqui.")}</p>}
+        </article> : <p className="ds-body mt-3">{t("Quando o relatório encontrar uma correção ou a análise de voz sinalizar uma frase, ela aparecerá aqui.")}</p>}
       </section>
       <section className="vv-section" aria-labelledby="work-words">
         <div className="ds-sec-head"><div><h2 id="work-words" className="ds-section-title">{t("Suas palavras de trabalho")}</h2></div><p className="ds-lead">{t("Palavras que se repetem nas suas entrevistas.")}</p></div>

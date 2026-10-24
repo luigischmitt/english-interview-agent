@@ -391,7 +391,7 @@ select.ds-field {
 /* Kicker: small caps label with a 7px green square. data-tone="voice" swaps the square to terra. */
 .ds-kicker { display: inline-flex; align-items: center; gap: 0.55rem; margin: 0; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; line-height: 1.2; text-transform: uppercase; color: var(--ds-green-deep); }
 .ds-kicker::before { content: ""; width: 7px; height: 7px; flex: none; background: var(--ds-green); }
-.ds-kicker[data-tone="voice"]::before { background: var(--ds-brand-warm); }
+.ds-kicker[data-tone="voice"]::before { background: var(--ds-green); } /* voice stays green (2026-10-24): no terra in the UI */
 
 /* Titles: Instrument Serif 400, -0.02em, ~1.1. Page title > section title. */
 .ds-title { margin: 0; font-family: var(--font-display); font-size: clamp(2.25rem, 1.7rem + 2.2vw, 3.25rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.08; text-wrap: balance; }
@@ -426,21 +426,17 @@ select.ds-field {
 
 /* Thin meter (3–4px). Set --p (0%–100%) on the element. data-tone: default green (English), "voice" terra, "error" err, "muted" text-2. */
 .ds-meter { display: block; height: 4px; border-radius: 999px; background: linear-gradient(var(--ds-meter, var(--ds-green)), var(--ds-meter, var(--ds-green))) 0 0 / var(--p, 0%) 100% no-repeat, var(--ds-track); }
-.ds-meter[data-tone="voice"] { --ds-meter: var(--ds-brand-warm); }
+.ds-meter[data-tone="voice"] { --ds-meter: var(--ds-green); }
 .ds-meter[data-tone="error"] { --ds-meter: var(--ds-error); }
 .ds-meter[data-tone="muted"] { --ds-meter: var(--ds-text-2); }
 
-/*
- * Forest frame: the green engraving as the backdrop of a piece of product (answerr-style frame). The product inside stays opaque
- * (put a .ds-card in it). data-crop="mirror" flips it so neighbouring sections never repeat the same crop; --frame-pos moves it.
- */
-.ds-mata-frame { position: relative; isolation: isolate; overflow: hidden; border-radius: 28px; background: var(--ds-field); padding: clamp(14px, 3.2vw, 40px); }
-.ds-mata-frame::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: url("/landing/hero-mata-1152.webp") var(--frame-pos, center 70%) / cover no-repeat; opacity: var(--ds-forest-opacity); filter: var(--ds-forest-filter); }
-.ds-mata-frame[data-crop="mirror"]::before { transform: scaleX(-1); }
-/* Tall, narrow frames use the portrait crop (bay framed by palms, no empty sky). */
-.ds-mata-frame[data-shape="portrait"]::before { background-image: url("/landing/hero-mata-mobile.webp"); background-position: var(--frame-pos, center 60%); }
-
-/* Voice focus marker: terra is a mark, never text colour (DESIGN.md), so the label stays text-2 after a terra square. */
+/* Focus marker: a small green square before a text-2 label. */
 .ds-focus-mark { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--ds-text-2); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
-.ds-focus-mark::before { content: ""; width: 6px; height: 6px; flex: none; background: var(--ds-brand-warm); }
-@media (max-width: 767px) { .ds-mata-frame::before { background-image: url("/landing/hero-mata-mobile.webp"); background-position: center; } }
+.ds-focus-mark::before { content: ""; width: 6px; height: 6px; flex: none; background: var(--ds-green); }
+
+/*
+ * Grey block (the landing's .pair-box): a quiet well for content pairs and summaries, no shadow, no image behind.
+ * data-tone="good" = the corrected / right version (tint + green hairline).
+ */
+.ds-block { border: 1px solid var(--ds-hairline); border-radius: 24px; background: var(--ds-field); padding: clamp(1.25rem, 3vw, 2rem); }
+.ds-block[data-tone="good"] { background: var(--ds-tint); border-color: color-mix(in srgb, var(--ds-green) 25%, transparent); }
