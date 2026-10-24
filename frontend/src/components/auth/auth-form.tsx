@@ -28,8 +28,6 @@ function Alert({ tone, role, children }: { tone: keyof typeof alertIcon; role: "
   );
 }
 
-const stagger = (i: number) => ({ "--i": i }) as React.CSSProperties;
-
 type AuthMode = "login" | "signup" | "forgot-password" | "update-password";
 
 const copy = {
@@ -160,150 +158,150 @@ export function AuthForm({ mode, reason, next }: { mode: AuthMode; reason?: stri
 
   return (
     <main className="au-page antialiased">
-      <section className="au-shell">
-        <Link href="/" className="au-brand ds-fade-in">
-          <Image src="/landing/tucano-mark.webp" alt="" width={30} height={34} priority />
-          <span style={{ fontFamily: "var(--font-display)", fontSize: "1.35rem", fontWeight: 400 }}>Entoa</span>
-        </Link>
-        <div className="au-card ds-card ds-enter">
-          <div className="au-stack">
-            <div className="ds-enter" style={stagger(1)}>
-              <h1 className="au-title">{details.title}</h1>
-              <p className="au-desc">{details.description}</p>
-            </div>
+        <section className="au-shell">
+          <Link href="/" className="au-brand">
+            <Image src="/landing/tucano-mark.webp" alt="" width={30} height={34} priority />
+            <span style={{ fontFamily: "var(--font-display)", fontSize: "1.35rem", fontWeight: 400 }}>Entoa</span>
+          </Link>
+          <div className="au-card ds-card">
+            <div className="au-stack">
+              <div>
+                <h1 className="au-title">{details.title}</h1>
+                <p className="au-desc">{details.description}</p>
+              </div>
 
-            {expired && (
-              <Alert tone="warning" role="alert">
-                Sua sessão terminou. Entre novamente para manter seu espaço de prática seguro.
-              </Alert>
-            )}
-            {reason === "config" && (
-              <Alert tone="warning" role="alert">
-                A autenticação ainda não está configurada neste ambiente.
-              </Alert>
-            )}
-            {reason === "auth_callback" && (
-              <Alert tone="error" role="alert">
-                Este link de autenticação é inválido ou expirou. Tente novamente.
-              </Alert>
-            )}
-            {error && (
-              <Alert tone="error" role="alert">
-                {error}
-                {errorCode === "email_not_confirmed" && (
+              {expired && (
+                <Alert tone="warning" role="alert">
+                  Sua sessão terminou. Entre novamente para manter seu espaço de prática seguro.
+                </Alert>
+              )}
+              {reason === "config" && (
+                <Alert tone="warning" role="alert">
+                  A autenticação ainda não está configurada neste ambiente.
+                </Alert>
+              )}
+              {reason === "auth_callback" && (
+                <Alert tone="error" role="alert">
+                  Este link de autenticação é inválido ou expirou. Tente novamente.
+                </Alert>
+              )}
+              {error && (
+                <Alert tone="error" role="alert">
+                  {error}
+                  {errorCode === "email_not_confirmed" && (
+                    <>
+                      {" "}
+                      <button type="button" className="au-inline-action" onClick={() => void resendConfirmation()} disabled={resendState !== "idle" || !email}>
+                        {resendState === "sent" ? "Confirmação reenviada" : resendState === "sending" ? "Reenviando…" : "Reenviar confirmação"}
+                      </button>
+                    </>
+                  )}
+                </Alert>
+              )}
+              {message && (
+                <Alert tone="success" role="status">
+                  {message}
+                </Alert>
+              )}
+
+              <form className="au-form" onSubmit={handleSubmit}>
+                {mode === "signup" && (
+                  <div className="au-field">
+                    <label htmlFor="name" className="ds-label">Nome</label>
+                    <input
+                      id="name"
+                      className="ds-field"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      name="name"
+                      autoComplete="name"
+                      placeholder="Seu nome"
+                      required
+                    />
+                  </div>
+                )}
+
+                {mode !== "update-password" && (
+                  <div className="au-field">
+                    <label htmlFor="email" className="ds-label">E-mail</label>
+                    <input
+                      id="email"
+                      className="ds-field"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="you@example.com"
+                      required
+                      aria-describedby={emailSuggestion ? "email-suggestion" : undefined}
+                    />
+                    {emailSuggestion && (
+                      <p id="email-suggestion" className="au-suggestion" role="status">
+                        Você quis dizer{" "}
+                        <button type="button" className="au-inline-action" onClick={() => setEmail(emailSuggestion)}>{emailSuggestion}</button>?
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {(mode === "login" || mode === "signup" || mode === "update-password") && (
+                  <div className="au-field">
+                    <label htmlFor="password" className="ds-label">
+                      {mode === "update-password" ? "Nova senha" : "Senha"}
+                    </label>
+                    <input
+                      id="password"
+                      className="ds-field"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      name="password"
+                      type="password"
+                      autoComplete={mode === "login" ? "current-password" : "new-password"}
+                      placeholder="Pelo menos 8 caracteres"
+                      required
+                    />
+                  </div>
+                )}
+
+                {mode === "signup" && (
+                  <div className="au-field">
+                    <label htmlFor="password-confirmation" className="ds-label">Confirmar senha</label>
+                    <input
+                      id="password-confirmation"
+                      className="ds-field"
+                      value={passwordConfirmation}
+                      onChange={(event) => setPasswordConfirmation(event.target.value)}
+                      name="password-confirmation"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Repita sua senha"
+                      required
+                    />
+                  </div>
+                )}
+
+                <button className="ds-btn ds-btn-cta-green au-submit" type="submit" disabled={isPending}>
+                  {isPending && <span className="au-spinner" aria-hidden="true" />}
+                  {details.submit}
+                </button>
+              </form>
+
+              <div className="au-links">
+                {mode === "login" && (
                   <>
-                    {" "}
-                    <button type="button" className="au-inline-action" onClick={() => void resendConfirmation()} disabled={resendState !== "idle" || !email}>
-                      {resendState === "sent" ? "Confirmação reenviada" : resendState === "sending" ? "Reenviando…" : "Reenviar confirmação"}
-                    </button>
+                    <Link href="/forgot-password" className="au-link">Esqueceu sua senha?</Link>
+                    <p>Ainda não tem conta? <Link href="/signup" className="au-link">Criar uma conta</Link></p>
                   </>
                 )}
-              </Alert>
-            )}
-            {message && (
-              <Alert tone="success" role="status">
-                {message}
-              </Alert>
-            )}
-
-            <form className="au-form ds-enter" style={stagger(2)} onSubmit={handleSubmit}>
-              {mode === "signup" && (
-                <div className="au-field">
-                  <label htmlFor="name" className="ds-label">Nome</label>
-                  <input
-                    id="name"
-                    className="ds-field"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    name="name"
-                    autoComplete="name"
-                    placeholder="Seu nome"
-                    required
-                  />
-                </div>
-              )}
-
-              {mode !== "update-password" && (
-                <div className="au-field">
-                  <label htmlFor="email" className="ds-label">E-mail</label>
-                  <input
-                    id="email"
-                    className="ds-field"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    placeholder="you@example.com"
-                    required
-                    aria-describedby={emailSuggestion ? "email-suggestion" : undefined}
-                  />
-                  {emailSuggestion && (
-                    <p id="email-suggestion" className="au-suggestion" role="status">
-                      Você quis dizer{" "}
-                      <button type="button" className="au-inline-action" onClick={() => setEmail(emailSuggestion)}>{emailSuggestion}</button>?
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {(mode === "login" || mode === "signup" || mode === "update-password") && (
-                <div className="au-field">
-                  <label htmlFor="password" className="ds-label">
-                    {mode === "update-password" ? "Nova senha" : "Senha"}
-                  </label>
-                  <input
-                    id="password"
-                    className="ds-field"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    name="password"
-                    type="password"
-                    autoComplete={mode === "login" ? "current-password" : "new-password"}
-                    placeholder="Pelo menos 8 caracteres"
-                    required
-                  />
-                </div>
-              )}
-
-              {mode === "signup" && (
-                <div className="au-field">
-                  <label htmlFor="password-confirmation" className="ds-label">Confirmar senha</label>
-                  <input
-                    id="password-confirmation"
-                    className="ds-field"
-                    value={passwordConfirmation}
-                    onChange={(event) => setPasswordConfirmation(event.target.value)}
-                    name="password-confirmation"
-                    type="password"
-                    autoComplete="new-password"
-                    placeholder="Repita sua senha"
-                    required
-                  />
-                </div>
-              )}
-
-              <button className="ds-btn ds-btn-cta-green au-submit" type="submit" disabled={isPending}>
-                {isPending && <span className="au-spinner" aria-hidden="true" />}
-                {details.submit}
-              </button>
-            </form>
-
-            <div className="au-links ds-enter" style={stagger(3)}>
-              {mode === "login" && (
-                <>
-                  <Link href="/forgot-password" className="au-link">Esqueceu sua senha?</Link>
-                  <p>Ainda não tem conta? <Link href="/signup" className="au-link">Criar uma conta</Link></p>
-                </>
-              )}
-              {mode === "signup" && <p>Já tem uma conta? <Link href="/login" className="au-link">Entrar</Link></p>}
-              {mode === "forgot-password" && <p>Lembrou? <Link href="/login" className="au-link">Voltar para entrar</Link></p>}
-              {mode === "update-password" && <p>Precisa recomeçar? <Link href="/login" className="au-link">Voltar para entrar</Link></p>}
+                {mode === "signup" && <p>Já tem uma conta? <Link href="/login" className="au-link">Entrar</Link></p>}
+                {mode === "forgot-password" && <p>Lembrou? <Link href="/login" className="au-link">Voltar para entrar</Link></p>}
+                {mode === "update-password" && <p>Precisa recomeçar? <Link href="/login" className="au-link">Voltar para entrar</Link></p>}
+              </div>
             </div>
           </div>
-        </div>
-        <p className="au-foot ds-fade-in">Suas sessões ficam privadas na sua conta.</p>
-      </section>
+          <p className="au-foot">Suas sessões ficam privadas na sua conta.</p>
+        </section>
     </main>
   );
 }

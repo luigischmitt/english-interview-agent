@@ -14,6 +14,7 @@
 /* ---- Surfaces. ---- */
 .ds-card {
   background: var(--ds-surface);
+  border: 1px solid var(--ds-hairline);
   border-radius: var(--ds-r-card);
   box-shadow: var(--ds-shadow-card);
 }
@@ -187,7 +188,7 @@ select.ds-field {
 .ds-btn-soft { background: var(--ds-tint); color: var(--ds-green-deep); }            /* secondary */
 .ds-btn-quiet { background: transparent; color: var(--ds-text-2); }                   /* ghost */
 .ds-btn-cta { min-height: 3.25rem; width: 100%; background: var(--ds-inverse-bg); color: var(--ds-inverse-fg); font-size: 1rem; }              /* on dark panels */
-.ds-btn-cta-green { min-height: 3.25rem; width: 100%; background: var(--ds-green-solid); color: var(--ds-on-green); font-size: 1rem; }      /* primary */
+.ds-btn-cta-green { min-height: 3.25rem; width: 100%; background: var(--ds-green-solid); color: var(--ds-on-green); font-size: 1rem; box-shadow: var(--ds-shadow-btn); }      /* primary */
 .ds-btn-cta .ds-arrow, .ds-btn-cta-green .ds-arrow { transition: transform var(--ds-dur-base) var(--ease-out); }
 .ds-btn-cta:disabled, .ds-btn-cta-green:disabled { opacity: 0.5; }
 @media (hover: hover) and (pointer: fine) {
@@ -195,8 +196,7 @@ select.ds-field {
   .ds-btn-quiet:hover:not(:disabled) { background: var(--ds-hover-wash); }
   .ds-btn-cta:hover:not(:disabled) { background: var(--ds-inverse-hover); }
   .ds-btn-cta-green:hover:not(:disabled) { background: var(--ds-green-solid-hover); }
-  .ds-btn-cta-green:hover:not(:disabled):not(:active) { transform: translateY(-1px); box-shadow: var(--ds-shadow-btn); }
-  .ds-btn-cta:hover .ds-arrow, .ds-btn-cta-green:hover .ds-arrow { transform: translate(2px, -2px); }
+  .ds-btn-cta:hover .ds-arrow, .ds-btn-cta-green:hover .ds-arrow { transform: translateX(3px); }
   .ds-option:hover:not(:has(input:checked)) { background: var(--ds-field-hover); }
   .ds-seg-item:hover:not(:has(input:checked)) { color: var(--ds-ink); }
   .ds-toggle:hover:not([data-disabled="true"]) { background: var(--ds-hover-wash-faint); }
@@ -252,12 +252,10 @@ select.ds-field {
 @keyframes ds-check { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
 @keyframes ds-fade { from { opacity: 0; } to { opacity: 1; } }
 /* Stagger children with style="--i: n". */
-.ds-enter { animation: ds-rise var(--ds-dur-slow) var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 60ms); }
 .ds-fade-in { animation: ds-fade var(--ds-dur-base) ease backwards; }
 .ds-pop { animation: ds-check 320ms var(--ease-out) backwards; }
 
 @media (prefers-reduced-motion: reduce) {
-  .ds-enter { animation: ds-fade var(--ds-dur-base) ease backwards; animation-delay: 0ms; }
   .ds-seg-thumb[data-animate="true"] { transition: none; }
   .ds-combo-list { animation: ds-fade 120ms ease both; }
   .ds-pop { animation: none; }
@@ -332,7 +330,6 @@ select.ds-field {
 [data-reveal="group"] { transition: none; }
 [data-reveal="group"][data-inview="false"] { opacity: 1; transform: none; }
 
-.ds-view { animation: ds-view-in 260ms var(--ease-out) backwards; }
 .ds-item { animation: ds-item-in 600ms var(--ease-out) backwards; animation-delay: calc(var(--rd, 0ms) + 60ms + var(--i, 0) * 80ms); }
 .ds-grow-x { transform-origin: left; animation: ds-bar-x var(--grow-t, 750ms) var(--grow-ease, var(--ease-out)) backwards; animation-delay: calc(var(--rd, 0ms) + 200ms + var(--i, 0) * var(--grow-step, 90ms)); }
 .ds-grow-y { transform-origin: bottom; animation: ds-bar-y var(--grow-t, 750ms) var(--grow-ease, var(--ease-out)) backwards; animation-delay: calc(var(--rd, 0ms) + 200ms + var(--i, 0) * var(--grow-step, 90ms)); }
@@ -340,28 +337,18 @@ select.ds-field {
 .ds-stagger > :nth-child(1) { --i: 0; } .ds-stagger > :nth-child(2) { --i: 1; } .ds-stagger > :nth-child(3) { --i: 2; } .ds-stagger > :nth-child(4) { --i: 3; }
 .ds-stagger > :nth-child(5) { --i: 4; } .ds-stagger > :nth-child(6) { --i: 5; } .ds-stagger > :nth-child(7) { --i: 6; } .ds-stagger > :nth-child(n+8) { --i: 7; }
 
-/* Page entrances (screens that mount with a `.ds-enter` card) reuse the same rise, a touch later so the title leads. */
-.ds-enter { animation: ds-item-in 650ms var(--ease-out) backwards; animation-delay: calc(320ms + var(--i, 0) * 90ms); }
-
-/* Selection feedback: the picked option pops and a ring pulses out of it (the ring is a transformed pseudo-element, no layout). */
+/* App screens carry no entrance motion: `.ds-enter` and `.ds-view` are kept as plain hooks (no animation). Selection is a thin ring, no pop. */
 .ds-option, .vp-row { position: relative; }
-.ds-option:has(input:checked), .vp-row:has(input:checked) { animation: ds-option-pop 380ms var(--ease-out); }
-.ds-option:has(input:checked)::after, .vp-row:has(input:checked)::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--ds-green) 38%, transparent); animation: ds-ring-out 560ms var(--ease-out) forwards; }
-.ds-radio:checked { animation: ds-radio-pop 320ms var(--ease-out); }
 
 @media (hover: hover) and (pointer: fine) {
   .ds-lift { transition: transform 280ms var(--ease-out), box-shadow 280ms var(--ease-out); }
   .ds-lift:hover { transform: translateY(-3px); box-shadow: var(--ds-shadow-pop); }
-  .ds-btn-soft:hover:not(:disabled):not(:active) { transform: translateY(-1px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   [data-reveal] { transition: none; }
-  .ds-view, .ds-split-ch, .ds-rise, .ds-item, .ds-enter, .ds-grow-x, .ds-grow-y, .ds-radio:checked { animation: none; }
-  .ds-option:has(input:checked), .vp-row:has(input:checked) { animation: none; }
-  .ds-option:has(input:checked)::after, .vp-row:has(input:checked)::after { display: none; }
+  .ds-split-ch, .ds-rise, .ds-item, .ds-grow-x, .ds-grow-y { animation: none; }
   .ds-lift, .ds-lift:hover { transform: none; transition: none; }
-  .ds-btn-cta-green:hover:not(:disabled):not(:active), .ds-btn-soft:hover:not(:disabled) { transform: none; }
 }
 
 /* ---- Loading (one language: breathing waveform mark + sentence-case label + layout-shaped skeletons with a green shimmer) ---- */
@@ -392,3 +379,64 @@ select.ds-field {
   .ld-sk::after { display: none; }
   .ld-mark i:nth-child(1), .ld-mark i:nth-child(5) { transform: scaleY(0.45); } .ld-mark i:nth-child(2), .ld-mark i:nth-child(4) { transform: scaleY(0.75); } .ld-mark i:nth-child(3) { transform: scaleY(1); }
 }
+
+/*
+ * ---- App language (2026-10-23 redesign): the landing's primitives, for the signed-in screens. ----
+ * Reading order per block: .ds-kicker → title → one .ds-lead → one visual. No entrance animation on text.
+ */
+/* Focus: a thin ring in the element's colour, never the browser's square blue box; mouse clicks show no ring. */
+:where(a, button, input, select, textarea, summary, [role="button"], [tabindex]):focus-visible { outline: 2px solid var(--ds-green); outline-offset: 2px; }
+:where(a, button, input, select, textarea, summary, [role="button"], [tabindex]):focus:not(:focus-visible) { outline: none; }
+
+/* Kicker: small caps label with a 7px green square. data-tone="voice" swaps the square to terra. */
+.ds-kicker { display: inline-flex; align-items: center; gap: 0.55rem; margin: 0; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; line-height: 1.2; text-transform: uppercase; color: var(--ds-green-deep); }
+.ds-kicker::before { content: ""; width: 7px; height: 7px; flex: none; background: var(--ds-green); }
+.ds-kicker[data-tone="voice"]::before { background: var(--ds-green); } /* voice stays green (2026-10-24): no terra in the UI */
+
+/* Titles: Instrument Serif 400, -0.02em, ~1.1. Page title > section title. */
+.ds-title { margin: 0; font-family: var(--font-display); font-size: clamp(2.25rem, 1.7rem + 2.2vw, 3.25rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.08; text-wrap: balance; }
+.ds-section-title { margin: 0; font-family: var(--font-display); font-size: clamp(1.75rem, 1.4rem + 1.3vw, 2.375rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.1; text-wrap: balance; }
+.ds-card-title { margin: 0; font-family: var(--font-display); font-size: 1.5rem; font-weight: 400; letter-spacing: -0.02em; line-height: 1.15; }
+.ds-lead { margin: 0; max-width: 56ch; color: var(--ds-text-2); font-size: 1.0625rem; line-height: 1.55; text-wrap: pretty; }
+/* Scores and counts: sans 600, tabular. */
+.ds-num { font-family: var(--font-sans); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+/* Section head. Default: stacked. data-layout="split": title left, lead right (desktop). data-layout="center": centred. */
+.ds-sec-head { display: grid; gap: 0.75rem; margin-bottom: clamp(1.25rem, 2.6vw, 2rem); }
+.ds-sec-head > div { display: grid; gap: 0.75rem; align-content: end; min-width: 0; }
+.ds-sec-head .ds-section-title { max-width: 20ch; }
+.ds-sec-head .ds-lead { max-width: 46ch; }
+@media (min-width: 900px) {
+  .ds-sec-head[data-layout="split"] { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: end; column-gap: 3.5rem; }
+  .ds-sec-head[data-layout="split"] > .ds-lead { padding-bottom: 0.3rem; }
+}
+.ds-sec-head[data-layout="center"] { justify-items: center; text-align: center; }
+.ds-sec-head[data-layout="center"] > div { justify-items: center; }
+.ds-sec-head[data-layout="center"] .ds-section-title, .ds-sec-head[data-layout="center"] .ds-lead { margin-inline: auto; }
+
+/* Facts strip: short facts between two hairlines, each after a 6px green square. Use <ul class="ds-facts"><li>…</li></ul>. */
+.ds-facts { display: flex; flex-wrap: wrap; gap: 0.6rem 2rem; margin: 0; padding: 0.9rem 0; list-style: none; border-block: 1px solid var(--ds-hairline); color: var(--ds-text-2); font-size: 0.9375rem; font-weight: 500; }
+.ds-facts > li { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
+.ds-facts > li::before { content: ""; width: 6px; height: 6px; flex: none; background: var(--ds-green); }
+.ds-facts b, .ds-facts strong { color: var(--ds-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Hairline separators instead of more boxes. .ds-rows: every child after the first gets a 1px top line. */
+.ds-hairline-top { border-top: 1px solid var(--ds-hairline); }
+.ds-rows > * + * { border-top: 1px solid var(--ds-hairline); }
+
+/* Thin meter (3–4px). Set --p (0%–100%) on the element. data-tone: default green (English), "voice" terra, "error" err, "muted" text-2. */
+.ds-meter { display: block; height: 4px; border-radius: 999px; background: linear-gradient(var(--ds-meter, var(--ds-green)), var(--ds-meter, var(--ds-green))) 0 0 / var(--p, 0%) 100% no-repeat, var(--ds-track); }
+.ds-meter[data-tone="voice"] { --ds-meter: var(--ds-green); }
+.ds-meter[data-tone="error"] { --ds-meter: var(--ds-error); }
+.ds-meter[data-tone="muted"] { --ds-meter: var(--ds-text-2); }
+
+/* Focus marker: a small green square before a text-2 label. */
+.ds-focus-mark { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--ds-text-2); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.ds-focus-mark::before { content: ""; width: 6px; height: 6px; flex: none; background: var(--ds-green); }
+
+/*
+ * Grey block (the landing's .pair-box): a quiet well for content pairs and summaries, no shadow, no image behind.
+ * data-tone="good" = the corrected / right version (tint + green hairline).
+ */
+.ds-block { border: 1px solid var(--ds-hairline); border-radius: 24px; background: var(--ds-field); padding: clamp(1.25rem, 3vw, 2rem); }
+.ds-block[data-tone="good"] { background: var(--ds-tint); border-color: color-mix(in srgb, var(--ds-green) 25%, transparent); }

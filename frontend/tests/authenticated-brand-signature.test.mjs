@@ -9,6 +9,7 @@ const shell = readFileSync(new URL("../src/app/components/shell.css", import.met
 const setup = readFileSync(new URL("../src/app/components/interview-setup.tsx", import.meta.url), "utf8");
 const progress = readFileSync(new URL("../src/app/components/progress/progress-content.tsx", import.meta.url), "utf8");
 const progressCss = readFileSync(new URL("../src/app/components/progress/progress.css", import.meta.url), "utf8");
+const designSystem = readFileSync(new URL("../src/app/design-system.css", import.meta.url), "utf8");
 
 function schemeTokens(scheme) {
   const marker = scheme === "dark" ? ':root[data-color-scheme="dark"] {' : ":root {";
@@ -55,21 +56,19 @@ test("the warm bird accent keeps 3:1 contrast on light and dark app surfaces", (
   assert.match(design, /`--ds-brand-warm` is a small decorative accent[\s\S]+never use it for text, status/u);
 });
 
-test("authenticated Home carries its Brazilian signature and retains its optimized forest detail", () => {
-  assert.match(home, /Feito no Brasil, para vaga lá fora/u);
+test("authenticated Home keeps product on plain blocks, without forest overlays", () => {
   assert.doesNotMatch(home, /data-home-item=/u);
-  assert.match(home, /className="shl-home-hero-art" aria-hidden="true"/u);
+  assert.match(home, /className="ds-block shl-home-card"/u);
+  assert.doesNotMatch(home, /ds-mata-frame|--ds-brand-warm/u);
   assert.doesNotMatch(home, /src="\/landing\/hero-mata/u);
-  assert.doesNotMatch(home, /ds-card shl-home/u);
   assert.match(shell, /\.shl-nav-item\[aria-current="page"\] svg \{ color: var\(--ds-green\); \}/u);
   assert.match(shell, /\.shl-mobile-item\[aria-current="page"\] svg \{ color: var\(--ds-green\); \}/u);
   assert.doesNotMatch(shell, /data-home-item="true"\]\[aria-current="page"\]/u);
-  assert.match(shell, /\.shl-home-hero-art \{ display: none;[^}]+pointer-events: none/u);
-  assert.match(shell, /@media \(min-width: 768px\) \{[\s\S]+\.shl-home-hero-art \{[^}]+hero-mata\.webp/u);
+  assert.match(designSystem, /\.ds-block \{[^}]+background: var\(--ds-field\)/u);
 });
 
 test("setup and true first-use progress marks remain decorative", () => {
-  assert.match(setup, /<Leaf className="size-3\.5 text-\[color:var\(--ds-brand-warm\)\]" aria-hidden="true" \/>/u);
+  assert.match(setup, /<div className="isu-aside-wrap">\s*<aside className="ds-card isu-aside"/u);
   assert.match(progress, /insights\.sessionCount === 0 && <span className="pg-tucano" aria-hidden="true" \/>/u);
   assert.match(progressCss, /\.pg-tucano \{[^}]*tucano-mark\.webp/u);
 });

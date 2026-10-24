@@ -264,13 +264,14 @@
   --ds-chart-ring: #c9d8cf;
   --ds-chart-axis: #d5e1d9;
   /* Voice metric series (precision, rhythm, prosody): validated for CVD and contrast on surface; always paired with direct labels and marker shapes. */
-  --ds-series-accuracy: #2f8a5a;
-  --ds-series-fluency: #3b6fd1;
-  --ds-series-prosody: #c98a12;
+  /* Voice chart series: mata green, sea teal, sun amber — distinct hues, always paired with marker shapes and labels. */
+  --ds-series-accuracy: #1f6b45;
+  --ds-series-fluency: #2a7891;
+  --ds-series-prosody: #b07d12;
   --ds-forest-filter: none;  /* landing illustrations */
   --ds-forest-opacity: 0.9;
   /* Interview stage (call-stage.css): tile, captions, dock, toasts */
-  --ds-tile-shadow: 0 1px 2px rgba(14, 42, 31, 0.05), 0 22px 44px -26px rgba(14, 42, 31, 0.28);
+  --ds-tile-shadow: 0 1px 2px rgba(14, 42, 31, 0.06), 0 4px 12px -6px rgba(14, 42, 31, 0.1);
   --ds-avatar: #e6ebe2;
   --ds-avatar-you: #dfe6dc;
   --ds-caption-bg: rgba(14, 42, 31, 0.9);
@@ -283,11 +284,12 @@
   --ds-danger-solid: #d9533a;
   --ds-danger-solid-hover: #c1442d;
   --ds-on-danger: #ffffff;
-  --ds-shadow-float: 0 10px 30px -10px rgba(0, 0, 0, 0.55);
-  --ds-shadow-dock: 0 14px 36px -12px rgba(0, 0, 0, 0.45);
-  --ds-shadow-dialog: 0 30px 80px -20px rgba(0, 0, 0, 0.7);
-  --ds-shadow-pip: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  --ds-shadow-float: 0 1px 2px rgba(14, 42, 31, 0.08), 0 6px 16px -8px rgba(14, 42, 31, 0.24);
+  --ds-shadow-dock: 0 1px 2px rgba(14, 42, 31, 0.06), 0 4px 12px -6px rgba(14, 42, 31, 0.12);
+  --ds-shadow-dialog: 0 1px 2px rgba(14, 42, 31, 0.08), 0 12px 28px -14px rgba(14, 42, 31, 0.3);
+  --ds-shadow-pip: 0 1px 2px rgba(14, 42, 31, 0.08), 0 6px 16px -8px rgba(14, 42, 31, 0.24);
   --ds-line: rgba(14, 42, 31, 0.09);        /* inset hairline on fields and popovers */
+  --ds-hairline: rgba(14, 42, 31, 0.1);     /* 1px card borders and separators (landing: rgba(14,42,31,.1)) */
   --ds-line-strong: #9bb3a5;                /* unchecked radio ring */
   --ds-hover-wash: rgba(14, 42, 31, 0.06);
   --ds-hover-wash-faint: rgba(14, 42, 31, 0.04);
@@ -314,17 +316,17 @@
   --ds-r-panel: 1.75rem;
   --ds-r-pill: 9999px;
 
-  /* Elevation: soft two-layer shadows instead of hard borders */
-  --ds-shadow-card: 0 1px 2px rgba(14, 42, 31, 0.04), 0 14px 32px -18px rgba(14, 42, 31, 0.16);
-  --ds-shadow-pop: 0 2px 6px rgba(14, 42, 31, 0.06), 0 18px 40px -12px rgba(14, 42, 31, 0.22);
+  /* Elevation: short, light shadows (the landing's). Never long dark drops. */
+  --ds-shadow-card: 0 1px 2px rgba(14, 42, 31, 0.06), 0 4px 12px -6px rgba(14, 42, 31, 0.1);
+  --ds-shadow-pop: 0 1px 2px rgba(14, 42, 31, 0.06), 0 8px 20px -10px rgba(14, 42, 31, 0.18);
   --ds-shadow-thumb: 0 1px 2px rgba(14, 42, 31, 0.1), 0 2px 8px -2px rgba(14, 42, 31, 0.12);
-  --ds-shadow-panel: 0 24px 48px -24px rgba(14, 42, 31, 0.5);
-  --ds-shadow-report: 0 2px 4px rgba(14, 42, 31, 0.05), 0 40px 80px -36px rgba(14, 42, 31, 0.5);
-  --ds-shadow-bar: 0 -1px 0 rgba(14, 42, 31, 0.06), 0 -12px 32px -12px rgba(14, 42, 31, 0.18);
-  --ds-shadow-header: 0 1px 0 var(--ds-line), 0 10px 30px -22px rgba(14, 42, 31, 0.3);
+  --ds-shadow-panel: 0 1px 2px rgba(14, 42, 31, 0.06), 0 4px 12px -6px rgba(14, 42, 31, 0.1);
+  --ds-shadow-report: 0 1px 2px rgba(14, 42, 31, 0.08), 0 16px 32px -24px rgba(14, 42, 31, 0.28);
+  --ds-shadow-bar: 0 -1px 0 var(--ds-hairline);
+  --ds-shadow-header: 0 1px 0 var(--ds-hairline);
   --ds-shadow-seg: 0 1px 2px rgba(14, 42, 31, 0.1);
   --ds-shadow-knob: 0 1px 3px rgba(14, 42, 31, 0.3);
-  --ds-shadow-btn: 0 1px 2px rgba(14, 42, 31, 0.18), 0 12px 24px -14px rgba(31, 107, 69, 0.7);
+  --ds-shadow-btn: 0 1px 2px rgba(14, 42, 31, 0.16); /* outline only, no green glow */
 
   /* Motion: durations (all <= 300ms) */
   --ds-dur-press: 120ms;
@@ -378,6 +380,7 @@
   --ds-panel-glow: rgba(95, 208, 143, 0.16);
   --ds-overlay: rgba(0, 0, 0, 0.62);
   --ds-line: rgba(255, 255, 255, 0.09);
+  --ds-hairline: rgba(255, 255, 255, 0.1);
   --ds-line-strong: #7b817b;
   --ds-hover-wash: rgba(255, 255, 255, 0.07);
   --ds-hover-wash-faint: rgba(255, 255, 255, 0.04);
@@ -393,12 +396,12 @@
   --ds-green-wash: rgba(95, 208, 143, 0.16);
   --ds-chart-ring: #3a3e46;
   --ds-chart-axis: #2e3137;
-  --ds-series-accuracy: #3a9a66;
-  --ds-series-fluency: #5f8ce0;
-  --ds-series-prosody: #b9861f;
+  --ds-series-accuracy: #5fd08f;
+  --ds-series-fluency: #6cc2dc;
+  --ds-series-prosody: #e2bd78;
   --ds-forest-filter: brightness(0.62) saturate(0.85);
   --ds-forest-opacity: 0.8;
-  --ds-tile-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 18px 40px -22px rgba(0, 0, 0, 0.8);
+  --ds-tile-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 4px 12px -6px rgba(0, 0, 0, 0.5);
   --ds-avatar: #2a2d34;
   --ds-avatar-you: #34383f;
   --ds-caption-bg: rgba(10, 11, 14, 0.82);
@@ -407,12 +410,16 @@
   --ds-dock-bg: rgba(32, 34, 40, 0.86);
   --ds-btn-off-hover: #ffffff;
   --ds-dialog: #23262c;
+  --ds-shadow-float: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 16px -8px rgba(0, 0, 0, 0.5);
+  --ds-shadow-dock: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 12px -6px rgba(0, 0, 0, 0.45);
+  --ds-shadow-dialog: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 28px -14px rgba(0, 0, 0, 0.6);
+  --ds-shadow-pip: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 16px -8px rgba(0, 0, 0, 0.5);
 
-  --ds-shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 10px 24px -16px rgba(0, 0, 0, 0.55);
-  --ds-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 14px 32px -12px rgba(0, 0, 0, 0.6);
+  --ds-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px -6px rgba(0, 0, 0, 0.4);
+  --ds-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 8px 20px -10px rgba(0, 0, 0, 0.55);
   --ds-shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --ds-shadow-panel: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 18px 36px -24px rgba(0, 0, 0, 0.6);
-  --ds-shadow-report: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 30px 60px -36px rgba(0, 0, 0, 0.7);
+  --ds-shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px -6px rgba(0, 0, 0, 0.4);
+  --ds-shadow-report: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 16px 32px -24px rgba(0, 0, 0, 0.6);
   --ds-shadow-bar: 0 -1px 0 rgba(255, 255, 255, 0.08);
   --ds-shadow-header: 0 1px 0 var(--ds-line);
   --ds-shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.4);

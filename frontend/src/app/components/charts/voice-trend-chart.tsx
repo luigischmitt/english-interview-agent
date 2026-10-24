@@ -80,7 +80,7 @@ function endLabels(rows: VoiceTrendRow[], metrics: VoiceTrendMetric[], x: (index
 export function VoiceTrendChart({ rows, variant = "full", focus = null }: { rows: VoiceTrendRow[]; variant?: Variant; focus?: VoiceTrendMetric | null }) {
   const { ref, width } = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
-  const [highlight, setHighlight] = useState<VoiceTrendMetric | null>(null);
+  const [selected, setSelected] = useState<VoiceTrendMetric | null>(null);
   const compact = variant === "compact";
   const height = compact ? 180 : width < 520 ? 240 : 300;
   const pad = compact
@@ -92,8 +92,8 @@ export function VoiceTrendChart({ rows, variant = "full", focus = null }: { rows
   const x = (index: number) => pad.left + (rows.length <= 1 ? innerW / 2 : (index * innerW) / (rows.length - 1));
   const y = (value: number) => pad.top + innerH - ((value - low) / (high - low)) * innerH;
   const ticks = compact ? [] : Array.from({ length: Math.floor((high - low) / 10) + 1 }, (_, i) => low + i * 10).filter((value, _, all) => all.length <= 6 || (value - low) % 20 === 0);
-  const emphasis = highlight ?? focus;
-  const dimOthers = highlight !== null;
+  const emphasis = selected ?? focus;
+  const dimOthers = selected !== null;
   const labels = width ? endLabels(rows, voiceTrendMetrics, x, y, compact ? 15 : 17) : [];
   const step = rows.length > 1 ? innerW / (rows.length - 1) : innerW;
   const showEveryLabel = !compact && step >= 44;
@@ -114,11 +114,8 @@ export function VoiceTrendChart({ rows, variant = "full", focus = null }: { rows
             key={metric}
             type="button"
             className="vt-legend-item"
-            aria-pressed={emphasis === metric}
-            onMouseEnter={() => setHighlight(metric)}
-            onMouseLeave={() => setHighlight(null)}
-            onFocus={() => setHighlight(metric)}
-            onBlur={() => setHighlight(null)}
+            aria-pressed={selected === metric}
+            onClick={() => setSelected((current) => (current === metric ? null : metric))}
           >
             <MetricSwatch metric={metric} />
             {t(voiceTrendCopy[metric].label)}

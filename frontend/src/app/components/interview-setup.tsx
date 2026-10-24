@@ -2,8 +2,8 @@
 
 
 import { getCurrentLocale, t } from "@/lib/locale";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
-import { ArrowUpRight, ArrowLeft, ChevronDown, FileText, Leaf } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { ArrowUpRight, ArrowLeft, ChevronDown, FileText } from "lucide-react";
 import type { InterviewConfig } from "@/lib/interview/types";
 import type { JobDirection, JobSeniority } from "@/lib/interview/job-direction.mjs";
 import type { SetupMode } from "@/lib/interview/job-direction.mjs";
@@ -428,13 +428,6 @@ export function InterviewSetup({
       : "Aguarde a voz do entrevistador ficar pronta para iniciar com áudio.";
   const roleInvalid = showErrors && !config.role.trim();
 
-  // The opening "deal" only plays once; fields that mount later (after an analysis) just rise.
-  const [dealing, setDealing] = useState(true);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDealing(false), 1800);
-    return () => window.clearTimeout(timer);
-  }, []);
-
   return (
     <main id="main-content" className={`isu-root mx-auto w-full min-w-0 max-w-6xl px-4 pb-[calc(var(--shl-bottom-nav-h,0px)+9rem)] pt-6 sm:px-8 sm:pt-8 lg:px-12 lg:pb-16 lg:pt-10`}>
       <button type="button" className="ds-btn ds-btn-quiet -ml-3 mb-6 min-h-10 gap-2 px-3 text-sm" onClick={onBack}>
@@ -442,21 +435,22 @@ export function InterviewSetup({
         {t("Voltar à visão geral ")}</button>
 
       <PageIntro
+        kicker={t("Nova entrevista")}
         title={t("Configure sua entrevista.")}
         description={t("Escolha o cargo, o foco e o tempo que você quer praticar.")}
       />
 
-      <form id="interview-setup-form" onSubmit={handleSubmit} className="mt-8 grid items-start gap-6 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-8" noValidate>
+      <form id="interview-setup-form" onSubmit={handleSubmit} className="mt-8 grid items-start gap-6 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-8" noValidate>
         <div className="flex min-w-0 flex-col gap-5">
           {/* 1. Essentials: what is being practiced, set manually or filled from a pasted job description */}
-          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 0, "--rot": "-2.4deg" } as CSSProperties} aria-labelledby="interview-details-title">
-            <div className="flex items-center gap-3">
-              <span className="ds-step" aria-hidden="true">{t("1")}</span>
-              <h2 id="interview-details-title" className="ds-h2">{t("Detalhes da entrevista")}</h2>
+          <section className="ds-card p-5 sm:p-7" aria-labelledby="interview-details-title">
+            <div className="flex items-baseline gap-3">
+              <span className="isu-step" aria-hidden="true">{t("1")}</span>
+              <h2 id="interview-details-title" className="ds-card-title">{t("Detalhes da entrevista")}</h2>
             </div>
             <p className="ds-body mt-2">{t("Você pode mudar essas opções a cada nova sessão.")}</p>
             <div className="mt-6 flex flex-col gap-6">
-              <fieldset className="isu-deal flex min-w-0 flex-col gap-2" style={{ "--j": 0, "--rot": "-1.6deg" } as CSSProperties}>
+              <fieldset className="flex min-w-0 flex-col gap-2">
                 <legend className="ds-label mb-2">{t("Como definir a entrevista")}</legend>
                 <SlidingSegmented
                   name="setup-mode"
@@ -502,7 +496,7 @@ export function InterviewSetup({
                     </div>
                     <div aria-live="polite">
                       {jobDirectionError && (
-                        <div className="alert alert-warning mt-4" role="alert">
+                        <div className="isu-notice mt-4" role="alert">
                           <p>{t(jobDirectionError)}</p>
                         </div>
                       )}
@@ -517,10 +511,10 @@ export function InterviewSetup({
                   <div className="-mx-1 px-1 pb-1">
                     <label htmlFor="resume-file" className="ds-label block">{t("Currículo em PDF")}</label>
                     <p className="ds-small mt-1">{t("A IA identifica experiências e projetos para criar perguntas específicas. Você revisa tudo antes de começar.")}</p>
-                    <div className="card card-border mt-3 bg-base-100">
-                      <div className="card-body gap-3 p-4 sm:p-5">
+                    <div className="isu-upload mt-3">
+                      <div className="grid gap-3">
                         <div className="flex items-start gap-3">
-                          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-base-200 text-base-content/70" aria-hidden="true">
+                          <span className="isu-upload-icon" aria-hidden="true">
                             <FileText className="size-5" />
                           </span>
                           <div className="min-w-0 flex-1">
@@ -540,7 +534,7 @@ export function InterviewSetup({
                         <p id="resume-file-help" className="ds-small">
                           {resumeFile ? `${resumeFile.name} · ${(resumeFile.size / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB` : t("Nenhum arquivo selecionado.")}
                         </p>
-                        <div className="card-actions items-center">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             className="btn btn-sm ds-btn ds-btn-soft"
@@ -559,7 +553,7 @@ export function InterviewSetup({
                     </div>
                     <div aria-live="polite">
                       {resumeDirectionError && (
-                        <div className="alert alert-warning mt-4" role="alert"><p>{t(resumeDirectionError)}</p></div>
+                        <div className="isu-notice mt-4" role="alert"><p>{t(resumeDirectionError)}</p></div>
                       )}
                     </div>
                   </div>
@@ -568,7 +562,7 @@ export function InterviewSetup({
 
               {/* Resume interviews use the inferred profile internally; only manual and vacancy modes expose these controls. */}
               {setupMode !== "resume" && (setupMode === "manual" || config.jobDirection) && (
-                <div className={`${dealing ? "isu-deal" : "isu-rise-in"} isu-rise flex flex-col gap-6`} style={{ "--j": 1, "--rot": "1.4deg" } as CSSProperties}>
+                <div className="flex flex-col gap-6">
                   {setupMode !== "manual" && (
                     <p className="ds-small -mb-2" role="status">{t("Preenchido a partir da vaga. Ajuste o que não estiver certo.")}</p>
                   )}
@@ -585,7 +579,7 @@ export function InterviewSetup({
                       describedBy={roleInvalid ? "role-error" : undefined}
                     />
                     {roleInvalid && (
-                      <span id="role-error" role="alert" className="ds-fade-in text-sm font-medium text-danger">{t("Informe o cargo para o qual você quer praticar.")}</span>
+                      <span id="role-error" role="alert" className="text-sm font-medium text-danger">{t("Informe o cargo para o qual você quer praticar.")}</span>
                     )}
                   </div>
 
@@ -620,7 +614,7 @@ export function InterviewSetup({
               <div id="job-direction-panel" className="ds-reveal" data-open={setupMode !== "manual" && !!config.jobDirection} inert={!(setupMode !== "manual" && config.jobDirection)}>
                 <div>
                   {config.jobDirection && (
-                    <fieldset className="-mx-1 rounded-2xl border border-base-300 bg-base-100 p-4 sm:p-5" aria-labelledby="direction-found-title">
+                    <fieldset className="isu-direction" aria-labelledby="direction-found-title">
                       <legend className="sr-only">{t("Direcionamento da entrevista")}</legend>
                       <h3 id="direction-found-title" className="ds-label">{t(setupMode === "resume" ? "Entrevista criada pelo currículo" : "Prioridades da vaga")}</h3>
                       <p className="ds-small mt-1">{t(setupMode === "resume" ? "Currículo analisado. As oito perguntas personalizadas ficam ocultas e aparecem somente durante a entrevista." : "Revise o direcionamento geral. As oito perguntas específicas ficam ocultas e aparecem somente durante a entrevista.")}</p>
@@ -646,7 +640,7 @@ export function InterviewSetup({
                 </div>
               </div>
 
-              <fieldset className="isu-deal flex min-w-0 flex-col gap-2" style={{ "--j": 2, "--rot": "-1.4deg" } as CSSProperties}>
+              <fieldset className="flex min-w-0 flex-col gap-2">
                 <legend className="ds-label mb-2">{t("Duração da sessão")}</legend>
                 <SlidingSegmented
                   name="duration"
@@ -661,10 +655,10 @@ export function InterviewSetup({
           </section>
 
           {/* 2. Interviewer audio mode and an optional real synthesis test. */}
-          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 1, "--rot": "1.9deg" } as CSSProperties} aria-labelledby="interviewer-audio-title">
-            <div className="flex items-center gap-3">
-              <span className="ds-step" aria-hidden="true">{t("2")}</span>
-              <h2 id="interviewer-audio-title" className="ds-h2">{t("Como o entrevistador fala")}</h2>
+          <section className="ds-card p-5 sm:p-7" aria-labelledby="interviewer-audio-title">
+            <div className="flex items-baseline gap-3">
+              <span className="isu-step" aria-hidden="true">{t("2")}</span>
+              <h2 id="interviewer-audio-title" className="ds-card-title">{t("Como o entrevistador fala")}</h2>
             </div>
             <p className="ds-body mt-2 max-w-2xl">{t("Escolha como você receberá a introdução e cada pergunta. O texto da pergunta continua disponível quando o áudio falha.")}</p>
 
@@ -685,7 +679,7 @@ export function InterviewSetup({
               <label className="ds-option">
                 <input type="radio" name="interviewer-audio-mode" value="audio" className="ds-radio" checked={getInterviewerAudioMode(config) === "audio"} onChange={() => updateInterviewerAudioMode("audio")} />
                 <span className="min-w-0">
-                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">{t("Com áudio ")}<span className="rounded-full bg-green-solid px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-on-green">{t("Recomendado")}</span></span>
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">{t("Com áudio ")}<span className="rounded-full bg-tint px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em] text-green-deep">{t("Recomendado")}</span></span>
                   <span className="ds-small mt-1 block">{t("O entrevistador fala a introdução e as perguntas em inglês. Você também pode ler o texto.")}</span>
                 </span>
               </label>
@@ -699,7 +693,7 @@ export function InterviewSetup({
             </fieldset>
 
             {config.playInterviewerAudio && (
-              <div className="ds-fade-in mt-5">
+              <div className="mt-5">
                 <div className="flex flex-col gap-2 min-[460px]:flex-row min-[460px]:items-center">
                   <button type="button" className="ds-btn ds-btn-soft" onClick={() => void testAudio()} disabled={voiceReadiness !== "ready"}>
                     {t(audioTestStatus.kind === "loading" ? "Cancelar teste" : "Testar áudio")}
@@ -713,10 +707,10 @@ export function InterviewSetup({
           </section>
 
           {/* 3. Candidate microphone: optional check, placed right after the interviewer audio choice */}
-          <section className="ds-card ds-enter p-5 sm:p-7" style={{ "--i": 2, "--rot": "-1.5deg" } as CSSProperties} aria-labelledby="microphone-title">
-            <div className="flex items-center gap-3">
-              <span className="ds-step" aria-hidden="true">{t("3")}</span>
-              <h2 id="microphone-title" className="ds-h2">{t("Seu microfone")}</h2>
+          <section className="ds-card p-5 sm:p-7" aria-labelledby="microphone-title">
+            <div className="flex items-baseline gap-3">
+              <span className="isu-step" aria-hidden="true">{t("3")}</span>
+              <h2 id="microphone-title" className="ds-card-title">{t("Seu microfone")}</h2>
             </div>
             <p className="ds-body mt-2 max-w-2xl">{t("Se o navegador estiver usando o microfone errado, a entrevista não ouve você. Teste e escolha o certo. Você pode pular esta etapa.")}</p>
             <div className="mt-5">
@@ -725,11 +719,11 @@ export function InterviewSetup({
           </section>
 
           {/* 4. Advanced: one level deeper, collapsed by default */}
-          <section ref={roomOptionsRef} className="ds-card ds-enter scroll-mb-28 scroll-mt-24" style={{ "--i": 3, "--rot": "1.3deg" } as CSSProperties} aria-labelledby="room-options-title">
+          <section ref={roomOptionsRef} className="ds-card scroll-mb-28 scroll-mt-24" aria-labelledby="room-options-title">
             <button type="button" className="isu-disclosure-button flex items-center gap-3 p-5 sm:px-7" aria-expanded={roomOptionsOpen} aria-controls="room-options-panel" onClick={toggleRoomOptions}>
-              <span className="ds-step" aria-hidden="true">{t("4")}</span>
+              <span className="isu-step" aria-hidden="true">{t("4")}</span>
               <span className="min-w-0 flex-1">
-                <span id="room-options-title" className="ds-h2 block">{t("Preferências da sala")}</span>
+                <span id="room-options-title" className="ds-card-title block">{t("Preferências da sala")}</span>
                 <span className="ds-small block">{t("Voz do entrevistador, legendas, câmera e início da gravação. Os padrões já funcionam bem.")}</span>
               </span>
               <ChevronDown className="ds-chevron size-5 shrink-0 text-text-2" style={{ transform: roomOptionsOpen ? "rotate(180deg)" : undefined }} aria-hidden="true" />
@@ -738,7 +732,7 @@ export function InterviewSetup({
               <div>
                 <div className="px-5 pb-6 sm:px-7">
                   <p className="ds-body">{t("Essas opções mudam a voz, o que aparece e quando o microfone começa a capturar.")}</p>
-                  <div className="isu-deal-late mt-5">
+                  <div className="mt-5">
                     <VoicePicker
                       value={voice}
                       onChange={chooseVoice}
@@ -761,32 +755,26 @@ export function InterviewSetup({
         </div>
 
         {/* Summary + primary action: sticky beside the form on desktop, recap in flow on mobile */}
-        <div className="ds-enter lg:sticky lg:top-24" style={{ "--i": 4, "--rot": "2.2deg" } as CSSProperties}>
-          <aside className="isu-aside ds-mata px-6 py-7 sm:px-8" aria-labelledby="session-preview-title">
-            <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.08em] text-on-panel-accent">
-              <Leaf className="size-3.5 text-[color:var(--ds-brand-warm)]" aria-hidden="true" />
-              {t("Sua sessão ")}</p>
-            <h2
-              id="session-preview-title"
-              key={cargoSummary.value}
-              className="ds-fade-in mt-2 text-balance font-[family-name:var(--font-display)] text-[1.875rem] leading-[1.1] tracking-[-0.02em] [overflow-wrap:anywhere]"
-            >
+        <div className="isu-aside-wrap">
+          <aside className="ds-card isu-aside" aria-labelledby="session-preview-title">
+            <p className="ds-kicker">{t("Sua sessão ")}</p>
+            <h2 id="session-preview-title" key={cargoSummary.value} className="ds-card-title isu-aside-title">
               {t(cargoSummary.value)}
             </h2>
-            <dl className="mt-5 space-y-2.5 text-sm">
+            <dl className="ds-rows isu-aside-list">
               {restSummary.map(({ label, value }) => (
-                <div key={label} className="flex items-baseline justify-between gap-4">
-                  <dt className="shrink-0 text-on-panel-accent">{label}</dt>
-                  <dd key={value} className="ds-fade-in min-w-0 text-right font-medium [overflow-wrap:anywhere]">{value}</dd>
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd key={value}>{value}</dd>
                 </div>
               ))}
             </dl>
-            <button type="submit" className="ds-btn ds-btn-cta mt-7 hidden lg:flex" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint-desktop" : undefined}>
+            <button type="submit" className="ds-btn ds-btn-cta-green mt-4 hidden lg:flex" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint-desktop" : undefined}>
               {config.playInterviewerAudio && voiceReadiness === "warming" && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
               {t(startLabel)} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />
             </button>
-            {startBlocked && <p id="start-hint-desktop" className="ds-hint ds-fade-in mt-3 hidden text-on-panel-accent lg:block">{t(startHint)}</p>}
-            <button type="button" className="ds-btn ds-btn-quiet mt-2 hidden w-full text-on-panel-accent hover:text-[color:var(--ds-on-panel)] lg:flex" onClick={onBack}>
+            {startBlocked && <p id="start-hint-desktop" className="ds-hint mt-3 hidden text-text-2 lg:block">{t(startHint)}</p>}
+            <button type="button" className="ds-btn ds-btn-quiet mt-1 hidden w-full lg:flex" onClick={onBack}>
               {t("Cancelar ")}</button>
           </aside>
           <p className="ds-small mt-4 px-2">
@@ -795,7 +783,7 @@ export function InterviewSetup({
 
         {/* Mobile: the primary action stays reachable */}
         <div className="isu-bar fixed inset-x-0 z-20 px-4 pb-3 pt-3 lg:hidden">
-          {startBlocked && <p id="start-hint-mobile" className="ds-hint ds-fade-in mb-2 text-center text-text-2">{t(startHint)}</p>}
+          {startBlocked && <p id="start-hint-mobile" className="ds-hint mb-2 text-center text-text-2">{t(startHint)}</p>}
           <button type="submit" form="interview-setup-form" className="ds-btn ds-btn-cta-green" disabled={startBlocked} aria-describedby={startBlocked ? "start-hint-mobile" : undefined}>
             {config.playInterviewerAudio && voiceReadiness === "warming" && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
             {t(startLabel)} <ArrowUpRight className="ds-arrow size-4" aria-hidden="true" />

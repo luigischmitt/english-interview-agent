@@ -170,8 +170,9 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
   return (
     <main id="main-content" className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 pb-36 sm:px-8 sm:py-10 sm:pb-28 lg:px-12 lg:py-14 lg:pb-16">
       <PageIntro
+        kicker={t("Progresso")}
         title={t("Seu progresso")}
-        description={t("O que se repete nas suas respostas, o que estudar primeiro e como você evolui a cada prática.")}
+        description={t("O que se repete nas suas respostas e como você evolui a cada entrevista.")}
         action={insights.sessionCount > 0 ? startAction : undefined}
       />
       {isLoading ? (
@@ -185,7 +186,7 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
         </LoadingRegion>
       ) : error ? (
         <section className="mt-8 lg:mt-10" role="alert">
-          <div className="shl-error ds-fade-in flex flex-col items-start gap-4 p-5 sm:p-6">
+          <div className="pg-error flex flex-col items-start gap-4 p-5 sm:p-6">
             <div>
               <h2 className="ds-h2">{t("Não foi possível carregar seu progresso.")}</h2>
               <p className="mt-1 text-sm">{t("Verifique sua conexão e tente novamente.")}</p>
@@ -195,19 +196,14 @@ export function ProgressView({ onStart }: { onStart?: () => void } = {}) {
         </section>
       ) : insights.sessionCount === 0 ? (
         <section className="mt-8 lg:mt-10">
-          <div className="shl-dashed ds-enter p-6 sm:p-8">
-            <span className="shl-pill shl-pill-off">{t("Nenhuma sessão concluída ainda")}</span>
-            <div className="mt-4">
-              <h2 className="ds-h2">{t("Sua primeira prática começa o seu painel.")}</h2>
-              <p className="ds-body mt-2 max-w-xl">
-                {t("Depois de concluir uma entrevista você vê aqui seus erros mais comuns, o que estudar primeiro e a evolução a cada prática. Sessões em andamento ou abandonadas não entram. ")}</p>
-              {onStart && (
-                <div className="mt-5">
-                  <button type="button" className="ds-btn ds-btn-soft" onClick={onStart}>
-                    <Play className="size-4 fill-current" aria-hidden="true" /> {t("Começar primeira prática ")}</button>
-                </div>
-              )}
-            </div>
+          <div className="ds-card pg-first">
+            <h2 className="ds-card-title">{t("Sua primeira prática começa o seu painel.")}</h2>
+            <p className="ds-body mt-2 max-w-xl">
+              {t("Depois de concluir uma entrevista você vê aqui seus erros mais comuns, o que estudar primeiro e a evolução a cada prática. Sessões em andamento ou abandonadas não entram. ")}</p>
+            {onStart && (
+              <button type="button" className="ds-btn ds-btn-cta-green pg-first-btn mt-6" onClick={onStart}>
+                <Play className="size-4 fill-current" aria-hidden="true" /> {t("Começar primeira prática ")}</button>
+            )}
           </div>
         </section>
       ) : (

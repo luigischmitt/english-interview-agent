@@ -33,7 +33,6 @@ test("Progress keeps revealed sections visible and restores the list position af
 
   assert.match(reveal, /observer\.unobserve\(entry\.target\)/);
   assert.match(reveal, /else if \(!entry\.isIntersecting && !once\)/);
-  assert.match(progressContent, /useReplayReveal\(rootRef, \[insights\], \{ once: true \}\)/);
   assert.match(progressView, /<ProgressContent insights=\{insights\} onOpenReport=\{openHistoricalReport\}/);
   assert.match(progressView, /progressScrollTop\.current = window\.scrollY/);
   assert.match(progressView, /window\.requestAnimationFrame\(\(\) => window\.scrollTo\(\{ top: progressScrollTop\.current, behavior: "auto" \}\)\)/);
